@@ -1,0 +1,43 @@
+# Schema: bluenviron/mediamtx v1.11.3. WebRTC (8889/tcp, 8189/udp) exposed
+# beyond loopback for manual LAN verification; RTSP/API stay loopback-only.
+logLevel: info
+api: yes
+apiAddress: :9997
+rtsp: yes
+rtspAddress: :8554
+rtspTransports: [tcp]
+rtmp: no
+hls: no
+srt: no
+webrtc: yes
+webrtcAddress: :8889
+webrtcLocalUDPAddress: :8189
+webrtcIPsFromInterfaces: no
+# Host-specific LAN IP (this Lunar Lake host's current address); confirm/
+# override on a different target device. 127.0.0.1 kept for same-host
+# testing (e.g. curl from inside this machine).
+webrtcAdditionalHosts: [127.0.0.1, 10.123.233.207]
+# Coturn assists MediaMTX WebRTC ICE only (handheld-architecture boundary).
+# Bootstrap/dev-only static long-term credential (config/coturn/turnserver.conf),
+# not a production secret.
+webrtcICEServers2:
+  - url: stun:10.123.233.207:3478
+  - url: turn:10.123.233.207:3478
+    username: handheld
+    password: handheldbootstrap
+# Regex paths (D13): a `~` prefix makes `path` a regular expression, so the
+# config does not grow per camera. camN carries the clean RTSP feed, annotatedN
+# the DLSPS WHIP push. Adding a camera needs no change here.
+authInternalUsers:
+  - user: any
+    permissions:
+      - action: publish
+        path: ~^(cam|annotated)[0-9]+$
+      - action: read
+        path: ~^(cam|annotated)[0-9]+$
+      - action: api
+paths:
+  ~^cam[0-9]+$:
+    source: publisher
+  ~^annotated[0-9]+$:
+    source: publisher

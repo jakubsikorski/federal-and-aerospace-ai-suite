@@ -1,0 +1,42 @@
+---
+name: handheld-architecture
+description: Use when planning handheld integration boundaries or reviewing a bootstrap handoff; enforces the owner-defined video, observation, evidence, speech, and metrics contracts.
+---
+
+# Handheld architecture
+
+These are fixed owner requirements, not claims that components are running.
+Pinned baseline and resolved source commits: `BOOTSTRAP_MANIFEST.yaml`.
+Read `AGENTS.md` and `BOOTSTRAP_STATUS.md` first.
+
+```text
+MediaMTX -> DLSPS clean RTSP
+DLSPS -> MediaMTX annotated WebRTC (WHIP push; owner-approved amendment,
+    supersedes the original RTSP-for-annotated draft — see
+    docs/bootstrap/video-contracts.md)
+MediaMTX -> UI WebRTC/WHEP
+
+DLSPS -> MQTT -> Backend observations
+DLSPS -> shared snips -> Backend static evidence images
+
+Metrics Manager -> Backend -> UI
+Backend -> UI HTTP/SSE/WebSocket
+Coturn <-> MediaMTX WebRTC only
+
+Backend does NOT sit in the video path.
+Backend does NOT reconfigure DLSPS at runtime.
+UI does NOT access SQLite directly.
+UI does NOT access snip filesystem paths directly.
+```
+
+Backend owns microphone capture; Audio Analyzer owns transcription.
+Snips must be cropped inside the DLSPS pipeline, never in Backend.
+CPU/GPU/NPU pipelines are predefined, NPU is the intended default. Do not
+introduce a dynamic pipeline-editing API or expose the stock Chat Q&A UI.
+
+Use verified component contracts for actual APIs, health checks, devices,
+volumes, and commands. Null runtime fields are not values to invent.
+Owner accepts the current Lunar Lake host as the execution target. Label
+actual hardware truthfully; its name is not a bootstrap blocker. Stock `/chat`
+is accepted for general conversation with retrieval allowed and a suitable
+prompt. Do not erase mission documents to implement general chat.

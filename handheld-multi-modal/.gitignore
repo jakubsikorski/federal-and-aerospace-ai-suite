@@ -1,0 +1,24 @@
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials/
+secrets/
+models/
+data/
+.venv/
+__pycache__/
+*.pyc
+docs/bootstrap/evidence/*
+!docs/bootstrap/evidence/README.md
+!docs/bootstrap/evidence/host.txt
+!docs/bootstrap/evidence/phase3/
+!docs/bootstrap/evidence/phase3/*.txt
+
+# TLS material is generated on the device and never committed (design 15.4).
+config/tls/
+data/backend/
+
+# Ultralytics INT8 calibration dataset, downloaded by the model export step.
+datasets/

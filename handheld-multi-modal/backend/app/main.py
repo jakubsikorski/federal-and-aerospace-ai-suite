@@ -1,0 +1,361 @@
+"""Backend application: prerequisites, camera registry, pipelines and ingest.
+
+Phases 1-2 of docs/design/APPLICATION_DESIGN.md, Appendix A. No query routing,
+alerts or speech yet - those are Phases 3 and later.
+"""
+from __future__ import annotations
+
+import logging
+import os
+import shutil
+import sqlite3
+import threading
+import time
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+
+from . import history, pipelines, reset
+from .adapters import Probe, Services
+from .ingest import Ingest
+from .core import (
+    connect,
+    crop_store_busy,
+    envelope,
+    load_config,
+    migrate,
+    new_request_id,
+    request_id_var,
+    resolve_crop_path,
+    setup_logging,
+    sync_streams,
+)
+
+log = logging.getLogger("backend")
+
+
+def local_checks(cfg: dict, conn: sqlite3.Connection) -> list[Probe]:
+    """Prerequisites Backend can verify without any network call."""
+    checks: list[Probe] = []
+
+    crop_dir = Path(cfg["crop_dir"])
+    if not crop_dir.is_dir():
+        checks.append(Probe("crop_mount", False, f"{crop_dir} is not a directory", True))
+    else:
+        writable = os.access(crop_dir, os.W_OK)
+        free_mb = shutil.disk_usage(crop_dir).free // (1024 * 1024)
+        checks.append(
+            Probe(
+                "crop_mount",
+                writable,
+                f"readable, {'writable' if writable else 'READ-ONLY'}, {free_mb} MiB free",
+                True,
+                data={"free_mb": free_mb, "writable": writable},
+            )
+        )
+
+    # H1: a producer that died inside __init__ leaves .lock held with no pipeline
+    # running. Reported, never forcibly removed - breaking the single-writer
+    # guarantee is worse than the stuck state it would paper over.
+    for stream in cfg["streams"]:
+        busy = crop_store_busy(cfg["crop_dir"], stream["stream_id"], cfg["takeover_seconds"])
+        checks.append(
+            Probe(
+                f"crop_store:{stream['stream_id']}",
+                True,
+                "owned by a live producer" if busy else "available",
+                False,
+                data={"busy": busy},
+            )
+        )
+
+    script = Path(cfg["crop_cleanup_script"])
+    checks.append(
+        Probe(
+            "cleanup_script",
+            script.is_file(),
+            f"{script} {'present' if script.is_file() else 'MISSING - clear-history unavailable'}",
+            False,
+        )
+    )
+
+    try:
+        count = conn.execute("SELECT count(*) AS n FROM streams").fetchone()["n"]
+        checks.append(Probe("database", True, f"schema present, {count} camera(s) registered", True))
+    except sqlite3.Error as exc:
+        checks.append(Probe("database", False, str(exc), True))
+
+    return checks
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    cfg = load_config()
+    setup_logging(cfg["log_level"])
+    conn = connect(cfg["db_path"])
+    migrate(conn)
+    sync_streams(conn, cfg["streams"])
+    app.state.cfg = cfg
+    app.state.db = conn
+    app.state.services = Services(cfg["services"], cfg["timeout_seconds"])
+    # Ingest before pipelines: a subscriber that starts second misses the first
+    # observations of every camera it is supposed to be watching.
+    app.state.ingest = Ingest(cfg, cfg["db_path"])
+    # Section 6.4: a previous process's open tracks are closed before anything
+    # can query current state, so a restart cannot present them as live.
+    app.state.ingest.recover()
+    app.state.ingest.start()
+    # One clear at a time, process-wide: two concurrent resets would race on
+    # the same producer lock and leave one of them reporting a false failure.
+    app.state.clear_lock = threading.Lock()
+    # A clear interrupted by a crash is finished before the reconcile below,
+    # so a half-cleared camera is never restarted with stale history (9.2).
+    reset.resume_interrupted(conn, cfg, app.state.services.client, app.state.ingest)
+    # A pipeline whose RTSP source disappears goes to COMPLETED and stays there.
+    # reconcile() already knows how to replace anything not RUNNING, so the
+    # supervisor is just that same call on a timer - no separate restart path.
+    stopping = threading.Event()
+
+    # Seeded from the startup reconcile, not left empty: the grace guard below
+    # compares against this, and an unseeded camera counts as "started
+    # infinitely long ago", so the very first supervisor pass would delete a
+    # pipeline that is still prerolling. A cold NPU model compile takes far
+    # longer than one supervisor interval.
+    last_started: dict[str, float] = dict.fromkeys(
+        pipelines.reconcile(
+            conn, cfg, app.state.services.client, include_kept=True
+        ),
+        time.monotonic(),
+    )
+
+    def supervise():
+        grace = cfg["feed_stale_seconds"]
+        while not stopping.wait(cfg["supervise_seconds"]):
+            try:
+                now = time.monotonic()
+                # A camera is only replaced once it has been silent past the
+                # grace period AND its own restart has had that long to produce
+                # something, otherwise every pass would restart every camera.
+                unhealthy = frozenset(
+                    s for s in app.state.ingest.stale(grace)
+                    if now - last_started.get(s, float("-inf")) > grace
+                )
+                if unhealthy:
+                    log.warning("replacing silent camera pipelines: %s", sorted(unhealthy))
+                for stream_id in pipelines.reconcile(
+                    conn, cfg, app.state.services.client, unhealthy
+                ):
+                    last_started[stream_id] = time.monotonic()
+            except Exception:
+                log.exception("supervisor pass failed")
+
+    supervisor = threading.Thread(target=supervise, name="pipeline-supervisor", daemon=True)
+    supervisor.start()
+    log.info("backend started with %d camera(s)", len(cfg["streams"]))
+    yield
+    stopping.set()
+    # A pass may already be waiting on the lifecycle lock. Let it finish before
+    # stop_owned(), otherwise it can restart cameras after shutdown deleted them.
+    supervisor.join()
+    pipelines.stop_owned(conn, cfg, app.state.services.client)
+    app.state.ingest.close()
+    app.state.services.close()
+    conn.close()
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(title="handheld-multimodal backend", lifespan=lifespan)
+
+    @app.middleware("http")
+    async def request_context(request: Request, call_next):
+        token = request_id_var.set(request.headers.get("x-request-id") or new_request_id())
+        try:
+            response = await call_next(request)
+            response.headers["x-request-id"] = request_id_var.get()
+            return response
+        finally:
+            request_id_var.reset(token)
+
+    @app.exception_handler(Exception)
+    async def unhandled(request: Request, exc: Exception):
+        log.exception("unhandled error on %s", request.url.path)
+        return JSONResponse(
+            status_code=500,
+            content=envelope(error={"code": "internal_error", "message": type(exc).__name__}),
+        )
+
+    @app.get("/api/health")
+    def health(request: Request):
+        cfg, conn = request.app.state.cfg, request.app.state.db
+        checks = local_checks(cfg, conn) + request.app.state.services.probe_all()
+        blocking = [c for c in checks if c.blocking and not c.ok]
+        degraded = [c for c in checks if not c.blocking and not c.ok]
+        status = "blocked" if blocking else ("degraded" if degraded else "ready")
+        return JSONResponse(
+            status_code=200,
+            content=envelope(
+                {
+                    "status": status,
+                    "blocking_failures": [c.name for c in blocking],
+                    "degraded": [c.name for c in degraded],
+                    "checks": [c.as_dict() for c in checks],
+                }
+            ),
+        )
+
+    @app.get("/api/streams")
+    def streams(request: Request):
+        rows = request.app.state.db.execute(
+            "SELECT * FROM streams WHERE enabled = 1 ORDER BY sort_order, stream_id"
+        ).fetchall()
+        health = request.app.state.ingest.snapshot()
+        return envelope(
+            [
+                {
+                    "stream_id": row["stream_id"],
+                    "display_name": row["display_name"],
+                    "sort_order": row["sort_order"],
+                    # Relative on purpose (D15): the UI resolves it against its own
+                    # origin, so no host or address is ever baked into the bundle.
+                    "whep_path": f"/{row['annotated_path']}/whep",
+                    "clear_state": row["clear_state"],
+                    "feed": health.get(row["stream_id"], {"ok": None, "reason": "unknown"}),
+                    "tracking_session_id": row["tracking_session_id"],
+                    "history_generation": row["history_generation"],
+                }
+                for row in rows
+            ]
+        )
+
+    def _known(request: Request, stream_id: str) -> None:
+        if stream_id not in {s["stream_id"] for s in request.app.state.cfg["streams"]}:
+            raise HTTPException(status_code=404, detail="unknown camera")
+
+    @app.get("/api/streams/{stream_id}/current")
+    def current(request: Request, stream_id: str):
+        """Section 6.5. Never answers "nothing there" on a feed that is not advancing."""
+        _known(request, stream_id)
+        state = request.app.state
+        return envelope(history.current(state.db, state.ingest, state.cfg, stream_id))
+
+    @app.get("/api/streams/{stream_id}/tracks")
+    def tracks(request: Request, stream_id: str, limit: int = 50, since_utc: str | None = None):
+        _known(request, stream_id)
+        state = request.app.state
+        return envelope(history.recent(state.db, state.ingest, state.cfg, stream_id,
+                                       limit=limit, since_utc=since_utc))
+
+    @app.get("/api/tracks/{track_id}/candidates")
+    def track_candidates(request: Request, track_id: int):
+        conn = request.app.state.db
+        if not conn.execute("SELECT 1 FROM tracks WHERE track_id = ?", (track_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="unknown track")
+        return envelope({"track_id": track_id, "candidates": history.candidates(conn, track_id)})
+
+    @app.get("/api/ingest/stats")
+    def ingest_stats(request: Request):
+        """Drop counters by reason. Silent drops are the ones that mislead."""
+        return envelope(request.app.state.ingest.stats())
+
+    # -- images (section 8.3) ----------------------------------------------
+    def _serve(request: Request, row) -> Response:
+        cfg, conn = request.app.state.cfg, request.app.state.db
+        if row is None:
+            raise HTTPException(status_code=404, detail="unknown candidate")
+        if row["image_state"] != "present":
+            # Typed body, not a bare 404: the UI must render an explicit state
+            # rather than a broken image icon.
+            return JSONResponse(status_code=404,
+                                content=envelope({"image_state": row["image_state"]}))
+        generation = conn.execute(
+            "SELECT history_generation FROM streams WHERE stream_id = ?",
+            (row["stream_id"],)).fetchone()
+        if generation and (generation["history_generation"] or "") != row["history_generation"]:
+            # Evidence from a cleared generation is not part of the current
+            # application context and is never served, even if the file survives.
+            return JSONResponse(status_code=404, content=envelope({"image_state": "superseded"}))
+        try:
+            path = resolve_crop_path(cfg["crop_dir"], row["stream_id"], row["storage_key"])
+        except ValueError:
+            log.warning("rejected storage key for candidate %s", row["candidate_id"])
+            raise HTTPException(status_code=400, detail="invalid storage key")
+        if not path.is_file():
+            # The producer owns expiry; a vanished file is a normal state, so it
+            # is recorded rather than retried or substituted.
+            conn.execute("UPDATE candidates SET image_state = 'missing' WHERE candidate_id = ?",
+                         (row["candidate_id"],))
+            conn.commit()
+            return JSONResponse(status_code=404, content=envelope({"image_state": "missing"}))
+        etag = f'"{row["candidate_id"]}"'
+        if request.headers.get("if-none-match") == etag:
+            return Response(status_code=304)
+        return FileResponse(path, media_type="image/jpeg", headers={
+            "Cache-Control": "private, max-age=60", "ETag": etag})
+
+    @app.get("/api/candidates/{candidate_id}/image")
+    def candidate_image(request: Request, candidate_id: str):
+        row = request.app.state.db.execute(
+            "SELECT * FROM candidates WHERE candidate_id = ?", (candidate_id,)).fetchone()
+        return _serve(request, row)
+
+    @app.get("/api/tracks/{track_id}/snip")
+    def track_snip(request: Request, track_id: int):
+        """The track's selected candidate, else the best one still on disk.
+
+        Crops rotate out from under the index (the producer caps its store), so
+        the best-scoring row is routinely a file that no longer exists. Walking
+        down to the next surviving candidate turns that into a served image
+        instead of a 404 the operator has to retry, and each miss is recorded on
+        the way past so the next request skips it immediately.
+        """
+        conn = request.app.state.db
+        rows = conn.execute(
+            """SELECT c.* FROM candidates c
+               JOIN tracks t ON t.track_id = c.track_id
+               WHERE c.track_id = ? AND c.image_state = 'present'
+               ORDER BY (c.candidate_id = coalesce(t.selected_candidate_id, '')) DESC,
+                        c.quality_score DESC LIMIT 10""", (track_id,)).fetchall()
+        for row in rows:
+            response = _serve(request, row)
+            if response.status_code != 404:
+                return response
+        return JSONResponse(status_code=404, content=envelope({"image_state": "none"}))
+
+    @app.post("/api/streams/{stream_id}/clear")
+    def clear_history(request: Request, stream_id: str, confirm: str = ""):
+        """Section 9.2. Destructive and scoped to one camera.
+
+        `confirm` must repeat the camera id, so a mis-aimed request clears
+        nothing rather than the wrong camera's evidence.
+        """
+        _known(request, stream_id)
+        if confirm != stream_id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"confirm must equal {stream_id!r}; history was not cleared")
+        state = request.app.state
+        if not state.clear_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail="another clear is already running")
+        try:
+            result = reset.clear_camera(state.db, state.cfg, state.services.client,
+                                        state.ingest, stream_id)
+        except reset.ResetError as exc:
+            # Never reports success it did not achieve.
+            return JSONResponse(status_code=503, content=envelope(
+                {"stream_id": stream_id, "cleared": False},
+                error={"code": "clear_incomplete", "message": str(exc)}))
+        finally:
+            state.clear_lock.release()
+        return envelope(result)
+
+    static = Path(__file__).parent / "static"
+    if static.is_dir():
+        app.mount("/", StaticFiles(directory=static, html=True), name="ui")
+
+    return app
+
+
+app = create_app()

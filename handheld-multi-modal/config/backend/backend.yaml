@@ -1,0 +1,79 @@
+# Backend configuration. Values here override backend/app/core.py DEFAULTS.
+#
+# Cameras (D13): multi-camera from the start. Adding one is a list entry here
+# plus an RTSP publisher; no MediaMTX, proxy or UI configuration changes.
+# `annotated_path` and `source_uri` are derived from `stream_id` unless set.
+#
+# ponytail: static camera list. A registration API only becomes worthwhile when
+# cameras arrive at runtime, which is not a demo requirement.
+
+# Required and measured on this host: 3 cameras run concurrently through the
+# stock DLSPS MQTT publisher and REST WebRTC frame destination. Bounded queues
+# keep observations current instead of retaining a multi-second backlog.
+max_streams: 3
+streams:
+  - stream_id: cam1
+    display_name: Camera 1
+    sort_order: 0
+    enabled: true
+  - stream_id: cam2
+    display_name: Camera 2
+    sort_order: 1
+    enabled: true
+  - stream_id: cam3
+    display_name: Camera 3
+    sort_order: 2
+    enabled: true
+
+rtsp_base: rtsp://mediamtx:8554
+
+# Internal container ports, probed 2026-09-14. These are NOT the host-published
+# ports: audio-analyzer publishes 8011->8010 and tts 8012->8011, so using host
+# numbers here would silently target the wrong service.
+services:
+  chatqna: http://chatqna:8888
+  audio_analyzer: http://audio-analyzer:8010
+  tts: http://tts:8011
+  dlsps: http://dlsps:8080
+  mediamtx: http://mediamtx:9997
+  alert_agent: http://alert-agent:8000
+  metrics: http://metrics:9090
+
+mqtt:
+  host: mqtt
+  port: 1883
+  topic: handheld/observations
+
+detections_topic: detections/live
+
+db_path: /data/app.db
+crop_dir: /crops
+crop_cleanup_script: /opt/handheld-crops/crop_candidates.py
+# How often to replace pipelines that are no longer RUNNING.
+supervise_seconds: 15.0
+# DLSPS accepts POST before asynchronous pipeline construction consumes request
+# parameters. Serialize starts by waiting for RUNNING before sending next camera.
+pipeline_start_timeout_seconds: 180.0
+pipeline_start_poll_seconds: 2.0
+# Silence longer than this means the camera is replaced, not just reported down.
+# It also gates how long a fresh start is left alone. A replacement pipeline was
+# measured taking up to ~40s to reach RUNNING while contending with the leaked
+# sessions of the pipeline it replaces, so a window near that turns the
+# supervisor into a restart loop that never lets a camera finish starting.
+feed_stale_seconds: 90.0
+# Mirrors takeover_seconds in config/dlsps/crops/*.json.
+takeover_seconds: 30.0
+timeout_seconds: 5.0
+log_level: INFO
+
+# History windows (section 6). Measured 2026-09-15 by timestamping messages at
+# the broker against the producer's own observed_at: observations arrive a
+# median 3.8s (max 4.6s) after the frame is stamped, and that delay is inside
+# the stock DLSPS pipeline, before Backend sees anything. A 3s freshness window
+# would therefore report every camera as permanently "absent" while people are
+# visibly on screen, so it is set above the measured maximum with margin.
+freshness_window_seconds: 8.0
+# 14s so that ~10s of *real* silence closes a track, once delivery lag is paid.
+track_timeout_seconds: 14.0
+absence_split_seconds: 5.0
+pending_association_seconds: 120.0

@@ -1,0 +1,56 @@
+# Demo camera publishers - REMOVABLE DEMO ASSETS (design section 22).
+#
+# Real deployments point cameras at rtsp://<host>:8554/camN themselves; nothing
+# in the application depends on this file. It exists so the demo has N
+# reproducible feeds instead of a hand-started ffmpeg that dies with the shell.
+#
+#   make cameras CAMERAS=2     start cam1 and cam2
+#   make cameras-down          stop them
+#
+# -c copy: the source is already H.264 1920x1080 30fps, so this remuxes rather
+# than re-encodes. Publishing costs ~1% CPU per camera and leaves the measured
+# per-camera pipeline cost (design 3.4) attributable to DLSPS, not to the
+# simulator. -re paces at real time; -stream_loop -1 loops forever.
+#
+# classroom.ts is the PTS-repaired remux of classroom.avi, whose broken
+# timestamps otherwise cost ~132% CPU in the reader.
+
+name: handheld-bootstrap
+
+x-camera: &camera
+  image: jrottenberg/ffmpeg:6.1-ubuntu2404
+  restart: unless-stopped
+  network_mode: "container:handheld-bootstrap-mediamtx-1"
+  volumes:
+    - ../data/dlsps/demo-video:/video:ro
+  entrypoint: ["ffmpeg"]
+
+services:
+  cam1:
+    <<: *camera
+    container_name: handheld-demo-cam1
+    command: ["-nostdin", "-hide_banner", "-loglevel", "warning",
+              "-re", "-stream_loop", "-1", "-i", "/video/classroom.ts",
+              "-map", "0:v:0", "-c", "copy",
+              "-f", "rtsp", "-rtsp_transport", "tcp", "rtsp://127.0.0.1:8554/cam1"]
+  cam2:
+    <<: *camera
+    container_name: handheld-demo-cam2
+    command: ["-nostdin", "-hide_banner", "-loglevel", "warning",
+              "-re", "-stream_loop", "-1", "-i", "/video/classroom.ts",
+              "-map", "0:v:0", "-c", "copy",
+              "-f", "rtsp", "-rtsp_transport", "tcp", "rtsp://127.0.0.1:8554/cam2"]
+  cam3:
+    <<: *camera
+    container_name: handheld-demo-cam3
+    command: ["-nostdin", "-hide_banner", "-loglevel", "warning",
+              "-re", "-stream_loop", "-1", "-i", "/video/classroom.ts",
+              "-map", "0:v:0", "-c", "copy",
+              "-f", "rtsp", "-rtsp_transport", "tcp", "rtsp://127.0.0.1:8554/cam3"]
+  cam4:
+    <<: *camera
+    container_name: handheld-demo-cam4
+    command: ["-nostdin", "-hide_banner", "-loglevel", "warning",
+              "-re", "-stream_loop", "-1", "-i", "/video/classroom.ts",
+              "-map", "0:v:0", "-c", "copy",
+              "-f", "rtsp", "-rtsp_transport", "tcp", "rtsp://127.0.0.1:8554/cam4"]

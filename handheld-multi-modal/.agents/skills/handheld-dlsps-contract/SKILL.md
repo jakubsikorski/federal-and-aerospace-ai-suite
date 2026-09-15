@@ -1,0 +1,71 @@
+---
+name: handheld-dlsps-contract
+description: Use when integrating fixed CPU/GPU/NPU Pipeline Server variants, annotated WebRTC (WHIP/WHEP), observation MQTT, or tracked-object snips for the handheld bootstrap.
+---
+
+# Fixed DLSPS integration
+
+Pinned image from release source:
+`intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24-rc3`.
+Use official `dlsps-user` and `dlstreamer-coding-agent` skills for stock APIs.
+Repository-specific source findings + live evidence: `docs/bootstrap/video-contracts.md`.
+**Runtime-verified**: all three variants (CPU/GPU/NPU) deployed and smoke-tested
+against real running containers, not source-only anymore (see `BOOTSTRAP_STATUS.md`
+and `scripts/smoke/{02,03,04,05}_*.sh`, hardened 2026-09-10 — see
+`docs/bootstrap/IMPROVEMENT_PLAN.md`).
+
+Config locations: `config/dlsps/{cpu,gpu,npu}/config.json`, selected at
+deployment time via `DLSPS_CONFIG_VARIANT` in `compose/bootstrap-compose.yaml`
+(default `npu`). Changing the mounted variant requires recreating the
+container (`docker compose up -d --force-recreate dlsps`), not a plain
+restart — a restart re-reads the same bind-mounted file, it does not swap it.
+GPU `/dev/dri/renderD128`, NPU `/dev/accel/accel0`; render GID 992 observed on
+this host, confirm on target device.
+REST port 8080 (host `127.0.0.1:8080`); start fixed user-defined pipeline at
+`POST /pipelines/user_defined_pipelines/{configured-name}` (returns a bare
+JSON string instance id), poll `GET /pipelines/{id}/status` for
+`state`/`frame_fps`/`elapsed_time`, and stop with `DELETE /pipelines/{id}`
+(only that instance; `GET /pipelines/status` lists all instances ever
+started, including stopped ones, never auto-pruned). Confirmed working
+end-to-end this session.
+
+Required default: YOLO11s IR, INT8 preferred, NPU inference, CPU `gvatrack`,
+Intel hardware decode (`vah264dec`). NPU/GPU variants use VA-memory hardware
+decode; CPU variant uses software `decodebin`. **Encode is not yet
+hardware-accelerated** for the annotated leg: the shipped pipeline uses
+`vapostproc+jpegenc` (software JPEG) feeding the WebRTC sink, which then
+picks VP9 — this is a known, still-unresolved gap (see
+`docs/bootstrap/video-contracts.md`), not a runtime edit or nano fallback.
+Input for the shipped default demo is a local file URI
+(`file:///home/pipeline-server/resources/videos/classroom.avi`); the source
+is set per-pipeline in the REST start request body
+(`DLSPS_DEMO_URI` in `scripts/smoke/_dlsps_lib.sh`), so pointing at
+`rtsp://mediamtx:8554/cam1` instead needs no config.json change, only a
+different `source.uri` in that same request — this combined RTSP-in path is
+not yet exercised as one linked example (tracked in the improvement plan).
+Output MediaMTX `/annotated` via native WebRTC (WHIP push, not RTSP — see
+`docs/bootstrap/video-contracts.md` for the owner-approved amendment).
+Topics: `detections/live` (confirmed real payload shape in
+`docs/bootstrap/video-contracts.md`); `detections/snips` is aspirational,
+not implemented (see below).
+
+Do not invent a `snip` configuration key beyond the shipped `crop-config`
+pipeline parameter. No stock DLSPS destination performs a per-object crop;
+`destination.frame` only supports whole-frame `rtsp`, `webrtc`, `s3_write`,
+`application`. An earlier `s3_write`/SeaweedFS whole-frame "frame-saver"
+was built then fully rejected/backed out by the owner — no SeaweedFS
+container or `s3_write` destination exists in this repo. The implemented
+extension point is a stock `gvapython` element (no
+`ADDITIONAL_GST_PLUGIN_PATH` needed) reading
+`GstVideoRegionOfInterestMeta` per tracked object and cropping before any
+encode step: `scripts/dlsps/crop_candidates.py`, wired into all three
+shipped `config/dlsps/{cpu,gpu,npu}/config.json` variants and
+`compose/bootstrap-compose.yaml` — see
+`scripts/smoke/06_snip.sh` (validated PASS).
+
+Do not mistake stock RTSP destination's JPEG RTP output for a browser-compatible
+H.264 push to MediaMTX. Use the documented `appsink`+`mqtt_publisher` MQTT
+mechanism, not the raw `gvametapublish` element (confirmed broken in this
+rc3 image). Do not claim GPU/NPU execution from configuration alone — verify
+via `gvafpscounter` output and the absence of NPU compile/plugin errors in
+container logs (see `scripts/smoke/04_dlsps_npu.sh`).

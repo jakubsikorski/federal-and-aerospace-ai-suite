@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Handheld</title>
+<style>
+  :root { color-scheme: dark; --ok:#4ade80; --bad:#f87171; --warn:#fbbf24; --bg:#0b0f14; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:#e5e7eb;
+         font:15px/1.45 system-ui,-apple-system,sans-serif; }
+  header { padding:12px 16px; border-bottom:1px solid #1f2937; display:flex;
+           align-items:center; gap:12px; }
+  h1 { font-size:16px; margin:0; font-weight:600; }
+  .pill { margin-left:auto; padding:3px 10px; border-radius:999px; font-size:12px;
+          font-weight:600; background:#1f2937; }
+  .pill.ready{color:var(--ok)} .pill.degraded{color:var(--warn)} .pill.blocked{color:var(--bad)}
+  main { padding:16px; max-width:900px; }
+  .cameras { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+  .cameras button { padding:8px 14px; border-radius:8px; border:1px solid #374151;
+                    background:#111827; color:inherit; font:inherit; min-height:44px; }
+  .cameras button[aria-pressed="true"] { border-color:#60a5fa; background:#1e3a5f; }
+  .cameras button.down { border-color:#b91c1c; }
+  video { width:100%; max-height:56vh; background:#000; border-radius:10px; display:block; }
+  ul { list-style:none; padding:0; margin:0; }
+  li { display:flex; gap:10px; padding:9px 0; border-bottom:1px solid #111827;
+       align-items:baseline; }
+  .mark { width:1.4em; flex:none; } .ok{color:var(--ok)} .bad{color:var(--bad)}
+  .name { font-weight:600; min-width:11em; }
+  .detail { color:#9ca3af; font-size:13px; word-break:break-word; }
+  .tag { font-size:11px; color:#6b7280; border:1px solid #374151; border-radius:4px;
+         padding:0 5px; margin-left:auto; flex:none; }
+  #overlay { position:fixed; inset:0; background:rgba(3,7,18,.96); display:none;
+             padding:24px; overflow:auto; }
+  #overlay.show { display:block; }
+  #overlay h2 { color:var(--bad); }
+  button.action { padding:10px 16px; border-radius:8px; border:1px solid #374151;
+                  background:#111827; color:inherit; font:inherit; min-height:44px; }
+  .note { color:#9ca3af; font-size:13px; margin-top:6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Handheld multimodal</h1>
+  <span id="status" class="pill">checking...</span>
+</header>
+
+<main>
+  <div class="cameras" id="cameras"></div>
+
+  <video id="video" autoplay muted playsinline></video>
+  <p class="note" id="videoNote">no camera selected</p>
+
+  <h2 style="font-size:14px;color:#9ca3af;margin:0 0 6px">Prerequisites</h2>
+  <ul id="checks"></ul>
+
+  <p style="margin-top:20px">
+    <button class="action" id="mic">Test microphone access</button>
+    <span id="micResult" class="note"></span>
+  </p>
+  <p class="note" id="ctx"></p>
+</main>
+
+<div id="overlay">
+  <h2>Cannot start</h2>
+  <p>A required service is unavailable. The application will not show video or
+     answer questions until these are fixed.</p>
+  <ul id="overlayChecks"></ul>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+async function api(path) {
+  const res = await fetch(path, { headers: { accept: "application/json" } });
+  const body = await res.json();
+  if (body.error) throw new Error(body.error.message);
+  return body.data;
+}
+
+function renderChecks(target, checks) {
+  target.innerHTML = "";
+  for (const c of checks) {
+    const li = document.createElement("li");
+    li.innerHTML =
+      '<span class="mark ' + (c.ok ? "ok" : "bad") + '">' + (c.ok ? "\u2713" : "\u2717") + "</span>" +
+      '<span class="name"></span><span class="detail"></span>' +
+      '<span class="tag">' + (c.blocking ? "required" : "optional") + "</span>";
+    li.querySelector(".name").textContent = c.name;
+    li.querySelector(".detail").textContent = c.detail;
+    target.append(li);
+  }
+}
+
+async function refresh() {
+  try {
+    const health = await api("/api/health");
+    $("status").textContent = health.status;
+    $("status").className = "pill " + health.status;
+    renderChecks($("checks"), health.checks);
+    const blocked = health.status === "blocked";
+    $("overlay").classList.toggle("show", blocked);
+    if (blocked) {
+      renderChecks($("overlayChecks"), health.checks.filter((c) => c.blocking && !c.ok));
+    }
+  } catch (err) {
+    $("status").textContent = "backend unreachable";
+    $("status").className = "pill blocked";
+  }
+}
+
+// ---- WHEP playback -------------------------------------------------------
+// One session at a time. DLSPS chooses the codec at publish time (H.264 on the
+// GPU/NPU variants, VP9 on the CPU one), so the offer must carry every codec
+// MediaMTX might hand back or it answers "400 codecs not supported by client".
+let session = null;
+
+async function detachWhep() {
+  const previous = session;
+  session = null;
+  if (!previous) return;
+  $("video").srcObject = null;
+  // Delete before closing: closing the peer connection makes MediaMTX reap the
+  // session itself, and the DELETE that follows then answers 404.
+  if (previous.resource) {
+    // Relative Location, so this resolves against our own origin too.
+    try { await fetch(previous.resource, { method: "DELETE" }); } catch (e) { /* gone anyway */ }
+  }
+  previous.pc.close();
+}
+
+async function attachWhep(whepPath, label) {
+  await detachWhep();
+  const note = $("videoNote");
+  note.textContent = "connecting to " + label + "...";
+  const pc = new RTCPeerConnection({ bundlePolicy: "max-bundle" });
+  const current = { pc, resource: null };
+  session = current;
+
+  pc.addTransceiver("video", { direction: "recvonly" });  // annotated stream is video only
+  pc.ontrack = (event) => { $("video").srcObject = event.streams[0]; };
+  pc.onconnectionstatechange = () => {
+    if (session !== current) return;
+    note.textContent = label + ": " + pc.connectionState;
+  };
+
+  await pc.setLocalDescription(await pc.createOffer());
+  await new Promise((resolve) => {
+    if (pc.iceGatheringState === "complete") return resolve();
+    pc.onicegatheringstatechange = () => pc.iceGatheringState === "complete" && resolve();
+  });
+
+  const res = await fetch(new URL(whepPath, location.origin), {
+    method: "POST",
+    headers: { "content-type": "application/sdp" },
+    body: pc.localDescription.sdp,
+  });
+  if (!res.ok) {
+    note.textContent = label + ": " + res.status + " " + (await res.text()).trim();
+    pc.close();
+    if (session === current) session = null;
+    return;
+  }
+  current.resource = res.headers.get("location");
+  if (session !== current) { pc.close(); return; }  // switched while we waited
+  await pc.setRemoteDescription({ type: "answer", sdp: await res.text() });
+}
+
+async function loadCameras() {
+  const streams = await api("/api/streams");
+  const box = $("cameras");
+  box.innerHTML = "";
+  streams.forEach((s, i) => {
+    const b = document.createElement("button");
+    b.textContent = s.display_name;
+    b.setAttribute("aria-pressed", String(i === 0));
+    b.classList.toggle("down", s.feed && s.feed.ok === false);
+    // Relative path resolved against this origin (D15): no host in the bundle.
+    b.title = new URL(s.whep_path, location.origin).href;
+    b.onclick = () => {
+      [].forEach.call(box.children, (c) => c.setAttribute("aria-pressed", "false"));
+      b.setAttribute("aria-pressed", "true");
+      attachWhep(s.whep_path, s.display_name).catch((e) => {
+        $("videoNote").textContent = s.display_name + ": " + e.message;
+      });
+    };
+    box.append(b);
+  });
+  if (streams.length) {
+    attachWhep(streams[0].whep_path, streams[0].display_name).catch((e) => {
+      $("videoNote").textContent = e.message;
+    });
+  }
+}
+
+// Phase 1 exit criterion: prove a real permission prompt, not a missing API.
+$("ctx").textContent = window.isSecureContext
+  ? "Secure context: yes. getUserMedia is available."
+  : "Secure context: NO. The microphone API is unavailable over plain HTTP - use the HTTPS address.";
+
+$("mic").onclick = async () => {
+  $("micResult").textContent = "requesting...";
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    $("micResult").textContent = "getUserMedia is not available (not a secure context).";
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach((t) => t.stop());
+    $("micResult").textContent = "granted";
+  } catch (err) {
+    $("micResult").textContent = err.name + ": " + err.message;
+  }
+};
+
+loadCameras().catch(() => {});
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>
