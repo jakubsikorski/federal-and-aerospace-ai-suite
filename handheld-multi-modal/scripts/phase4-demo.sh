@@ -166,8 +166,9 @@ up() {
   done
   wait_for "annotated WebRTC publishers" paths_ready "$(IFS=,; echo "${annotated[*]}")"
   wait_for "Backend telemetry" telemetry_ready
-  curl -skfsS --max-time 5 https://127.0.0.1:8443/ |
-    grep -q "Pause list updates"
+  local dashboard
+  dashboard=$(curl -skfsS --max-time 5 https://127.0.0.1:8443/)
+  [[ $dashboard == *"Pause list updates"* ]]
   trap - ERR
   printf 'Phase 4 demo ready: https://127.0.0.1:8443/\n'
   printf 'Feeds: %s | device: NPU | MQTT + WebRTC enabled\n' \
