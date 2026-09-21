@@ -9,6 +9,9 @@ services:
       - ../scripts/dlsps:/opt/handheld-crops:ro
       - ../config/dlsps/crops:/opt/handheld-crops-config:ro
       - ${ASSET_ROOT:?set ASSET_ROOT}/data/dlsps/crops:/opt/handheld-crops-output
+  chatqna:
+    volumes:
+      - ${ASSET_ROOT:?set ASSET_ROOT}/data/chatqna/model_cache:/tmp/model_cache
   backend:
     volumes:
       - ../config/backend/backend.yaml:/config/backend.yaml:ro

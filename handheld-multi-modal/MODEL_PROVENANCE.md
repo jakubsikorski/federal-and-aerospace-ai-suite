@@ -20,9 +20,18 @@ downloads are not inference passes.
 | Organization/country evidence | Ultralytics, Inc., Delaware, United States, in publisher legal terms |
 | License | AGPL-3.0 model card; commercial enterprise licensing offered separately |
 | Sources | [Publisher model card](https://huggingface.co/Ultralytics/YOLO11), [legal terms](https://www.ultralytics.com/legal/terms-of-service), [OEP YOLO11s integration](https://github.com/open-edge-platform/edge-ai-libraries/blob/c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9/microservices/dlstreamer-pipeline-server/docs/user-guide/how-to-guides/download-and-run-yolo-models.md) |
-| Provenance assessment | Evidence identifies the original Ultralytics family and US publisher; no prohibited parent model is identified in the inspected card. Exact checkpoint revision/lineage has not been frozen; execution approval remains unresolved. |
+| Provenance assessment | Evidence identifies the original Ultralytics family and US publisher; no prohibited parent model is identified in the inspected card. The owner requires this original YOLO11s family and explicitly requested stock Model Download preparation (2026-09-21). The stock Ultralytics plugin does not expose an immutable checkpoint revision selector; image/export-script pins and generated artifact checksums are recorded separately. |
 | Consumer/device | DLSPS, NPU default (deployed); CPU/GPU alternative variants (deployed) |
 | Pin/compatibility status | Resolved. INT8 OpenVINO IR exported via `ultralytics`+`openvino==2025.0.0`+`nncf` PTQ (prior session). Frozen artifact hashes: `yolo11s.xml` sha256 `61e8501fa5a11fa012921d5f7c65f0ff05fa78f2d2bf0a37fc1fe7fdf8630d45`, `yolo11s.bin` sha256 `8bb1f5d1b46de8c09fe26d0379072cfddf847e4d627696ccd59374b4a623d51d`. Loaded and executed on NPU/GPU/CPU in `intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24-rc3`; NPU run confirmed real ~30fps detection+tracking via `gvafpscounter`. A cosmetic runtime-version-mismatch warning appears (exporter openvino 2025.0.0 vs. pipeline-server runtime 2026.2.0) with no observed functional effect. |
+
+The automated 2026-09-21 path uses the digest-pinned stock downloader and its
+pinned DL Streamer export script, Ultralytics 8.4.57/OpenVINO 2026.2.0/NNCF
+2.19.0, with the same YOLO11s/coco8/INT8 selection. It preserves generated
+metadata and artifact hashes. Only the legacy or reviewed fresh-demo IR hash
+pair is accepted; a self-generated receipt never authorizes a changed model.
+New export and fixed 640×640 NPU execution were verified; CPU/GPU shape changes
+were configuration-checked, not independently rerun. See
+`docs/bootstrap/evidence/phase4/fresh-demo/`.
 
 Publisher nationality alone doesn't certify every derivative's lineage. Owner
 provenance policy requires resolving uncertainty before use. YOLO11s fixed —
@@ -99,18 +108,20 @@ extension point.
 
 ## Model ownership
 
-Actual installed cache paths + model consumers stay unresolved until
-compliant stock deployment selected. `null` in manifest = unknown, not a
-path to create or setting to infer.
+Installed cache paths and consumers are recorded below. Speech cache revisions
+and deployed artifact hashes are recorded in
+`docs/bootstrap/evidence/phase4/closeout/speech-artifacts.json`; stock exporters
+do not enforce a revision argument. These pins identify this deployment, not
+a guarantee that a later cold stock export resolves the same upstream revision.
 
 | Role | Model | Download owner | Cache/volume | Consumer |
 |---|---|---|---|---|
-| Detection | Required YOLO11s | OEP DLSPS tutorial uses an external Ultralytics export; not a DLSPS startup download | Tutorial mount `/home/pipeline-server/yolo_models/yolo11s`; repository export/cache not selected | DLSPS |
+| Detection | Required YOLO11s INT8/coco8 | Stock Model Download Ultralytics plugin, invoked by `make demo-assets` | `ASSET_ROOT/data/model-download`; validated output installed under `data/dlsps/yolo_export/yolo11s_int8_openvino_model`, with `download.json` provenance/checksums | DLSPS |
 | LLM | Required `Intel/neural-chat-7b-v3-3` (owner-directed replacement for `microsoft/Phi-3.5-mini-instruct`) | Chat Q&A backend HF/Optimum export (`app/openvino_backend.py`) | Stock `/tmp/model_cache/Intel/neural-chat-7b-v3-3` and compile cache; host volume `data/chatqna/model_cache` | Chat Q&A OpenVINO GPU |
 | Embedding | Selected `ibm-granite/granite-embedding-125m-english` | Chat Q&A backend HF/Optimum export | Stock `/tmp/model_cache/ibm-granite/granite-embedding-125m-english`; host volume `data/chatqna/model_cache` | Chat Q&A OpenVINO CPU |
 | Reranker | Selected `cross-encoder/ms-marco-electra-base` | Chat Q&A backend HF/Optimum export | Stock `/tmp/model_cache/cross-encoder/ms-marco-electra-base`; host volume `data/chatqna/model_cache` | Chat Q&A OpenVINO CPU |
 | STT | `openai/whisper-medium`, service name `whisper-medium` | Audio Analyzer `utils/ensure_model.py` | Stock `/app/audio_analyzer/models/openvino/whisper-medium`; HF cache `/app/audio_analyzer/.cache/huggingface` | Audio Analyzer OpenVINO GPU |
-| TTS | Unresolved compliant stock selection | OEP TTS ensure/export helpers | Stock `/app/text-to-speech/models` and `.cache/huggingface`; concrete model export path depends on unselected model/runtime | OEP TTS GPU |
+| TTS | Owner-approved `microsoft/speecht5_tts` | Stock OEP TTS ensure/export helpers | `/app/text-to-speech/models/openvino/microsoft_speecht5_tts__fp16`; source cache `/app/text-to-speech/.cache/huggingface` | OEP TTS GPU |
 | Wake word | Not selected | None | None | None |
 
 Official `model-download-user` skill documents separate Model Download

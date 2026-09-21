@@ -5,7 +5,7 @@
                 "name": "handheld_gpu_detect",
                 "source": "gstreamer",
                 "queue_maxsize": 50,
-                "pipeline": "{auto_source} ! parsebin ! vah264dec ! vapostproc ! video/x-raw(memory:VAMemory) ! queue ! gvadetect name=detection model-instance-id=inst0 device=GPU pre-process-backend=va-surface-sharing ! gvatrack name=tracking tracking-type=short-term-imageless ! gvametaconvert add-empty-results=true name=metaconvert ! gvapython name=cropcandidates module=/opt/handheld-crops/crop_candidates.py class=CropCandidates ! queue ! gvafpscounter ! appsink name=destination",
+                "pipeline": "{auto_source} ! parsebin ! vah264dec ! vapostproc ! video/x-raw(memory:VAMemory) ! queue ! gvadetect name=detection reshape=true reshape-width=640 reshape-height=640 batch-size=1 model-instance-id=inst0 device=GPU pre-process-backend=va-surface-sharing ! gvatrack name=tracking tracking-type=short-term-imageless ! gvametaconvert add-empty-results=true name=metaconvert ! gvapython name=cropcandidates module=/opt/handheld-crops/crop_candidates.py class=CropCandidates ! queue ! gvafpscounter ! appsink name=destination",
                 "parameters": {
                     "type": "object",
                     "properties": {

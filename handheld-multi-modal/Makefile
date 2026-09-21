@@ -8,19 +8,27 @@ CAMERAS ?= 2
 ASSET_ROOT ?= $(CURDIR)
 export ASSET_ROOT := $(abspath $(ASSET_ROOT))
 export WAIT_SECONDS ?= 360
+MODEL_WAIT_SECONDS ?= 3600
+AI_WAIT_SECONDS ?= 3600
 HOST_NAME ?= $(shell hostname)
 HOST_IP ?= $(shell ip -4 -o addr show scope global | awk 'NR==1{split($$4,a,"/"); print a[1]}')
 export COTURN_EXTERNAL_IP ?= $(HOST_IP)
 export RENDER_GID ?= $(shell stat -c '%g' /dev/dri/renderD128 2>/dev/null)
+export ACCEL_GID ?= $(shell stat -c '%g' /dev/accel/accel0 2>/dev/null)
+export ASSET_GID := $(shell id -g)
 export CAMERAS
 TLS_DIR := $(ASSET_ROOT)/config/tls
-DEMO_COMPOSE := docker compose -f compose/bootstrap-compose.yaml -f compose/cameras.yaml -f compose/phase4-demo.override.yaml
+ASSET_COMPOSE := docker compose -f compose/bootstrap-compose.yaml
+DEMO_COMPOSE := $(ASSET_COMPOSE) -f compose/cameras.yaml -f compose/phase4-demo.override.yaml -f "$(ASSET_ROOT)/config/devices.yaml"
 
-.PHONY: help tls demo-setup demo-up demo-stop demo-restart demo-down demo-status cameras cameras-down health test test-ui
+.PHONY: help tls model-downloader-up demo demo-assets demo-preflight demo-setup demo-up demo-stop demo-restart demo-down demo-status cameras cameras-down health test test-ui test-assets
 help:
-	@echo 'make demo-up       Verify assets, prepare device, start and check application'
-	@echo 'make demo-stop     Stop Backend and DLSPS (including stuck pipelines)'
-	@echo 'make demo-restart  Stop Backend/DLSPS, then start and verify application'
+	@echo 'make demo          Download assets, prepare device, start and check the entire stack'
+	@echo 'make demo-assets   Download YOLO11s INT8 through Model Download and the pinned video'
+	@echo 'make demo-up       Same complete setup/start flow as demo'
+	@echo 'make model-downloader-up  Start stock downloader (--plugins ultralytics, port 8200)'
+	@echo 'make demo-stop     Stop all application services (including stuck pipelines)'
+	@echo 'make demo-restart  Restart all services and verify application'
 	@echo 'make demo-down     Remove application containers; preserve assets and history'
 	@echo 'make demo-status  Show containers and camera feeds'
 	@echo 'Options: CAMERAS=1..3 ASSET_ROOT=/path/to/assets HOST_IP=<LAN IP>'
@@ -30,8 +38,8 @@ define readiness
 wait_for() {
   local description=$$1
   shift
-  local attempts=$$((WAIT_SECONDS / 2))
-  for ((i = 0; i < attempts; i++)); do
+  local deadline=$$((SECONDS + WAIT_SECONDS))
+  while ((SECONDS < deadline)); do
     if "$$@" >/dev/null 2>&1; then
       printf 'ready: %s\n' "$$description"
       return 0
@@ -74,7 +82,18 @@ raise SystemExit(0 if data.get("metrics") else 1)
 '
 }
 
+json_ready() {
+  curl -fsS --max-time 5 "$$1" |
+    python3 -c 'import json,sys; sys.exit(json.load(sys.stdin).get(sys.argv[1]) != sys.argv[2])' "$$2" "$$3"
+}
+
 endef
+
+model-downloader-up:
+	@$(readiness)
+	install -d -m 2775 "$$ASSET_ROOT/data/model-download"
+	$(ASSET_COMPOSE) up -d --no-deps model-downloader
+	WAIT_SECONDS=$(MODEL_WAIT_SECONDS) wait_for "Model Download (ultralytics, port 8200)" curl -fsS --max-time 5 http://127.0.0.1:8200/api/v1/health
 
 tls:
 	@test -n "$(COTURN_EXTERNAL_IP)" || { echo 'Set HOST_IP to the device LAN address' >&2; exit 1; }
@@ -87,8 +106,30 @@ tls:
 	  chmod 600 "$(TLS_DIR)/server.key"
 	fi
 
-demo-setup: tls
-	@fail() { echo "demo-setup: $$*" >&2; exit 1; }
+# These prerequisites are deliberately sequential, including under make -j.
+.NOTPARALLEL: demo-assets demo-setup demo-restart
+
+demo-assets:
+	@if python3 scripts/demo_assets.py check-model; then
+	  echo 'YOLO11s INT8 cache verified'
+	else
+	  code=$$?
+	  [[ $$code == 2 ]] || exit "$$code"
+	  make --no-print-directory model-downloader-up
+	  python3 scripts/demo_assets.py model --timeout $(MODEL_WAIT_SECONDS)
+	fi
+	python3 scripts/demo_assets.py video
+	video="$$ASSET_ROOT/data/dlsps/demo-video"
+
+	if [[ ! -f "$$video/classroom.ts" ]]; then
+	  docker run --rm --user "$$(id -u):$$(id -g)" -v "$$video:/video" jrottenberg/ffmpeg:6.1-ubuntu2404 \
+	    -hide_banner -loglevel warning -y -fflags +genpts -i /video/classroom.avi \
+	    -map 0:v:0 -c copy -f mpegts /video/classroom.part.ts
+	  mv "$$video/classroom.part.ts" "$$video/classroom.ts"
+	fi
+
+demo-preflight:
+	@fail() { echo "demo-preflight: $$*" >&2; exit 1; }
 	command -v docker >/dev/null || fail "docker is required"
 	command -v curl >/dev/null || fail "curl is required"
 	command -v python3 >/dev/null || fail "python3 is required"
@@ -97,49 +138,32 @@ demo-setup: tls
 	[[ -e /dev/dri/renderD128 ]] || fail "/dev/dri/renderD128 is required"
 	[[ -e /dev/accel/accel0 ]] || fail "/dev/accel/accel0 is required"
 
-	export RENDER_GID=$${RENDER_GID:-$$(stat -c '%g' /dev/dri/renderD128)}
-	accel_gid=$$(stat -c '%g' /dev/accel/accel0)
-	[[ $$accel_gid == "$$RENDER_GID" ]] ||
-	  fail "renderD128 GID $$RENDER_GID and accel0 GID $$accel_gid differ"
+demo-setup: demo-preflight demo-assets tls
+	@mkdir -p "$$ASSET_ROOT/data/backend"
+	install -d -m 2775 "$$ASSET_ROOT/data/dlsps/crops" "$$ASSET_ROOT/data/chatqna/model_cache"
+	python3 -c 'import json,os; print("services:"); [print("  " + service + ":\n    group_add: !override " + json.dumps(list(dict.fromkeys(os.environ[k] for k in keys)))) for service,keys in {"dlsps":("RENDER_GID","ACCEL_GID","ASSET_GID"), "chatqna":("RENDER_GID","ASSET_GID")}.items()]' > "$$ASSET_ROOT/config/devices.yaml"
 
-	model="$$ASSET_ROOT/data/dlsps/yolo_export/yolo11s_int8_openvino_model"
-	video="$$ASSET_ROOT/data/dlsps/demo-video"
-	[[ -f "$$model/yolo11s.xml" && -f "$$model/yolo11s.bin" && -f "$$model/metadata.yaml" ]] ||
-	  fail "missing YOLO11s INT8 assets under $$model; see docs/bootstrap/video-contracts.md"
-	[[ -f "$$video/classroom.avi" ]] ||
-	  fail "missing pinned classroom.avi under $$video; see docs/bootstrap/video-contracts.md"
-	printf '%s  %s\n' \
-	  61e8501fa5a11fa012921d5f7c65f0ff05fa78f2d2bf0a37fc1fe7fdf8630d45 \
-	  "$$model/yolo11s.xml" |
-	  sha256sum --check --status || fail "YOLO11s XML hash mismatch"
-	printf '%s  %s\n' \
-	  8bb1f5d1b46de8c09fe26d0379072cfddf847e4d627696ccd59374b4a623d51d \
-	  "$$model/yolo11s.bin" |
-	  sha256sum --check --status || fail "YOLO11s BIN hash mismatch"
-	printf '%s  %s\n' \
-	  ca6d1b53d54a40ffda9d4ca1d0ab0cc43f744583324aaf97146c820e2b62a2fa \
-	  "$$video/classroom.avi" |
-	  sha256sum --check --status || fail "classroom.avi hash mismatch"
-
-	if [[ ! -f "$$video/classroom.ts" ]]; then
-	  docker run --rm -v "$$video:/video" jrottenberg/ffmpeg:6.1-ubuntu2404 \
-	    -hide_banner -loglevel warning -fflags +genpts -i /video/classroom.avi \
-	    -map 0:v:0 -c copy /video/classroom.ts
-	fi
-
-	mkdir -p "$$ASSET_ROOT/data/backend" "$$ASSET_ROOT/data/dlsps/crops"
 	sed -e 's|webrtcAdditionalHosts:.*|webrtcAdditionalHosts: [127.0.0.1, $(COTURN_EXTERNAL_IP)]|' \
 	    -e 's|:127.0.0.1:3478|:$(COTURN_EXTERNAL_IP):3478|g' \
 	    config/mediamtx/mediamtx.yml > "$$ASSET_ROOT/config/mediamtx.yml"
+
+demo: demo-up
 
 demo-up: demo-setup
 	@$(readiness)
 	$(DEMO_COMPOSE) config --quiet
 
-	trap 'code=$$?; trap - ERR; printf "demo-up: startup failed; stopping pipelines\n" >&2; $(DEMO_COMPOSE) stop backend dlsps || true; exit "$$code"' ERR
-	$(DEMO_COMPOSE) stop backend dlsps
+	trap 'code=$$?; trap - ERR; printf "demo-up: startup failed; stopping full demo stack\n" >&2; $(DEMO_COMPOSE) --profile assets stop || true; exit "$$code"' ERR
+	$(DEMO_COMPOSE) stop backend dlsps chatqna
+	# Stock conversion skips any existing directory, even an interrupted export.
+	# Preserve partial output before retrying with the unmodified stock backend.
+	$(DEMO_COMPOSE) run --rm --no-deps --entrypoint python3 \
+	  -v "$(CURDIR)/scripts:/bootstrap/scripts:ro" \
+	  -v "$(CURDIR)/config/model-download:/bootstrap/config/model-download:ro" \
+	  -e PYTHONPATH=/bootstrap/scripts chatqna -c 'import pathlib,yaml; from demo_assets import repair_chat_cache; models=yaml.safe_load(pathlib.Path("/tmp/model_config/config.yaml").read_text())["model_settings"]; repair_chat_cache(pathlib.Path("/tmp/model_cache"), [models[role + "_MODEL_ID"] for role in ("LLM", "EMBEDDING", "RERANKER")])'
+
 	$(DEMO_COMPOSE) stop cam1 cam2 cam3 cam4
-	$(DEMO_COMPOSE) up -d coturn mediamtx mqtt metrics dlsps
+	$(DEMO_COMPOSE) up -d coturn mediamtx mqtt metrics dlsps alert-agent chatqna audio-analyzer tts
 	wait_for "MediaMTX" curl -fsS --max-time 3 http://127.0.0.1:9997/v3/paths/list
 	wait_for "DLSPS" curl -fsS --max-time 3 http://127.0.0.1:8080/pipelines
 	wait_for "Metrics Manager" curl -fsS --max-time 3 http://127.0.0.1:9090/health
@@ -165,21 +189,27 @@ demo-up: demo-setup
 	done
 	wait_for "annotated WebRTC publishers" paths_ready "$$(IFS=,; echo "$${annotated[*]}")"
 	wait_for "Backend telemetry" telemetry_ready
+	WAIT_SECONDS=$(AI_WAIT_SECONDS) wait_for "Chat Q&A neural-chat model" json_ready http://127.0.0.1:8888/model llm_model Intel/neural-chat-7b-v3-3
+	WAIT_SECONDS=$(AI_WAIT_SECONDS) wait_for "Whisper GPU service" json_ready http://127.0.0.1:8011/health status ok
+	WAIT_SECONDS=$(AI_WAIT_SECONDS) wait_for "SpeechT5 GPU service" json_ready http://127.0.0.1:8012/v1/model-info device GPU
+
+	wait_for "Alert Agent" curl -fsS --max-time 5 http://127.0.0.1:8010/api/v1/health
+
 	dashboard=$$(curl -skfsS --max-time 5 https://127.0.0.1:8443/)
 	[[ $$dashboard == *'id="pause-updates"'* ]]
 	trap - ERR
-	printf 'Phase 4 demo ready: https://127.0.0.1:8443/\n'
+	printf 'Full demo stack ready: https://127.0.0.1:8443/\n'
 	printf 'Feeds: %s | device: NPU | MQTT + WebRTC enabled\n' \
 	  "$$(IFS=,; echo "$${paths[*]}")"
 
 demo-stop:
-	$(DEMO_COMPOSE) stop backend dlsps
+	$(DEMO_COMPOSE) --profile assets stop
 
-# Every up starts with a pipeline drain; repeat deployment uses the same path.
-demo-restart: demo-up
+# Restart every application service; reuse verified models and retained caches.
+demo-restart: demo-stop demo-up
 
 demo-down:
-	$(DEMO_COMPOSE) down --remove-orphans
+	$(DEMO_COMPOSE) --profile assets down --remove-orphans
 
 demo-status:
 	$(DEMO_COMPOSE) ps
@@ -196,6 +226,9 @@ health:
 
 test:
 	$(DEMO_COMPOSE) exec -T backend python3 test_backend.py
+
+test-assets:
+	python3 scripts/test_demo_assets.py
 
 test-ui:
 	python3 backend/test_ui.py

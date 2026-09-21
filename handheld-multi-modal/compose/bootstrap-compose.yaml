@@ -41,6 +41,20 @@ x-gpu-healthcheck: &gpu-healthcheck
 # launch; the mounts below are what it needs, not an optional extra.
 # See docs/bootstrap/video-contracts.md and docs/design/APPLICATION_DESIGN.md.
 services:
+  model-downloader:
+    image: intel/model-download:2026.2.0-rc2@sha256:8894c3d624e949e79d54557b834a11a90bc3673a98de820a0297f3328b91cc95
+    profiles: [assets]
+    command: ["--plugins", "ultralytics"]
+    restart: "no"
+    group_add: ["${ASSET_GID:-1000}"]
+    environment:
+      <<: *proxy-env-real
+      MODEL_PATH: ${ASSET_ROOT:-..}/data/model-download
+    ports:
+      - "127.0.0.1:8200:8000"
+    volumes:
+      - ${ASSET_ROOT:-..}/data/model-download:/opt/models
+    networks: [bootstrap]
   mediamtx:
     image: bluenviron/mediamtx:1.11.3
     restart: "no"
@@ -93,7 +107,8 @@ services:
     depends_on: [mediamtx, mqtt]
     security_opt:
       - no-new-privileges:true
-    group_add: ["${RENDER_GID:-992}"] # resolved from renderD128 by Make
+    # Make supplies detected render, accelerator and asset groups via devices.yaml.
+    group_add: ["${RENDER_GID:-992}"]
     devices:
       - /dev/dri/renderD128:/dev/dri/renderD128
       - /dev/accel/accel0:/dev/accel/accel0
@@ -294,6 +309,9 @@ services:
     environment:
       # Public model download; token stays optional/env-supplied, never baked in.
       HF_ACCESS_TOKEN: "${HF_ACCESS_TOKEN:-}"
+      # snapshot_download and Optimum must share the mounted cache.
+      HF_HUB_CACHE: /tmp/model_cache
+      HUGGINGFACE_HUB_CACHE: /tmp/model_cache # pinned Optimum uses the legacy name
       <<: *proxy-env-real
     volumes:
       - ../data/chatqna/model_cache:/tmp/model_cache
