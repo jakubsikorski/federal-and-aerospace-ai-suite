@@ -7,201 +7,142 @@
 <style>
   :root {
     color-scheme: dark;
-    --bg: #071116;
-    --panel: #0d1b22;
-    --panel2: #12262e;
-    --line: #23414b;
-    --text: #eef8f7;
-    --muted: #8eaaa9;
-    --accent: #47e6b1;
-    --accent2: #ffb45e;
-    --bad: #ff6b6b;
-    --warn: #ffd166;
+    --bg: #20252c; --panel: #292f38; --panel2: #343d49; --line: #566171;
+    --text: #f3f1eb; --muted: #bbc3ce; --accent: #99c5f5;
+    --good: #91c9a5; --warn: #efc580; --bad: #f2a5a5;
   }
   * { box-sizing: border-box; }
   html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
-  body {
-    background:
-      radial-gradient(circle at 80% -20%, #153a43 0, transparent 38%),
-      linear-gradient(145deg, #061014, var(--bg));
-    color: var(--text);
-    font: 14px/1.35 Inter, ui-sans-serif, system-ui, sans-serif;
-  }
-  button { font: inherit; }
-  button:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
-  #app { height: 100dvh; display: grid; grid-template-rows: 68px minmax(0, 1fr); }
-  header {
-    display: flex; align-items: center; gap: 12px; min-width: 0;
-    padding: 10px 14px; border-bottom: 1px solid var(--line);
-    background: rgba(7, 17, 22, .88); backdrop-filter: blur(12px);
-  }
-  .brand { min-width: 172px; }
-  .brand strong { display: block; letter-spacing: .08em; text-transform: uppercase; }
-  .brand span, .micro { color: var(--muted); font-size: 11px; }
-  #cameras { display: flex; gap: 7px; min-width: 0; flex: 1; }
-  .camera {
-    min-height: 44px; min-width: 86px; padding: 7px 11px;
-    border: 1px solid var(--line); border-radius: 10px;
-    background: #0b171c; color: var(--text); cursor: pointer;
-  }
-  .camera[aria-pressed="true"] {
-    border-color: var(--accent); background: #12342f;
-    box-shadow: inset 0 0 0 1px rgba(71, 230, 177, .25);
-  }
-  .camera .status-dot {
-    display: inline-block; width: 8px; height: 8px; margin-right: 6px;
-    border-radius: 50%; background: var(--muted);
-  }
-  .camera.up .status-dot { background: var(--accent); }
-  .camera.down .status-dot { background: var(--bad); }
-  .top-status { margin-left: auto; text-align: right; white-space: nowrap; }
-  #connection { color: var(--warn); font-weight: 700; }
-  #connection.live { color: var(--accent); }
-
-  #workspace {
-    min-height: 0; padding: 10px; display: grid; gap: 10px;
-    grid-template-columns: minmax(0, 60fr) minmax(410px, 40fr);
-    grid-template-rows: minmax(0, 52fr) minmax(0, 48fr);
-  }
-  .panel {
-    min-width: 0; min-height: 0; overflow: hidden;
-    border: 1px solid var(--line); border-radius: 14px;
-    background: linear-gradient(150deg, rgba(18, 38, 46, .94), rgba(9, 22, 28, .96));
-    box-shadow: 0 12px 34px rgba(0, 0, 0, .18);
-  }
-  .panel-head {
-    height: 45px; padding: 0 13px; display: flex; align-items: center; gap: 8px;
-    border-bottom: 1px solid var(--line);
-  }
-  .panel-head h2 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; }
-  .panel-head small { margin-left: auto; color: var(--muted); }
-  #video-panel { grid-column: 1; grid-row: 1; display: grid; grid-template-rows: 45px minmax(0, 1fr); }
-  #video-wrap { position: relative; min-height: 0; background: #020506; }
-  video { width: 100%; height: 100%; display: block; object-fit: contain; background: #000; }
-  #video-wrap.inactive video { opacity: .22; }
-  #video-note {
-    position: absolute; left: 12px; bottom: 10px; max-width: calc(100% - 24px);
-    padding: 6px 9px; border-radius: 7px; background: rgba(3, 10, 13, .82);
-    color: #d9eeec; font-size: 12px;
-  }
-  .live-label { color: var(--accent); }
-
-  #lower { grid-column: 1; grid-row: 2; display: grid; grid-template-columns: 28% 72%; gap: 10px; min-height: 0; }
-  #alerts, #telemetry { display: grid; grid-template-rows: 45px minmax(0, 1fr); }
-  #alert-list { margin: 0; padding: 7px 12px; list-style: none; }
-  #alert-list li {
-    display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 8px;
-    padding: 7px 0; border-bottom: 1px solid rgba(35, 65, 75, .55);
-  }
+  body { background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; }
+  button, select { font: inherit; color: inherit; }
+  button, select, summary { touch-action: manipulation; }
+  button { cursor: pointer; }
+  button:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
+  button:disabled { opacity: .55; cursor: default; }
+  [hidden] { display: none !important; }
+  #app { height: 100dvh; display: grid; grid-template-rows: auto auto minmax(0, 1fr); }
+  header { display: flex; align-items: center; gap: 16px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
+  .brand strong { font-size: 16px; }
+  .brand span { display: block; }
+  .micro { color: var(--muted); font-size: 12px; }
+  #cameras { display: flex; gap: 8px; min-width: 0; flex: 1; }
+  .camera { min-height: 44px; padding: 4px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+  .camera small { display: block; font-size: 11px; color: var(--muted); }
+  .camera[aria-pressed="true"] { border: 2px solid var(--accent); background: #35485e; }
+  .camera.up small, #connection.live { color: var(--good); }
+  .camera.down small { color: var(--bad); }
+  .top-status { margin-left: auto; text-align: right; }
+  #connection { color: var(--warn); font-size: 13px; }
+  #model-strip { display: flex; align-items: center; gap: 12px; padding: 4px 16px; border-bottom: 1px solid var(--line); }
+  #model-strip > strong { font-size: 13px; white-space: nowrap; }
+  #model-buttons { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; flex: 1; min-width: 0; }
+  .model-button { min-height: 46px; min-width: 0; padding: 3px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); text-align: left; }
+  .model-button strong { display: block; font-size: 13px; }
+  .model-button small { display: block; font-size: 11px; color: var(--muted); }
+  .model-button[data-status="ready"] small { color: var(--good); }
+  .model-button[data-status="unavailable"] small, .model-button[data-status="mismatch"] small { color: var(--warn); }
+  .model-button[aria-expanded="true"] { border-color: var(--accent); background: #35485e; }
+  #model-details { position: fixed; top: 126px; left: 12px; width: min(380px, calc(100vw - 24px)); max-height: calc(100dvh - 140px); z-index: 10; box-shadow: 0 12px 30px #0008; overflow: auto; }
+  #model-details .panel-head { position: sticky; top: 0; background: var(--panel); }
+  #model-details .panel-head button { margin-left: auto; }
+  #model-detail-body { padding: 12px 16px; }
+  #model-detail-body dl { display: grid; grid-template-columns: 70px 1fr; gap: 8px; margin: 0; }
+  #model-detail-body dt { color: var(--muted); }
+  #model-detail-body dd { margin: 0; overflow-wrap: anywhere; }
+  #model-note { color: var(--muted); font-size: 13px; }
+  #workspace { min-height: 0; overflow: auto; padding: 12px; display: grid; gap: 12px;
+    grid-template-columns: minmax(0, 58fr) minmax(400px, 42fr);
+    grid-template-rows: minmax(min-content, 1fr) minmax(min-content, .8fr); }
+  #workspace.resources-expanded { grid-template-rows: minmax(min-content, 1fr) minmax(min-content, 1.4fr); }
+  .panel { min-width: 0; min-height: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  .panel-head { min-height: 44px; padding: 0 12px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); }
+  .panel-head h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  .panel-head small { margin-left: auto; color: var(--muted); font-size: 12px; }
+  .quiet-button { min-height: 44px; border: 0; border-radius: 6px; padding: 6px 10px; background: transparent; color: var(--accent); }
+  .quiet-button[aria-pressed="true"] { background: #35485e; }
+  #video-panel { grid-column: 1; grid-row: 1; display: grid; grid-template-rows: 44px minmax(200px, 1fr) auto; }
+  #video-wrap { contain: size; position: relative; min-height: 0; background: #171b20; }
+  video { width: 100%; height: 100%; display: block; object-fit: contain; }
+  #video-wrap.inactive video { opacity: .25; }
+  #video-fullscreen { position: absolute; top: 8px; right: 8px; background: #20252ce8; color: var(--text); border: 1px solid var(--line); }
+  #video-wrap:fullscreen { width: 100vw; height: 100vh; background: #171b20; }
+  #video-note { position: absolute; left: 10px; bottom: 8px; max-width: calc(100% - 20px); padding: 5px 8px; border-radius: 6px; background: #20252ce8; font-size: 12px; }
+  #alerts { border-top: 1px solid var(--line); }
+  #alerts summary { min-height: 44px; padding: 11px 12px; cursor: pointer; font-size: 13px; }
+  #alert-list { margin: 0; padding: 0 12px; list-style: none; max-height: 92px; overflow: auto; }
+  #alert-list li { display: grid; grid-template-columns: 64px 1fr; gap: 8px; padding: 5px 0; font-size: 12px; }
   #alert-list li.empty { display: block; }
-  .empty { color: var(--muted); padding: 18px 12px; }
-  #telemetry-grid {
-    padding: 6px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
-    grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 6px;
-  }
-  .metric-group { min-width: 0; overflow: hidden; padding: 5px 8px; border-radius: 9px; background: #09181d; }
-  section.metric-group { display: flex; flex-direction: column; }
-  .metric-group h3 { margin: 0 0 2px; font-size: 12px; color: var(--accent2); text-transform: uppercase; }
-  .metric-line { display: flex; justify-content: space-between; gap: 7px; font-size: 12px; line-height: 1.2; white-space: nowrap; }
-  .metric-line span:first-child { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
-  .metric-line strong { font-variant-numeric: tabular-nums; }
-  .metric-line.unavailable strong { color: var(--warn); }
-  .metric-line.stale strong { color: var(--bad); }
-  .metric-note { display: block; margin: 2px 0 3px; color: var(--muted); font-size: 10px; line-height: 1.15; }
-  .diagnostics summary { color: var(--accent2); cursor: pointer; font-size: 12px; font-weight: 700; text-transform: uppercase; }
-  .diagnostics[open] { overflow: auto; }
-  .spark-label {
-    margin-top: 2px; overflow: hidden; color: var(--muted); font-size: 10px; line-height: 1.1;
-    text-overflow: ellipsis; white-space: nowrap;
-  }
-  .spark-wrap {
-    min-height: 0; flex: 1; display: grid;
-    grid-template-rows: auto minmax(18px, 1fr); row-gap: 1px;
-  }
-  .spark {
-    display: block; width: 100%; height: 100%; min-height: 18px; border-radius: 4px;
-    background: linear-gradient(to top, rgba(49, 91, 103, .25) 1px, transparent 1px);
-  }
-  .spark polyline { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
-
-  #tracks-panel {
-    grid-column: 2; grid-row: 1 / span 2; position: relative;
-    display: grid; grid-template-rows: auto auto auto auto auto minmax(0, 1fr);
-  }
-  #track-title { text-transform: none; letter-spacing: 0; font-size: 15px; }
-  .truth { color: var(--accent2); font-weight: 700; }
-  #track-controls {
-    display: grid; grid-template-columns: 1fr 1.2fr 1fr auto; gap: 6px;
-    padding: 7px 9px; border-bottom: 1px solid var(--line);
-  }
-  #track-controls label { color: var(--muted); font-size: 10px; }
-  #track-controls select, #pause-updates {
-    width: 100%; min-height: 30px; margin-top: 2px; padding: 4px 6px;
-    border: 1px solid var(--line); border-radius: 7px;
-    background: #0a171c; color: var(--text);
-  }
-  #pause-updates { width: auto; align-self: end; cursor: pointer; white-space: nowrap; }
-  #pause-updates[aria-pressed="true"] { border-color: var(--warn); color: var(--warn); }
-  #track-summary { padding: 7px 11px; border-bottom: 1px solid var(--line); color: #c3d8d6; }
-  #presence {
-    display: none; padding: 8px 12px; background: rgba(255, 209, 102, .12);
-    border-bottom: 1px solid #6e5a25; color: #ffe8a3;
-  }
+  .empty { color: var(--muted); padding: 16px; }
+  #lower { grid-column: 1; grid-row: 2; min-height: 0; }
+  #telemetry { height: 100%; position: relative; display: grid; grid-template-rows: 44px auto minmax(0, 1fr); }
+  #telemetry-status { white-space: nowrap; }
+  #telemetry-grid { padding: 8px 10px 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+  .resource { min-width: 0; text-align: left; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+  .resource[aria-pressed="true"] { border-color: var(--accent); background: #35485e; }
+  .resource span, .resource strong, .resource small { display: block; }
+  .resource span { color: var(--muted); font-size: 12px; }
+  .resource strong { font-size: 21px; font-variant-numeric: tabular-nums; line-height: 1.3; }
+  .resource small { font-size: 11px; color: var(--muted); }
+  .resource meter { appearance: none; border: 0; background: var(--line); border-radius: 3px; display: block; width: 100%; height: 7px; margin-top: 4px; }
+  meter::-moz-meter-bar { background: var(--accent); }
+  meter::-webkit-meter-bar { background: var(--line); border: 0; }
+  meter::-webkit-meter-optimum-value { background: var(--accent); }
+  .resource[data-state="stale"] strong, .resource[data-state="unavailable"] strong { color: var(--warn); }
+  #trend { min-height: 0; padding: 6px 12px 8px; display: grid; grid-template-rows: auto minmax(85px, 1fr) auto; }
+  #chart-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; }
+  .legend-item { display: inline-flex; align-items: center; gap: 5px; }
+  .swatch { width: 16px; border-top: 3px solid; }
+  #chart { display: block; width: 100%; height: 100%; min-height: 85px; }
+  #chart text { fill: var(--muted); font-size: 12px; }
+  #chart .gridline { stroke: var(--line); stroke-width: 1; }
+  #chart-note { color: var(--muted); font-size: 12px; min-height: 17px; }
+  #diagnostics { position: absolute; inset: 44px 0 0; background: var(--panel); z-index: 2; overflow: auto; padding: 12px; }
+  .metric-line { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .metric-line small { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
+  #tracks-panel { contain: size; grid-column: 2; grid-row: 1 / span 2; position: relative; display: grid;
+    grid-template-rows: auto auto auto auto auto minmax(0, 1fr); }
+  #track-controls { display: grid; grid-template-columns: .85fr 1fr 1fr; gap: 8px; padding: 10px 12px; }
+  #track-controls label { color: var(--muted); font-size: 12px; }
+  #track-controls select { width: 100%; min-height: 44px; margin-top: 4px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); }
+  #track-summary { padding: 0 12px 8px; font-size: 13px; color: var(--muted); }
+  #presence { display: none; padding: 8px 12px; color: var(--warn); background: #443c2f; }
   #presence.show { display: block; }
-  #subtotals { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
-  .subtotal { padding: 4px 7px; border-radius: 6px; background: #0a171c; color: var(--muted); font-size: 11px; }
-  .subtotal strong { color: var(--text); }
-  #track-scroll { min-height: 0; overflow: auto; padding: 9px; scrollbar-color: #315862 transparent; }
-  .time-group h3 {
-    margin: 5px 2px 7px; color: var(--muted); font-size: 11px;
-    letter-spacing: .08em; text-transform: uppercase;
-  }
-  .track-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  .track-card {
-    min-width: 0; padding: 0; overflow: hidden; text-align: left; cursor: pointer;
-    border: 1px solid var(--line); border-radius: 10px; background: #0a171c; color: inherit;
-  }
-  .track-card:hover { border-color: #3e7477; }
-  .track-card[aria-current="true"] { border-color: var(--accent); }
-  .crop { height: 104px; display: grid; place-items: center; overflow: hidden; background: #061013; color: var(--muted); }
+  #list-status { min-height: 44px; padding: 0 6px 0 12px; display: flex; align-items: center; gap: 4px; border-block: 1px solid var(--line); }
+  #list-state { flex: 1; font-size: 12px; color: var(--muted); }
+  #subtotals { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
+  .subtotal { font-size: 12px; }
+  #track-scroll { min-height: 0; overflow: auto; padding: 10px; scrollbar-color: var(--line) transparent; overflow-anchor: none; }
+  .track-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .track-card { min-width: 0; padding: 0; overflow: hidden; text-align: left; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); }
+  .track-card:hover, .candidate:hover { border-color: var(--accent); }
+  .track-card[aria-current="true"], .candidate[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .crop { height: 132px; display: grid; place-items: center; overflow: hidden; background: #191e24; color: var(--muted); }
   .crop img { width: 100%; height: 100%; object-fit: contain; }
-  .crop.missing { padding: 12px; text-align: center; border-bottom: 1px dashed #354b50; }
-  .track-copy { padding: 8px 9px; }
-  .track-copy strong { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .track-copy span { color: var(--muted); font-size: 11px; }
-  .track-copy .camera-name { color: var(--accent); }
-
-  #drawer {
-    position: absolute; inset: 0; z-index: 5; display: none;
-    grid-template-rows: 50px minmax(0, 1fr); background: #08151a;
-  }
+  .crop.missing { padding: 12px; text-align: center; }
+  .track-copy { padding: 8px 10px; }
+  .track-copy strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .track-copy span { color: var(--muted); font-size: 12px; }
+  .camera-name { display: block; }
+  #drawer { position: absolute; inset: 0; z-index: 5; display: none; grid-template-rows: 54px minmax(0, 1fr); background: var(--panel); }
   #drawer.open { display: grid; }
-  #drawer-head { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
-  #drawer-head button {
-    min-width: 44px; min-height: 36px; border: 1px solid var(--line); border-radius: 8px;
-    background: #10232a; color: var(--text); cursor: pointer;
-  }
+  #drawer-head { display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-bottom: 1px solid var(--line); }
+  #drawer-head button { min-width: 54px; min-height: 44px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
   #drawer-body { min-height: 0; overflow: auto; padding: 12px; }
-  #large-crop { height: 46%; min-height: 190px; display: grid; place-items: center; background: #020607; border-radius: 10px; overflow: hidden; }
-  #large-crop img { width: 100%; height: 100%; object-fit: contain; }
-  #candidate-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; margin-top: 10px; }
-  .candidate {
-    min-height: 76px; border: 1px solid var(--line); border-radius: 8px;
-    background: #0d2027; color: var(--muted); padding: 4px; cursor: pointer; overflow: hidden;
-  }
+  #large-crop { height: 46%; min-height: 190px; border-radius: 8px; }
+  #candidate-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+  .candidate { min-height: 76px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 4px; overflow: hidden; }
   .candidate img { width: 100%; height: 58px; object-fit: contain; display: block; }
-  #drawer-detail { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
-  #orientation {
-    display: none; position: fixed; inset: 0; z-index: 20; place-items: center;
-    padding: 28px; text-align: center; background: var(--bg); font-size: 18px;
-  }
+  #drawer-detail { color: var(--muted); font-size: 13px; }
+  #orientation { display: none; position: fixed; inset: 0; z-index: 20; place-items: center; padding: 28px; text-align: center; background: var(--bg); font-size: 18px; }
   @media (orientation: portrait) { #orientation { display: grid; } }
   @media (max-width: 1100px) {
-    #workspace { grid-template-columns: minmax(0, 55fr) minmax(390px, 45fr); }
-    .brand { min-width: 130px; }
-    .camera { min-width: 70px; padding-inline: 7px; }
-    #telemetry-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .track-grid { grid-template-columns: 1fr; }
+    #workspace { grid-template-columns: minmax(0, 1.1fr) minmax(370px, 1fr); gap: 8px; padding: 8px; }
+    .brand { display: none; }
+    .resource { padding: 6px; }
+    .resource strong { font-size: 18px; }
+    #telemetry .panel-head { flex-wrap: wrap; gap: 0 4px; }
+    #telemetry .panel-head h2 { font-size: 13px; }
+    #telemetry-status { font-size: 11px; }
   }
 </style>
 </head>
@@ -212,43 +153,63 @@
     <nav id="cameras" aria-label="Camera selection"></nav>
     <div class="top-status">
       <div id="connection">connecting</div>
-      <div class="micro">Tracks, not people</div>
+
     </div>
   </header>
 
+  <section id="model-strip" aria-label="Models and devices">
+    <strong>Models &amp; devices</strong>
+    <div id="model-buttons"></div>
+  </section>
+  <aside id="model-details" class="panel" aria-labelledby="model-title" hidden>
+    <div class="panel-head"><h2 id="model-title">Model details</h2><button id="close-model-details" class="quiet-button" type="button">Close</button></div>
+    <div id="model-detail-body">
+      <dl>
+        <dt>Status</dt><dd id="model-status"></dd>
+        <dt>Model</dt><dd id="model-configured"></dd>
+        <dt>Device</dt><dd id="model-device"></dd>
+        <dt>Host</dt><dd id="model-host"></dd>
+      </dl>
+      <p id="model-note"></p>
+    </div>
+  </aside>
   <main id="workspace">
     <section id="video-panel" class="panel" aria-labelledby="video-heading">
       <div class="panel-head">
-        <h2 id="video-heading">Live annotated video</h2>
-        <small>Live only / no controls</small>
+        <h2 id="video-heading">Live camera</h2><small>Annotated video</small>
       </div>
       <div id="video-wrap" class="inactive">
         <video id="video" autoplay muted playsinline></video>
+        <button id="video-fullscreen" class="quiet-button" type="button" aria-label="Enter video fullscreen" aria-pressed="false">Fullscreen</button>
         <div id="video-note">Select a camera.</div>
       </div>
+      <details id="alerts">
+        <summary id="alert-summary">Global alerts · No alerts</summary>
+        <ul id="alert-list"></ul>
+      </details>
     </section>
 
     <div id="lower">
-      <section id="alerts" class="panel" aria-labelledby="alerts-heading">
-        <div class="panel-head">
-          <h2 id="alerts-heading">Global alerts</h2>
-          <small>track events</small>
-        </div>
-        <ul id="alert-list"></ul>
-      </section>
-
       <section id="telemetry" class="panel" aria-labelledby="telemetry-heading">
         <div class="panel-head">
-          <h2 id="telemetry-heading">Platform telemetry</h2>
-          <small id="telemetry-status">300 s browser window</small>
+          <h2 id="telemetry-heading">Resources</h2>
+          <small id="telemetry-status">Waiting</small>
+          <button id="toggle-diagnostics" class="quiet-button" aria-expanded="false" aria-controls="diagnostics">Details</button>
+          <button id="expand-telemetry" class="quiet-button" aria-pressed="false" aria-label="Expand resource chart">Expand</button>
         </div>
-        <div id="telemetry-grid"></div>
+        <div id="telemetry-grid" aria-label="Select resource trend"></div>
+        <div id="trend">
+          <div id="chart-legend"></div>
+          <svg id="chart" role="img" aria-label="Resource trend"></svg>
+          <div id="chart-note"></div>
+        </div>
+        <div id="diagnostics" aria-label="Resource details" hidden></div>
       </section>
     </div>
 
     <section id="tracks-panel" class="panel" aria-labelledby="track-title">
       <div class="panel-head">
-        <h2 id="track-title">Object tracks, not people</h2>
+        <h2 id="track-title">Evidence · object tracks</h2>
         <small id="track-count">0 tracks</small>
       </div>
       <div id="track-controls">
@@ -267,18 +228,21 @@
             <option value="image">Has image</option>
           </select>
         </label>
-        <button id="pause-updates" type="button" aria-pressed="false">Pause list updates</button>
       </div>
-      <div id="track-summary" aria-live="polite">Loading track scope…</div>
+      <div id="track-summary"><span id="scope-copy">Loading tracks…</span><div id="subtotals"></div></div>
       <div id="presence"></div>
-      <div id="subtotals"></div>
-      <div id="track-scroll"></div>
+      <div id="list-status">
+        <span id="list-state" role="status">Live list</span>
+        <button id="apply-updates" class="quiet-button" disabled>Updates available</button>
+        <button id="pause-updates" class="quiet-button" type="button" aria-pressed="false">Pause</button>
+      </div>
+      <div id="track-scroll"><div class="track-grid"></div></div>
 
       <aside id="drawer" aria-label="Static track evidence">
         <div id="drawer-head">
           <button id="close-drawer" type="button" aria-label="Close evidence drawer">Back</button>
           <strong id="drawer-title">Static evidence</strong>
-          <span class="micro">Stored crop only; no live-video zoom</span>
+          <span class="micro">Stored image</span>
         </div>
         <div id="drawer-body">
           <div id="large-crop" class="crop missing">No stored crop</div>
@@ -297,7 +261,9 @@ const state = {
   streams: [], selected: null, current: {}, recent: {}, alerts: [],
   telemetry: null, history: new Map(), whep: null, events: null,
   filter: {mode: "history", classLabel: "", hasImage: false},
-  paused: false, drawerTrack: null, selectedTrackKey: null, diagnosticsOpen: false,
+  paused: false, held: false, pending: false, drawerTrack: null, selectedTrackKey: null,
+  resource: "cpu", trackSignature: "", requestVersion: 0,
+  models: [], selectedModel: null, modelsUnavailable: false,
 };
 
 async function api(path) {
@@ -308,6 +274,96 @@ async function api(path) {
   }
   return body.data;
 }
+
+const modelLabels = [["dlsps", "Vision"], ["chatqna", "LLM"], ["audio_analyzer", "Transcription"], ["tts", "Speech"]];
+
+function placementStatus(model) {
+  if (!model || state.modelsUnavailable || !model.checked_utc
+    || !Number.isFinite(Date.parse(model.checked_utc)) || Date.now() - Date.parse(model.checked_utc) > 30000) return "unknown";
+  return model.status;
+}
+
+function renderModels() {
+  const buttons = $("model-buttons");
+  for (const [id, label] of modelLabels) {
+    const model = state.models.find((item) => item.id === id);
+    let button = [...buttons.children].find((item) => item.dataset.model === id);
+    if (!button) {
+      button = document.createElement("button"); button.type = "button";
+      button.className = "model-button"; button.dataset.model = id;
+      button.setAttribute("aria-controls", "model-details");
+      button.append(document.createElement("strong"), document.createElement("small"));
+      button.onclick = () => {
+        if (state.selectedModel === id && !$("model-details").hidden) {
+          closeModelDetails();
+          return;
+        }
+        state.selectedModel = id;
+        $("model-details").hidden = false;
+        renderModels();
+        $("close-model-details").focus();
+      };
+      buttons.append(button);
+    }
+    const status = placementStatus(model);
+    const reported = model?.runtime_device && status !== "unknown" && status !== "unavailable";
+    const device = reported ? model.runtime_device : model?.configured_device;
+    button.firstChild.textContent = label + " · " + (device || "Unknown device");
+    button.lastChild.textContent = titleCase(status) + (device && !reported ? " · assigned" : "");
+    button.dataset.status = status;
+    button.setAttribute("aria-expanded", String(state.selectedModel === id && !$("model-details").hidden));
+  }
+  const model = state.models.find((item) => item.id === state.selectedModel);
+  if ($("model-details").hidden) return;
+  $("model-title").textContent = model?.label || modelLabels.find(([id]) => id === state.selectedModel)?.[1] || "Model details";
+  const status = placementStatus(model);
+  const reported = model?.runtime_device && status !== "unknown" && status !== "unavailable";
+  $("model-status").textContent = titleCase(status);
+  $("model-configured").textContent = model?.runtime_model || model?.configured_model || "Unknown";
+  $("model-device").textContent = (reported ? model.runtime_device : model?.configured_device) || "Unknown";
+  $("model-host").textContent = model?.host || "Unknown";
+  $("model-note").textContent = status === "unavailable" ? "Service offline. Showing assigned model and device."
+    : status === "unknown" ? "Live status unavailable. Showing last known assignment."
+    : status === "mismatch" ? "Service settings differ from the deployment."
+    : reported ? "Device reported by the service." : "Assigned device; runtime device is not reported.";
+
+}
+
+function closeModelDetails(restoreFocus = true) {
+  $("model-details").hidden = true;
+  const selected = state.selectedModel;
+  state.selectedModel = null;
+  renderModels();
+  if (restoreFocus) [...$("model-buttons").children].find((button) => button.dataset.model === selected)?.focus();
+}
+$("close-model-details").onclick = () => closeModelDetails();
+document.addEventListener("click", (event) => {
+  const panel = $("model-details");
+  if (panel.hidden || event.target.closest(".model-button, #close-model-details")) return;
+  const inside = panel.contains(event.target);
+  // Keep selected text available for copying; a normal panel tap dismisses it.
+  if (inside && !window.getSelection().isCollapsed) return;
+  // Outside controls keep their own focus and still perform the clicked action.
+  closeModelDetails(inside);
+}, true);
+$("model-details").addEventListener("keydown", (event) => {
+  if (event.key === "Escape") { event.stopPropagation(); closeModelDetails(); }
+});
+async function refreshModels() {
+  try {
+    const snapshot = await api("/api/models");
+    if (!Array.isArray(snapshot.models)) throw new Error("Invalid placement response");
+    state.models = snapshot.models;
+    state.modelsUnavailable = false;
+  } catch (_) {
+    state.modelsUnavailable = true;
+  }
+  renderModels();
+  setTimeout(refreshModels, 10000); // No overlapping probes when a service is slow.
+}
+renderModels();
+refreshModels();
+setInterval(renderModels, 1000); // Expire status if Backend stops responding.
 
 function cameraName(streamId) {
   const stream = state.streams.find((item) => item.stream_id === streamId);
@@ -320,24 +376,26 @@ function feedClass(feed) {
 
 function renderCameras() {
   const nav = $("cameras");
-  nav.replaceChildren();
-  const choices = [{stream_id: "all", display_name: "All", feed: null}, ...state.streams];
+  const choices = [{stream_id: "all", display_name: "All cameras", feed: null}, ...state.streams];
   for (const stream of choices) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "camera " + (stream.stream_id === "all" ? "" : feedClass(stream.feed));
-    button.setAttribute("aria-pressed", String(state.selected === stream.stream_id));
-    const dot = document.createElement("span");
-    dot.className = "status-dot";
-    button.append(dot, document.createTextNode(stream.display_name));
-    if (stream.stream_id !== "all") {
-      const status = stream.feed && stream.feed.ok === true ? "live"
-        : stream.feed && stream.feed.ok === false ? "no signal" : "unknown";
-      button.title = stream.display_name + ": " + status;
+    let button = [...nav.children].find((node) => node.dataset.stream === stream.stream_id);
+    if (!button) {
+      button = document.createElement("button");
+      button.type = "button";
+      button.dataset.stream = stream.stream_id;
+      button.append(document.createElement("span"), document.createElement("small"));
+      button.onclick = () => selectCamera(stream.stream_id);
+      nav.append(button);
     }
-    button.onclick = () => selectCamera(stream.stream_id);
-    nav.append(button);
+    const status = stream.stream_id === "all" ? "Evidence overview"
+      : stream.feed?.ok === true ? "Live" : stream.feed?.ok === false ? "No signal" : "Unknown";
+    button.className = "camera " + feedClass(stream.feed);
+    button.setAttribute("aria-pressed", String(state.selected === stream.stream_id));
+    button.firstChild.textContent = stream.display_name;
+    button.lastChild.textContent = status;
   }
+  [...nav.children].filter((node) => !choices.some((s) => s.stream_id === node.dataset.stream))
+    .forEach((node) => node.remove());
 }
 
 async function detachWhep() {
@@ -398,7 +456,10 @@ async function attachWhep(stream) {
 }
 
 function selectCamera(streamId, firstLoad = false) {
+  if (state.drawerTrack) closeDrawer();
   state.selected = streamId;
+  state.held = false;
+  $("track-scroll").scrollTop = 0;
   renderCameras();
   renderTracks(true);
   if (streamId === "all") {
@@ -423,13 +484,6 @@ function shortTime(value) {
   });
 }
 
-function groupTime(value) {
-  const date = new Date(value);
-  return Number.isNaN(date.valueOf()) ? "Unknown time" : date.toLocaleString([], {
-    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"
-  });
-}
-
 function selectedStreams() {
   return state.selected === "all" ? state.streams
     : state.streams.filter((stream) => stream.stream_id === state.selected);
@@ -443,17 +497,18 @@ function filterTrack(track) {
 function visibleTracks() {
   const source = state.filter.mode === "current" ? state.current : state.recent;
   return selectedStreams().flatMap((stream) =>
-    ((source[stream.stream_id] || {}).tracks || []).filter(filterTrack).map((track) => ({
-      ...track, stream_id: stream.stream_id
+    ((source[stream.stream_id] || {}).tracks || []).filter(filterTrack).map((track, index) => ({
+      ...track, stream_id: stream.stream_id, liveIndex: index
     }))
   ).sort((a, b) => String(b.last_observed_utc).localeCompare(String(a.last_observed_utc)));
 }
 
 function renderPresence() {
   const banner = $("presence");
+  const disconnected = state.events && state.events.readyState !== EventSource.OPEN;
   const unknown = selectedStreams().filter((stream) => {
     const current = state.current[stream.stream_id];
-    return !current || current.current_presence === "unknown" || current.feed_ok === false;
+    return disconnected || !current || current.current_presence === "unknown" || current.feed_ok === false;
   });
   if (!unknown.length) {
     banner.classList.remove("show");
@@ -468,23 +523,21 @@ function renderPresence() {
 function renderSubtotals() {
   const box = $("subtotals");
   box.replaceChildren();
+  if (state.selected !== "all") return;
   const source = state.filter.mode === "current" ? state.current : state.recent;
   for (const stream of selectedStreams()) {
     const tracks = ((source[stream.stream_id] || {}).tracks || []).filter(filterTrack);
-    const counts = {};
-    for (const track of tracks) counts[track.class_label] = (counts[track.class_label] || 0) + 1;
-    const detail = Object.entries(counts).map(([label, count]) => count + " " + label).join(", ");
     const item = document.createElement("span");
     item.className = "subtotal";
     const strong = document.createElement("strong");
     strong.textContent = stream.display_name + ": " + tracks.length + " tracks";
-    item.append(strong, document.createTextNode(detail ? " / " + detail : " / none recorded"));
+    item.append(strong);
     box.append(item);
   }
 }
 
 function titleCase(value) {
-  return value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
+  return value ? (value.charAt(0).toUpperCase() + value.slice(1)).replaceAll("_", " ") : value;
 }
 
 function renderClassFilter() {
@@ -497,29 +550,26 @@ function renderClassFilter() {
     for (const track of (result && result.tracks) || []) labels.add(track.class_label);
   }
   const selected = state.filter.classLabel;
-  select.replaceChildren(new Option("All types", ""));
-  for (const label of [...labels].sort()) select.append(new Option(titleCase(label), label));
+  if (selected) labels.add(selected);
+  // Keep existing options mounted while the operator uses the native select.
+  for (const label of [...labels].sort()) {
+    if (![...select.options].some((option) => option.value === label)) {
+      select.append(new Option(titleCase(label), label));
+    }
+  }
   select.value = selected;
 }
 
 function renderTrackSummary(tracks) {
   const camera = state.selected === "all" ? "All cameras" : cameraName(state.selected);
-  const type = state.filter.classLabel ? titleCase(state.filter.classLabel) + " tracks" : "All object types";
-  const image = state.filter.hasImage ? "with stored images" : "all evidence states";
-  if (state.filter.mode === "current") {
-    $("track-summary").textContent = type + " · " + camera + " · currently observed · "
-      + tracks.length + " fresh track" + (tracks.length === 1 ? "" : "s") + " · " + image
-      + ". Counts are tracks, not unique objects.";
-    return;
-  }
+  const type = state.filter.classLabel ? titleCase(state.filter.classLabel) + " tracks" : "Object tracks";
   const results = selectedStreams().map((stream) => state.recent[stream.stream_id] || {});
   const matched = results.reduce((sum, result) => sum + Number(result.matched_count || 0), 0);
-  const more = selectedStreams().filter((stream) =>
-    (state.recent[stream.stream_id] || {}).truncated).map((stream) => stream.display_name);
-  $("track-summary").textContent = type + " · " + camera + " · recent history in the current tracking "
-    + "session · " + tracks.length + " of " + matched + " matching records shown · " + image + ". "
-    + (more.length ? "More results available on " + more.join(", ") + ". " : "")
-    + "The same object may appear in more than one track.";
+  const history = state.filter.mode === "history";
+  $("scope-copy").textContent = [camera, history ? "History · current session" : "Current",
+    type, history ? tracks.length + " of " + matched + " shown" : tracks.length + " observed",
+    results.some((r) => r.truncated) && history ? "More results available" : ""].filter(Boolean).join(" · ");
+  $("track-count").textContent = "Tracks, not people";
 }
 
 function missingCrop(box, reason) {
@@ -528,7 +578,10 @@ function missingCrop(box, reason) {
 }
 
 function trackKey(track) {
-  return track.stream_id + ":" + (track.track_id || "live:" + track.last_observed_utc);
+  // Live-only records have no persisted identity in this API. Include their
+  // position so simultaneous uncommitted tracks never collapse into one card.
+  return track.stream_id + ":" + (track.track_id || "live:" + track.first_observed_utc
+    + ":" + track.class_label + ":" + track.liveIndex);
 }
 
 function trackCard(track) {
@@ -544,7 +597,13 @@ function trackCard(track) {
     const image = document.createElement("img");
     image.src = track.snip_url;
     image.alt = "Stored crop for " + track.class_label + " track";
-    image.onerror = () => missingCrop(crop, "Crop missing or expired");
+    image.onerror = () => {
+      if (crop.isConnected) {
+        delete crop.parentElement.dataset.imageKey;
+        state.trackSignature = "";
+      }
+      missingCrop(crop, "Crop missing or expired");
+    };
     crop.append(image);
   } else {
     const reasons = {
@@ -559,70 +618,96 @@ function trackCard(track) {
   const copy = document.createElement("div");
   copy.className = "track-copy";
   const title = document.createElement("strong");
-  title.textContent = track.class_label + " track " + (track.track_id ? "#" + track.track_id : "(live)");
+  title.textContent = titleCase(track.class_label) + " track " + (track.track_id ? "#" + track.track_id : "(live)");
   const meta = document.createElement("span");
-  meta.textContent = shortTime(track.last_observed_utc) + " / "
-    + (state.filter.mode === "current" ? "currently observed" : "recent history") + " / "
-    + (track.candidate_count || 0) + " crops";
+  meta.textContent = "Seen " + shortTime(track.last_observed_utc) + " · " + (track.candidate_count || 0) + (track.candidate_count === 1 ? " image" : " images");
   const camera = document.createElement("span");
   camera.className = "camera-name";
   camera.textContent = cameraName(track.stream_id);
-  copy.append(title, meta, document.createElement("br"), camera);
+  copy.append(title, meta);
+  if (state.selected === "all") copy.append(camera);
   card.append(crop, copy);
   return card;
 }
 
+function updateListState() {
+  $("list-state").textContent = state.paused ? "Paused · snapshot"
+    : state.held ? "Held for inspection · snapshot" : "Live list";
+  $("apply-updates").disabled = !state.pending || Boolean(state.drawerTrack);
+  $("pause-updates").setAttribute("aria-pressed", String(state.paused));
+  $("pause-updates").textContent = state.paused ? "Resume" : "Pause";
+  $("pause-updates").setAttribute("aria-label", state.paused ? "Resume list updates" : "Pause list updates");
+}
+
+function holdList() {
+  state.held = true;
+  updateListState();
+}
+
 function renderTracks(force = false) {
-  if (state.paused && !force) return;
-  renderPresence();
-  renderSubtotals();
+  renderPresence(); // Feed loss must remain visible even while evidence is held.
   const tracks = visibleTracks();
-  renderTrackSummary(tracks);
-  $("track-count").textContent = tracks.length + (tracks.length === 1 ? " track" : " tracks");
-  const scroller = $("track-scroll");
-  const scrollTop = scroller.scrollTop;
-  const focused = document.activeElement && document.activeElement.closest(".track-card");
-  const focusedKey = focused && focused.dataset.trackKey;
-  scroller.replaceChildren();
-  if (!tracks.length) {
-    const empty = document.createElement("div");
-    empty.className = "empty";
-    empty.textContent = "No recorded object tracks for this scope.";
-    scroller.append(empty);
+  const signature = JSON.stringify([state.selected, state.filter, tracks,
+    selectedStreams().map((stream) => state.recent[stream.stream_id]?.matched_count)]);
+  if (!force && signature === state.trackSignature) return;
+  if (!force && (state.paused || state.held || state.drawerTrack)) {
+    state.pending = true;
+    updateListState();
     return;
   }
-  const groups = new Map();
-  for (const track of tracks) {
-    const key = groupTime(track.last_observed_utc);
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(track);
+  state.trackSignature = signature;
+  state.pending = false;
+  renderSubtotals();
+  renderTrackSummary(tracks);
+  const grid = $("track-scroll").firstElementChild;
+  const existing = new Map([...grid.querySelectorAll(".track-card")].map((card) => [card.dataset.trackKey, card]));
+  grid.querySelector(".empty")?.remove();
+  tracks.forEach((track, index) => {
+    const key = trackKey(track);
+    let card = existing.get(key);
+    if (!card) card = trackCard(track);
+    else {
+      card.onclick = () => openDrawer(track);
+      card.querySelector(".track-copy span").textContent = "Seen " + shortTime(track.last_observed_utc)
+        + " · " + (track.candidate_count || 0) + (track.candidate_count === 1 ? " image" : " images");
+      const imageKey = JSON.stringify([track.snip_url, track.snip_state]);
+      if (card.dataset.imageKey !== imageKey) card.firstChild.replaceWith(trackCard(track).firstChild);
+    }
+    card.dataset.imageKey = JSON.stringify([track.snip_url, track.snip_state]);
+    card.setAttribute("aria-current", String(key === state.selectedTrackKey));
+    const camera = card.querySelector(".camera-name");
+    if (state.selected !== "all") camera?.remove();
+    else if (!camera) {
+      const name = document.createElement("span"); name.className = "camera-name";
+      name.textContent = cameraName(track.stream_id); card.lastChild.append(name);
+    }
+    if (grid.children[index] !== card) grid.insertBefore(card, grid.children[index] || null);
+    existing.delete(key);
+  });
+  existing.forEach((card) => card.remove());
+  if (!tracks.length) {
+    const empty = document.createElement("div"); empty.className = "empty";
+    empty.textContent = "No tracks match these filters."; grid.append(empty);
   }
-  for (const [label, entries] of groups) {
-    const section = document.createElement("section");
-    section.className = "time-group";
-    const heading = document.createElement("h3");
-    heading.textContent = label;
-    const grid = document.createElement("div");
-    grid.className = "track-grid";
-    entries.forEach((track) => grid.append(trackCard(track)));
-    section.append(heading, grid);
-    scroller.append(section);
-  }
-  scroller.scrollTop = scrollTop;
-  if (focusedKey) {
-    const replacement = [...scroller.querySelectorAll(".track-card")]
-      .find((card) => card.dataset.trackKey === focusedKey);
-    if (replacement) replacement.focus({preventScroll: true});
-  }
+  updateListState();
 }
 
 function renderAlerts() {
   const list = $("alert-list");
+  const signature = JSON.stringify(state.alerts.slice(0, 5));
+  if (list.dataset.signature === signature) return;
+  const newest = String(state.alerts[0]?.match_id || "");
+  if (newest && list.dataset.newest !== newest) $("alerts").open = true;
+  list.dataset.newest = newest;
+  list.dataset.signature = signature;
+  $("alert-summary").textContent = "Global alerts · " + (state.alerts.length
+    ? state.alerts.length + " recent · " + cameraName(state.alerts[0].stream_id) + " · " + state.alerts[0].rule_name
+    : "No alerts");
   list.replaceChildren();
   if (!state.alerts.length) {
     const item = document.createElement("li");
     item.className = "empty";
-    item.textContent = "No persisted rule matches. Alerts identify tracks, not unique people.";
+    item.textContent = "No alerts.";
     list.append(item);
     return;
   }
@@ -644,11 +729,12 @@ function rememberTelemetry(snapshot) {
   for (const metric of snapshot.metrics) {
     if (typeof metric.value !== "number" || metric.state === "unavailable") continue;
     const sampled = Date.parse(metric.sampled_utc || snapshot.sampled_utc);
-    const at = Number.isNaN(sampled) ? Date.now() : sampled;
+    if (Number.isNaN(sampled)) continue;
+    const at = sampled;
     const values = state.history.get(metric.id) || [];
     if (values.length && values[values.length - 1].at === at) {
       values[values.length - 1].value = metric.value;
-    } else {
+    } else if (!values.length || at > values[values.length - 1].at) {
       values.push({at, value: metric.value});
     }
     while (values.length && values[0].at < at - windowMs) values.shift();
@@ -662,171 +748,166 @@ function formatted(metric) {
   if (metric.unit === "bytes") {
     return (metric.value / (1024 ** 3)).toFixed(1) + " GiB";
   }
-  const digits = Math.abs(metric.value) >= 100 ? 0 : Math.abs(metric.value) >= 10 ? 1 : 2;
-  return metric.value.toFixed(digits) + " " + metric.unit;
+  const digits = metric.unit === "%" || Math.abs(metric.value) >= 100 ? 0 : 1;
+  return metric.value.toFixed(digits) + (metric.unit === "%" ? "" : " ") + metric.unit;
 }
 
-function sparkline(metric) {
-  const values = state.history.get(metric.id) || [];
-  const windowSeconds = Number((state.telemetry && state.telemetry.history_seconds) || 300);
-  const windowMs = windowSeconds * 1000;
-  const end = Date.now();
-  const start = end - windowMs;
-  const visible = values.filter((entry) => entry.at >= start && entry.at <= end);
-  const wrap = document.createElement("div");
-  wrap.className = "spark-wrap";
-  const label = document.createElement("div");
-  label.className = "spark-label";
-  const collected = visible.length < 2 ? 0
-    : Math.min(windowSeconds, Math.round((visible[visible.length - 1].at - visible[0].at) / 1000));
-  label.textContent = metric.label + " · " + collected + " / " + windowSeconds + " s";
-  label.title = "Trend: " + metric.label + " · " + collected + " s collected / "
-    + windowSeconds + " s";
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("class", "spark");
-  svg.setAttribute("viewBox", "0 0 100 20");
-  svg.setAttribute("preserveAspectRatio", "none");
-  svg.setAttribute("aria-label", metric.label + " over a fixed " + windowSeconds + " second window");
-  wrap.append(label, svg);
-  if (visible.length < 2) return wrap;
-  const numeric = visible.map((entry) => entry.value);
-  const min = 0;
-  const max = metric.unit === "%" ? 100
-    : metric.unit === "°C" ? 120
-    : Math.max(1, Math.ceil(Math.max(...numeric) / 10) * 10);
-  const span = max - min;
-  const segments = [];
-  let segment = [];
-  for (const entry of visible) {
-    if (segment.length && entry.at - segment[segment.length - 1].at > 3000) {
-      if (segment.length > 1) segments.push(segment);
-      segment = [];
-    }
-    segment.push(entry);
-  }
-  if (segment.length > 1) segments.push(segment);
-  for (const entries of segments) {
-    const points = entries.map((entry) => {
-      const x = (entry.at - start) * 100 / windowMs;
-      const y = 18 - Math.max(0, Math.min(1, (entry.value - min) / span)) * 16;
-      return x.toFixed(2) + "," + y.toFixed(2);
-    }).join(" ");
-    const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-    line.setAttribute("points", points);
-    svg.append(line);
-  }
-  return wrap;
+const resourceGroups = [
+  {id: "cpu", label: "CPU", ids: ["cpu_load_percent"]},
+  {id: "memory", label: "Memory", ids: ["memory_used_percent"]},
+  {id: "gpu", label: "GPU engines", prefix: "gpu_engine_"},
+  {id: "npu", label: "NPU", ids: ["npu_utilization_percent"]},
+  {id: "power", label: "Package", ids: ["package_power_w"]},
+];
+const chartColors = ["#99c5f5", "#efc580", "#bdb1ed", "#91c9a5", "#f2a5a5"];
+
+function metricState(metric) {
+  if (!metric || metric.state === "unavailable" || !Number.isFinite(metric.value)) return "unavailable";
+  const sampled = Date.parse(metric.sampled_utc);
+  return metric.state === "stale" || !Number.isFinite(sampled) || Date.now() - sampled > 5000
+    ? "stale" : "live";
 }
 
-function appendMetric(card, metric, noteText = null) {
-  const line = document.createElement("div");
-  line.className = "metric-line " + metric.state;
-  line.title = [metric.source, noteText || metric.note].filter(Boolean).join(" · ");
-  const label = document.createElement("span");
-  label.textContent = metric.label.replace(/^GPU |^NPU /, "");
-  const value = document.createElement("strong");
-  value.textContent = formatted(metric);
-  line.append(label, value);
-  card.append(line);
-  if (noteText) {
-    const note = document.createElement("small");
-    note.className = "metric-note";
-    note.textContent = noteText;
-    card.append(note);
-  }
-}
-
-function renderMetricGroup(box, metrics, title, ids, primaryId) {
-  const available = ids.map((id) => metrics.get(id)).filter(Boolean);
-  if (!available.length) return;
-  const card = document.createElement("section");
-  card.className = "metric-group";
-  const heading = document.createElement("h3");
-  heading.textContent = title;
-  card.append(heading);
-  available.forEach((metric) => appendMetric(card, metric));
-  const primary = metrics.get(primaryId);
-  if (primary && typeof primary.value === "number" && primary.state !== "unavailable") {
-    card.append(sparkline(primary));
-  }
-  box.append(card);
+function groupMetrics(group) {
+  const metrics = state.telemetry?.metrics || [];
+  return group.prefix ? metrics.filter((m) => m.id.startsWith(group.prefix)).sort((a, b) => a.id.localeCompare(b.id))
+    : group.ids.map((id) => metrics.find((m) => m.id === id)).filter(Boolean);
 }
 
 function renderTelemetry() {
   const box = $("telemetry-grid");
-  box.replaceChildren();
-  const snapshot = state.telemetry;
-  if (!snapshot || !snapshot.metrics || !snapshot.metrics.length) {
-    const empty = document.createElement("div");
-    empty.className = "empty";
-    empty.textContent = snapshot && snapshot.reason
-      ? "Telemetry unavailable: " + snapshot.reason.replaceAll("_", " ")
-      : "Waiting for telemetry.";
-    box.append(empty);
-    return;
+  for (const group of resourceGroups) {
+    const metrics = groupMetrics(group);
+    let button = [...box.children].find((node) => node.dataset.resource === group.id);
+    if (!button) {
+      button = document.createElement("button"); button.type = "button"; button.className = "resource";
+      button.dataset.resource = group.id;
+      button.innerHTML = "<span></span><strong></strong><small></small><meter min='0' max='100'></meter>";
+      button.onclick = () => { state.resource = group.id; renderTelemetry(); };
+      box.append(button);
+    }
+    // Absent series are omitted; explicitly unsupported values remain unavailable.
+    button.hidden = !metrics.length;
+    if (!metrics.length) continue;
+    const primary = metrics[0];
+    const status = metricState(primary);
+    button.dataset.state = status;
+    button.setAttribute("aria-pressed", String(state.resource === group.id));
+    button.querySelector("span").textContent = group.label;
+    button.querySelector("strong").textContent = group.id === "gpu" ? metrics.length + " engines" : formatted(primary);
+    button.querySelector("small").textContent = group.id === "gpu" ? "View readings"
+      : status === "live" ? (group.id === "npu" ? "Zero ≠ idle" : "Live") : titleCase(status);
+    const meter = button.querySelector("meter");
+    meter.hidden = primary.unit !== "%" || status !== "live" || group.id === "gpu";
+    meter.value = primary.value ?? 0;
+    meter.setAttribute("aria-label", primary.label);
   }
-  const metrics = new Map(snapshot.metrics.map((metric) => [metric.id, metric]));
-  const engineOrder = ["vcs", "vecs", "rcs", "ccs", "bcs"];
-  const engines = [...metrics.values()]
-    .filter((metric) => metric.id.startsWith("gpu_engine_"))
-    .sort((a, b) => {
-      const aName = a.id.slice("gpu_engine_".length, -"_percent".length);
-      const bName = b.id.slice("gpu_engine_".length, -"_percent".length);
-      const aRank = engineOrder.indexOf(aName);
-      const bRank = engineOrder.indexOf(bName);
-      return (aRank < 0 ? engineOrder.length : aRank)
-        - (bRank < 0 ? engineOrder.length : bRank) || a.id.localeCompare(b.id);
-    });
-  const primaryEngines = engines.slice(0, 2).map((metric) => metric.id);
-  renderMetricGroup(box, metrics, "CPU",
-    ["cpu_load_percent", "cpu_temperature_c"], "cpu_load_percent");
-  renderMetricGroup(box, metrics, "Memory",
-    ["memory_used_percent"], "memory_used_percent");
-  renderMetricGroup(box, metrics, "GPU engines", primaryEngines, primaryEngines[0]);
-  renderMetricGroup(box, metrics, "Power",
-    ["package_power_w", "npu_power_w"], null);
-  renderMetricGroup(box, metrics, "NPU",
-    ["npu_utilization_percent"],
-    "npu_utilization_percent");
+  const available = resourceGroups.filter((group) => groupMetrics(group).length);
+  if (!available.some((group) => group.id === state.resource) && available.length) {
+    state.resource = available[0].id;
+    [...box.children].forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.resource === state.resource)));
+  }
+  renderChart();
+  renderDiagnostics();
+  renderTelemetryState();
+}
 
-  const diagnosticIds = [
-    "memory_used_bytes", "memory_total_bytes", "gpu_power_w", "npu_temperature_c",
-    "npu_memory_mib", "cpu_frequency_mhz",
-    "gpu_frequency_mhz", "npu_frequency_raw", "npu_bandwidth_raw", "npu_tile_config",
-    ...engines.slice(2).map((metric) => metric.id),
-  ];
-  const diagnostics = diagnosticIds.map((id) => metrics.get(id)).filter(Boolean);
-  if (diagnostics.length) {
-    const details = document.createElement("details");
-    details.className = "metric-group diagnostics";
-    details.open = state.diagnosticsOpen;
-    details.addEventListener("toggle", () => {
-      state.diagnosticsOpen = details.open;
-    });
-    const summary = document.createElement("summary");
-    summary.textContent = "Diagnostics";
-    details.append(summary);
-    diagnostics.forEach((metric) => appendMetric(details, metric, metric.note));
-    box.append(details);
+function renderChart() {
+  const group = resourceGroups.find((item) => item.id === state.resource);
+  const metrics = groupMetrics(group);
+  const legend = $("chart-legend");
+  legend.replaceChildren();
+  metrics.forEach((metric, index) => {
+    const item = document.createElement("span"); item.className = "legend-item";
+    const swatch = document.createElement("span"); swatch.className = "swatch";
+    swatch.style.borderColor = chartColors[index % chartColors.length];
+    const label = document.createElement("span");
+    const engineLabels = {bcs: "Copy (BCS)", ccs: "Compute (CCS)", rcs: "Render (RCS)",
+      vcs: "Video (VCS)", vecs: "Video enhancement (VECS)"};
+    const engine = metric.id.match(/^gpu_engine_(.+)_percent$/)?.[1];
+    const name = engineLabels[engine] || metric.label;
+    const status = metricState(metric);
+    label.textContent = name + " · " + formatted(metric) + (status === "live" ? "" : " · " + titleCase(status));
+    item.title = metric.label;
+    item.append(swatch, label); legend.append(item);
+  });
+  const svg = $("chart");
+  svg.replaceChildren();
+  const width = Math.max(320, svg.clientWidth), height = Math.max(85, svg.clientHeight);
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.setAttribute("aria-label", group.label + " trend, last five minutes. " + legend.textContent);
+  const node = (tag, attrs, text) => {
+    const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    Object.entries(attrs).forEach(([key, value]) => el.setAttribute(key, value));
+    if (text !== undefined) el.textContent = text;
+    svg.append(el); return el;
+  };
+  const end = Date.now(), start = end - 300000;
+  const histories = metrics.map((m) => (state.history.get(m.id) || []).filter((v) => v.at >= start && v.at <= end));
+  const unit = metrics[0]?.unit || "%";
+  const maximum = unit === "%" ? 100 : Math.max(10, Math.ceil(Math.max(0, ...histories.flat().map((v) => v.value)) / 10) * 10);
+  const left = 54, right = width - 12, top = 12, bottom = height - 24;
+  const x = (at) => left + (at - start) / 300000 * (right - left);
+  const y = (value) => bottom - Math.max(0, Math.min(1, value / maximum)) * (bottom - top);
+  for (const value of [0, maximum / 2, maximum]) {
+    node("line", {x1: left, x2: right, y1: y(value), y2: y(value), class: "gridline"});
+    node("text", {x: left - 7, y: y(value) + 4, "text-anchor": "end"}, value + (unit === "%" ? "%" : " " + unit));
   }
+  for (const [fraction, label, anchor] of [[0, "5 min ago", "start"], [.5, "2½ min", "middle"], [1, "Now", "end"]]) {
+    node("text", {x: left + fraction * (right - left), y: height - 4, "text-anchor": anchor}, label);
+  }
+  histories.forEach((values, index) => {
+    let segment = [];
+    const color = chartColors[index % chartColors.length];
+    const flush = () => {
+      if (segment.length > 1) node("polyline", {points: segment.map((v) => `${x(v.at)},${y(v.value)}`).join(" "),
+        fill: "none", stroke: color, "stroke-width": 2, "stroke-dasharray": index % 2 ? "6 3" : "none"});
+      segment = [];
+    };
+    for (const value of values) {
+      if (segment.length && value.at - segment[segment.length - 1].at > 3000) flush();
+      segment.push(value);
+    }
+    flush();
+    const latest = values.at(-1);
+    if (latest) node("circle", {cx: x(latest.at), cy: y(latest.value), r: 3, fill: color});
+  });
+  const collecting = histories.every((values) => values.length < 2);
+  const caveat = group.id === "npu" ? "NPU zero does not prove idle."
+    : group.id === "power" ? "Package power, not wall power." : "";
+  $("chart-note").textContent = !metrics.length ? "Telemetry unavailable."
+    : [collecting ? "Collecting history…" : "5-minute history · gaps mean missing samples", caveat].filter(Boolean).join(" · ");
+}
+
+function renderDiagnostics() {
+  const box = $("diagnostics");
+  const metrics = state.telemetry?.metrics || [];
+  const existing = new Map([...box.children].map((line) => [line.dataset.metric, line]));
+  for (const metric of metrics) {
+    let line = existing.get(metric.id);
+    if (!line) {
+      line = document.createElement("div"); line.className = "metric-line"; line.dataset.metric = metric.id;
+      line.append(document.createElement("span"), document.createElement("strong"), document.createElement("small"));
+      box.append(line);
+    }
+    line.children[0].textContent = metric.label;
+    line.children[1].textContent = formatted(metric) + " · " + titleCase(metricState(metric));
+    line.children[2].textContent = [metric.note, metric.source].filter(Boolean).join(" · ");
+    existing.delete(metric.id);
+  }
+  existing.forEach((line) => line.remove());
 }
 
 function renderTelemetryState() {
-  const status = $("telemetry-status");
-  if (!state.telemetry) {
-    status.textContent = "waiting for telemetry";
-    return;
-  }
-  const sampled = Date.parse(state.telemetry.sampled_utc);
-  const age = Number.isNaN(sampled) ? null : Math.max(0, Math.floor((Date.now() - sampled) / 1000));
-  const unavailable = (state.telemetry.metrics || [])
-    .filter((metric) => metric.state === "unavailable").map((metric) => metric.label);
-  const parts = [age == null ? "sample time unavailable" : "updated " + age + " s ago"];
-  if (state.telemetry.status !== "ok") {
-    parts.push(String(state.telemetry.reason || state.telemetry.status).replaceAll("_", " "));
-  }
-  if (unavailable.length) parts.push(unavailable.join(", ") + " unavailable");
-  status.textContent = parts.join(" · ");
+  const snapshot = state.telemetry;
+  const age = Date.now() - Date.parse(snapshot?.sampled_utc);
+  const metrics = snapshot?.metrics || [];
+  const stale = metrics.some((metric) => metricState(metric) === "stale");
+  $("telemetry-status").textContent = !metrics.length ? "Unavailable"
+    : age > 5000 || stale ? "Stale readings"
+    : metrics.some((m) => metricState(m) === "unavailable") ? "Live · limited data" : "Live · 5 min";
+  $("telemetry-status").title = [snapshot?.reason,
+    ...metrics.filter((m) => metricState(m) !== "live").map((m) => m.label + ": " + metricState(m))].filter(Boolean).join(" · ");
 }
 
 function candidateState(candidate) {
@@ -870,12 +951,15 @@ function showLargeCandidate(candidate) {
 }
 
 async function openDrawer(track) {
+  holdList();
   state.drawerTrack = track;
   state.selectedTrackKey = trackKey(track);
   document.querySelectorAll(".track-card").forEach((card) => {
     card.setAttribute("aria-current", String(card.dataset.trackKey === state.selectedTrackKey));
   });
   $("drawer").classList.add("open");
+  for (const child of $("tracks-panel").children) if (child.id !== "drawer") child.inert = true;
+  $("close-drawer").focus();
   $("drawer-title").textContent = track.class_label + " track "
     + (track.track_id ? "#" + track.track_id : "(live)");
   renderDrawerDetail(null);
@@ -887,6 +971,7 @@ async function openDrawer(track) {
   }
   try {
     const result = await api("/api/tracks/" + track.track_id + "/candidates");
+    if (state.drawerTrack !== track) return;
     const candidates = result.candidates || [];
     showLargeCandidate(candidates[0]);
     if (!candidates.length) {
@@ -909,21 +994,30 @@ async function openDrawer(track) {
       } else {
         button.textContent = candidate.image_state;
       }
-      button.onclick = () => showLargeCandidate(candidate);
+      button.setAttribute("aria-pressed", String(candidate === candidates[0]));
+      button.onclick = () => {
+        $("candidate-list").querySelectorAll("button").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
+        showLargeCandidate(candidate);
+      };
       $("candidate-list").append(button);
     }
   } catch (error) {
+    if (state.drawerTrack !== track) return;
     missingCrop($("large-crop"), "Candidates unavailable");
   }
 }
 
-$("close-drawer").onclick = () => {
+function closeDrawer() {
   $("drawer").classList.remove("open");
   state.drawerTrack = null;
+  for (const child of $("tracks-panel").children) child.inert = false;
+  updateListState();
   const selected = [...document.querySelectorAll(".track-card")]
     .find((card) => card.dataset.trackKey === state.selectedTrackKey);
   if (selected) selected.focus({preventScroll: true});
-};
+}
+$("close-drawer").onclick = closeDrawer;
+$("drawer").addEventListener("keydown", (event) => { if (event.key === "Escape") closeDrawer(); });
 
 function historyQuery(includeLimit = true) {
   const query = new URLSearchParams();
@@ -934,22 +1028,27 @@ function historyQuery(includeLimit = true) {
 }
 
 async function refreshTracks() {
+  const version = ++state.requestVersion;
   const streams = state.streams;
   const trackData = await Promise.all(streams.flatMap((stream) => [
     api("/api/streams/" + stream.stream_id + "/current"),
     api("/api/streams/" + stream.stream_id + "/tracks?" + historyQuery()),
   ]));
+  if (version !== state.requestVersion) return false;
   streams.forEach((stream, index) => {
     state.current[stream.stream_id] = trackData[index * 2];
     state.recent[stream.stream_id] = trackData[index * 2 + 1];
   });
   renderClassFilter();
+  return true;
 }
 
 async function refreshState() {
+  const version = ++state.requestVersion;
   const streams = await api("/api/streams");
+  if (version !== state.requestVersion) return;
   state.streams = streams;
-  if (!state.selected || !streams.some((stream) => stream.stream_id === state.selected)) {
+  if (!state.selected || (state.selected !== "all" && !streams.some((stream) => stream.stream_id === state.selected))) {
     state.selected = streams[0] ? streams[0].stream_id : "all";
   }
   const [alerts, telemetry, ...trackData] = await Promise.all([
@@ -960,6 +1059,7 @@ async function refreshState() {
       api("/api/streams/" + stream.stream_id + "/tracks?" + historyQuery()),
     ]),
   ]);
+  if (version !== state.requestVersion) return;
   state.alerts = alerts.alerts || [];
   state.telemetry = telemetry;
   rememberTelemetry(telemetry);
@@ -969,10 +1069,9 @@ async function refreshState() {
   });
   renderClassFilter();
   renderCameras();
-  renderTracks(true);
+  renderTracks();
   renderAlerts();
   renderTelemetry();
-  renderTelemetryState();
 }
 
 function connectEvents() {
@@ -981,60 +1080,114 @@ function connectEvents() {
   const events = new EventSource("/api/stream" + (query ? "?" + query : ""));
   state.events = events;
   events.onopen = () => {
+    if (state.events !== events) return;
     $("connection").textContent = "live updates";
     $("connection").className = "live";
     refreshState().catch(() => {});
   };
   events.onerror = () => {
+    if (state.events !== events) return;
+    renderPresence();
     $("connection").textContent = "reconnecting";
     $("connection").className = "";
   };
   events.addEventListener("feed", (event) => {
+    if (state.events !== events) return;
     const data = JSON.parse(event.data);
     const stream = state.streams.find((item) => item.stream_id === data.stream_id);
     if (stream) stream.feed = data.feed;
     renderCameras();
   });
   events.addEventListener("track", (event) => {
+    if (state.events !== events) return;
     const data = JSON.parse(event.data);
     state.current[data.stream_id] = data.current;
     state.recent[data.stream_id] = data.recent;
-    renderTracks();
+    if (state.selected === "all" || state.selected === data.stream_id) renderTracks();
   });
   events.addEventListener("alert", (event) => {
+    if (state.events !== events) return;
     state.alerts = JSON.parse(event.data).alerts || [];
     renderAlerts();
   });
   events.addEventListener("telemetry", (event) => {
+    if (state.events !== events) return;
     state.telemetry = JSON.parse(event.data);
     rememberTelemetry(state.telemetry);
     renderTelemetry();
-    renderTelemetryState();
   });
 }
 
 $("track-mode").onchange = (event) => {
   state.filter.mode = event.target.value;
+  state.held = false;
+  $("track-scroll").scrollTop = 0;
   renderTracks(true);
 };
-$("class-filter").onchange = async (event) => {
-  state.filter.classLabel = event.target.value;
-  await refreshTracks();
-  renderTracks(true);
-  connectEvents();
-};
-$("image-filter").onchange = async (event) => {
-  state.filter.hasImage = event.target.value === "image";
-  await refreshTracks();
-  renderTracks(true);
-  connectEvents();
-};
+async function changeFilters() {
+  state.events?.close();
+  state.events = null;
+  state.filter.classLabel = $("class-filter").value;
+  state.filter.hasImage = $("image-filter").value === "image";
+  state.held = false;
+  const refresh = refreshTracks();
+  const version = state.requestVersion;
+  try {
+    if (!await refresh) return;
+    $("track-scroll").scrollTop = 0;
+    renderTracks(true);
+  } catch (error) {
+    if (version !== state.requestVersion) return;
+    $("scope-copy").textContent = "Filter update failed. Showing previous results; select a filter to retry.";
+    $("connection").textContent = "reconnecting";
+    $("connection").className = "";
+  } finally {
+    if (version === state.requestVersion) connectEvents();
+  }
+}
+$("class-filter").onchange = changeFilters;
+$("image-filter").onchange = changeFilters;
 $("pause-updates").onclick = () => {
   state.paused = !state.paused;
-  $("pause-updates").setAttribute("aria-pressed", String(state.paused));
-  $("pause-updates").textContent = state.paused ? "Resume list updates" : "Pause list updates";
-  if (!state.paused) renderTracks(true);
+  if (!state.paused) { state.held = false; renderTracks(true); }
+  updateListState();
 };
+$("apply-updates").onclick = () => {
+  state.held = false;
+  renderTracks(true);
+};
+for (const event of ["pointerdown", "wheel", "touchstart", "focusin"]) {
+  $("track-scroll").addEventListener(event, holdList, {passive: true});
+}
+$("video-fullscreen").disabled = !document.fullscreenEnabled;
+$("video-fullscreen").onclick = async () => {
+  try {
+    if (document.fullscreenElement === $("video-wrap")) await document.exitFullscreen();
+    else await $("video-wrap").requestFullscreen();
+  } catch (error) {
+    $("video-note").textContent = "Fullscreen unavailable. " + error.message;
+  }
+};
+document.addEventListener("fullscreenchange", () => {
+  const fullscreen = document.fullscreenElement === $("video-wrap");
+  $("video-fullscreen").textContent = fullscreen ? "Exit fullscreen" : "Fullscreen";
+  $("video-fullscreen").setAttribute("aria-pressed", String(fullscreen));
+  $("video-fullscreen").setAttribute("aria-label", fullscreen ? "Exit video fullscreen" : "Enter video fullscreen");
+});
+$("expand-telemetry").onclick = () => {
+  const expanded = $("workspace").classList.toggle("resources-expanded");
+  $("expand-telemetry").setAttribute("aria-pressed", String(expanded));
+  $("expand-telemetry").textContent = expanded ? "Reduce" : "Expand";
+  $("expand-telemetry").setAttribute("aria-label", expanded ? "Reduce resource chart" : "Expand resource chart");
+  renderChart();
+};
+$("toggle-diagnostics").onclick = () => {
+  $("diagnostics").hidden = !$("diagnostics").hidden;
+  $("toggle-diagnostics").setAttribute("aria-expanded", String(!$("diagnostics").hidden));
+};
+window.addEventListener("resize", renderChart);
+// Re-evaluate freshness even when the event stream stops delivering samples.
+setInterval(() => { renderTelemetry(); renderPresence(); }, 1000);
 
 refreshState().then(() => {
   selectCamera(state.selected, true);
