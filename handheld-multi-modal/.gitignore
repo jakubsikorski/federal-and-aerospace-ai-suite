@@ -15,6 +15,11 @@ docs/bootstrap/evidence/*
 !docs/bootstrap/evidence/host.txt
 !docs/bootstrap/evidence/phase3/
 !docs/bootstrap/evidence/phase3/*.txt
+!docs/bootstrap/evidence/phase4/
+!docs/bootstrap/evidence/phase4/*.json
+!docs/bootstrap/evidence/phase4/*.md
+!docs/bootstrap/evidence/phase4/*.png
+!docs/bootstrap/evidence/phase4/*.txt
 
 # TLS material is generated on the device and never committed (design 15.4).
 config/tls/

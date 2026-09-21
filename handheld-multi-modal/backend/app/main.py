@@ -1,26 +1,29 @@
-"""Backend application: prerequisites, camera registry, pipelines and ingest.
+"""Backend application: services, camera history, telemetry and live UI state.
 
-Phases 1-2 of docs/design/APPLICATION_DESIGN.md, Appendix A. No query routing,
-alerts or speech yet - those are Phases 3 and later.
+Phases 1-4 of docs/design/APPLICATION_DESIGN.md, Appendix A. Query routing,
+rule evaluation and speech remain later phases.
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import os
 import shutil
 import sqlite3
 import threading
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import history, pipelines, reset
 from .adapters import Probe, Services
 from .ingest import Ingest
+from .telemetry import Telemetry
 from .core import (
     connect,
     crop_store_busy,
@@ -35,6 +38,16 @@ from .core import (
 )
 
 log = logging.getLogger("backend")
+
+
+@contextmanager
+def read_connection(request: Request):
+    """Give each concurrent API read its own SQLite connection."""
+    conn = connect(request.app.state.cfg["db_path"])
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def local_checks(cfg: dict, conn: sqlite3.Connection) -> list[Probe]:
@@ -101,6 +114,7 @@ async def lifespan(app: FastAPI):
     app.state.cfg = cfg
     app.state.db = conn
     app.state.services = Services(cfg["services"], cfg["timeout_seconds"])
+    app.state.telemetry = Telemetry(app.state.services, cfg["telemetry_host"])
     # Ingest before pipelines: a subscriber that starts second misses the first
     # observations of every camera it is supposed to be watching.
     app.state.ingest = Ingest(cfg, cfg["db_path"])
@@ -154,6 +168,7 @@ async def lifespan(app: FastAPI):
 
     supervisor = threading.Thread(target=supervise, name="pipeline-supervisor", daemon=True)
     supervisor.start()
+    app.state.telemetry.start()
     log.info("backend started with %d camera(s)", len(cfg["streams"]))
     yield
     stopping.set()
@@ -162,6 +177,7 @@ async def lifespan(app: FastAPI):
     supervisor.join()
     pipelines.stop_owned(conn, cfg, app.state.services.client)
     app.state.ingest.close()
+    app.state.telemetry.close()
     app.state.services.close()
     conn.close()
 
@@ -189,8 +205,9 @@ def create_app() -> FastAPI:
 
     @app.get("/api/health")
     def health(request: Request):
-        cfg, conn = request.app.state.cfg, request.app.state.db
-        checks = local_checks(cfg, conn) + request.app.state.services.probe_all()
+        cfg = request.app.state.cfg
+        with read_connection(request) as conn:
+            checks = local_checks(cfg, conn) + request.app.state.services.probe_all()
         blocking = [c for c in checks if c.blocking and not c.ok]
         degraded = [c for c in checks if not c.blocking and not c.ok]
         status = "blocked" if blocking else ("degraded" if degraded else "ready")
@@ -208,9 +225,10 @@ def create_app() -> FastAPI:
 
     @app.get("/api/streams")
     def streams(request: Request):
-        rows = request.app.state.db.execute(
-            "SELECT * FROM streams WHERE enabled = 1 ORDER BY sort_order, stream_id"
-        ).fetchall()
+        with read_connection(request) as conn:
+            rows = conn.execute(
+                "SELECT * FROM streams WHERE enabled = 1 ORDER BY sort_order, stream_id"
+            ).fetchall()
         health = request.app.state.ingest.snapshot()
         return envelope(
             [
@@ -239,30 +257,85 @@ def create_app() -> FastAPI:
         """Section 6.5. Never answers "nothing there" on a feed that is not advancing."""
         _known(request, stream_id)
         state = request.app.state
-        return envelope(history.current(state.db, state.ingest, state.cfg, stream_id))
+        with read_connection(request) as conn:
+            return envelope(history.current(conn, state.ingest, state.cfg, stream_id))
 
     @app.get("/api/streams/{stream_id}/tracks")
     def tracks(request: Request, stream_id: str, limit: int = 50, since_utc: str | None = None):
         _known(request, stream_id)
         state = request.app.state
-        return envelope(history.recent(state.db, state.ingest, state.cfg, stream_id,
-                                       limit=limit, since_utc=since_utc))
+        with read_connection(request) as conn:
+            return envelope(history.recent(conn, state.ingest, state.cfg, stream_id,
+                                           limit=limit, since_utc=since_utc))
 
     @app.get("/api/tracks/{track_id}/candidates")
     def track_candidates(request: Request, track_id: int):
-        conn = request.app.state.db
-        if not conn.execute("SELECT 1 FROM tracks WHERE track_id = ?", (track_id,)).fetchone():
-            raise HTTPException(status_code=404, detail="unknown track")
-        return envelope({"track_id": track_id, "candidates": history.candidates(conn, track_id)})
+        with read_connection(request) as conn:
+            if not conn.execute(
+                    "SELECT 1 FROM tracks WHERE track_id = ?", (track_id,)).fetchone():
+                raise HTTPException(status_code=404, detail="unknown track")
+            return envelope({
+                "track_id": track_id,
+                "candidates": history.candidates(conn, track_id),
+            })
 
     @app.get("/api/ingest/stats")
     def ingest_stats(request: Request):
         """Drop counters by reason. Silent drops are the ones that mislead."""
         return envelope(request.app.state.ingest.stats())
 
+    @app.get("/api/metrics")
+    def metrics(request: Request):
+        return envelope(request.app.state.telemetry.snapshot())
+
+    @app.get("/api/alerts")
+    def alerts(request: Request, limit: int = 50):
+        with read_connection(request) as conn:
+            return envelope({"alerts": history.alerts(conn, limit=limit)})
+
+    @app.get("/api/stream")
+    async def live_stream(request: Request):
+        """Current-state SSE. Reconnect is a full resync; no replay ring exists."""
+        async def events():
+            yield "retry: 2000\n\n"
+            yield _event("mode", {
+                "stream_id": None,
+                "video": "live_only",
+                "identity": "tracks_not_people",
+            })
+            with read_connection(request) as conn:
+                while not await request.is_disconnected():
+                    state = request.app.state
+                    feeds = state.ingest.snapshot()
+                    for stream in state.cfg["streams"]:
+                        stream_id = stream["stream_id"]
+                        feed = feeds.get(stream_id, {"ok": None, "reason": "unknown"})
+                        yield _event("feed", {"stream_id": stream_id, "feed": feed})
+                        yield _event("track", {
+                            "stream_id": stream_id,
+                            "current": history.current(
+                                conn, state.ingest, state.cfg, stream_id),
+                            "recent": history.recent(
+                                conn, state.ingest, state.cfg, stream_id, limit=50),
+                        })
+                    yield _event("alert", {
+                        "stream_id": None,
+                        "alerts": history.alerts(conn, limit=50),
+                    })
+                    yield _event("telemetry", {
+                        "stream_id": None,
+                        **state.telemetry.snapshot(),
+                    })
+                    await asyncio.sleep(1.0)
+
+        return StreamingResponse(events(), media_type="text/event-stream", headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        })
+
     # -- images (section 8.3) ----------------------------------------------
-    def _serve(request: Request, row) -> Response:
-        cfg, conn = request.app.state.cfg, request.app.state.db
+    def _serve(request: Request, conn: sqlite3.Connection, row) -> Response:
+        cfg = request.app.state.cfg
         if row is None:
             raise HTTPException(status_code=404, detail="unknown candidate")
         if row["image_state"] != "present":
@@ -297,9 +370,10 @@ def create_app() -> FastAPI:
 
     @app.get("/api/candidates/{candidate_id}/image")
     def candidate_image(request: Request, candidate_id: str):
-        row = request.app.state.db.execute(
-            "SELECT * FROM candidates WHERE candidate_id = ?", (candidate_id,)).fetchone()
-        return _serve(request, row)
+        with read_connection(request) as conn:
+            row = conn.execute(
+                "SELECT * FROM candidates WHERE candidate_id = ?", (candidate_id,)).fetchone()
+            return _serve(request, conn, row)
 
     @app.get("/api/tracks/{track_id}/snip")
     def track_snip(request: Request, track_id: int):
@@ -311,17 +385,17 @@ def create_app() -> FastAPI:
         instead of a 404 the operator has to retry, and each miss is recorded on
         the way past so the next request skips it immediately.
         """
-        conn = request.app.state.db
-        rows = conn.execute(
-            """SELECT c.* FROM candidates c
-               JOIN tracks t ON t.track_id = c.track_id
-               WHERE c.track_id = ? AND c.image_state = 'present'
-               ORDER BY (c.candidate_id = coalesce(t.selected_candidate_id, '')) DESC,
-                        c.quality_score DESC LIMIT 10""", (track_id,)).fetchall()
-        for row in rows:
-            response = _serve(request, row)
-            if response.status_code != 404:
-                return response
+        with read_connection(request) as conn:
+            rows = conn.execute(
+                """SELECT c.* FROM candidates c
+                   JOIN tracks t ON t.track_id = c.track_id
+                   WHERE c.track_id = ? AND c.image_state = 'present'
+                   ORDER BY (c.candidate_id = coalesce(t.selected_candidate_id, '')) DESC,
+                            c.quality_score DESC LIMIT 10""", (track_id,)).fetchall()
+            for row in rows:
+                response = _serve(request, conn, row)
+                if response.status_code != 404:
+                    return response
         return JSONResponse(status_code=404, content=envelope({"image_state": "none"}))
 
     @app.post("/api/streams/{stream_id}/clear")
@@ -359,3 +433,7 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+
+
+def _event(name: str, data: dict) -> str:
+    return f"event: {name}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n"

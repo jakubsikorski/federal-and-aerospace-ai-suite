@@ -39,6 +39,10 @@ services:
   alert_agent: http://alert-agent:8000
   metrics: http://metrics:9090
 
+# Must match METRICS_MANAGER_HOSTNAME in Compose. Mixing host tags would combine
+# unrelated collector identities into one dashboard.
+telemetry_host: handheld
+
 mqtt:
   host: mqtt
   port: 1883

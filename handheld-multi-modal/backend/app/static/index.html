@@ -3,219 +3,762 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Handheld</title>
+<title>Handheld operations</title>
 <style>
-  :root { color-scheme: dark; --ok:#4ade80; --bad:#f87171; --warn:#fbbf24; --bg:#0b0f14; }
+  :root {
+    color-scheme: dark;
+    --bg: #071116;
+    --panel: #0d1b22;
+    --panel2: #12262e;
+    --line: #23414b;
+    --text: #eef8f7;
+    --muted: #8eaaa9;
+    --accent: #47e6b1;
+    --accent2: #ffb45e;
+    --bad: #ff6b6b;
+    --warn: #ffd166;
+  }
   * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:#e5e7eb;
-         font:15px/1.45 system-ui,-apple-system,sans-serif; }
-  header { padding:12px 16px; border-bottom:1px solid #1f2937; display:flex;
-           align-items:center; gap:12px; }
-  h1 { font-size:16px; margin:0; font-weight:600; }
-  .pill { margin-left:auto; padding:3px 10px; border-radius:999px; font-size:12px;
-          font-weight:600; background:#1f2937; }
-  .pill.ready{color:var(--ok)} .pill.degraded{color:var(--warn)} .pill.blocked{color:var(--bad)}
-  main { padding:16px; max-width:900px; }
-  .cameras { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
-  .cameras button { padding:8px 14px; border-radius:8px; border:1px solid #374151;
-                    background:#111827; color:inherit; font:inherit; min-height:44px; }
-  .cameras button[aria-pressed="true"] { border-color:#60a5fa; background:#1e3a5f; }
-  .cameras button.down { border-color:#b91c1c; }
-  video { width:100%; max-height:56vh; background:#000; border-radius:10px; display:block; }
-  ul { list-style:none; padding:0; margin:0; }
-  li { display:flex; gap:10px; padding:9px 0; border-bottom:1px solid #111827;
-       align-items:baseline; }
-  .mark { width:1.4em; flex:none; } .ok{color:var(--ok)} .bad{color:var(--bad)}
-  .name { font-weight:600; min-width:11em; }
-  .detail { color:#9ca3af; font-size:13px; word-break:break-word; }
-  .tag { font-size:11px; color:#6b7280; border:1px solid #374151; border-radius:4px;
-         padding:0 5px; margin-left:auto; flex:none; }
-  #overlay { position:fixed; inset:0; background:rgba(3,7,18,.96); display:none;
-             padding:24px; overflow:auto; }
-  #overlay.show { display:block; }
-  #overlay h2 { color:var(--bad); }
-  button.action { padding:10px 16px; border-radius:8px; border:1px solid #374151;
-                  background:#111827; color:inherit; font:inherit; min-height:44px; }
-  .note { color:#9ca3af; font-size:13px; margin-top:6px; }
+  html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+  body {
+    background:
+      radial-gradient(circle at 80% -20%, #153a43 0, transparent 38%),
+      linear-gradient(145deg, #061014, var(--bg));
+    color: var(--text);
+    font: 14px/1.35 Inter, ui-sans-serif, system-ui, sans-serif;
+  }
+  button { font: inherit; }
+  button:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+  #app { height: 100dvh; display: grid; grid-template-rows: 68px minmax(0, 1fr); }
+  header {
+    display: flex; align-items: center; gap: 12px; min-width: 0;
+    padding: 10px 14px; border-bottom: 1px solid var(--line);
+    background: rgba(7, 17, 22, .88); backdrop-filter: blur(12px);
+  }
+  .brand { min-width: 172px; }
+  .brand strong { display: block; letter-spacing: .08em; text-transform: uppercase; }
+  .brand span, .micro { color: var(--muted); font-size: 11px; }
+  #cameras { display: flex; gap: 7px; min-width: 0; flex: 1; }
+  .camera {
+    min-height: 44px; min-width: 86px; padding: 7px 11px;
+    border: 1px solid var(--line); border-radius: 10px;
+    background: #0b171c; color: var(--text); cursor: pointer;
+  }
+  .camera[aria-pressed="true"] {
+    border-color: var(--accent); background: #12342f;
+    box-shadow: inset 0 0 0 1px rgba(71, 230, 177, .25);
+  }
+  .camera .status-dot {
+    display: inline-block; width: 8px; height: 8px; margin-right: 6px;
+    border-radius: 50%; background: var(--muted);
+  }
+  .camera.up .status-dot { background: var(--accent); }
+  .camera.down .status-dot { background: var(--bad); }
+  .top-status { margin-left: auto; text-align: right; white-space: nowrap; }
+  #connection { color: var(--warn); font-weight: 700; }
+  #connection.live { color: var(--accent); }
+
+  #workspace {
+    min-height: 0; padding: 10px; display: grid; gap: 10px;
+    grid-template-columns: minmax(0, 58fr) minmax(410px, 42fr);
+    grid-template-rows: minmax(0, 60fr) minmax(220px, 40fr);
+  }
+  .panel {
+    min-width: 0; min-height: 0; overflow: hidden;
+    border: 1px solid var(--line); border-radius: 14px;
+    background: linear-gradient(150deg, rgba(18, 38, 46, .94), rgba(9, 22, 28, .96));
+    box-shadow: 0 12px 34px rgba(0, 0, 0, .18);
+  }
+  .panel-head {
+    height: 45px; padding: 0 13px; display: flex; align-items: center; gap: 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  .panel-head h2 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; }
+  .panel-head small { margin-left: auto; color: var(--muted); }
+  #video-panel { grid-column: 1; grid-row: 1; display: grid; grid-template-rows: 45px minmax(0, 1fr); }
+  #video-wrap { position: relative; min-height: 0; background: #020506; }
+  video { width: 100%; height: 100%; display: block; object-fit: contain; background: #000; }
+  #video-wrap.inactive video { opacity: .22; }
+  #video-note {
+    position: absolute; left: 12px; bottom: 10px; max-width: calc(100% - 24px);
+    padding: 6px 9px; border-radius: 7px; background: rgba(3, 10, 13, .82);
+    color: #d9eeec; font-size: 12px;
+  }
+  .live-label { color: var(--accent); }
+
+  #lower { grid-column: 1; grid-row: 2; display: grid; grid-template-columns: 36% 64%; gap: 10px; min-height: 0; }
+  #alerts, #telemetry { display: grid; grid-template-rows: 45px minmax(0, 1fr); }
+  #alert-list { margin: 0; padding: 7px 12px; list-style: none; }
+  #alert-list li {
+    display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 8px;
+    padding: 7px 0; border-bottom: 1px solid rgba(35, 65, 75, .55);
+  }
+  .empty { color: var(--muted); padding: 18px 12px; }
+  #telemetry-grid {
+    padding: 8px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 7px;
+  }
+  .metric-group { min-width: 0; padding: 7px 9px; border-radius: 9px; background: #09181d; }
+  .metric-group h3 { margin: 0 0 4px; font-size: 11px; color: var(--accent2); text-transform: uppercase; }
+  .metric-line { display: flex; justify-content: space-between; gap: 7px; font-size: 11px; white-space: nowrap; }
+  .metric-line span:first-child { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+  .metric-line strong { font-variant-numeric: tabular-nums; }
+  .metric-line.unavailable strong { color: var(--warn); }
+  .spark { width: 100%; height: 20px; margin-top: 3px; }
+  .spark polyline { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
+
+  #tracks-panel {
+    grid-column: 2; grid-row: 1 / span 2; position: relative;
+    display: grid; grid-template-rows: auto auto auto minmax(0, 1fr);
+  }
+  #track-title { text-transform: none; letter-spacing: 0; font-size: 15px; }
+  .truth { color: var(--accent2); font-weight: 700; }
+  #presence {
+    display: none; padding: 8px 12px; background: rgba(255, 209, 102, .12);
+    border-bottom: 1px solid #6e5a25; color: #ffe8a3;
+  }
+  #presence.show { display: block; }
+  #subtotals { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  .subtotal { padding: 4px 7px; border-radius: 6px; background: #0a171c; color: var(--muted); font-size: 11px; }
+  .subtotal strong { color: var(--text); }
+  #track-scroll { min-height: 0; overflow: auto; padding: 9px; scrollbar-color: #315862 transparent; }
+  .time-group h3 {
+    margin: 5px 2px 7px; color: var(--muted); font-size: 11px;
+    letter-spacing: .08em; text-transform: uppercase;
+  }
+  .track-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .track-card {
+    min-width: 0; padding: 0; overflow: hidden; text-align: left; cursor: pointer;
+    border: 1px solid var(--line); border-radius: 10px; background: #0a171c; color: inherit;
+  }
+  .track-card:hover { border-color: #3e7477; }
+  .crop { height: 104px; display: grid; place-items: center; overflow: hidden; background: #061013; color: var(--muted); }
+  .crop img { width: 100%; height: 100%; object-fit: contain; }
+  .crop.missing { padding: 12px; text-align: center; border-bottom: 1px dashed #354b50; }
+  .track-copy { padding: 8px 9px; }
+  .track-copy strong { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track-copy span { color: var(--muted); font-size: 11px; }
+  .track-copy .camera-name { color: var(--accent); }
+
+  #drawer {
+    position: absolute; inset: 0; z-index: 5; display: none;
+    grid-template-rows: 50px minmax(0, 1fr); background: #08151a;
+  }
+  #drawer.open { display: grid; }
+  #drawer-head { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  #drawer-head button {
+    min-width: 44px; min-height: 36px; border: 1px solid var(--line); border-radius: 8px;
+    background: #10232a; color: var(--text); cursor: pointer;
+  }
+  #drawer-body { min-height: 0; overflow: auto; padding: 12px; }
+  #large-crop { height: 46%; min-height: 190px; display: grid; place-items: center; background: #020607; border-radius: 10px; overflow: hidden; }
+  #large-crop img { width: 100%; height: 100%; object-fit: contain; }
+  #candidate-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; margin-top: 10px; }
+  .candidate {
+    min-height: 76px; border: 1px solid var(--line); border-radius: 8px;
+    background: #0d2027; color: var(--muted); padding: 4px; cursor: pointer; overflow: hidden;
+  }
+  .candidate img { width: 100%; height: 58px; object-fit: contain; display: block; }
+  #drawer-detail { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+  #orientation {
+    display: none; position: fixed; inset: 0; z-index: 20; place-items: center;
+    padding: 28px; text-align: center; background: var(--bg); font-size: 18px;
+  }
+  @media (orientation: portrait) { #orientation { display: grid; } }
+  @media (max-width: 1100px) {
+    #workspace { grid-template-columns: minmax(0, 55fr) minmax(390px, 45fr); }
+    .brand { min-width: 130px; }
+    .camera { min-width: 70px; padding-inline: 7px; }
+    #telemetry-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .track-grid { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
-<header>
-  <h1>Handheld multimodal</h1>
-  <span id="status" class="pill">checking...</span>
-</header>
+<div id="app">
+  <header>
+    <div class="brand"><strong>Handheld ops</strong><span>Live evidence console</span></div>
+    <nav id="cameras" aria-label="Camera selection"></nav>
+    <div class="top-status">
+      <div id="connection">connecting</div>
+      <div class="micro">Tracks, not people</div>
+    </div>
+  </header>
 
-<main>
-  <div class="cameras" id="cameras"></div>
+  <main id="workspace">
+    <section id="video-panel" class="panel" aria-labelledby="video-heading">
+      <div class="panel-head">
+        <h2 id="video-heading">Live annotated video</h2>
+        <small>Live only / no controls</small>
+      </div>
+      <div id="video-wrap" class="inactive">
+        <video id="video" autoplay muted playsinline></video>
+        <div id="video-note">Select a camera.</div>
+      </div>
+    </section>
 
-  <video id="video" autoplay muted playsinline></video>
-  <p class="note" id="videoNote">no camera selected</p>
+    <div id="lower">
+      <section id="alerts" class="panel" aria-labelledby="alerts-heading">
+        <div class="panel-head">
+          <h2 id="alerts-heading">Global alerts</h2>
+          <small>track events</small>
+        </div>
+        <ul id="alert-list"></ul>
+      </section>
 
-  <h2 style="font-size:14px;color:#9ca3af;margin:0 0 6px">Prerequisites</h2>
-  <ul id="checks"></ul>
+      <section id="telemetry" class="panel" aria-labelledby="telemetry-heading">
+        <div class="panel-head">
+          <h2 id="telemetry-heading">Platform telemetry</h2>
+          <small id="telemetry-status">300 s browser window</small>
+        </div>
+        <div id="telemetry-grid"></div>
+      </section>
+    </div>
 
-  <p style="margin-top:20px">
-    <button class="action" id="mic">Test microphone access</button>
-    <span id="micResult" class="note"></span>
-  </p>
-  <p class="note" id="ctx"></p>
-</main>
+    <section id="tracks-panel" class="panel" aria-labelledby="track-title">
+      <div class="panel-head">
+        <h2 id="track-title">Object tracks, not people</h2>
+        <small id="track-count">0 tracks</small>
+      </div>
+      <div id="presence"></div>
+      <div id="subtotals"></div>
+      <div id="track-scroll"></div>
 
-<div id="overlay">
-  <h2>Cannot start</h2>
-  <p>A required service is unavailable. The application will not show video or
-     answer questions until these are fixed.</p>
-  <ul id="overlayChecks"></ul>
+      <aside id="drawer" aria-label="Static track evidence">
+        <div id="drawer-head">
+          <button id="close-drawer" type="button" aria-label="Close evidence drawer">Back</button>
+          <strong id="drawer-title">Static evidence</strong>
+          <span class="micro">Stored crop only; no live-video zoom</span>
+        </div>
+        <div id="drawer-body">
+          <div id="large-crop" class="crop missing">No stored crop</div>
+          <p id="drawer-detail"></p>
+          <div id="candidate-list"></div>
+        </div>
+      </aside>
+    </section>
+  </main>
 </div>
+<div id="orientation">Rotate to landscape. This console is designed as one fixed operator screen.</div>
 
 <script>
 const $ = (id) => document.getElementById(id);
+const state = {
+  streams: [], selected: null, current: {}, recent: {}, alerts: [],
+  telemetry: null, history: new Map(), whep: null, events: null,
+};
 
 async function api(path) {
-  const res = await fetch(path, { headers: { accept: "application/json" } });
-  const body = await res.json();
-  if (body.error) throw new Error(body.error.message);
+  const response = await fetch(path, {headers: {accept: "application/json"}});
+  const body = await response.json();
+  if (!response.ok || body.error) {
+    throw new Error((body.error && body.error.message) || response.statusText);
+  }
   return body.data;
 }
 
-function renderChecks(target, checks) {
-  target.innerHTML = "";
-  for (const c of checks) {
-    const li = document.createElement("li");
-    li.innerHTML =
-      '<span class="mark ' + (c.ok ? "ok" : "bad") + '">' + (c.ok ? "\u2713" : "\u2717") + "</span>" +
-      '<span class="name"></span><span class="detail"></span>' +
-      '<span class="tag">' + (c.blocking ? "required" : "optional") + "</span>";
-    li.querySelector(".name").textContent = c.name;
-    li.querySelector(".detail").textContent = c.detail;
-    target.append(li);
-  }
+function cameraName(streamId) {
+  const stream = state.streams.find((item) => item.stream_id === streamId);
+  return stream ? stream.display_name : streamId;
 }
 
-async function refresh() {
-  try {
-    const health = await api("/api/health");
-    $("status").textContent = health.status;
-    $("status").className = "pill " + health.status;
-    renderChecks($("checks"), health.checks);
-    const blocked = health.status === "blocked";
-    $("overlay").classList.toggle("show", blocked);
-    if (blocked) {
-      renderChecks($("overlayChecks"), health.checks.filter((c) => c.blocking && !c.ok));
+function feedClass(feed) {
+  return feed && feed.ok === true ? "up" : feed && feed.ok === false ? "down" : "unknown";
+}
+
+function renderCameras() {
+  const nav = $("cameras");
+  nav.replaceChildren();
+  const choices = [{stream_id: "all", display_name: "All", feed: null}, ...state.streams];
+  for (const stream of choices) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "camera " + (stream.stream_id === "all" ? "" : feedClass(stream.feed));
+    button.setAttribute("aria-pressed", String(state.selected === stream.stream_id));
+    const dot = document.createElement("span");
+    dot.className = "status-dot";
+    button.append(dot, document.createTextNode(stream.display_name));
+    if (stream.stream_id !== "all") {
+      const status = stream.feed && stream.feed.ok === true ? "live"
+        : stream.feed && stream.feed.ok === false ? "no signal" : "unknown";
+      button.title = stream.display_name + ": " + status;
     }
-  } catch (err) {
-    $("status").textContent = "backend unreachable";
-    $("status").className = "pill blocked";
+    button.onclick = () => selectCamera(stream.stream_id);
+    nav.append(button);
   }
 }
-
-// ---- WHEP playback -------------------------------------------------------
-// One session at a time. DLSPS chooses the codec at publish time (H.264 on the
-// GPU/NPU variants, VP9 on the CPU one), so the offer must carry every codec
-// MediaMTX might hand back or it answers "400 codecs not supported by client".
-let session = null;
 
 async function detachWhep() {
-  const previous = session;
-  session = null;
-  if (!previous) return;
+  const previous = state.whep;
+  state.whep = null;
   $("video").srcObject = null;
-  // Delete before closing: closing the peer connection makes MediaMTX reap the
-  // session itself, and the DELETE that follows then answers 404.
+  if (!previous) return;
   if (previous.resource) {
-    // Relative Location, so this resolves against our own origin too.
-    try { await fetch(previous.resource, { method: "DELETE" }); } catch (e) { /* gone anyway */ }
+    try { await fetch(previous.resource, {method: "DELETE"}); } catch (_) {}
   }
   previous.pc.close();
 }
 
-async function attachWhep(whepPath, label) {
+async function attachWhep(stream) {
   await detachWhep();
-  const note = $("videoNote");
-  note.textContent = "connecting to " + label + "...";
-  const pc = new RTCPeerConnection({ bundlePolicy: "max-bundle" });
-  const current = { pc, resource: null };
-  session = current;
-
-  pc.addTransceiver("video", { direction: "recvonly" });  // annotated stream is video only
+  const note = $("video-note");
+  $("video-wrap").classList.remove("inactive");
+  note.textContent = "Connecting to " + stream.display_name + "...";
+  const pc = new RTCPeerConnection({bundlePolicy: "max-bundle"});
+  const current = {pc, resource: null};
+  state.whep = current;
+  pc.addTransceiver("video", {direction: "recvonly"});
   pc.ontrack = (event) => { $("video").srcObject = event.streams[0]; };
   pc.onconnectionstatechange = () => {
-    if (session !== current) return;
-    note.textContent = label + ": " + pc.connectionState;
+    if (state.whep !== current) return;
+    note.textContent = stream.display_name + ": " + pc.connectionState;
   };
-
   await pc.setLocalDescription(await pc.createOffer());
   await new Promise((resolve) => {
     if (pc.iceGatheringState === "complete") return resolve();
     pc.onicegatheringstatechange = () => pc.iceGatheringState === "complete" && resolve();
   });
-
-  const res = await fetch(new URL(whepPath, location.origin), {
+  const response = await fetch(new URL(stream.whep_path, location.origin), {
     method: "POST",
-    headers: { "content-type": "application/sdp" },
+    headers: {"content-type": "application/sdp"},
     body: pc.localDescription.sdp,
   });
-  if (!res.ok) {
-    note.textContent = label + ": " + res.status + " " + (await res.text()).trim();
+  if (!response.ok) {
+    const codecs = (RTCRtpReceiver.getCapabilities("video")?.codecs || [])
+      .map((codec) => codec.mimeType.replace("video/", ""))
+      .filter((codec, index, all) => all.indexOf(codec) === index)
+      .join(", ");
+    note.textContent = response.status === 400
+      ? stream.display_name + ": codec offer rejected; browser provides "
+        + (codecs || "no video codecs")
+      : stream.display_name + ": live video unavailable (" + response.status + ")";
     pc.close();
-    if (session === current) session = null;
+    if (state.whep === current) state.whep = null;
     return;
   }
-  current.resource = res.headers.get("location");
-  if (session !== current) { pc.close(); return; }  // switched while we waited
-  await pc.setRemoteDescription({ type: "answer", sdp: await res.text() });
+  current.resource = response.headers.get("location");
+  const answer = await response.text();
+  if (state.whep !== current) {
+    pc.close();
+    return;
+  }
+  await pc.setRemoteDescription({type: "answer", sdp: answer});
 }
 
-async function loadCameras() {
-  const streams = await api("/api/streams");
-  const box = $("cameras");
-  box.innerHTML = "";
-  streams.forEach((s, i) => {
-    const b = document.createElement("button");
-    b.textContent = s.display_name;
-    b.setAttribute("aria-pressed", String(i === 0));
-    b.classList.toggle("down", s.feed && s.feed.ok === false);
-    // Relative path resolved against this origin (D15): no host in the bundle.
-    b.title = new URL(s.whep_path, location.origin).href;
-    b.onclick = () => {
-      [].forEach.call(box.children, (c) => c.setAttribute("aria-pressed", "false"));
-      b.setAttribute("aria-pressed", "true");
-      attachWhep(s.whep_path, s.display_name).catch((e) => {
-        $("videoNote").textContent = s.display_name + ": " + e.message;
-      });
-    };
-    box.append(b);
-  });
-  if (streams.length) {
-    attachWhep(streams[0].whep_path, streams[0].display_name).catch((e) => {
-      $("videoNote").textContent = e.message;
+function selectCamera(streamId, firstLoad = false) {
+  state.selected = streamId;
+  renderCameras();
+  renderTracks();
+  if (streamId === "all") {
+    detachWhep();
+    $("video-wrap").classList.add("inactive");
+    $("video-note").textContent = "All cameras selected. Choose one camera for its live stream.";
+    return;
+  }
+  const stream = state.streams.find((item) => item.stream_id === streamId);
+  if (!stream) return;
+  if (!firstLoad || !state.whep) {
+    attachWhep(stream).catch((error) => {
+      $("video-note").textContent = stream.display_name + ": " + error.message;
     });
   }
 }
 
-// Phase 1 exit criterion: prove a real permission prompt, not a missing API.
-$("ctx").textContent = window.isSecureContext
-  ? "Secure context: yes. getUserMedia is available."
-  : "Secure context: NO. The microphone API is unavailable over plain HTTP - use the HTTPS address.";
+function shortTime(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.valueOf()) ? "--:--" : date.toLocaleTimeString([], {
+    hour: "2-digit", minute: "2-digit", second: "2-digit"
+  });
+}
 
-$("mic").onclick = async () => {
-  $("micResult").textContent = "requesting...";
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    $("micResult").textContent = "getUserMedia is not available (not a secure context).";
+function groupTime(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.valueOf()) ? "Unknown time" : date.toLocaleString([], {
+    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"
+  });
+}
+
+function selectedStreams() {
+  return state.selected === "all" ? state.streams
+    : state.streams.filter((stream) => stream.stream_id === state.selected);
+}
+
+function visibleTracks() {
+  return selectedStreams().flatMap((stream) =>
+    ((state.recent[stream.stream_id] || {}).tracks || []).map((track) => ({
+      ...track, stream_id: stream.stream_id
+    }))
+  ).sort((a, b) => String(b.last_observed_utc).localeCompare(String(a.last_observed_utc)));
+}
+
+function renderPresence() {
+  const banner = $("presence");
+  const unknown = selectedStreams().filter((stream) => {
+    const current = state.current[stream.stream_id];
+    return !current || current.current_presence === "unknown" || current.feed_ok === false;
+  });
+  if (!unknown.length) {
+    banner.classList.remove("show");
+    banner.textContent = "";
+    return;
+  }
+  banner.textContent = "Presence unknown on " + unknown.map((item) => item.display_name).join(", ")
+    + ". Recorded track history remains available.";
+  banner.classList.add("show");
+}
+
+function renderSubtotals() {
+  const box = $("subtotals");
+  box.replaceChildren();
+  for (const stream of selectedStreams()) {
+    const tracks = ((state.recent[stream.stream_id] || {}).tracks || []);
+    const counts = {};
+    for (const track of tracks) counts[track.class_label] = (counts[track.class_label] || 0) + 1;
+    const detail = Object.entries(counts).map(([label, count]) => count + " " + label).join(", ");
+    const item = document.createElement("span");
+    item.className = "subtotal";
+    const strong = document.createElement("strong");
+    strong.textContent = stream.display_name + ": " + tracks.length + " tracks";
+    item.append(strong, document.createTextNode(detail ? " / " + detail : " / none recorded"));
+    box.append(item);
+  }
+}
+
+function missingCrop(box, reason) {
+  box.className = "crop missing";
+  box.replaceChildren(document.createTextNode(reason));
+}
+
+function trackCard(track) {
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = "track-card";
+  card.onclick = () => openDrawer(track);
+  const crop = document.createElement("div");
+  crop.className = "crop";
+  if (track.snip_url) {
+    const image = document.createElement("img");
+    image.src = track.snip_url;
+    image.alt = "Stored crop for " + track.class_label + " track";
+    image.onerror = () => missingCrop(crop, "Crop missing or expired");
+    crop.append(image);
+  } else {
+    const reasons = {
+      pending: "Crop pending",
+      expired: "Crop expired",
+      missing: "Crop missing",
+      superseded: "Crop superseded",
+      none: "No stored crop",
+    };
+    missingCrop(crop, reasons[track.snip_state] || "No stored crop");
+  }
+  const copy = document.createElement("div");
+  copy.className = "track-copy";
+  const title = document.createElement("strong");
+  title.textContent = track.class_label + " track " + (track.track_id ? "#" + track.track_id : "(live)");
+  const meta = document.createElement("span");
+  meta.textContent = shortTime(track.last_observed_utc) + " / "
+    + (track.closed_at ? "history" : "current") + " / "
+    + (track.candidate_count || 0) + " crops";
+  const camera = document.createElement("span");
+  camera.className = "camera-name";
+  camera.textContent = cameraName(track.stream_id);
+  copy.append(title, meta, document.createElement("br"), camera);
+  card.append(crop, copy);
+  return card;
+}
+
+function renderTracks() {
+  renderPresence();
+  renderSubtotals();
+  const tracks = visibleTracks();
+  $("track-count").textContent = tracks.length + (tracks.length === 1 ? " track" : " tracks");
+  const scroller = $("track-scroll");
+  scroller.replaceChildren();
+  if (!tracks.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "No recorded object tracks for this scope.";
+    scroller.append(empty);
+    return;
+  }
+  const groups = new Map();
+  for (const track of tracks) {
+    const key = groupTime(track.last_observed_utc);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(track);
+  }
+  for (const [label, entries] of groups) {
+    const section = document.createElement("section");
+    section.className = "time-group";
+    const heading = document.createElement("h3");
+    heading.textContent = label;
+    const grid = document.createElement("div");
+    grid.className = "track-grid";
+    entries.forEach((track) => grid.append(trackCard(track)));
+    section.append(heading, grid);
+    scroller.append(section);
+  }
+}
+
+function renderAlerts() {
+  const list = $("alert-list");
+  list.replaceChildren();
+  if (!state.alerts.length) {
+    const item = document.createElement("li");
+    item.className = "empty";
+    item.textContent = "No persisted rule matches. Alerts identify tracks, not unique people.";
+    list.append(item);
+    return;
+  }
+  for (const alert of state.alerts.slice(0, 5)) {
+    const item = document.createElement("li");
+    const time = document.createElement("strong");
+    time.textContent = shortTime(alert.matched_utc);
+    const copy = document.createElement("span");
+    copy.textContent = alert.class_label + " track #" + alert.track_id + " / "
+      + cameraName(alert.stream_id) + " / " + alert.rule_name + " / " + alert.dispatch_state;
+    item.append(time, copy);
+    list.append(item);
+  }
+}
+
+function rememberTelemetry(snapshot) {
+  if (!snapshot || !Array.isArray(snapshot.metrics)) return;
+  for (const metric of snapshot.metrics) {
+    if (typeof metric.value !== "number" || metric.state === "unavailable") continue;
+    const values = state.history.get(metric.id) || [];
+    values.push(metric.value);
+    if (values.length > 300) values.splice(0, values.length - 300);
+    state.history.set(metric.id, values);
+  }
+}
+
+function formatted(metric) {
+  if (metric.state === "unavailable") return "unavailable";
+  if (typeof metric.value !== "number") return "--";
+  if (metric.unit === "bytes") {
+    return (metric.value / (1024 ** 3)).toFixed(1) + " GiB";
+  }
+  const digits = Math.abs(metric.value) >= 100 ? 0 : Math.abs(metric.value) >= 10 ? 1 : 2;
+  return metric.value.toFixed(digits) + " " + metric.unit;
+}
+
+function sparkline(metricId) {
+  const values = state.history.get(metricId) || [];
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "spark");
+  svg.setAttribute("viewBox", "0 0 100 20");
+  svg.setAttribute("preserveAspectRatio", "none");
+  if (values.length < 2) return svg;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
+  const points = values.map((value, index) => {
+    const x = index * 100 / (values.length - 1);
+    const y = 18 - ((value - min) / span) * 16;
+    return x.toFixed(2) + "," + y.toFixed(2);
+  }).join(" ");
+  const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+  line.setAttribute("points", points);
+  svg.append(line);
+  return svg;
+}
+
+function renderTelemetry() {
+  const box = $("telemetry-grid");
+  box.replaceChildren();
+  const snapshot = state.telemetry;
+  if (!snapshot || !snapshot.metrics || !snapshot.metrics.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = snapshot && snapshot.reason
+      ? "Telemetry unavailable: " + snapshot.reason.replaceAll("_", " ")
+      : "Waiting for telemetry.";
+    box.append(empty);
+    return;
+  }
+  const metrics = new Map(snapshot.metrics.map((metric) => [metric.id, metric]));
+  const groups = [
+    ["CPU", ["cpu_load_percent", "cpu_frequency_mhz", "cpu_temperature_c"]],
+    ["Memory", ["memory_used_percent", "memory_used_bytes", "memory_total_bytes"]],
+    ["GPU engines", [...metrics.keys()].filter((id) => id.startsWith("gpu_engine_"))],
+    ["GPU and package", ["gpu_frequency_mhz", "gpu_power_w", "package_power_w"]],
+    ["NPU", ["npu_utilization_percent", "npu_power_w", "npu_temperature_c"]],
+    ["NPU details", ["npu_frequency_raw", "npu_bandwidth_raw", "npu_memory_mib", "npu_tile_config"]],
+  ];
+  for (const [title, ids] of groups) {
+    const available = ids.map((id) => metrics.get(id)).filter(Boolean);
+    if (!available.length) continue;
+    const card = document.createElement("section");
+    card.className = "metric-group";
+    const heading = document.createElement("h3");
+    heading.textContent = title;
+    card.append(heading);
+    for (const metric of available) {
+      const line = document.createElement("div");
+      line.className = "metric-line " + metric.state;
+      line.title = metric.source + (metric.note ? " / " + metric.note : "");
+      const label = document.createElement("span");
+      label.textContent = metric.label.replace(/^GPU |^NPU /, "");
+      const value = document.createElement("strong");
+      value.textContent = formatted(metric);
+      line.append(label, value);
+      card.append(line);
+    }
+    const primary = available.find((metric) => typeof metric.value === "number");
+    if (primary) card.append(sparkline(primary.id));
+    box.append(card);
+  }
+}
+
+function renderTelemetryState() {
+  const status = $("telemetry-status");
+  status.textContent = !state.telemetry || state.telemetry.status === "ok"
+    ? "300 s browser window"
+    : state.telemetry.status + " / " + String(state.telemetry.reason || "unknown").replaceAll("_", " ");
+}
+
+function showLargeCandidate(candidate) {
+  const box = $("large-crop");
+  if (!candidate || !candidate.image_url) {
+    missingCrop(box, candidate ? "Crop " + candidate.image_state : "No stored crop");
+    return;
+  }
+  box.className = "crop";
+  box.replaceChildren();
+  const image = document.createElement("img");
+  image.src = candidate.image_url;
+  image.alt = "Static stored crop";
+  image.onerror = () => missingCrop(box, "Crop missing or expired");
+  box.append(image);
+}
+
+async function openDrawer(track) {
+  $("drawer").classList.add("open");
+  $("drawer-title").textContent = track.class_label + " track "
+    + (track.track_id ? "#" + track.track_id : "(live)");
+  $("drawer-detail").textContent = cameraName(track.stream_id) + " / captured "
+    + shortTime(track.last_observed_utc) + " / confidence "
+    + (track.peak_confidence == null ? "unavailable" : (track.peak_confidence * 100).toFixed(1) + "%")
+    + " / " + track.confidence_freshness + ". Static evidence for this track, not identity.";
+  $("candidate-list").replaceChildren();
+  missingCrop($("large-crop"), "Loading stored candidates...");
+  if (!track.track_id) {
+    missingCrop($("large-crop"), "Track is live; no committed crop yet");
     return;
   }
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    stream.getTracks().forEach((t) => t.stop());
-    $("micResult").textContent = "granted";
-  } catch (err) {
-    $("micResult").textContent = err.name + ": " + err.message;
+    const result = await api("/api/tracks/" + track.track_id + "/candidates");
+    const candidates = result.candidates || [];
+    showLargeCandidate(candidates[0]);
+    if (!candidates.length) {
+      missingCrop($("large-crop"), "No stored crop");
+      return;
+    }
+    for (const candidate of candidates) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "candidate";
+      button.title = "Candidate " + candidate.candidate_number + " / " + candidate.image_state;
+      if (candidate.image_url) {
+        const image = document.createElement("img");
+        image.src = candidate.image_url;
+        image.alt = "Alternative static crop";
+        image.onerror = () => {
+          button.replaceChildren(document.createTextNode("missing"));
+        };
+        button.append(image);
+      } else {
+        button.textContent = candidate.image_state;
+      }
+      button.onclick = () => showLargeCandidate(candidate);
+      $("candidate-list").append(button);
+    }
+  } catch (error) {
+    missingCrop($("large-crop"), "Candidates unavailable");
   }
-};
+}
 
-loadCameras().catch(() => {});
-refresh();
-setInterval(refresh, 5000);
+$("close-drawer").onclick = () => $("drawer").classList.remove("open");
+
+async function refreshState() {
+  const streams = await api("/api/streams");
+  state.streams = streams;
+  if (!state.selected || !streams.some((stream) => stream.stream_id === state.selected)) {
+    state.selected = streams[0] ? streams[0].stream_id : "all";
+  }
+  const [alerts, telemetry, ...trackData] = await Promise.all([
+    api("/api/alerts"),
+    api("/api/metrics"),
+    ...streams.flatMap((stream) => [
+      api("/api/streams/" + stream.stream_id + "/current"),
+      api("/api/streams/" + stream.stream_id + "/tracks?limit=50"),
+    ]),
+  ]);
+  state.alerts = alerts.alerts || [];
+  state.telemetry = telemetry;
+  rememberTelemetry(telemetry);
+  streams.forEach((stream, index) => {
+    state.current[stream.stream_id] = trackData[index * 2];
+    state.recent[stream.stream_id] = trackData[index * 2 + 1];
+  });
+  renderCameras();
+  renderTracks();
+  renderAlerts();
+  renderTelemetry();
+  renderTelemetryState();
+}
+
+function connectEvents() {
+  if (state.events) state.events.close();
+  const events = new EventSource("/api/stream");
+  state.events = events;
+  events.onopen = () => {
+    $("connection").textContent = "live updates";
+    $("connection").className = "live";
+    refreshState().catch(() => {});
+  };
+  events.onerror = () => {
+    $("connection").textContent = "reconnecting";
+    $("connection").className = "";
+  };
+  events.addEventListener("feed", (event) => {
+    const data = JSON.parse(event.data);
+    const stream = state.streams.find((item) => item.stream_id === data.stream_id);
+    if (stream) stream.feed = data.feed;
+    renderCameras();
+  });
+  events.addEventListener("track", (event) => {
+    const data = JSON.parse(event.data);
+    state.current[data.stream_id] = data.current;
+    state.recent[data.stream_id] = data.recent;
+    renderTracks();
+  });
+  events.addEventListener("alert", (event) => {
+    state.alerts = JSON.parse(event.data).alerts || [];
+    renderAlerts();
+  });
+  events.addEventListener("telemetry", (event) => {
+    state.telemetry = JSON.parse(event.data);
+    rememberTelemetry(state.telemetry);
+    renderTelemetry();
+    renderTelemetryState();
+  });
+}
+
+refreshState().then(() => {
+  selectCamera(state.selected, true);
+  connectEvents();
+}).catch((error) => {
+  $("connection").textContent = "backend unavailable";
+  $("video-note").textContent = error.message;
+});
+
+window.addEventListener("beforeunload", () => {
+  if (state.events) state.events.close();
+  detachWhep();
+});
 </script>
 </body>
 </html>

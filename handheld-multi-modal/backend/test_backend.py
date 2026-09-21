@@ -177,6 +177,69 @@ def test_envelope_shape():
     request_id_var.reset(token)
 
 
+def test_telemetry_preserves_zero_unavailable_and_real_units():
+    from app.telemetry import normalize
+
+    def metric(name, value, **tags):
+        return {"name": name, "tags": {"host": "handheld", **tags},
+                "fields": {"value": value}, "timestamp": 2_000_000_000_000_000_000}
+
+    payload = {"metrics": {
+        "u": metric("cpu_usage_user", 10, cpu="cpu-total"),
+        "s": metric("cpu_usage_system", 5, cpu="cpu-total"),
+        "f": metric("cpu_frequency_avg_frequency", 1_250_000),
+        "g": metric("gpu_frequency", 450, type="cur_freq"),
+        "p": metric("gpu_power", 12.5, type="pkg_cur_power"),
+        "n": metric("npu_utilization", 0),
+        "m": metric("npu_memory_mb", -1),
+    }}
+    answer = normalize(payload, "handheld", now=2_000_000_000)
+    metrics = {item["id"]: item for item in answer["metrics"]}
+    assert metrics["cpu_load_percent"]["value"] == 15
+    assert metrics["cpu_frequency_mhz"]["value"] == 1250
+    assert metrics["cpu_frequency_mhz"]["unit"] == "MHz"
+    assert metrics["gpu_frequency_mhz"]["source"] == "gpu_frequency"
+    assert metrics["package_power_w"]["value"] == 12.5
+    assert metrics["npu_utilization_percent"]["value"] == 0
+    assert metrics["npu_utilization_percent"]["state"] == "ok"
+    assert metrics["npu_memory_mib"]["value"] is None
+    assert metrics["npu_memory_mib"]["state"] == "unavailable"
+
+    mismatch = normalize(payload, "other-host", now=2_000_000_000)
+    assert mismatch["status"] == "host_mismatch"
+    assert mismatch["metrics"] == []
+
+
+def test_alert_feed_is_global_and_camera_labelled():
+    from app import history
+
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = connect(str(Path(tmp) / "app.db"))
+        migrate(conn)
+        sync_streams(conn, [{"stream_id": "cam1", "display_name": "cam1",
+                             "source_uri": "u", "annotated_path": "a",
+                             "enabled": True, "sort_order": 0}])
+        cursor = conn.execute(
+            """INSERT INTO tracks (stream_id, tracking_session_id, history_generation,
+                 tracker_id, class_label, first_observed_utc, last_observed_utc,
+                 confidence_freshness)
+               VALUES ('cam1','s','g',1,'person','t','t','unverified')""")
+        track_id = cursor.lastrowid
+        conn.execute(
+            """INSERT INTO rules (rule_id, name, enabled, spec_json)
+               VALUES ('r1','entry',1,'{}')""")
+        conn.execute(
+            """INSERT INTO rule_matches
+               (match_id, rule_id, track_id, matched_utc, dispatch_state)
+               VALUES ('m1','r1',?,'2026-01-01T00:00:00Z','pending')""", (track_id,))
+        conn.commit()
+        answer = history.alerts(conn)
+        assert answer[0]["stream_id"] == "cam1"
+        assert answer[0]["class_label"] == "person"
+        assert answer[0]["rule_name"] == "entry"
+        conn.close()
+
+
 def _crop(stream_id, tracker_id, candidate_id, *, session="s1", generation="g1",
           observed_at=1000.0, expires_in=3600.0):
     """A producer sidecar, verbatim: the same flat dict it publishes and fsyncs."""
@@ -266,6 +329,10 @@ def test_expired_candidates_are_reflected_not_deleted():
         assert row["image_state"] == "expired", row["image_state"]
         assert ing.conn.execute("SELECT count(*) n FROM tracks").fetchone()["n"] == 1, (
             "expiring an image must not remove the track it belonged to")
+        from app import history
+        recent = history.recent(ing.conn, ing, ing.cfg, "cam1")
+        assert recent["tracks"][0]["snip_state"] == "expired", recent
+        assert recent["tracks"][0]["snip_url"] is None, recent
         ing.conn.close()
 
 

@@ -44,7 +44,8 @@ def _identity(conn: sqlite3.Connection, stream_id: str, ingest=None) -> tuple[st
     return row["tracking_session_id"], row["history_generation"] or ""
 
 
-def _track_payload(row, *, state_source: str, snip: str | None = None) -> dict:
+def _track_payload(row, *, state_source: str, snip: str | None = None,
+                   snip_state: str = "none") -> dict:
     return {
         "track_id": row["track_id"],
         "stream_id": row["stream_id"],
@@ -59,6 +60,7 @@ def _track_payload(row, *, state_source: str, snip: str | None = None) -> dict:
         "closure_reason": row["closure_reason"] if "closure_reason" in row.keys() else None,
         "state_source": state_source,
         "snip_url": snip,
+        "snip_state": snip_state,
     }
 
 
@@ -83,9 +85,11 @@ def current(conn: sqlite3.Connection, ingest, cfg: dict, stream_id: str) -> dict
              AND closed_at IS NULL AND last_observed_utc >= ?
            ORDER BY last_observed_utc DESC""",
         (stream_id, identity[0], identity[1], cutoff)).fetchall()
-    merged = {row["track_id"]: _track_payload(row, state_source="committed",
-                                              snip=_snip_url(conn, row["track_id"]))
-              for row in rows}
+    merged = {}
+    for row in rows:
+        snip, snip_state = _snip(conn, row["track_id"])
+        merged[row["track_id"]] = _track_payload(
+            row, state_source="committed", snip=snip, snip_state=snip_state)
 
     # Section 6.3: overlay tracks the writer has not checkpointed yet. Keyed by
     # tracker id because a live track may have no committed row - and therefore
@@ -105,7 +109,8 @@ def current(conn: sqlite3.Connection, ingest, cfg: dict, stream_id: str) -> dict
             "observation_count": entry["observation_count"],
             "peak_confidence": entry["peak_confidence"],
             "confidence_freshness": entry["confidence_freshness"],
-            "closure_reason": None, "state_source": "live", "snip_url": None,
+            "closure_reason": None, "state_source": "live",
+            "snip_url": None, "snip_state": "pending",
         }
 
     tracks = sorted(merged.values(), key=lambda t: t["last_observed_utc"], reverse=True)
@@ -127,13 +132,16 @@ def current(conn: sqlite3.Connection, ingest, cfg: dict, stream_id: str) -> dict
             "reason": None, "tracks": tracks, "counts": counts}
 
 
-def _snip_url(conn: sqlite3.Connection, track_id: int) -> str | None:
-    """The selected candidate, or the best available one if none was selected."""
+def _snip(conn: sqlite3.Connection, track_id: int) -> tuple[str | None, str]:
+    """Return the best available image URL and the truthful retained state."""
     row = conn.execute(
-        """SELECT candidate_id FROM candidates
-           WHERE track_id = ? AND image_state = 'present'
-           ORDER BY quality_score DESC LIMIT 1""", (track_id,)).fetchone()
-    return f"/api/tracks/{track_id}/snip" if row else None
+        """SELECT image_state FROM candidates WHERE track_id = ?
+           ORDER BY (image_state = 'present') DESC, quality_score DESC LIMIT 1""",
+        (track_id,)).fetchone()
+    if row is None:
+        return None, "none"
+    state = row["image_state"]
+    return (f"/api/tracks/{track_id}/snip" if state == "present" else None), state
 
 
 def recent(conn: sqlite3.Connection, ingest, cfg: dict, stream_id: str,
@@ -164,9 +172,10 @@ def recent(conn: sqlite3.Connection, ingest, cfg: dict, stream_id: str,
     tracks = []
     live_intervals = ingest.live_intervals(stream_id) if ingest else {}
     for row in rows:
+        snip, snip_state = _snip(conn, row["track_id"])
         payload = _track_payload(
             row, state_source="committed" if row["closed_at"] else "live",
-            snip=_snip_url(conn, row["track_id"]))
+            snip=snip, snip_state=snip_state)
         payload["closed_at"] = row["closed_at"]
         intervals = [
             {"started_utc": i["started_utc"], "ended_utc": i["ended_utc"],
@@ -215,4 +224,31 @@ def candidates(conn: sqlite3.Connection, track_id: int) -> list[dict]:
         # Absent images keep their row: the track fact survives the file.
         "image_url": (f"/api/candidates/{row['candidate_id']}/image"
                       if row["image_state"] == "present" else None),
+    } for row in rows]
+
+
+def alerts(conn: sqlite3.Connection, *, limit: int = 50) -> list[dict]:
+    """Recent persisted rule matches. Rule evaluation itself belongs to Phase 8."""
+    limit = max(1, min(int(limit), 100))
+    rows = conn.execute(
+        """SELECT m.match_id, m.rule_id, m.track_id, m.matched_utc,
+                  m.dispatch_state, m.attempts, m.last_attempt_utc, m.last_error,
+                  r.name AS rule_name, t.stream_id, t.class_label
+           FROM rule_matches m
+           JOIN tracks t ON t.track_id = m.track_id
+           LEFT JOIN rules r ON r.rule_id = m.rule_id
+           ORDER BY m.matched_utc DESC LIMIT ?""", (limit,)).fetchall()
+    return [{
+        "match_id": row["match_id"],
+        "rule_id": row["rule_id"],
+        "rule_name": row["rule_name"] or row["rule_id"],
+        "track_id": row["track_id"],
+        "stream_id": row["stream_id"],
+        "class_label": row["class_label"],
+        "matched_utc": row["matched_utc"],
+        "dispatch_state": row["dispatch_state"],
+        "attempts": row["attempts"],
+        "last_attempt_utc": row["last_attempt_utc"],
+        "last_error": row["last_error"],
+        "snip_url": _snip(conn, row["track_id"])[0],
     } for row in rows]

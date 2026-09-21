@@ -67,6 +67,7 @@ DEFAULTS: dict[str, Any] = {
     "pipeline_start_poll_seconds": 2.0,
     "feed_stale_seconds": 90.0,
     "takeover_seconds": 30.0,  # must match crop config takeover_seconds
+    "telemetry_host": "handheld",
     "timeout_seconds": 5.0,
     "log_level": "INFO",
 }

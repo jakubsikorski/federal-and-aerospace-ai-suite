@@ -123,7 +123,7 @@ class Services:
         2026-09-14. Using the query endpoint would report a healthy collector as
         broken.
         """
-        body = self._get("metrics", "/api/v1/metrics/latest").json()
+        body = self.metrics_latest()
         series = body.get("metrics", {})
         if not series:
             raise RuntimeError("no live metric series")
@@ -132,6 +132,9 @@ class Services:
             "series_count": len(series),
             "names": names,
         }
+
+    def metrics_latest(self) -> dict:
+        return self._get("metrics", "/api/v1/metrics/latest").json()
 
     # --- checklist -----------------------------------------------------------
 
