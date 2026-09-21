@@ -74,7 +74,7 @@ services:
     # real interface, so --external-ip alone (no NAT-translation mapping)
     # is correct.
     network_mode: host
-    command: ["-c", "/etc/coturn/turnserver.conf", "--external-ip=${COTURN_EXTERNAL_IP:-10.123.233.207}"]
+    command: ["-c", "/etc/coturn/turnserver.conf", "--external-ip=${COTURN_EXTERNAL_IP:-127.0.0.1}"]
     volumes:
       - ../config/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
   mqtt:
@@ -93,7 +93,7 @@ services:
     depends_on: [mediamtx, mqtt]
     security_opt:
       - no-new-privileges:true
-    group_add: ["${RENDER_GID:-992}"] # resolved from renderD128 by phase4-demo.sh
+    group_add: ["${RENDER_GID:-992}"] # resolved from renderD128 by Make
     devices:
       - /dev/dri/renderD128:/dev/dri/renderD128
       - /dev/accel/accel0:/dev/accel/accel0
@@ -286,7 +286,7 @@ services:
     container_name: handheld-bootstrap-chatqna-core-gpu
     restart: "no"
     group_add:
-      - "${RENDER_GID:-992}" # resolved from renderD128 by phase4-demo.sh
+      - "${RENDER_GID:-992}" # resolved from renderD128 by Make
     devices:
       - /dev/dri/renderD128:/dev/dri/renderD128
     ports:
@@ -307,6 +307,8 @@ services:
   backend:
     build: ../backend
     image: handheld/backend:dev
+    # Allow bounded HTTP calls and verified pipeline cleanup before SIGKILL.
+    stop_grace_period: 120s
     container_name: handheld-bootstrap-backend
     restart: "no"
     security_opt:
@@ -319,6 +321,11 @@ services:
       <<: *proxy-env-blocked
     volumes:
       - ../config/backend/backend.yaml:/config/backend.yaml:ro
+      # Display configured model placement without copying model/device values.
+      - ../config/chatqna/config.yaml:/config/model-placement/chatqna.yaml:ro
+      - ../config/audio-analyzer/config.yaml:/config/model-placement/audio-analyzer.yaml:ro
+      - ../config/tts/config.yaml:/config/model-placement/tts.yaml:ro
+      - ../config/dlsps/${DLSPS_CONFIG_VARIANT:-npu}/config.json:/config/model-placement/dlsps.json:ro
       - ../data/backend:/data
       # Read-write, but only one call site writes: the stopped-producer cleanup
       # of design section 9.2, which must hold the producer's own exclusive lock.

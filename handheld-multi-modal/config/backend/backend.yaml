@@ -42,6 +42,8 @@ services:
 # Must match METRICS_MANAGER_HOSTNAME in Compose. Mixing host tags would combine
 # unrelated collector identities into one dashboard.
 telemetry_host: handheld
+# Deployment label, not the container hostname or a measured device identity.
+execution_host: "Local edge host"
 
 mqtt:
   host: mqtt

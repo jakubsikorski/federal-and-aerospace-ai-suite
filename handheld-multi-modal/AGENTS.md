@@ -82,3 +82,14 @@ confuse scaffolding/schema validation with service execution.
 Reinstall official copies via pinned command in
 `docs/bootstrap/release-and-host.md`. Don't edit upstream skill copies;
 repo-specific overrides belong in local skills + this contract.
+
+## Application operations and UX (owner direction, 2026-09-21)
+
+Prioritize repeatability across devices. Keep application setup, start, stop,
+restart, and readiness checks in the root Makefile; do not add custom scripts
+just to launch pipelines. Backend owns pipeline REST lifecycle. Use
+`make demo-up`, `demo-stop`, `demo-restart`, and `demo-down`; document asset
+prerequisites and detect device groups/network addresses instead of hardcoding
+this host. Stop DLSPS with the application to release stuck instances.
+Keep model/device UI concise: status, model, device, host; distinguish configured
+placement from service-reported execution without verbose technical diagnostics.

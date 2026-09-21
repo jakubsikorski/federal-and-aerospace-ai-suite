@@ -554,6 +554,8 @@ class FakeDlsps:
                 if remaining == 1:
                     self.instances[instance] = "RUNNING"
             body = {"state": state}
+        elif url.endswith("/v3/paths/list"):
+            body = {"items": [{"name": f"cam{i}", "ready": True} for i in range(1, 4)]}
         else:  # MediaMTX session lists
             body = {"items": []}
         return types.SimpleNamespace(json=lambda: body, raise_for_status=lambda: None)
@@ -585,7 +587,7 @@ class FakeDlsps:
 
 def _pipeline_fixture(tmp):
     from app import pipelines
-    pipelines._swept.clear()
+    pipelines.shutdown.clear()
     pipelines._failures.clear()
     pipelines._retry_after.clear()
     pipelines._accepted_at.clear()
@@ -598,6 +600,45 @@ def _pipeline_fixture(tmp):
            "supervise_seconds": 10.0, "pipeline_start_timeout_seconds": 1.0,
            "pipeline_start_poll_seconds": 0.0, "feed_stale_seconds": 90.0}
     return pipelines, conn, cfg
+
+
+def test_shutdown_sweeps_orphans_and_preserves_unverified_ownership():
+    with tempfile.TemporaryDirectory() as tmp:
+        pipelines, conn, cfg = _pipeline_fixture(tmp)
+        client = FakeDlsps()
+        pipelines.reconcile(conn, cfg, client)
+        client.instances["orphan"] = "RECONNECTING"
+        pipelines.shutdown.set()
+        assert not pipelines.reconcile(conn, cfg, client)
+        pipelines.stop_owned(conn, cfg, client)
+        assert set(client.deleted) == {"i1", "orphan"}
+        assert conn.execute("SELECT dlsps_instance_id FROM streams").fetchone()[0] is None
+        conn.execute("UPDATE streams SET dlsps_instance_id = 'uncertain'")
+        conn.commit()
+        client.list_failures = 2
+        try:
+            pipelines.stop_owned(conn, cfg, client)
+            assert False, "unverified stop must fail"
+        except RuntimeError:
+            pass
+        assert conn.execute("SELECT dlsps_instance_id FROM streams").fetchone()[0] == "uncertain"
+        pipelines.shutdown.clear()
+        conn.close()
+
+
+def test_absent_source_is_not_started():
+    with tempfile.TemporaryDirectory() as tmp:
+        pipelines, conn, cfg = _pipeline_fixture(tmp)
+        client = FakeDlsps()
+        original = client.get
+        def get(url, timeout=None):
+            if url.endswith("/v3/paths/list"):
+                return types.SimpleNamespace(json=lambda: {"items": []}, raise_for_status=lambda: None)
+            return original(url, timeout)
+        client.get = get
+        assert not pipelines.reconcile(conn, cfg, client)
+        assert not client.starts
+        conn.close()
 
 
 def test_a_retired_pipeline_is_stopped_not_merely_abandoned():
@@ -793,6 +834,68 @@ def test_a_crop_that_never_finds_a_track_is_reaped():
         assert left == [fresh], (
             f"only the crop past the parking window may be reaped, kept {left}")
         ing.conn.close()
+
+
+def test_model_placement_separates_configuration_runtime_and_availability():
+    from app.adapters import Services
+    from app.placement import Placement
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "chatqna.yaml").write_text(json.dumps({
+            "model_settings": {"LLM_MODEL_ID": "Intel/neural-chat-7b-v3-3", "EMBEDDING_MODEL_ID": "embedding", "RERANKER_MODEL_ID": "reranker"},
+            "device_settings": {"LLM_DEVICE": "GPU", "EMBEDDING_DEVICE": "CPU", "RERANKER_DEVICE": "CPU"}}))
+        (root / "tts.yaml").write_text(json.dumps({"models": {"tts": {"name": "microsoft/speecht5_tts", "device": "GPU"}}}))
+        (root / "audio-analyzer.yaml").write_text(json.dumps({"models": {"asr": {"name": "whisper-medium", "device": "GPU", "hf_token": "never-expose-this"}}}))
+        (root / "dlsps.json").write_text(json.dumps({"config": {"pipelines": [{"name": "handheld_npu_detect",
+            "pipeline": "vah264dec ! gvadetect model=/models/INT8/yolo11s.xml device=NPU ! gvatrack name=tracking ! appsink"}]}}))
+        calls = []
+        replies = {"/model": {"llm_model": "Intel/neural-chat-7b-v3-3"},
+                   "/v1/model-info": {"model": "microsoft/speecht5_tts", "device": "GPU"},
+                   "/health": {"status": "ok"}, "/pipelines/status": [{"id": "owned", "state": "RUNNING"}]}
+        def handle(request):
+            calls.append(request.url.path)
+            body = replies[request.url.path]
+            if body is None:
+                raise httpx.ConnectError("offline", request=request)
+            return httpx.Response(200, json=body)
+        services = Services({name: "http://" + name for name in ("dlsps", "chatqna", "tts", "audio_analyzer")})
+        services.client.close()
+        services.client = httpx.Client(transport=httpx.MockTransport(handle))
+        placement = Placement(services, {}, tmp)
+        result = placement.snapshot({"cam1": "owned"}, {"cam1": {"ok": True}})
+        rows = {m["id"]: m for m in result["models"]}
+        assert rows["dlsps"]["status"] == "ready"
+        assert rows["dlsps"]["runtime_device"] is None
+        assert rows["dlsps"]["configured_device"] == "NPU"
+        assert rows["tts"]["runtime_device"] == "GPU"
+        assert rows["chatqna"]["runtime_device"] is None
+        assert rows["chatqna"]["stages"][0]["device"] == "CPU"
+        assert "never-expose-this" not in json.dumps(result)
+        rows["tts"]["runtime_device"] = "corrupt-client-copy"
+        again = placement.snapshot({"cam1": "unrelated"}, {"cam1": {"ok": True}})
+        assert len(calls) == 4, "probes must be cached across clients"
+        assert again["models"][0]["status"] == "unavailable", "unowned pipelines cannot establish readiness"
+        assert again["models"][3]["runtime_device"] == "GPU", "caller mutation must not corrupt the cache"
+        replies["/v1/model-info"] = None
+        replies["/model"] = {"llm_model": "unexpected-model"}
+        placement.expires = 0
+        result = placement.snapshot({}, {})
+        assert result["models"][1]["status"] == "mismatch"
+        assert result["models"][3]["status"] == "unavailable"
+        assert result["models"][3]["configured_device"] == "GPU"
+        assert result["models"][3]["runtime_device"] is None
+        replies["/pipelines/status"] = None
+        placement.expires = 0
+        result = placement.snapshot({"cam1": "owned"}, {"cam1": {"ok": True}})
+        assert result["models"][0]["status"] == "unknown", "failed control-plane probes cannot claim a live pipeline stopped"
+        assert "fresh observations" in result["models"][0]["note"]
+        (root / "audio-analyzer.yaml").unlink()
+        replies["/model"] = {"llm_model": {"invalid": True}}
+        placement.expires = 0
+        result = placement.snapshot({}, {})
+        assert result["models"][1]["status"] == "unknown"
+        assert result["models"][2]["configured_device"] is None
+        services.close()
 
 
 if __name__ == "__main__":

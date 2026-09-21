@@ -89,7 +89,9 @@ dependency order, launches `/cam1` and `/cam2`, waits for Backend MQTT feed
 health plus `/annotated1` and `/annotated2`, and leaves the stack running.
 If ignored assets live outside the checkout, pass their repository root
 explicitly, for example `make demo-up CAMERAS=2 ASSET_ROOT=/path/to/assets`.
-Use `make demo-status` to inspect it and `make demo-down` to stop it.
+Use `make demo-status` to inspect it, `make demo-stop` to stop Backend/DLSPS,
+`make demo-restart` to restart, or `make demo-down` to remove containers.
+See [device setup](../../docs/bootstrap/application-operations.md) for a new host.
 
 The publisher definitions remain in `compose/cameras.yaml`. Prefer this target
 over a hand-run `ffmpeg`: a manual publisher dies with its shell and silently

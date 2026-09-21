@@ -24,6 +24,7 @@ from . import history, pipelines, reset
 from .adapters import Probe, Services
 from .ingest import Ingest
 from .telemetry import Telemetry
+from .placement import Placement
 from .core import (
     connect,
     crop_store_busy,
@@ -123,6 +124,7 @@ async def lifespan(app: FastAPI):
     app.state.db = conn
     app.state.services = Services(cfg["services"], cfg["timeout_seconds"])
     app.state.telemetry = Telemetry(app.state.services, cfg["telemetry_host"])
+    app.state.placement = Placement(app.state.services, cfg)
     # Ingest before pipelines: a subscriber that starts second misses the first
     # observations of every camera it is supposed to be watching.
     app.state.ingest = Ingest(cfg, cfg["db_path"])
@@ -136,10 +138,8 @@ async def lifespan(app: FastAPI):
     # A clear interrupted by a crash is finished before the reconcile below,
     # so a half-cleared camera is never restarted with stale history (9.2).
     reset.resume_interrupted(conn, cfg, app.state.services.client, app.state.ingest)
-    # A pipeline whose RTSP source disappears goes to COMPLETED and stays there.
-    # reconcile() already knows how to replace anything not RUNNING, so the
-    # supervisor is just that same call on a timer - no separate restart path.
-    stopping = threading.Event()
+    # Use the same lifecycle for startup and periodic camera recovery.
+    stopping = pipelines.shutdown
 
     # Seeded from the startup reconcile, not left empty: the grace guard below
     # compares against this, and an unseeded camera counts as "started
@@ -180,17 +180,19 @@ async def lifespan(app: FastAPI):
     supervisor.start()
     app.state.telemetry.start()
     log.info("backend started with %d camera(s)", len(cfg["streams"]))
-    yield
-    stopping.set()
-    # A pass may already be waiting on the lifecycle lock. Let it finish before
-    # stop_owned(), otherwise it can restart cameras after shutdown deleted them.
-    supervisor.join()
-    pipelines.stop_owned(
-        conn, cfg, app.state.services.client, writer=app.state.ingest.write)
-    app.state.ingest.close()
-    app.state.telemetry.close()
-    app.state.services.close()
-    conn.close()
+    try:
+        yield
+    finally:
+        stopping.set()
+        supervisor.join()
+        try:
+            pipelines.stop_owned(
+                conn, cfg, app.state.services.client, writer=app.state.ingest.write)
+        finally:
+            app.state.ingest.close()
+            app.state.telemetry.close()
+            app.state.services.close()
+            conn.close()
 
 
 def create_app() -> FastAPI:
@@ -233,6 +235,14 @@ def create_app() -> FastAPI:
                 }
             ),
         )
+
+    @app.get("/api/models")
+    def models(request: Request):
+        with read_connection(request) as conn:
+            owned = {row["stream_id"]: row["dlsps_instance_id"] for row in conn.execute(
+                "SELECT stream_id, dlsps_instance_id FROM streams WHERE enabled = 1")}
+        return envelope(request.app.state.placement.snapshot(
+            owned, request.app.state.ingest.snapshot()))
 
     @app.get("/api/streams")
     def streams(request: Request):
@@ -322,7 +332,7 @@ def create_app() -> FastAPI:
                 "identity": "tracks_not_people",
             })
             with read_connection(request) as conn:
-                while not await request.is_disconnected():
+                while not pipelines.shutdown.is_set() and not await request.is_disconnected():
                     state = request.app.state
                     feeds = state.ingest.snapshot()
                     for stream in state.cfg["streams"]:

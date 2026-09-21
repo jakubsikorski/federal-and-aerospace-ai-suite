@@ -32,12 +32,7 @@ CROP_CONFIG_DIR = "/opt/handheld-crops-config"
 # on a timer, so a BACKOFF_WAIT instance left behind keeps reconnecting forever
 # (observed 2026-09-15: a retired camera's instance still polling a dead RTSP
 # path long after that camera was removed from the config).
-ACTIVE_STATES = frozenset({"RUNNING", "QUEUED", "BACKOFF_WAIT"})
-
-# Instances we have already asked DLSPS to delete. DLSPS keeps terminal
-# instances in /pipelines/status forever, so without this every supervisor pass
-# would re-issue a DELETE for every pipeline this deployment has ever run.
-_swept: set[str] = set()
+ACTIVE_STATES = frozenset({"RUNNING", "QUEUED", "BACKOFF_WAIT", "RECONNECTING"})
 
 # Consecutive failed starts per camera, and the earliest time we may try again.
 #
@@ -51,6 +46,7 @@ _failures: dict[str, int] = {}
 _retry_after: dict[str, float] = {}
 _accepted_at: dict[str, float] = {}
 _lifecycle_lock = threading.RLock()
+shutdown = threading.Event()
 MAX_BACKOFF_PASSES = 32
 START_TERMINAL_STATES = frozenset({"ERROR", "ABORTED", "COMPLETED"})
 
@@ -162,6 +158,8 @@ def wait_running(client: httpx.Client, base: str, instance_id: str,
     """Wait until asynchronous construction has consumed this request's parameters."""
     deadline = time.monotonic() + timeout_seconds
     while True:
+        if shutdown.is_set():
+            raise TimeoutError("application is stopping")
         reply = client.get(f"{base}/pipelines/{instance_id}/status", timeout=10.0)
         reply.raise_for_status()
         state = reply.json()["state"]
@@ -173,7 +171,7 @@ def wait_running(client: httpx.Client, base: str, instance_id: str,
             raise TimeoutError(
                 f"pipeline {instance_id} did not reach RUNNING within {timeout_seconds}s"
             )
-        time.sleep(poll_seconds)
+        shutdown.wait(poll_seconds)
 
 
 def stop(client: httpx.Client, base: str, instance_id: str) -> None:
@@ -211,6 +209,8 @@ def _reconcile(conn: sqlite3.Connection, cfg: dict, client: httpx.Client,
     leaves its pipelines running, and the instance IDs it had persisted are the
     only way to tell those apart from someone else's.
     """
+    if shutdown.is_set():
+        return set()
     base = cfg["services"]["dlsps"]
     rows = conn.execute(
         "SELECT * FROM streams WHERE enabled = 1 ORDER BY sort_order, stream_id"
@@ -258,13 +258,9 @@ def _reconcile(conn: sqlite3.Connection, cfg: dict, client: httpx.Client,
     # replaces is what let instances accumulate - the old instance is exactly
     # the thing holding the resources the replacement needs.
     for instance_id, state in live.items():
-        if instance_id in keep or state not in ACTIVE_STATES or instance_id in _swept:
-            # Terminal instances are left alone on purpose: DLSPS has already
-            # torn them down so they hold nothing, and DELETE on one raises a
-            # KeyError inside its own teardown thread. _swept keeps us from
-            # re-issuing a delete that DLSPS did not act on.
+        if instance_id in keep or state not in ACTIVE_STATES:
+            # Stock DLSPS retains terminal status records; do not delete again.
             continue
-        _swept.add(instance_id)
         log.warning("deleting pipeline %s (state %s) that no camera owns",
                     instance_id, state)
         try:
@@ -277,6 +273,8 @@ def _reconcile(conn: sqlite3.Connection, cfg: dict, client: httpx.Client,
         if include_kept and row["dlsps_instance_id"] in keep
     }
     for row in rows:
+        if shutdown.is_set():
+            break
         stream = dict(row)
         if row["dlsps_instance_id"] in keep:
             # Debug, not info: this is the steady state and fires for every
@@ -295,7 +293,20 @@ def _reconcile(conn: sqlite3.Connection, cfg: dict, client: httpx.Client,
             log.info("camera %s: crop store still owned, deferring start",
                      row["stream_id"])
             continue
+        # Do not create an endlessly reconnecting stock pipeline for an absent
+        # MediaMTX source. Retry when the publisher actually arrives.
+        try:
+            reply = client.get(f"{cfg['services']['mediamtx']}/v3/paths/list", timeout=5.0)
+            reply.raise_for_status()
+            if not any(p.get("name") == row["stream_id"] and p.get("ready")
+                       for p in reply.json().get("items", [])):
+                continue
+        except (httpx.HTTPError, ValueError) as exc:
+            log.warning("source readiness unavailable: %s", exc)
+            continue
         evict_stale_media(client, cfg["services"]["mediamtx"], stream)
+        if shutdown.is_set():
+            break
         # Counted before the attempt, and cleared only on a later supervisor
         # pass. A POST only allocates an ID; DLSPS constructs asynchronously.
         fails = _failures[row["stream_id"]] = _failures.get(row["stream_id"], 0) + 1
@@ -353,14 +364,37 @@ def stop_owned(conn: sqlite3.Connection, cfg: dict, client: httpx.Client,
 def _stop_owned(conn: sqlite3.Connection, cfg: dict, client: httpx.Client,
                 writer) -> None:
     base = cfg["services"]["dlsps"]
-    for row in conn.execute(
-        "SELECT stream_id, dlsps_instance_id FROM streams WHERE dlsps_instance_id IS NOT NULL"
-    ).fetchall():
+    rows = conn.execute("SELECT * FROM streams").fetchall()
+    owned = {row["dlsps_instance_id"] for row in rows if row["dlsps_instance_id"]}
+    try:
+        live = running_instances(client, base)
+        pending = {i for i, state in live.items() if state in ACTIVE_STATES}
+    except (httpx.HTTPError, ValueError):
+        log.exception("cannot enumerate DLSPS; attempting persisted pipeline IDs")
+        pending = owned
+    for instance_id in pending:
         try:
-            stop(client, base, row["dlsps_instance_id"])
-            log.info("stopped %s for camera %s", row["dlsps_instance_id"], row["stream_id"])
-        except httpx.HTTPError as exc:
-            log.error("could not stop %s: %s", row["dlsps_instance_id"], exc)
-    _write(conn, writer, lambda db: db.execute(
-        "UPDATE streams SET dlsps_instance_id = NULL"))
+            stop(client, base, instance_id)
+        except httpx.HTTPError:
+            log.exception("could not stop pipeline %s", instance_id)
+    # DELETE is asynchronous. Keep ownership if the service cannot confirm stop.
+    deadline = time.monotonic() + 15.0
+    while True:
+        try:
+            live = running_instances(client, base)
+        except (httpx.HTTPError, ValueError) as exc:
+            raise RuntimeError("DLSPS shutdown unverified; stop/restart DLSPS") from exc
+        remaining = {i for i, state in live.items() if state in ACTIVE_STATES}
+        if not remaining or time.monotonic() >= deadline:
+            break
+        time.sleep(0.5)
+    for row in rows:
+        instance_id = row["dlsps_instance_id"]
+        if instance_id not in remaining:
+            _write(conn, writer, lambda db, sid=row["stream_id"]: db.execute(
+                "UPDATE streams SET dlsps_instance_id = NULL WHERE stream_id = ?", (sid,)))
+            evict_stale_media(client, cfg["services"]["mediamtx"], dict(row))
     _accepted_at.clear()
+    if remaining:
+        raise RuntimeError(f"DLSPS pipelines still active: {sorted(remaining)}; stop/restart DLSPS")
+    log.info("DLSPS shutdown verified: no active pipelines")
