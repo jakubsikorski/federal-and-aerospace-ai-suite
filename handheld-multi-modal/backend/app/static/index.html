@@ -61,7 +61,7 @@
   #workspace {
     min-height: 0; padding: 10px; display: grid; gap: 10px;
     grid-template-columns: minmax(0, 58fr) minmax(410px, 42fr);
-    grid-template-rows: minmax(0, 60fr) minmax(220px, 40fr);
+    grid-template-rows: minmax(0, 52fr) minmax(240px, 48fr);
   }
   .panel {
     min-width: 0; min-height: 0; overflow: hidden;
@@ -93,26 +93,48 @@
     display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 8px;
     padding: 7px 0; border-bottom: 1px solid rgba(35, 65, 75, .55);
   }
+  #alert-list li.empty { display: block; }
   .empty { color: var(--muted); padding: 18px 12px; }
   #telemetry-grid {
     padding: 8px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
     grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 7px;
   }
-  .metric-group { min-width: 0; padding: 7px 9px; border-radius: 9px; background: #09181d; }
+  .metric-group { min-width: 0; overflow: hidden; padding: 7px 9px; border-radius: 9px; background: #09181d; }
   .metric-group h3 { margin: 0 0 4px; font-size: 11px; color: var(--accent2); text-transform: uppercase; }
   .metric-line { display: flex; justify-content: space-between; gap: 7px; font-size: 11px; white-space: nowrap; }
   .metric-line span:first-child { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
   .metric-line strong { font-variant-numeric: tabular-nums; }
   .metric-line.unavailable strong { color: var(--warn); }
-  .spark { width: 100%; height: 20px; margin-top: 3px; }
+  .metric-line.stale strong { color: var(--bad); }
+  .metric-note { display: block; margin: 2px 0 3px; color: var(--muted); font-size: 9px; line-height: 1.15; }
+  .diagnostics summary { color: var(--accent2); cursor: pointer; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+  .diagnostics[open] { overflow: auto; }
+  .spark-label {
+    margin-top: 4px; overflow: hidden; color: var(--muted); font-size: 9px;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .spark { display: block; width: 100%; height: 13px; margin-top: 1px; }
   .spark polyline { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
 
   #tracks-panel {
     grid-column: 2; grid-row: 1 / span 2; position: relative;
-    display: grid; grid-template-rows: auto auto auto minmax(0, 1fr);
+    display: grid; grid-template-rows: auto auto auto auto auto minmax(0, 1fr);
   }
   #track-title { text-transform: none; letter-spacing: 0; font-size: 15px; }
   .truth { color: var(--accent2); font-weight: 700; }
+  #track-controls {
+    display: grid; grid-template-columns: 1fr 1.2fr 1fr auto; gap: 6px;
+    padding: 7px 9px; border-bottom: 1px solid var(--line);
+  }
+  #track-controls label { color: var(--muted); font-size: 10px; }
+  #track-controls select, #pause-updates {
+    width: 100%; min-height: 30px; margin-top: 2px; padding: 4px 6px;
+    border: 1px solid var(--line); border-radius: 7px;
+    background: #0a171c; color: var(--text);
+  }
+  #pause-updates { width: auto; align-self: end; cursor: pointer; white-space: nowrap; }
+  #pause-updates[aria-pressed="true"] { border-color: var(--warn); color: var(--warn); }
+  #track-summary { padding: 7px 11px; border-bottom: 1px solid var(--line); color: #c3d8d6; }
   #presence {
     display: none; padding: 8px 12px; background: rgba(255, 209, 102, .12);
     border-bottom: 1px solid #6e5a25; color: #ffe8a3;
@@ -132,6 +154,7 @@
     border: 1px solid var(--line); border-radius: 10px; background: #0a171c; color: inherit;
   }
   .track-card:hover { border-color: #3e7477; }
+  .track-card[aria-current="true"] { border-color: var(--accent); }
   .crop { height: 104px; display: grid; place-items: center; overflow: hidden; background: #061013; color: var(--muted); }
   .crop img { width: 100%; height: 100%; object-fit: contain; }
   .crop.missing { padding: 12px; text-align: center; border-bottom: 1px dashed #354b50; }
@@ -220,6 +243,25 @@
         <h2 id="track-title">Object tracks, not people</h2>
         <small id="track-count">0 tracks</small>
       </div>
+      <div id="track-controls">
+        <label>View
+          <select id="track-mode">
+            <option value="current">Current</option>
+            <option value="history" selected>History</option>
+          </select>
+        </label>
+        <label>Show object type
+          <select id="class-filter"><option value="">All types</option></select>
+        </label>
+        <label>Evidence
+          <select id="image-filter">
+            <option value="all">All records</option>
+            <option value="image">Has image</option>
+          </select>
+        </label>
+        <button id="pause-updates" type="button" aria-pressed="false">Pause list updates</button>
+      </div>
+      <div id="track-summary" aria-live="polite">Loading track scope…</div>
       <div id="presence"></div>
       <div id="subtotals"></div>
       <div id="track-scroll"></div>
@@ -246,6 +288,8 @@ const $ = (id) => document.getElementById(id);
 const state = {
   streams: [], selected: null, current: {}, recent: {}, alerts: [],
   telemetry: null, history: new Map(), whep: null, events: null,
+  filter: {mode: "history", classLabel: "", hasImage: false},
+  paused: false, drawerTrack: null, selectedTrackKey: null,
 };
 
 async function api(path) {
@@ -348,7 +392,7 @@ async function attachWhep(stream) {
 function selectCamera(streamId, firstLoad = false) {
   state.selected = streamId;
   renderCameras();
-  renderTracks();
+  renderTracks(true);
   if (streamId === "all") {
     detachWhep();
     $("video-wrap").classList.add("inactive");
@@ -383,9 +427,15 @@ function selectedStreams() {
     : state.streams.filter((stream) => stream.stream_id === state.selected);
 }
 
+function filterTrack(track) {
+  return (!state.filter.classLabel || track.class_label === state.filter.classLabel)
+    && (!state.filter.hasImage || Boolean(track.snip_url));
+}
+
 function visibleTracks() {
+  const source = state.filter.mode === "current" ? state.current : state.recent;
   return selectedStreams().flatMap((stream) =>
-    ((state.recent[stream.stream_id] || {}).tracks || []).map((track) => ({
+    ((source[stream.stream_id] || {}).tracks || []).filter(filterTrack).map((track) => ({
       ...track, stream_id: stream.stream_id
     }))
   ).sort((a, b) => String(b.last_observed_utc).localeCompare(String(a.last_observed_utc)));
@@ -410,8 +460,9 @@ function renderPresence() {
 function renderSubtotals() {
   const box = $("subtotals");
   box.replaceChildren();
+  const source = state.filter.mode === "current" ? state.current : state.recent;
   for (const stream of selectedStreams()) {
-    const tracks = ((state.recent[stream.stream_id] || {}).tracks || []);
+    const tracks = ((source[stream.stream_id] || {}).tracks || []).filter(filterTrack);
     const counts = {};
     for (const track of tracks) counts[track.class_label] = (counts[track.class_label] || 0) + 1;
     const detail = Object.entries(counts).map(([label, count]) => count + " " + label).join(", ");
@@ -424,15 +475,60 @@ function renderSubtotals() {
   }
 }
 
+function titleCase(value) {
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
+}
+
+function renderClassFilter() {
+  const select = $("class-filter");
+  const labels = new Set();
+  for (const result of Object.values(state.recent)) {
+    Object.keys((result && result.class_counts) || {}).forEach((label) => labels.add(label));
+  }
+  for (const result of Object.values(state.current)) {
+    for (const track of (result && result.tracks) || []) labels.add(track.class_label);
+  }
+  const selected = state.filter.classLabel;
+  select.replaceChildren(new Option("All types", ""));
+  for (const label of [...labels].sort()) select.append(new Option(titleCase(label), label));
+  select.value = selected;
+}
+
+function renderTrackSummary(tracks) {
+  const camera = state.selected === "all" ? "All cameras" : cameraName(state.selected);
+  const type = state.filter.classLabel ? titleCase(state.filter.classLabel) + " tracks" : "All object types";
+  const image = state.filter.hasImage ? "with stored images" : "all evidence states";
+  if (state.filter.mode === "current") {
+    $("track-summary").textContent = type + " · " + camera + " · currently observed · "
+      + tracks.length + " fresh track" + (tracks.length === 1 ? "" : "s") + " · " + image
+      + ". Counts are tracks, not unique objects.";
+    return;
+  }
+  const results = selectedStreams().map((stream) => state.recent[stream.stream_id] || {});
+  const matched = results.reduce((sum, result) => sum + Number(result.matched_count || 0), 0);
+  const more = selectedStreams().filter((stream) =>
+    (state.recent[stream.stream_id] || {}).truncated).map((stream) => stream.display_name);
+  $("track-summary").textContent = type + " · " + camera + " · recent history in the current tracking "
+    + "session · " + tracks.length + " of " + matched + " matching records shown · " + image + ". "
+    + (more.length ? "More results available on " + more.join(", ") + ". " : "")
+    + "The same object may appear in more than one track.";
+}
+
 function missingCrop(box, reason) {
   box.className = "crop missing";
   box.replaceChildren(document.createTextNode(reason));
+}
+
+function trackKey(track) {
+  return track.stream_id + ":" + (track.track_id || "live:" + track.last_observed_utc);
 }
 
 function trackCard(track) {
   const card = document.createElement("button");
   card.type = "button";
   card.className = "track-card";
+  card.dataset.trackKey = trackKey(track);
+  card.setAttribute("aria-current", String(state.selectedTrackKey === card.dataset.trackKey));
   card.onclick = () => openDrawer(track);
   const crop = document.createElement("div");
   crop.className = "crop";
@@ -458,7 +554,7 @@ function trackCard(track) {
   title.textContent = track.class_label + " track " + (track.track_id ? "#" + track.track_id : "(live)");
   const meta = document.createElement("span");
   meta.textContent = shortTime(track.last_observed_utc) + " / "
-    + (track.closed_at ? "history" : "current") + " / "
+    + (state.filter.mode === "current" ? "currently observed" : "recent history") + " / "
     + (track.candidate_count || 0) + " crops";
   const camera = document.createElement("span");
   camera.className = "camera-name";
@@ -468,12 +564,17 @@ function trackCard(track) {
   return card;
 }
 
-function renderTracks() {
+function renderTracks(force = false) {
+  if (state.paused && !force) return;
   renderPresence();
   renderSubtotals();
   const tracks = visibleTracks();
+  renderTrackSummary(tracks);
   $("track-count").textContent = tracks.length + (tracks.length === 1 ? " track" : " tracks");
   const scroller = $("track-scroll");
+  const scrollTop = scroller.scrollTop;
+  const focused = document.activeElement && document.activeElement.closest(".track-card");
+  const focusedKey = focused && focused.dataset.trackKey;
   scroller.replaceChildren();
   if (!tracks.length) {
     const empty = document.createElement("div");
@@ -498,6 +599,12 @@ function renderTracks() {
     entries.forEach((track) => grid.append(trackCard(track)));
     section.append(heading, grid);
     scroller.append(section);
+  }
+  scroller.scrollTop = scrollTop;
+  if (focusedKey) {
+    const replacement = [...scroller.querySelectorAll(".track-card")]
+      .find((card) => card.dataset.trackKey === focusedKey);
+    if (replacement) replacement.focus({preventScroll: true});
   }
 }
 
@@ -525,11 +632,18 @@ function renderAlerts() {
 
 function rememberTelemetry(snapshot) {
   if (!snapshot || !Array.isArray(snapshot.metrics)) return;
+  const sampled = Date.parse(snapshot.sampled_utc);
+  const at = Number.isNaN(sampled) ? Date.now() : sampled;
+  const windowMs = Number(snapshot.history_seconds || 300) * 1000;
   for (const metric of snapshot.metrics) {
     if (typeof metric.value !== "number" || metric.state === "unavailable") continue;
     const values = state.history.get(metric.id) || [];
-    values.push(metric.value);
-    if (values.length > 300) values.splice(0, values.length - 300);
+    if (values.length && values[values.length - 1].at === at) {
+      values[values.length - 1].value = metric.value;
+    } else {
+      values.push({at, value: metric.value});
+    }
+    while (values.length && values[0].at < at - windowMs) values.shift();
     state.history.set(metric.id, values);
   }
 }
@@ -544,25 +658,75 @@ function formatted(metric) {
   return metric.value.toFixed(digits) + " " + metric.unit;
 }
 
-function sparkline(metricId) {
-  const values = state.history.get(metricId) || [];
+function sparkline(metric) {
+  const values = state.history.get(metric.id) || [];
+  const wrap = document.createElement("div");
+  const label = document.createElement("div");
+  label.className = "spark-label";
+  label.textContent = "Trend: " + metric.label + " · last "
+    + Number((state.telemetry && state.telemetry.history_seconds) || 300) + " s";
+  label.title = label.textContent;
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("class", "spark");
   svg.setAttribute("viewBox", "0 0 100 20");
   svg.setAttribute("preserveAspectRatio", "none");
-  if (values.length < 2) return svg;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = max - min || 1;
-  const points = values.map((value, index) => {
-    const x = index * 100 / (values.length - 1);
-    const y = 18 - ((value - min) / span) * 16;
+  wrap.append(label, svg);
+  if (values.length < 2) return wrap;
+  const numeric = values.map((entry) => entry.value);
+  const min = 0;
+  const max = metric.unit === "%" ? 100
+    : metric.unit === "°C" ? 120
+    : Math.max(1, Math.ceil(Math.max(...numeric) / 10) * 10);
+  const span = max - min;
+  const start = values[0].at;
+  const end = Math.max(start + 1000, values[values.length - 1].at);
+  const points = values.map((entry) => {
+    const x = (entry.at - start) * 100 / (end - start);
+    const y = 18 - Math.max(0, Math.min(1, (entry.value - min) / span)) * 16;
     return x.toFixed(2) + "," + y.toFixed(2);
   }).join(" ");
   const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
   line.setAttribute("points", points);
   svg.append(line);
-  return svg;
+  return wrap;
+}
+
+function appendMetric(card, metric, noteText = null) {
+  const line = document.createElement("div");
+  line.className = "metric-line " + metric.state;
+  line.title = metric.source;
+  const label = document.createElement("span");
+  label.textContent = metric.label.replace(/^GPU |^NPU /, "");
+  const value = document.createElement("strong");
+  value.textContent = formatted(metric);
+  line.append(label, value);
+  card.append(line);
+  if (noteText) {
+    const note = document.createElement("small");
+    note.className = "metric-note";
+    note.textContent = noteText;
+    card.append(note);
+  }
+}
+
+function renderMetricGroup(box, metrics, title, ids, primaryId) {
+  const available = ids.map((id) => metrics.get(id)).filter(Boolean);
+  if (!available.length) return;
+  const card = document.createElement("section");
+  card.className = "metric-group";
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  card.append(heading);
+  const visibleNotes = {
+    package_power_w: "Package domain, not wall power.",
+    npu_utilization_percent: "0% qualified; shared SoC temperature.",
+  };
+  available.forEach((metric) => appendMetric(card, metric, visibleNotes[metric.id]));
+  const primary = metrics.get(primaryId);
+  if (primary && typeof primary.value === "number" && primary.state !== "unavailable") {
+    card.append(sparkline(primary));
+  }
+  box.append(card);
 }
 
 function renderTelemetry() {
@@ -579,50 +743,86 @@ function renderTelemetry() {
     return;
   }
   const metrics = new Map(snapshot.metrics.map((metric) => [metric.id, metric]));
-  const groups = [
-    ["CPU", ["cpu_load_percent", "cpu_frequency_mhz", "cpu_temperature_c"]],
-    ["Memory", ["memory_used_percent", "memory_used_bytes", "memory_total_bytes"]],
-    ["GPU engines", [...metrics.keys()].filter((id) => id.startsWith("gpu_engine_"))],
-    ["GPU and package", ["gpu_frequency_mhz", "gpu_power_w", "package_power_w"]],
-    ["NPU", ["npu_utilization_percent", "npu_power_w", "npu_temperature_c"]],
-    ["NPU details", ["npu_frequency_raw", "npu_bandwidth_raw", "npu_memory_mib", "npu_tile_config"]],
+  const engines = [...metrics.values()]
+    .filter((metric) => metric.id.startsWith("gpu_engine_"))
+    .sort((a, b) => Number(b.value || 0) - Number(a.value || 0));
+  const primaryEngines = engines.slice(0, 2).map((metric) => metric.id);
+  renderMetricGroup(box, metrics, "CPU",
+    ["cpu_load_percent", "cpu_temperature_c"], "cpu_load_percent");
+  renderMetricGroup(box, metrics, "Memory",
+    ["memory_used_percent"], "memory_used_percent");
+  renderMetricGroup(box, metrics, "GPU engines", primaryEngines, primaryEngines[0]);
+  renderMetricGroup(box, metrics, "Power",
+    ["package_power_w", "npu_power_w"], null);
+  renderMetricGroup(box, metrics, "NPU",
+    ["npu_utilization_percent", "npu_temperature_c"],
+    null);
+
+  const diagnosticIds = [
+    "memory_used_bytes", "memory_total_bytes", "gpu_power_w", "npu_memory_mib",
+    "cpu_frequency_mhz",
+    "gpu_frequency_mhz", "npu_frequency_raw", "npu_bandwidth_raw", "npu_tile_config",
+    ...engines.slice(2).map((metric) => metric.id),
   ];
-  for (const [title, ids] of groups) {
-    const available = ids.map((id) => metrics.get(id)).filter(Boolean);
-    if (!available.length) continue;
-    const card = document.createElement("section");
-    card.className = "metric-group";
-    const heading = document.createElement("h3");
-    heading.textContent = title;
-    card.append(heading);
-    for (const metric of available) {
-      const line = document.createElement("div");
-      line.className = "metric-line " + metric.state;
-      line.title = metric.source + (metric.note ? " / " + metric.note : "");
-      const label = document.createElement("span");
-      label.textContent = metric.label.replace(/^GPU |^NPU /, "");
-      const value = document.createElement("strong");
-      value.textContent = formatted(metric);
-      line.append(label, value);
-      card.append(line);
-    }
-    const primary = available.find((metric) => typeof metric.value === "number");
-    if (primary) card.append(sparkline(primary.id));
-    box.append(card);
+  const diagnostics = diagnosticIds.map((id) => metrics.get(id)).filter(Boolean);
+  if (diagnostics.length) {
+    const details = document.createElement("details");
+    details.className = "metric-group diagnostics";
+    const summary = document.createElement("summary");
+    summary.textContent = "Diagnostics";
+    details.append(summary);
+    diagnostics.forEach((metric) => appendMetric(details, metric, metric.note));
+    box.append(details);
   }
 }
 
 function renderTelemetryState() {
   const status = $("telemetry-status");
-  status.textContent = !state.telemetry || state.telemetry.status === "ok"
-    ? "300 s browser window"
-    : state.telemetry.status + " / " + String(state.telemetry.reason || "unknown").replaceAll("_", " ");
+  if (!state.telemetry) {
+    status.textContent = "waiting for telemetry";
+    return;
+  }
+  const sampled = Date.parse(state.telemetry.sampled_utc);
+  const age = Number.isNaN(sampled) ? null : Math.max(0, Math.floor((Date.now() - sampled) / 1000));
+  const unavailable = (state.telemetry.metrics || [])
+    .filter((metric) => metric.state === "unavailable").map((metric) => metric.label);
+  const parts = [age == null ? "sample time unavailable" : "updated " + age + " s ago"];
+  if (state.telemetry.status !== "ok") {
+    parts.push(String(state.telemetry.reason || state.telemetry.status).replaceAll("_", " "));
+  }
+  if (unavailable.length) parts.push(unavailable.join(", ") + " unavailable");
+  status.textContent = parts.join(" · ");
+}
+
+function candidateState(candidate) {
+  if (!candidate) return "No stored crop";
+  const labels = {
+    expired: "Crop expired by retention policy",
+    missing: "Crop file missing",
+    superseded: "Crop belongs to cleared history",
+    pending: "Crop pending",
+  };
+  return labels[candidate.image_state] || "Crop " + candidate.image_state;
+}
+
+function renderDrawerDetail(candidate) {
+  const track = state.drawerTrack;
+  if (!track) return;
+  const capture = candidate && candidate.observed_at_utc
+    ? shortTime(candidate.observed_at_utc) : "unavailable";
+  $("drawer-detail").textContent = cameraName(track.stream_id)
+    + " / image captured " + capture
+    + " / track last seen " + shortTime(track.last_observed_utc)
+    + " / confidence "
+    + (track.peak_confidence == null ? "unavailable" : (track.peak_confidence * 100).toFixed(1) + "%")
+    + " / " + track.confidence_freshness + ". Static evidence for this track, not identity.";
 }
 
 function showLargeCandidate(candidate) {
   const box = $("large-crop");
+  renderDrawerDetail(candidate);
   if (!candidate || !candidate.image_url) {
-    missingCrop(box, candidate ? "Crop " + candidate.image_state : "No stored crop");
+    missingCrop(box, candidateState(candidate));
     return;
   }
   box.className = "crop";
@@ -635,13 +835,15 @@ function showLargeCandidate(candidate) {
 }
 
 async function openDrawer(track) {
+  state.drawerTrack = track;
+  state.selectedTrackKey = trackKey(track);
+  document.querySelectorAll(".track-card").forEach((card) => {
+    card.setAttribute("aria-current", String(card.dataset.trackKey === state.selectedTrackKey));
+  });
   $("drawer").classList.add("open");
   $("drawer-title").textContent = track.class_label + " track "
     + (track.track_id ? "#" + track.track_id : "(live)");
-  $("drawer-detail").textContent = cameraName(track.stream_id) + " / captured "
-    + shortTime(track.last_observed_utc) + " / confidence "
-    + (track.peak_confidence == null ? "unavailable" : (track.peak_confidence * 100).toFixed(1) + "%")
-    + " / " + track.confidence_freshness + ". Static evidence for this track, not identity.";
+  renderDrawerDetail(null);
   $("candidate-list").replaceChildren();
   missingCrop($("large-crop"), "Loading stored candidates...");
   if (!track.track_id) {
@@ -680,7 +882,34 @@ async function openDrawer(track) {
   }
 }
 
-$("close-drawer").onclick = () => $("drawer").classList.remove("open");
+$("close-drawer").onclick = () => {
+  $("drawer").classList.remove("open");
+  state.drawerTrack = null;
+  const selected = [...document.querySelectorAll(".track-card")]
+    .find((card) => card.dataset.trackKey === state.selectedTrackKey);
+  if (selected) selected.focus({preventScroll: true});
+};
+
+function historyQuery(includeLimit = true) {
+  const query = new URLSearchParams();
+  if (includeLimit) query.set("limit", "50");
+  if (state.filter.classLabel) query.set("classes", state.filter.classLabel);
+  if (state.filter.hasImage) query.set("has_image", "true");
+  return query.toString();
+}
+
+async function refreshTracks() {
+  const streams = state.streams;
+  const trackData = await Promise.all(streams.flatMap((stream) => [
+    api("/api/streams/" + stream.stream_id + "/current"),
+    api("/api/streams/" + stream.stream_id + "/tracks?" + historyQuery()),
+  ]));
+  streams.forEach((stream, index) => {
+    state.current[stream.stream_id] = trackData[index * 2];
+    state.recent[stream.stream_id] = trackData[index * 2 + 1];
+  });
+  renderClassFilter();
+}
 
 async function refreshState() {
   const streams = await api("/api/streams");
@@ -693,7 +922,7 @@ async function refreshState() {
     api("/api/metrics"),
     ...streams.flatMap((stream) => [
       api("/api/streams/" + stream.stream_id + "/current"),
-      api("/api/streams/" + stream.stream_id + "/tracks?limit=50"),
+      api("/api/streams/" + stream.stream_id + "/tracks?" + historyQuery()),
     ]),
   ]);
   state.alerts = alerts.alerts || [];
@@ -703,8 +932,9 @@ async function refreshState() {
     state.current[stream.stream_id] = trackData[index * 2];
     state.recent[stream.stream_id] = trackData[index * 2 + 1];
   });
+  renderClassFilter();
   renderCameras();
-  renderTracks();
+  renderTracks(true);
   renderAlerts();
   renderTelemetry();
   renderTelemetryState();
@@ -712,7 +942,8 @@ async function refreshState() {
 
 function connectEvents() {
   if (state.events) state.events.close();
-  const events = new EventSource("/api/stream");
+  const query = historyQuery(false);
+  const events = new EventSource("/api/stream" + (query ? "?" + query : ""));
   state.events = events;
   events.onopen = () => {
     $("connection").textContent = "live updates";
@@ -746,6 +977,29 @@ function connectEvents() {
     renderTelemetryState();
   });
 }
+
+$("track-mode").onchange = (event) => {
+  state.filter.mode = event.target.value;
+  renderTracks(true);
+};
+$("class-filter").onchange = async (event) => {
+  state.filter.classLabel = event.target.value;
+  await refreshTracks();
+  renderTracks(true);
+  connectEvents();
+};
+$("image-filter").onchange = async (event) => {
+  state.filter.hasImage = event.target.value === "image";
+  await refreshTracks();
+  renderTracks(true);
+  connectEvents();
+};
+$("pause-updates").onclick = () => {
+  state.paused = !state.paused;
+  $("pause-updates").setAttribute("aria-pressed", String(state.paused));
+  $("pause-updates").textContent = state.paused ? "Resume list updates" : "Pause list updates";
+  if (!state.paused) renderTracks(true);
+};
 
 refreshState().then(() => {
   selectCamera(state.selected, true);

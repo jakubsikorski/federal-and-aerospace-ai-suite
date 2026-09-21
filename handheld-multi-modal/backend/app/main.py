@@ -50,6 +50,14 @@ def read_connection(request: Request):
         conn.close()
 
 
+def track_classes(value: str | None) -> tuple[str, ...]:
+    labels = tuple(dict.fromkeys(
+        label.strip() for label in (value or "").split(",") if label.strip()))
+    if len(labels) > 20 or any(len(label) > 64 for label in labels):
+        raise HTTPException(status_code=422, detail="invalid class filter")
+    return labels
+
+
 def local_checks(cfg: dict, conn: sqlite3.Connection) -> list[Probe]:
     """Prerequisites Backend can verify without any network call."""
     checks: list[Probe] = []
@@ -261,12 +269,16 @@ def create_app() -> FastAPI:
             return envelope(history.current(conn, state.ingest, state.cfg, stream_id))
 
     @app.get("/api/streams/{stream_id}/tracks")
-    def tracks(request: Request, stream_id: str, limit: int = 50, since_utc: str | None = None):
+    def tracks(request: Request, stream_id: str, limit: int = 50,
+               since_utc: str | None = None, classes: str | None = None,
+               has_image: bool = False):
         _known(request, stream_id)
         state = request.app.state
         with read_connection(request) as conn:
             return envelope(history.recent(conn, state.ingest, state.cfg, stream_id,
-                                           limit=limit, since_utc=since_utc))
+                                           limit=limit, since_utc=since_utc,
+                                           class_labels=track_classes(classes),
+                                           has_image=has_image))
 
     @app.get("/api/tracks/{track_id}/candidates")
     def track_candidates(request: Request, track_id: int):
@@ -294,8 +306,11 @@ def create_app() -> FastAPI:
             return envelope({"alerts": history.alerts(conn, limit=limit)})
 
     @app.get("/api/stream")
-    async def live_stream(request: Request):
+    async def live_stream(request: Request, classes: str | None = None,
+                          has_image: bool = False):
         """Current-state SSE. Reconnect is a full resync; no replay ring exists."""
+        class_labels = track_classes(classes)
+
         async def events():
             yield "retry: 2000\n\n"
             yield _event("mode", {
@@ -316,7 +331,8 @@ def create_app() -> FastAPI:
                             "current": history.current(
                                 conn, state.ingest, state.cfg, stream_id),
                             "recent": history.recent(
-                                conn, state.ingest, state.cfg, stream_id, limit=50),
+                                conn, state.ingest, state.cfg, stream_id, limit=50,
+                                class_labels=class_labels, has_image=has_image),
                         })
                     yield _event("alert", {
                         "stream_id": None,

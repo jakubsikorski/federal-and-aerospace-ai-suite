@@ -336,6 +336,57 @@ def test_expired_candidates_are_reflected_not_deleted():
         ing.conn.close()
 
 
+def test_history_filters_before_limit_and_reports_scope():
+    """Furniture in the newest page must not hide older matching person tracks."""
+    from app import history
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ing = _ingest(tmp, cameras=("cam1",))
+        ing.conn.execute(
+            "UPDATE streams SET tracking_session_id='s1', history_generation='g1' "
+            "WHERE stream_id='cam1'")
+        base = time.time() - 3600
+        for index in range(60):
+            label = "chair" if index >= 5 else "person"
+            stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(base + index))
+            ing.conn.execute(
+                """INSERT INTO tracks (
+                     stream_id, tracking_session_id, history_generation, tracker_id,
+                     class_label, first_observed_utc, last_observed_utc,
+                     observation_count, confidence_freshness, closed_at)
+                   VALUES ('cam1', 's1', 'g1', ?, ?, ?, ?, 1, 'unverified', ?)""",
+                (index + 1, label, stamp, stamp, stamp))
+        person_id = ing.conn.execute(
+            "SELECT track_id FROM tracks WHERE class_label='person' ORDER BY track_id LIMIT 1"
+        ).fetchone()["track_id"]
+        ing.conn.execute(
+            """INSERT INTO candidates (
+                 candidate_id, track_id, stream_id, tracking_session_id,
+                 history_generation, tracker_id, observed_at_utc, storage_key,
+                 expires_at_utc, image_state)
+               VALUES ('person-crop', ?, 'cam1', 's1', 'g1', 1,
+                       '2026-01-01T00:00:00Z', 'person-crop.jpg',
+                       '2099-01-01T00:00:00Z', 'present')""",
+            (person_id,))
+        ing.conn.commit()
+
+        answer = history.recent(
+            ing.conn, ing, ing.cfg, "cam1", limit=3, class_labels=("person",))
+        assert len(answer["tracks"]) == 3, answer
+        assert {track["class_label"] for track in answer["tracks"]} == {"person"}, answer
+        assert answer["matched_count"] == 5 and answer["truncated"] is True, answer
+        assert answer["class_counts"] == {"chair": 55, "person": 5}, answer
+        assert answer["scope"] == {
+            "kind": "tracking_session", "since_utc": None, "limit": 3}, answer
+
+        with_image = history.recent(
+            ing.conn, ing, ing.cfg, "cam1", limit=3,
+            class_labels=("person",), has_image=True)
+        assert with_image["matched_count"] == 1, with_image
+        assert [track["track_id"] for track in with_image["tracks"]] == [person_id], with_image
+        ing.conn.close()
+
+
 def test_tracks_are_closed_on_timeout_and_startup():
     """Section 6.4: a restart must not present a dead process's tracks as live."""
     with tempfile.TemporaryDirectory() as tmp:
