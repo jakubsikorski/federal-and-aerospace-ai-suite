@@ -77,12 +77,25 @@ DLSPS, publish test video, download models, or run any final application:
 docker compose -f compose/bootstrap-compose.yaml up -d mediamtx mqtt
 ```
 
-Provide real demo/camera publishers with `make cameras CAMERAS=2` (see
-`compose/cameras.yaml`), which loops the bundled clip into `/cam1`…`/camN` as
-pinned, restarting containers. Prefer this over a hand-run `ffmpeg`: a manual
-publisher dies with its shell and silently breaks every later video test. Use
-the PTS-remuxed `data/dlsps/demo-video/classroom.ts`, not the `.avi` — the
-latter has broken PTS and costs ~132% extra CPU.
+Run the complete Phase 4 demo with one target:
+
+```sh
+make demo-up CAMERAS=2
+```
+
+This validates pinned local assets, creates TLS when absent, produces the
+PTS-remuxed `classroom.ts` when needed, starts the Phase 4 service subset in
+dependency order, launches `/cam1` and `/cam2`, waits for Backend MQTT feed
+health plus `/annotated1` and `/annotated2`, and leaves the stack running.
+If ignored assets live outside the checkout, pass their repository root
+explicitly, for example `make demo-up CAMERAS=2 ASSET_ROOT=/path/to/assets`.
+Use `make demo-status` to inspect it and `make demo-down` to stop it.
+
+The publisher definitions remain in `compose/cameras.yaml`. Prefer this target
+over a hand-run `ffmpeg`: a manual publisher dies with its shell and silently
+breaks every later video test. The target uses the PTS-remuxed
+`data/dlsps/demo-video/classroom.ts`, not the `.avi`; the latter has broken PTS
+and costs ~132% extra CPU.
 
 Then start the DLSPS pipeline pushing native WebRTC to `/annotatedN` (see
 `config/dlsps/npu/README.md`, or just start the Backend, which owns pipeline

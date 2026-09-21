@@ -93,7 +93,7 @@ services:
     depends_on: [mediamtx, mqtt]
     security_opt:
       - no-new-privileges:true
-    group_add: ["992"] # host renderD128/accel0 GID; confirm on target device
+    group_add: ["${RENDER_GID:-992}"] # resolved from renderD128 by phase4-demo.sh
     devices:
       - /dev/dri/renderD128:/dev/dri/renderD128
       - /dev/accel/accel0:/dev/accel/accel0
@@ -151,7 +151,7 @@ services:
     security_opt:
       - apparmor:unconfined
     group_add:
-      - "992"
+      - "${RENDER_GID:-992}"
     devices:
       - "/dev/dri:/dev/dri"
     environment:
@@ -219,7 +219,7 @@ services:
       - "127.0.0.1:8011:8010/tcp"
     group_add:
       - video
-      - "992"
+      - "${RENDER_GID:-992}"
     environment:
       HF_HOME: /app/audio_analyzer/.cache/huggingface
       HF_TOKEN: "${HF_TOKEN:-}"
@@ -257,7 +257,7 @@ services:
       - "127.0.0.1:8012:8011/tcp"
     group_add:
       - video
-      - "992"
+      - "${RENDER_GID:-992}"
     environment:
       HF_HOME: /app/text-to-speech/.cache/huggingface
       HF_TOKEN: "${HF_TOKEN:-}"
@@ -286,7 +286,7 @@ services:
     container_name: handheld-bootstrap-chatqna-core-gpu
     restart: "no"
     group_add:
-      - "992" # host renderD128 GID; confirm on target device
+      - "${RENDER_GID:-992}" # resolved from renderD128 by phase4-demo.sh
     devices:
       - /dev/dri/renderD128:/dev/dri/renderD128
     ports:

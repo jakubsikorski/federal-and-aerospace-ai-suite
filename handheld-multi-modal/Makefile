@@ -4,14 +4,15 @@
 COMPOSE := docker compose -f compose/bootstrap-compose.yaml
 CAMERAS_COMPOSE := docker compose -f compose/cameras.yaml
 # How many demo cameras to publish. Real cameras replace these entirely.
-CAMERAS ?= 1
+CAMERAS ?= 2
+ASSET_ROOT ?= $(CURDIR)
 TLS_DIR := config/tls
 # LAN address the tablet actually connects to. Both a DNS name and an IP SAN are
 # issued because tablets normally reach the device by address (design 15.4).
 HOST_NAME ?= $(shell hostname)
 HOST_IP   ?= $(shell ip -4 -o addr show scope global | awk 'NR==1{split($$4,a,"/"); print a[1]}')
 
-.PHONY: tls demo-up demo-down health cameras cameras-down test
+.PHONY: tls demo-up demo-down demo-status health cameras cameras-down test
 
 # Make's dependency rule is the idempotency: regenerating only happens if the
 # cert is missing. No script, no state file.
@@ -27,11 +28,14 @@ $(TLS_DIR)/server.crt:
 	@echo "Trust this certificate on the tablet (fingerprint below), then browse to https://$(HOST_IP):8443"
 	@openssl x509 -in $(TLS_DIR)/server.crt -noout -fingerprint -sha256
 
-demo-up: tls
-	$(COMPOSE) up -d --build
+demo-up:
+	ASSET_ROOT="$(abspath $(ASSET_ROOT))" CAMERAS="$(CAMERAS)" bash scripts/phase4-demo.sh up
 
-demo-down: cameras-down
-	$(COMPOSE) down
+demo-down:
+	ASSET_ROOT="$(abspath $(ASSET_ROOT))" CAMERAS="$(CAMERAS)" bash scripts/phase4-demo.sh down
+
+demo-status:
+	ASSET_ROOT="$(abspath $(ASSET_ROOT))" CAMERAS="$(CAMERAS)" bash scripts/phase4-demo.sh status
 
 # Demo feeds only (design section 22: removable demo assets).
 cameras:

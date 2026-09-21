@@ -1,0 +1,27 @@
+services:
+  dlsps:
+    volumes:
+      - ${ASSET_ROOT:?set ASSET_ROOT}/data/dlsps/yolo_export/yolo11s_int8_openvino_model:/home/pipeline-server/yolo_models/yolo11s/INT8:ro
+      - ${ASSET_ROOT:?set ASSET_ROOT}/data/dlsps/demo-video:/home/pipeline-server/resources/videos:ro
+      - ../scripts/dlsps:/opt/handheld-crops:ro
+      - ../config/dlsps/crops:/opt/handheld-crops-config:ro
+      - ${ASSET_ROOT:?set ASSET_ROOT}/data/dlsps/crops:/opt/handheld-crops-output
+  backend:
+    volumes:
+      - ../config/backend/backend.yaml:/config/backend.yaml:ro
+      - ${ASSET_ROOT:?set ASSET_ROOT}/data/backend:/data
+      - ${ASSET_ROOT:?set ASSET_ROOT}/data/dlsps/crops:/crops
+      - ../scripts/dlsps/crop_candidates.py:/opt/handheld-crops/crop_candidates.py:ro
+  proxy:
+    volumes:
+      - ../config/proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ${ASSET_ROOT:?set ASSET_ROOT}/config/tls:/etc/tls:ro
+  cam1:
+    volumes:
+      - ${ASSET_ROOT:?set ASSET_ROOT}/data/dlsps/demo-video:/video:ro
+  cam2:
+    volumes:
+      - ${ASSET_ROOT:?set ASSET_ROOT}/data/dlsps/demo-video:/video:ro
+  cam3:
+    volumes:
+      - ${ASSET_ROOT:?set ASSET_ROOT}/data/dlsps/demo-video:/video:ro
