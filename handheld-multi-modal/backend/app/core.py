@@ -24,6 +24,7 @@ DEFAULTS: dict[str, Any] = {
     "db_path": "/data/app.db",
     "crop_dir": "/crops",
     "crop_cleanup_script": "/opt/handheld-crops/crop_candidates.py",
+    "detector_metadata_path": "/config/detector/metadata.yaml",
     "max_streams": 3,  # required and measured, see config/backend/backend.yaml
     "streams": [
         {"stream_id": "cam1", "display_name": "Camera 1", "sort_order": 0, "enabled": True},
@@ -61,6 +62,9 @@ DEFAULTS: dict[str, Any] = {
     # Section 8.1: a crop that arrives before its observation waits this long for
     # a track to attach to. Bounded by age alone.
     "pending_association_seconds": 120.0,
+    "history_retention_seconds": 604800,
+    "assistant_chat_timeout_seconds": 60.0,
+    "assistant_queue_depth": 4,
     "rtsp_base": "rtsp://mediamtx:8554",
     "supervise_seconds": 15.0,
     "pipeline_start_timeout_seconds": 180.0,

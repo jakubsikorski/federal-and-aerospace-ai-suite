@@ -114,3 +114,21 @@ CREATE TABLE IF NOT EXISTS mission_brief (
   stale INTEGER NOT NULL DEFAULT 0);
 
 CREATE TABLE IF NOT EXISTS app_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+
+CREATE VIEW IF NOT EXISTS q_tracks AS
+SELECT t.track_id, t.stream_id, t.tracking_session_id, t.history_generation,
+       t.class_label, t.class_id, t.first_observed_utc, t.last_observed_utc,
+       t.observation_count, t.peak_confidence, t.confidence_freshness,
+       t.closed_at, t.closure_reason,
+       EXISTS (SELECT 1 FROM candidates c
+               WHERE c.track_id = t.track_id AND c.image_state = 'present') AS has_image,
+       (SELECT c.image_state FROM candidates c
+        WHERE c.track_id = t.track_id
+        ORDER BY (c.image_state = 'present') DESC, c.quality_score DESC LIMIT 1) AS snip_state,
+       (SELECT count(*) FROM candidates c
+        WHERE c.track_id = t.track_id AND c.image_state = 'present') AS candidate_count
+FROM tracks t;
+
+CREATE VIEW IF NOT EXISTS q_intervals AS
+SELECT track_id, stream_id, started_utc, ended_utc, observation_count
+FROM track_intervals;

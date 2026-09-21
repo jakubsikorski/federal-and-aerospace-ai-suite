@@ -19,6 +19,7 @@ entry points exit 2 and are **not implemented smoke tests**.
 | `bash scripts/smoke/11_tts.sh` | PASS (SpeechT5, owner-approved); needs `TTS_URL`; checks `/health`, `device=GPU` via `/v1/model-info`, and validates real synthesis returns a non-trivial WAV |
 | `bash scripts/smoke/12_alert_agent.sh` | **PASS**, executed against deployed `intel/alert-agent-service:2026.2.0-rc3` (`ALERT_URL=http://127.0.0.1:8010`). Confirms rule-based mode, one real `log_alert` dispatch, one real dedup skip. Webhook/snapshot/MQTT/SSE and `backend.speak_alert` verified/documented manually — see `config/alert-agent/README.md`, `docs/bootstrap/evidence/alert-agent/smoke.log` |
 | `bash scripts/smoke/13_metrics.sh` | **PASS**, executed against deployed `intel/metrics-manager:2026.1.0`. Script scope is CPU/RAM-only by design; real GPU/NPU/temperature data additionally confirmed manually (see `config/metrics/README.md`, `docs/bootstrap/evidence/metrics/smoke.log`) |
+| `make test-phase5` | **PASS.** Runs strict route/plan, interval-overlap, read-only budget, aggregate, completeness and stable-paging tests, then a live typed ten-minute query through stock Chat Q&A. Records independent malformed-plan safe failures rather than repairing model output; evidence under `docs/bootstrap/evidence/phase5/` |
 
 ## DLSPS / MediaMTX / MQTT (video pipeline)
 
@@ -105,6 +106,19 @@ lifecycle from Phase 2 onward).
 Media test must not be reported as DLSPS pass if synthetic publisher
 used instead. Software generation of synthetic demo is not hardware
 encode evidence.
+
+Phase 5 typed-history smoke requires that full demo and is one target:
+
+```sh
+make test-phase5
+```
+
+The selected camera is authoritative. Stock Chat Q&A emits only a strict
+route/plan; Backend owns read-only SQL. The smoke records up to five
+independent generations because the stock model sometimes emits malformed
+JSON, but it accepts no repaired/prefix JSON: malformed plans must return the
+explicit safe failure and at least one request must pass the complete live
+ten-minute contract.
 
 Optional `aiortc`-based WHEP client (H264-only fallback, see gotcha above)
 requires Python and pinned `aiortc`:

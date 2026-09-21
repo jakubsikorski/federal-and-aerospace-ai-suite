@@ -21,7 +21,7 @@ TLS_DIR := $(ASSET_ROOT)/config/tls
 ASSET_COMPOSE := docker compose -f compose/bootstrap-compose.yaml
 DEMO_COMPOSE := $(ASSET_COMPOSE) -f compose/cameras.yaml -f compose/phase4-demo.override.yaml -f "$(ASSET_ROOT)/config/devices.yaml"
 
-.PHONY: help tls model-downloader-up demo demo-assets demo-preflight demo-setup demo-up demo-stop demo-restart demo-down demo-status cameras cameras-down health test test-ui test-assets
+.PHONY: help tls model-downloader-up demo demo-assets demo-preflight demo-setup demo-up demo-stop demo-restart demo-down demo-status cameras cameras-down health test test-ui test-assets test-phase5
 help:
 	@echo 'make demo          Download assets, prepare device, start and check the entire stack'
 	@echo 'make demo-assets   Download YOLO11s INT8 through Model Download and the pinned video'
@@ -31,6 +31,7 @@ help:
 	@echo 'make demo-restart  Restart all services and verify application'
 	@echo 'make demo-down     Remove application containers; preserve assets and history'
 	@echo 'make demo-status  Show containers and camera feeds'
+	@echo 'make test-phase5  Verify typed history against the running full demo'
 	@echo 'Options: CAMERAS=1..3 ASSET_ROOT=/path/to/assets HOST_IP=<LAN IP>'
 
 # Only this small polling helper is shared between startup checks.
@@ -232,3 +233,6 @@ test-assets:
 
 test-ui:
 	python3 backend/test_ui.py
+
+test-phase5:
+	python3 scripts/smoke/14_phase5_history.py

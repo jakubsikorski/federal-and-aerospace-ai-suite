@@ -8,11 +8,13 @@ against the real pinned containers via /api/health and the Phase 2 evidence,
 which are the only assertions that actually mean anything for them.
 """
 import json
+import sqlite3
 import sys
 import tempfile
 import threading
 import time
 import types
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -896,6 +898,282 @@ def test_model_placement_separates_configuration_runtime_and_availability():
         assert result["models"][1]["status"] == "unknown"
         assert result["models"][2]["configured_device"] is None
         services.close()
+
+
+def _phase5_fixture(root: Path):
+    from app.assistant import _utc
+
+    db = root / "phase5.db"
+    conn = connect(str(db))
+    migrate(conn)
+    conn.execute(
+        """INSERT INTO streams (stream_id, display_name, source_uri, annotated_path,
+                                enabled, sort_order, tracking_session_id, history_generation)
+           VALUES ('cam1','Camera 1','rtsp://cam1','annotated1',1,0,'session-1','generation-1')"""
+    )
+    metadata = root / "metadata.yaml"
+    metadata.write_text("names:\n  0: person\n  2: car\n  28: suitcase\n")
+    cutoff = datetime.now(UTC).replace(microsecond=0)
+
+    def track(track_id, label, first_minutes, last_minutes, intervals):
+        conn.execute(
+            """INSERT INTO tracks (
+                 track_id, stream_id, tracking_session_id, history_generation, tracker_id,
+                 class_label, first_observed_utc, last_observed_utc, observation_count,
+                 peak_confidence, confidence_freshness, closed_at, closure_reason)
+               VALUES (?, 'cam1', 'session-1', 'generation-1', ?, ?, ?, ?, 5, .9,
+                       'tracker_metadata_unverified', ?, 'timeout')""",
+            (track_id, track_id, label, _utc(cutoff - timedelta(minutes=first_minutes)),
+             _utc(cutoff - timedelta(minutes=last_minutes)),
+             _utc(cutoff - timedelta(minutes=last_minutes) + timedelta(seconds=15))),
+        )
+        for index, (start_minutes, end_minutes) in enumerate(intervals):
+            conn.execute(
+                """INSERT INTO track_intervals (
+                     track_id, interval_index, stream_id, started_utc, ended_utc,
+                     observation_count) VALUES (?, ?, 'cam1', ?, ?, 5)""",
+                (track_id, index, _utc(cutoff - timedelta(minutes=start_minutes)),
+                 _utc(cutoff - timedelta(minutes=end_minutes))),
+            )
+
+    track(1, "person", 12, 8, [(12, 8)])
+    # Envelope overlaps the ten-minute window, but its only interval does not.
+    track(2, "car", 30, 0, [(30, 25)])
+    conn.executemany(
+        """INSERT INTO feed_health (
+             stream_id, started_utc, ended_utc, ok, reason, observed_frames,
+             untracked_detections) VALUES ('cam1', ?, ?, ?, ?, 1, 0)""",
+        [
+            (_utc(cutoff - timedelta(minutes=20)), _utc(cutoff - timedelta(minutes=5)),
+             1, None),
+            (_utc(cutoff - timedelta(minutes=5)), _utc(cutoff - timedelta(minutes=3)),
+             0, "no_signal"),
+            (_utc(cutoff - timedelta(minutes=3)), None, 1, None),
+        ],
+    )
+    conn.commit()
+    return conn, cutoff, metadata
+
+
+def test_phase5_plan_validation_retries_then_fails_safely():
+    from app.assistant import Assistant, InvalidPlan, SAFE_FAILURE, validate_route
+
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        conn, cutoff, metadata = _phase5_fixture(root)
+        labels = ("person", "car", "suitcase")
+        valid = {
+            "intent": "video_history",
+            "plan": {"window": {"kind": "relative", "minutes": 10},
+                     "classes": ["person"], "page": 0, "page_size": 20},
+        }
+        route = validate_route(
+            valid, labels=labels, known_streams=("cam1",), selected_stream="cam1",
+            cutoff=cutoff, retention=timedelta(days=7))
+        assert route.plan["streams"] == ["cam1"]
+        for streams in (None, ["cam1", "cam2"]):
+            widened = json.loads(json.dumps(valid))
+            widened["plan"]["streams"] = streams
+            try:
+                validate_route(
+                    widened, labels=labels, known_streams=("cam1", "cam2"),
+                    selected_stream="cam1", cutoff=cutoff, retention=timedelta(days=7))
+            except InvalidPlan:
+                pass
+            else:
+                raise AssertionError("model widened the operator-selected camera scope")
+        all_cameras = validate_route(
+            {**valid, "plan": {**valid["plan"], "streams": None}},
+            labels=labels, known_streams=("cam1", "cam2"), selected_stream=None,
+            cutoff=cutoff, retention=timedelta(days=7))
+        assert all_cameras.plan["streams"] == ["cam1", "cam2"]
+
+        invalid = [
+            {"intent": "video_history", "plan": {
+                "window": {"kind": "relative", "minutes": 10}, "extra": True}},
+            {"intent": "invented"},
+            {"intent": "video_history", "plan": {
+                "window": {"kind": "relative", "minutes": 10}, "classes": ["weapon"]}},
+            {"intent": "video_history", "plan": {
+                "window": {"kind": "relative", "minutes": 10}, "streams": ["cam9"]}},
+            {"intent": "video_history", "plan": {
+                "window": {"kind": "relative", "minutes": 0}}},
+            {"intent": "video_history", "plan": {
+                "window": {"kind": "relative", "minutes": 10}, "page_size": 51}},
+        ]
+        for payload in invalid:
+            try:
+                validate_route(
+                    payload, labels=labels, known_streams=("cam1",),
+                    selected_stream="cam1", cutoff=cutoff, retention=timedelta(days=7))
+            except InvalidPlan:
+                pass
+            else:
+                raise AssertionError(f"invalid plan accepted: {payload}")
+
+        calls = []
+        bad = json.dumps(invalid[0])
+        assistant = Assistant(
+            {"db_path": str(root / "phase5.db"),
+             "detector_metadata_path": str(metadata),
+             "history_retention_seconds": 604800},
+            None, generate=lambda prompt: calls.append(prompt) or bad)
+        answer = assistant.ask("What was detected in the last ten minutes?", "cam1")
+        assert answer["answer_text"] == SAFE_FAILURE
+        assert len(calls) == 2, "invalid plan gets one retry, never an unbounded loop"
+        conn.close()
+
+
+def test_phase5_interval_query_aggregates_completeness_and_safe_grounding():
+    from app.assistant import Assistant
+
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        conn, _, metadata = _phase5_fixture(root)
+        responses = iter([
+            json.dumps({
+                "intent": "video_history",
+                "plan": {"window": {"kind": "relative", "minutes": 10},
+                         "classes": None, "order": "last_observed_desc",
+                         "page": 0, "page_size": 20},
+            }),
+            "I saw 1 person moving around.",
+        ])
+        assistant = Assistant(
+            {"db_path": str(root / "phase5.db"),
+             "detector_metadata_path": str(metadata),
+             "history_retention_seconds": 604800},
+            None, generate=lambda _prompt: next(responses))
+        answer = assistant.ask("What did camera one detect in the last ten minutes?", "cam1")
+        query = answer["query"]
+        assert query["total"] == 1 and query["class_counts"] == {"person": 1}, query
+        assert [row["track_id"] for row in query["tracks"]] == [1], (
+            "track envelope must not create a match without an overlapping interval")
+        assert query["tracks"][0]["intervals"][0]["started_utc"] == query["window"]["started_utc"]
+        gap = next(w for w in query["warnings"] if w["reason"] == "no_signal")
+        assert gap["gap_seconds_total"] == 120.0, gap
+        assert answer["answer_text"].startswith("Found 1 person track")
+        assert any(w["code"] == "language_output_rejected" for w in query["warnings"])
+        conn.close()
+
+
+def test_phase5_readonly_budget_and_stable_paging():
+    from app.assistant import (
+        InvalidInput,
+        QueryBudgetExceeded,
+        decode_page_token,
+        encode_page_token,
+        guarded_query,
+        query_history,
+        readonly_connection,
+        validate_plan,
+    )
+
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        conn, cutoff, _ = _phase5_fixture(root)
+        from app.assistant import _utc
+        for track_id, last_seconds in ((3, 60), (4, 120)):
+            conn.execute(
+                """INSERT INTO tracks (
+                     track_id, stream_id, tracking_session_id, history_generation, tracker_id,
+                     class_label, first_observed_utc, last_observed_utc, observation_count,
+                     peak_confidence, confidence_freshness, closed_at, closure_reason)
+                   VALUES (?, 'cam1','session-1','generation-1',?,'person',?,?,1,.8,
+                           'tracker_metadata_unverified',?,'timeout')""",
+                (track_id, track_id, _utc(cutoff - timedelta(seconds=last_seconds + 10)),
+                 _utc(cutoff - timedelta(seconds=last_seconds)),
+                 _utc(cutoff - timedelta(seconds=last_seconds - 15))),
+            )
+            conn.execute(
+                """INSERT INTO track_intervals (
+                     track_id, interval_index, stream_id, started_utc, ended_utc,
+                     observation_count) VALUES (?,0,'cam1',?,?,1)""",
+                (track_id, _utc(cutoff - timedelta(seconds=last_seconds + 10)),
+                 _utc(cutoff - timedelta(seconds=last_seconds))),
+            )
+        conn.commit()
+        plan = validate_plan(
+            {"window": {"kind": "relative", "minutes": 10}, "classes": ["person"],
+             "streams": ["cam1"], "order": "last_observed_desc", "page": 0,
+             "page_size": 1},
+            labels=("person", "car", "suitcase"), known_streams=("cam1",),
+            selected_stream=None, cutoff=cutoff, retention=timedelta(days=7))
+        ceiling = 4
+        scope = {"cam1": {
+            "tracking_session_id": "session-1",
+            "history_generation": "generation-1",
+        }}
+        first = query_history(str(root / "phase5.db"), plan, cutoff, ceiling, scope)
+        assert first["tracks"][0]["track_id"] == 3 and first["total"] == 3
+        secret = b"phase5-test-secret"
+        token = encode_page_token(plan, cutoff, ceiling, scope, secret)
+        try:
+            decode_page_token(token[:-1] + ("A" if token[-1] != "A" else "B"), secret)
+        except InvalidInput:
+            pass
+        else:
+            raise AssertionError("tampered page token was accepted")
+
+        # A new, newer matching row arrives between pages. The token's cutoff and
+        # track-id ceiling keep page two tied to the original selection.
+        conn.execute(
+            """INSERT INTO tracks (
+                 track_id, stream_id, tracking_session_id, history_generation, tracker_id,
+                 class_label, first_observed_utc, last_observed_utc, observation_count,
+                 peak_confidence, confidence_freshness)
+               VALUES (5,'cam1','session-1','generation-1',5,'person',?,?,1,.9,
+                       'tracker_metadata_unverified')""",
+            (_utc(cutoff - timedelta(seconds=20)), _utc(cutoff - timedelta(seconds=10))),
+        )
+        conn.execute(
+            """INSERT INTO track_intervals (
+                 track_id, interval_index, stream_id, started_utc, ended_utc,
+                 observation_count) VALUES (5,0,'cam1',?,?,1)""",
+            (_utc(cutoff - timedelta(seconds=20)), _utc(cutoff - timedelta(seconds=10))),
+        )
+        conn.execute(
+            """UPDATE streams
+               SET tracking_session_id='session-2', history_generation='generation-2'
+               WHERE stream_id='cam1'"""
+        )
+        conn.commit()
+        body = decode_page_token(token, secret)
+        second_plan = validate_plan(
+            body["plan"], labels=("person", "car", "suitcase"),
+            known_streams=("cam1",), selected_stream=None, cutoff=cutoff,
+            retention=timedelta(days=7))
+        second = query_history(
+            str(root / "phase5.db"), second_plan, cutoff, body["track_id_ceiling"],
+            body["scope"])
+        assert second["tracks"][0]["track_id"] == 4, second["tracks"]
+
+        # Signed paging for a selected camera remains valid when other cameras
+        # are registered; page() reconstructs the original selected scope.
+        selected_page = validate_plan(
+            body["plan"], labels=("person", "car", "suitcase"),
+            known_streams=("cam1", "cam2"), selected_stream="cam1", cutoff=cutoff,
+            retention=timedelta(days=7))
+        assert selected_page["streams"] == ["cam1"]
+
+        with readonly_connection(str(root / "phase5.db")) as read:
+            try:
+                read.execute("DELETE FROM tracks")
+            except sqlite3.OperationalError:
+                pass
+            else:
+                raise AssertionError("read-only query connection accepted a write")
+            try:
+                guarded_query(read, """
+                    WITH RECURSIVE n(x) AS (
+                      VALUES(0) UNION ALL SELECT x + 1 FROM n WHERE x < 100000000
+                    ) SELECT sum(x) AS total FROM n
+                """)
+            except QueryBudgetExceeded:
+                pass
+            else:
+                raise AssertionError("expensive query was not interrupted")
+        conn.close()
 
 
 if __name__ == "__main__":

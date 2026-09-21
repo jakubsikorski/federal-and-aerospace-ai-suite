@@ -14,10 +14,10 @@
   * { box-sizing: border-box; }
   html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
   body { background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; }
-  button, select { font: inherit; color: inherit; }
+  button, select, input { font: inherit; color: inherit; }
   button, select, summary { touch-action: manipulation; }
   button { cursor: pointer; }
-  button:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
+  button:focus-visible, select:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
   button:disabled { opacity: .55; cursor: default; }
   [hidden] { display: none !important; }
   #app { height: 100dvh; display: grid; grid-template-rows: auto auto minmax(0, 1fr); }
@@ -133,6 +133,19 @@
   .candidate { min-height: 76px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 4px; overflow: hidden; }
   .candidate img { width: 100%; height: 58px; object-fit: contain; display: block; }
   #drawer-detail { color: var(--muted); font-size: 13px; }
+  #assistant-panel { position: absolute; inset: 0; z-index: 6; display: none;
+    grid-template-rows: 54px auto auto auto minmax(0, 1fr) auto; background: var(--panel); }
+  #assistant-panel.open { display: grid; }
+  #assistant-head { display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-bottom: 1px solid var(--line); }
+  #assistant-head button { min-width: 54px; min-height: 44px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+  #ask-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 10px 12px; }
+  #ask-text { min-width: 0; min-height: 44px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+  #ask-submit { min-height: 44px; padding: 6px 16px; border: 1px solid var(--accent); border-radius: 8px; background: #35485e; }
+  #assistant-answer { padding: 0 12px 8px; font-size: 15px; }
+  #assistant-scope, #assistant-warnings { padding: 0 12px 8px; color: var(--muted); font-size: 12px; }
+  #assistant-warnings { color: var(--warn); }
+  #assistant-results { min-height: 0; overflow: auto; padding: 10px; }
+  #assistant-next { min-height: 44px; margin: 0 12px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
   #orientation { display: none; position: fixed; inset: 0; z-index: 20; place-items: center; padding: 28px; text-align: center; background: var(--bg); font-size: 18px; }
   @media (orientation: portrait) { #orientation { display: grid; } }
   @media (max-width: 1100px) {
@@ -211,6 +224,7 @@
       <div class="panel-head">
         <h2 id="track-title">Evidence · object tracks</h2>
         <small id="track-count">0 tracks</small>
+        <button id="open-assistant" class="quiet-button" type="button">Ask history</button>
       </div>
       <div id="track-controls">
         <label>View
@@ -238,6 +252,25 @@
       </div>
       <div id="track-scroll"><div class="track-grid"></div></div>
 
+      <aside id="assistant-panel" aria-label="Typed history question">
+        <div id="assistant-head">
+          <button id="close-assistant" type="button" aria-label="Close history question">Back</button>
+          <strong>Ask camera history</strong>
+          <span class="micro">Typed input only</span>
+        </div>
+        <form id="ask-form">
+          <input id="ask-text" type="text" maxlength="500" required
+                 placeholder="What person tracks appeared in the last ten minutes?"
+                 aria-label="Camera history question">
+          <button id="ask-submit" type="submit">Ask</button>
+        </form>
+        <div id="assistant-answer" role="status">Ask about recorded object tracks.</div>
+        <div id="assistant-scope"></div>
+        <div id="assistant-warnings"></div>
+        <div id="assistant-results"><div class="track-grid"></div></div>
+        <button id="assistant-next" type="button" hidden>Next page</button>
+      </aside>
+
       <aside id="drawer" aria-label="Static track evidence">
         <div id="drawer-head">
           <button id="close-drawer" type="button" aria-label="Close evidence drawer">Back</button>
@@ -264,10 +297,24 @@ const state = {
   paused: false, held: false, pending: false, drawerTrack: null, selectedTrackKey: null,
   resource: "cpu", trackSignature: "", requestVersion: 0,
   models: [], selectedModel: null, modelsUnavailable: false,
+  assistantToken: null, assistantBusy: false,
 };
 
 async function api(path) {
   const response = await fetch(path, {headers: {accept: "application/json"}});
+  const body = await response.json();
+  if (!response.ok || body.error) {
+    throw new Error((body.error && body.error.message) || response.statusText);
+  }
+  return body.data;
+}
+
+async function postApi(path, payload) {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: {"content-type": "application/json", accept: "application/json"},
+    body: JSON.stringify(payload),
+  });
   const body = await response.json();
   if (!response.ok || body.error) {
     throw new Error((body.error && body.error.message) || response.statusText);
@@ -1018,6 +1065,82 @@ function closeDrawer() {
 }
 $("close-drawer").onclick = closeDrawer;
 $("drawer").addEventListener("keydown", (event) => { if (event.key === "Escape") closeDrawer(); });
+
+function openAssistant() {
+  $("assistant-panel").classList.add("open");
+  $("open-assistant").setAttribute("aria-expanded", "true");
+  $("ask-text").focus();
+}
+
+function closeAssistant() {
+  $("assistant-panel").classList.remove("open");
+  $("open-assistant").setAttribute("aria-expanded", "false");
+  $("open-assistant").focus();
+}
+
+function renderAssistant(answer) {
+  $("assistant-answer").textContent = answer.answer_text || "No answer returned.";
+  const query = answer.query;
+  const grid = $("assistant-results").firstElementChild;
+  grid.replaceChildren();
+  if (!query) {
+    $("assistant-scope").textContent = "";
+    $("assistant-warnings").textContent = (answer.errors || []).map((error) => error.message).join(" ");
+    state.assistantToken = null;
+    $("assistant-next").hidden = true;
+    return;
+  }
+  $("assistant-scope").textContent = `${query.tracks.length} of ${query.total} tracks · `
+    + `${query.window.started_utc} to ${query.window.ended_utc} · ${query.filters.streams.join(", ")}`;
+  $("assistant-warnings").textContent = (query.warnings || [])
+    .map((warning) => warning.message).join(" ");
+  for (const track of query.tracks) {
+    const card = trackCard(track);
+    card.onclick = () => { closeAssistant(); openDrawer(track); };
+    grid.append(card);
+  }
+  if (!query.tracks.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "No matching object tracks.";
+    grid.append(empty);
+  }
+  state.assistantToken = query.next_page_token;
+  $("assistant-next").hidden = !state.assistantToken;
+}
+
+async function submitAssistant(payload) {
+  if (state.assistantBusy) return;
+  state.assistantBusy = true;
+  $("ask-submit").disabled = true;
+  $("assistant-next").disabled = true;
+  $("assistant-answer").textContent = "Querying recorded tracks…";
+  try {
+    renderAssistant(await postApi("/api/ask", payload));
+  } catch (error) {
+    $("assistant-answer").textContent = "History query failed.";
+    $("assistant-warnings").textContent = error.message;
+  } finally {
+    state.assistantBusy = false;
+    $("ask-submit").disabled = false;
+    $("assistant-next").disabled = false;
+  }
+}
+
+$("open-assistant").onclick = openAssistant;
+$("open-assistant").setAttribute("aria-expanded", "false");
+$("close-assistant").onclick = closeAssistant;
+$("assistant-panel").addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeAssistant();
+});
+$("ask-form").onsubmit = (event) => {
+  event.preventDefault();
+  submitAssistant({
+    text: $("ask-text").value,
+    selected_stream: state.selected === "all" ? null : state.selected,
+  });
+};
+$("assistant-next").onclick = () => submitAssistant({page_token: state.assistantToken});
 
 function historyQuery(includeLimit = true) {
   const query = new URLSearchParams();

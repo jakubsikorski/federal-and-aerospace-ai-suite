@@ -344,6 +344,7 @@ services:
       - ../config/audio-analyzer/config.yaml:/config/model-placement/audio-analyzer.yaml:ro
       - ../config/tts/config.yaml:/config/model-placement/tts.yaml:ro
       - ../config/dlsps/${DLSPS_CONFIG_VARIANT:-npu}/config.json:/config/model-placement/dlsps.json:ro
+      - ../data/dlsps/yolo_export/yolo11s_int8_openvino_model/metadata.yaml:/config/detector/metadata.yaml:ro
       - ../data/backend:/data
       # Read-write, but only one call site writes: the stopped-producer cleanup
       # of design section 9.2, which must hold the producer's own exclusive lock.

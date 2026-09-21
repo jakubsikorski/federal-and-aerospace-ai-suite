@@ -83,6 +83,39 @@ class Fixture(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
+    def do_POST(self):
+        if self.path != '/api/ask':
+            self.send_error(404)
+            return
+        length = int(self.headers.get('content-length', '0'))
+        request = json.loads(self.rfile.read(length) or b'{}')
+        now = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+        page = 1 if request.get('page_token') else 0
+        track = dict(track_id=41 + page, stream_id='cam1', class_label='person',
+                     last_observed_utc=now, first_observed_utc=now, candidate_count=1,
+                     snip_url='/fixture.svg', snip_state='available', peak_confidence=.87,
+                     confidence_freshness='tracker_metadata_unverified', intervals=[])
+        data = {
+            'intent': 'video_history',
+            'answer_text': 'Found 2 person tracks in the requested window.',
+            'spoken_text': None,
+            'errors': [],
+            'query': {
+                'tracks': [track], 'total': 2, 'page': page, 'page_size': 1,
+                'truncated': page == 0, 'next_page_token': 'fixture-next' if page == 0 else None,
+                'window': {'started_utc': now, 'ended_utc': now},
+                'filters': {'streams': ['cam1'], 'classes': ['person'],
+                            'order': 'last_observed_desc'},
+                'warnings': [{'message': 'cam1 has a 12 second feed gap.'}],
+            },
+        }
+        payload = json.dumps({'data': data}).encode()
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -137,6 +170,23 @@ def main():
             time.sleep(.5)
             assert js('return document.fullscreenElement') is None
             assert js('return document.getElementById("video-fullscreen").getAttribute("aria-pressed")') == 'false'
+            result = async_js('''const done = arguments[arguments.length - 1];
+              window.eval(`(async () => {
+                openAssistant(); $("ask-text").value = "What was seen?";
+                await submitAssistant({text: $("ask-text").value, selected_stream: "cam1"});
+                const first = $("assistant-results").querySelector(".track-card");
+                const initial = $("assistant-panel").classList.contains("open")
+                  && $("assistant-answer").textContent.includes("2 person tracks")
+                  && $("assistant-warnings").textContent.includes("12 second feed gap")
+                  && first?.dataset.trackKey === "cam1:41"
+                  && !$("assistant-next").hidden;
+                await submitAssistant({page_token: state.assistantToken});
+                return initial && $("assistant-results").querySelector(".track-card")?.dataset.trackKey === "cam1:42"
+                  && $("assistant-next").hidden;
+              })()`).then(done);
+            ''')
+            assert result is True, result
+            click('#close-assistant')
             # Execute in the page's global scope, where its lexical state is defined.
             def check(script):
                 result = js('return window.eval(' + json.dumps(script) + ')')
@@ -342,7 +392,7 @@ def main():
                     check('$("workspace").classList.remove("resources-expanded"); renderChart(); true')
                     data = request('GET', base + '/screenshot')
                     (args.screenshots / f'fixture-{width}x{height}.png').write_bytes(base64.b64decode(data))
-            print('PASS: stable evidence/focus/scroll, pending updates, reconnect pause/All, diagnostics, chart axes/gaps, stale readings, drawer, native video fullscreen, model placement/detail/failure states, filter failure recovery, repeated crop retry, 200px minimum video at 1280/1024 widths and 714/682/600/540 heights')
+            print('PASS: typed history overlay/paging, stable evidence/focus/scroll, pending updates, reconnect pause/All, diagnostics, chart axes/gaps, stale readings, drawer, native video fullscreen, model placement/detail/failure states, filter failure recovery, repeated crop retry, 200px minimum video at 1280/1024 widths and 714/682/600/540 heights')
         finally:
             if session:
                 request('DELETE', f'/session/{session}')

@@ -1,7 +1,7 @@
 """Backend application: services, camera history, telemetry and live UI state.
 
-Phases 1-4 of docs/design/APPLICATION_DESIGN.md, Appendix A. Query routing,
-rule evaluation and speech remain later phases.
+Phases 1-5 of docs/design/APPLICATION_DESIGN.md, Appendix A. Rule evaluation
+and speech remain later phases.
 """
 from __future__ import annotations
 
@@ -21,6 +21,13 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import history, pipelines, reset
+from .assistant import (
+    Assistant,
+    InvalidInput,
+    QueueFull,
+    QueryBudgetExceeded,
+    ServiceUnavailable,
+)
 from .adapters import Probe, Services
 from .ingest import Ingest
 from .telemetry import Telemetry
@@ -125,6 +132,7 @@ async def lifespan(app: FastAPI):
     app.state.services = Services(cfg["services"], cfg["timeout_seconds"])
     app.state.telemetry = Telemetry(app.state.services, cfg["telemetry_host"])
     app.state.placement = Placement(app.state.services, cfg)
+    app.state.assistant = Assistant(cfg, app.state.services)
     # Ingest before pipelines: a subscriber that starts second misses the first
     # observations of every camera it is supposed to be watching.
     app.state.ingest = Ingest(cfg, cfg["db_path"])
@@ -317,6 +325,50 @@ def create_app() -> FastAPI:
     def alerts(request: Request, limit: int = 50):
         with read_connection(request) as conn:
             return envelope({"alerts": history.alerts(conn, limit=limit)})
+
+    @app.post("/api/ask")
+    async def ask(request: Request):
+        try:
+            body = await request.json()
+        except json.JSONDecodeError:
+            body = None
+        if not isinstance(body, dict) or set(body) - {"text", "selected_stream", "page_token"}:
+            return JSONResponse(status_code=422, content=envelope(error={
+                "code": "invalid_request", "message": "invalid assistant request",
+            }))
+        if ("text" in body) == ("page_token" in body):
+            return JSONResponse(status_code=422, content=envelope(error={
+                "code": "invalid_request",
+                "message": "provide exactly one of text or page_token",
+            }))
+        if "page_token" in body and "selected_stream" in body:
+            return JSONResponse(status_code=422, content=envelope(error={
+                "code": "invalid_request",
+                "message": "selected_stream is not valid with page_token",
+            }))
+        try:
+            if "page_token" in body:
+                answer = request.app.state.assistant.page(body["page_token"])
+            else:
+                answer = request.app.state.assistant.ask(
+                    body["text"], body.get("selected_stream"))
+        except InvalidInput as exc:
+            return JSONResponse(status_code=422, content=envelope(error={
+                "code": "invalid_request", "message": str(exc),
+            }))
+        except QueueFull as exc:
+            return JSONResponse(status_code=429, content=envelope(error={
+                "code": "assistant_busy", "message": str(exc),
+            }))
+        except QueryBudgetExceeded as exc:
+            return JSONResponse(status_code=503, content=envelope(error={
+                "code": "query_budget_exceeded", "message": str(exc),
+            }))
+        except ServiceUnavailable as exc:
+            return JSONResponse(status_code=503, content=envelope(error={
+                "code": "language_service_unavailable", "message": str(exc),
+            }))
+        return envelope(answer)
 
     @app.get("/api/stream")
     async def live_stream(request: Request, classes: str | None = None,

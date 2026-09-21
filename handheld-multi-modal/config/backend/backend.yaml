@@ -55,6 +55,10 @@ detections_topic: detections/live
 db_path: /data/app.db
 crop_dir: /crops
 crop_cleanup_script: /opt/handheld-crops/crop_candidates.py
+detector_metadata_path: /config/detector/metadata.yaml
+history_retention_seconds: 604800
+assistant_chat_timeout_seconds: 60
+assistant_queue_depth: 4
 # How often to replace pipelines that are no longer RUNNING.
 supervise_seconds: 15.0
 # DLSPS accepts POST before asynchronous pipeline construction consumes request
