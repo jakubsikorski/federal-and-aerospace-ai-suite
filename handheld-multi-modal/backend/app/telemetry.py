@@ -83,14 +83,20 @@ def normalize(payload: dict, host: str, *, now: float | None = None) -> dict:
         if (item is None or not isinstance(found, (int, float))
                 or isinstance(found, bool)):
             return
+        item_ms = _epoch_ms(item.get("timestamp"))
+        item_stale = not item_ms or now_ms - item_ms > STALE_AFTER_SECONDS * 1000
         metrics.append({
             "id": metric_id,
             "label": label,
             "value": None if metric_state == "unavailable" else found * scale,
             "unit": unit,
-            "state": metric_state or state,
+            "state": metric_state or ("stale" if item_stale else "ok"),
             "source": item.get("name"),
             "source_tags": item.get("tags") or {},
+            "sampled_utc": (
+                time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(item_ms / 1000))
+                if item_ms else None
+            ),
             "derived": derived,
             "note": note,
         })
@@ -144,7 +150,7 @@ def normalize(payload: dict, host: str, *, now: float | None = None) -> dict:
         ("npu_utilization", "npu_utilization_percent", "NPU utilization", "%",
          "zero is not proof of idle when busy-time support is absent"),
         ("npu_power", "npu_power_w", "NPU power", "W", None),
-        ("npu_temperature", "npu_temperature_c", "NPU/SoC temperature", "°C",
+        ("npu_temperature", "npu_temperature_c", "SoC temperature", "°C",
          "PMT SoC field; not necessarily an isolated NPU sensor"),
         ("npu_frequency", "npu_frequency_raw", "NPU frequency (raw)", "source units",
          "hardware scaling is not independently validated"),

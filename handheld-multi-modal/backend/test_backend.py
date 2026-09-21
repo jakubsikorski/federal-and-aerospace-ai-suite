@@ -202,8 +202,16 @@ def test_telemetry_preserves_zero_unavailable_and_real_units():
     assert metrics["package_power_w"]["value"] == 12.5
     assert metrics["npu_utilization_percent"]["value"] == 0
     assert metrics["npu_utilization_percent"]["state"] == "ok"
+    assert metrics["npu_utilization_percent"]["sampled_utc"] == "2033-05-18T03:33:20Z"
     assert metrics["npu_memory_mib"]["value"] is None
     assert metrics["npu_memory_mib"]["state"] == "unavailable"
+
+    payload["metrics"]["n"]["timestamp"] = 1_999_999_990_000_000_000
+    answer = normalize(payload, "handheld", now=2_000_000_000)
+    metrics = {item["id"]: item for item in answer["metrics"]}
+    assert answer["status"] == "ok", "one stale series must not stale the whole snapshot"
+    assert metrics["npu_utilization_percent"]["state"] == "stale"
+    assert metrics["cpu_load_percent"]["state"] == "ok"
 
     mismatch = normalize(payload, "other-host", now=2_000_000_000)
     assert mismatch["status"] == "host_mismatch"
@@ -652,6 +660,32 @@ def test_camera_starts_are_serialized_until_previous_is_running():
             assert frame["peer-id"] == f"annotated{index}"
             assert "annotated_whip" not in request["parameters"]
         conn.close()
+
+
+def test_pipeline_ownership_writes_use_the_single_writer():
+    """Pipeline lifecycle may read separately, but must not become writer two."""
+    with tempfile.TemporaryDirectory() as tmp:
+        pipelines, writer_conn, cfg = _pipeline_fixture(tmp)
+        db_path = writer_conn.execute("PRAGMA database_list").fetchone()["file"]
+        reader = connect(db_path)
+        reader.execute("PRAGMA query_only=ON")
+        writes = []
+
+        def write(operation):
+            writes.append(True)
+            result = operation(writer_conn)
+            writer_conn.commit()
+            return result
+
+        started = pipelines.reconcile(
+            reader, cfg, FakeDlsps(), writer=write)
+        assert started == {"cam1"}, started
+        assert writes, "pipeline ownership was not routed through the single writer"
+        row = writer_conn.execute(
+            "SELECT dlsps_instance_id FROM streams WHERE stream_id='cam1'").fetchone()
+        assert row["dlsps_instance_id"] == "i1", dict(row)
+        reader.close()
+        writer_conn.close()
 
 
 def test_concurrent_reconciles_share_one_start_sequence():

@@ -184,15 +184,27 @@ def stop(client: httpx.Client, base: str, instance_id: str) -> None:
     reply.raise_for_status()
 
 
+def _write(conn: sqlite3.Connection, writer, operation):
+    if writer is not None:
+        return writer(operation)
+    try:
+        result = operation(conn)
+        conn.commit()
+        return result
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def reconcile(conn: sqlite3.Connection, cfg: dict, client: httpx.Client,
               unhealthy: frozenset[str] = frozenset(),
-              include_kept: bool = False) -> set[str]:
+              include_kept: bool = False, writer=None) -> set[str]:
     with lifecycle_lock():
-        return _reconcile(conn, cfg, client, unhealthy, include_kept)
+        return _reconcile(conn, cfg, client, unhealthy, include_kept, writer)
 
 
 def _reconcile(conn: sqlite3.Connection, cfg: dict, client: httpx.Client,
-               unhealthy: frozenset[str], include_kept: bool) -> set[str]:
+               unhealthy: frozenset[str], include_kept: bool, writer) -> set[str]:
     """Make DLSPS match the enabled camera list, then record what we own.
 
     Called at startup, so it also covers crash recovery: a Backend that died
@@ -295,13 +307,14 @@ def _reconcile(conn: sqlite3.Connection, cfg: dict, client: httpx.Client,
             # A camera that will not start is a visible degraded state, not a
             # reason to refuse to serve the ones that did.
             log.error("camera %s failed to start: %s", row["stream_id"], exc)
-            conn.execute("UPDATE streams SET dlsps_instance_id = NULL WHERE stream_id = ?",
-                         (row["stream_id"],))
+            _write(conn, writer, lambda db: db.execute(
+                "UPDATE streams SET dlsps_instance_id = NULL WHERE stream_id = ?",
+                (row["stream_id"],)))
             continue
-        conn.execute("UPDATE streams SET dlsps_instance_id = ? WHERE stream_id = ?",
-                     (instance_id, row["stream_id"]))
+        _write(conn, writer, lambda db: db.execute(
+            "UPDATE streams SET dlsps_instance_id = ? WHERE stream_id = ?",
+            (instance_id, row["stream_id"])))
         _accepted_at[row["stream_id"]] = time.monotonic()
-        conn.commit()
         try:
             wait_running(
                 client,
@@ -313,12 +326,11 @@ def _reconcile(conn: sqlite3.Connection, cfg: dict, client: httpx.Client,
         except PipelineStartFailed as exc:
             log.error("camera %s pipeline %s failed during construction: %s",
                       row["stream_id"], instance_id, exc)
-            conn.execute(
+            _write(conn, writer, lambda db: db.execute(
                 "UPDATE streams SET dlsps_instance_id = NULL WHERE stream_id = ?",
                 (row["stream_id"],),
-            )
+            ))
             _accepted_at.pop(row["stream_id"], None)
-            conn.commit()
             break
         except (httpx.HTTPError, ValueError, KeyError, TimeoutError) as exc:
             # Keep the instance ID on status/timeout failures: it may still own
@@ -329,16 +341,17 @@ def _reconcile(conn: sqlite3.Connection, cfg: dict, client: httpx.Client,
             break
         log.info("camera %s started as %s", row["stream_id"], instance_id)
         started.add(row["stream_id"])
-    conn.commit()
     return started
 
 
-def stop_owned(conn: sqlite3.Connection, cfg: dict, client: httpx.Client) -> None:
+def stop_owned(conn: sqlite3.Connection, cfg: dict, client: httpx.Client,
+               writer=None) -> None:
     with lifecycle_lock():
-        _stop_owned(conn, cfg, client)
+        _stop_owned(conn, cfg, client, writer)
 
 
-def _stop_owned(conn: sqlite3.Connection, cfg: dict, client: httpx.Client) -> None:
+def _stop_owned(conn: sqlite3.Connection, cfg: dict, client: httpx.Client,
+                writer) -> None:
     base = cfg["services"]["dlsps"]
     for row in conn.execute(
         "SELECT stream_id, dlsps_instance_id FROM streams WHERE dlsps_instance_id IS NOT NULL"
@@ -348,6 +361,6 @@ def _stop_owned(conn: sqlite3.Connection, cfg: dict, client: httpx.Client) -> No
             log.info("stopped %s for camera %s", row["dlsps_instance_id"], row["stream_id"])
         except httpx.HTTPError as exc:
             log.error("could not stop %s: %s", row["dlsps_instance_id"], exc)
-    conn.execute("UPDATE streams SET dlsps_instance_id = NULL")
-    conn.commit()
+    _write(conn, writer, lambda db: db.execute(
+        "UPDATE streams SET dlsps_instance_id = NULL"))
     _accepted_at.clear()

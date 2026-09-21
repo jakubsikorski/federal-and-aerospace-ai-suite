@@ -61,7 +61,7 @@
   #workspace {
     min-height: 0; padding: 10px; display: grid; gap: 10px;
     grid-template-columns: minmax(0, 58fr) minmax(410px, 42fr);
-    grid-template-rows: minmax(0, 52fr) minmax(240px, 48fr);
+    grid-template-rows: minmax(0, 45fr) minmax(260px, 55fr);
   }
   .panel {
     min-width: 0; min-height: 0; overflow: hidden;
@@ -86,7 +86,7 @@
   }
   .live-label { color: var(--accent); }
 
-  #lower { grid-column: 1; grid-row: 2; display: grid; grid-template-columns: 36% 64%; gap: 10px; min-height: 0; }
+  #lower { grid-column: 1; grid-row: 2; display: grid; grid-template-columns: 32% 68%; gap: 10px; min-height: 0; }
   #alerts, #telemetry { display: grid; grid-template-rows: 45px minmax(0, 1fr); }
   #alert-list { margin: 0; padding: 7px 12px; list-style: none; }
   #alert-list li {
@@ -100,17 +100,17 @@
     grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 7px;
   }
   .metric-group { min-width: 0; overflow: hidden; padding: 7px 9px; border-radius: 9px; background: #09181d; }
-  .metric-group h3 { margin: 0 0 4px; font-size: 11px; color: var(--accent2); text-transform: uppercase; }
-  .metric-line { display: flex; justify-content: space-between; gap: 7px; font-size: 11px; white-space: nowrap; }
+  .metric-group h3 { margin: 0 0 4px; font-size: 12px; color: var(--accent2); text-transform: uppercase; }
+  .metric-line { display: flex; justify-content: space-between; gap: 7px; font-size: 12px; white-space: nowrap; }
   .metric-line span:first-child { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
   .metric-line strong { font-variant-numeric: tabular-nums; }
   .metric-line.unavailable strong { color: var(--warn); }
   .metric-line.stale strong { color: var(--bad); }
-  .metric-note { display: block; margin: 2px 0 3px; color: var(--muted); font-size: 9px; line-height: 1.15; }
-  .diagnostics summary { color: var(--accent2); cursor: pointer; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+  .metric-note { display: block; margin: 2px 0 3px; color: var(--muted); font-size: 10px; line-height: 1.15; }
+  .diagnostics summary { color: var(--accent2); cursor: pointer; font-size: 12px; font-weight: 700; text-transform: uppercase; }
   .diagnostics[open] { overflow: auto; }
   .spark-label {
-    margin-top: 4px; overflow: hidden; color: var(--muted); font-size: 9px;
+    margin-top: 4px; overflow: hidden; color: var(--muted); font-size: 10px;
     text-overflow: ellipsis; white-space: nowrap;
   }
   .spark { display: block; width: 100%; height: 13px; margin-top: 1px; }
@@ -632,11 +632,11 @@ function renderAlerts() {
 
 function rememberTelemetry(snapshot) {
   if (!snapshot || !Array.isArray(snapshot.metrics)) return;
-  const sampled = Date.parse(snapshot.sampled_utc);
-  const at = Number.isNaN(sampled) ? Date.now() : sampled;
   const windowMs = Number(snapshot.history_seconds || 300) * 1000;
   for (const metric of snapshot.metrics) {
     if (typeof metric.value !== "number" || metric.state === "unavailable") continue;
+    const sampled = Date.parse(metric.sampled_utc || snapshot.sampled_utc);
+    const at = Number.isNaN(sampled) ? Date.now() : sampled;
     const values = state.history.get(metric.id) || [];
     if (values.length && values[values.length - 1].at === at) {
       values[values.length - 1].value = metric.value;
@@ -660,34 +660,52 @@ function formatted(metric) {
 
 function sparkline(metric) {
   const values = state.history.get(metric.id) || [];
+  const windowSeconds = Number((state.telemetry && state.telemetry.history_seconds) || 300);
+  const windowMs = windowSeconds * 1000;
+  const end = Date.now();
+  const start = end - windowMs;
+  const visible = values.filter((entry) => entry.at >= start && entry.at <= end);
   const wrap = document.createElement("div");
   const label = document.createElement("div");
   label.className = "spark-label";
-  label.textContent = "Trend: " + metric.label + " · last "
-    + Number((state.telemetry && state.telemetry.history_seconds) || 300) + " s";
+  const collected = visible.length < 2 ? 0
+    : Math.min(windowSeconds, Math.round((visible[visible.length - 1].at - visible[0].at) / 1000));
+  label.textContent = "Trend: " + metric.label + " · " + collected + " s collected / "
+    + windowSeconds + " s";
   label.title = label.textContent;
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("class", "spark");
   svg.setAttribute("viewBox", "0 0 100 20");
   svg.setAttribute("preserveAspectRatio", "none");
+  svg.setAttribute("aria-label", metric.label + " over a fixed " + windowSeconds + " second window");
   wrap.append(label, svg);
-  if (values.length < 2) return wrap;
-  const numeric = values.map((entry) => entry.value);
+  if (visible.length < 2) return wrap;
+  const numeric = visible.map((entry) => entry.value);
   const min = 0;
   const max = metric.unit === "%" ? 100
     : metric.unit === "°C" ? 120
     : Math.max(1, Math.ceil(Math.max(...numeric) / 10) * 10);
   const span = max - min;
-  const start = values[0].at;
-  const end = Math.max(start + 1000, values[values.length - 1].at);
-  const points = values.map((entry) => {
-    const x = (entry.at - start) * 100 / (end - start);
-    const y = 18 - Math.max(0, Math.min(1, (entry.value - min) / span)) * 16;
-    return x.toFixed(2) + "," + y.toFixed(2);
-  }).join(" ");
-  const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-  line.setAttribute("points", points);
-  svg.append(line);
+  const segments = [];
+  let segment = [];
+  for (const entry of visible) {
+    if (segment.length && entry.at - segment[segment.length - 1].at > 3000) {
+      if (segment.length > 1) segments.push(segment);
+      segment = [];
+    }
+    segment.push(entry);
+  }
+  if (segment.length > 1) segments.push(segment);
+  for (const entries of segments) {
+    const points = entries.map((entry) => {
+      const x = (entry.at - start) * 100 / windowMs;
+      const y = 18 - Math.max(0, Math.min(1, (entry.value - min) / span)) * 16;
+      return x.toFixed(2) + "," + y.toFixed(2);
+    }).join(" ");
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    line.setAttribute("points", points);
+    svg.append(line);
+  }
   return wrap;
 }
 
@@ -719,7 +737,7 @@ function renderMetricGroup(box, metrics, title, ids, primaryId) {
   card.append(heading);
   const visibleNotes = {
     package_power_w: "Package domain, not wall power.",
-    npu_utilization_percent: "0% qualified; shared SoC temperature.",
+    npu_utilization_percent: "0% may hide load; SoC temp.",
   };
   available.forEach((metric) => appendMetric(card, metric, visibleNotes[metric.id]));
   const primary = metrics.get(primaryId);
@@ -743,9 +761,17 @@ function renderTelemetry() {
     return;
   }
   const metrics = new Map(snapshot.metrics.map((metric) => [metric.id, metric]));
+  const engineOrder = ["vcs", "vecs", "rcs", "ccs", "bcs"];
   const engines = [...metrics.values()]
     .filter((metric) => metric.id.startsWith("gpu_engine_"))
-    .sort((a, b) => Number(b.value || 0) - Number(a.value || 0));
+    .sort((a, b) => {
+      const aName = a.id.slice("gpu_engine_".length, -"_percent".length);
+      const bName = b.id.slice("gpu_engine_".length, -"_percent".length);
+      const aRank = engineOrder.indexOf(aName);
+      const bRank = engineOrder.indexOf(bName);
+      return (aRank < 0 ? engineOrder.length : aRank)
+        - (bRank < 0 ? engineOrder.length : bRank) || a.id.localeCompare(b.id);
+    });
   const primaryEngines = engines.slice(0, 2).map((metric) => metric.id);
   renderMetricGroup(box, metrics, "CPU",
     ["cpu_load_percent", "cpu_temperature_c"], "cpu_load_percent");
@@ -755,12 +781,12 @@ function renderTelemetry() {
   renderMetricGroup(box, metrics, "Power",
     ["package_power_w", "npu_power_w"], null);
   renderMetricGroup(box, metrics, "NPU",
-    ["npu_utilization_percent", "npu_temperature_c"],
-    null);
+    ["npu_utilization_percent"],
+    "npu_utilization_percent");
 
   const diagnosticIds = [
-    "memory_used_bytes", "memory_total_bytes", "gpu_power_w", "npu_memory_mib",
-    "cpu_frequency_mhz",
+    "memory_used_bytes", "memory_total_bytes", "gpu_power_w", "npu_temperature_c",
+    "npu_memory_mib", "cpu_frequency_mhz",
     "gpu_frequency_mhz", "npu_frequency_raw", "npu_bandwidth_raw", "npu_tile_config",
     ...engines.slice(2).map((metric) => metric.id),
   ];

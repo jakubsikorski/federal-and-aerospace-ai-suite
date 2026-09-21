@@ -148,7 +148,8 @@ async def lifespan(app: FastAPI):
     # longer than one supervisor interval.
     last_started: dict[str, float] = dict.fromkeys(
         pipelines.reconcile(
-            conn, cfg, app.state.services.client, include_kept=True
+            conn, cfg, app.state.services.client, include_kept=True,
+            writer=app.state.ingest.write,
         ),
         time.monotonic(),
     )
@@ -168,7 +169,8 @@ async def lifespan(app: FastAPI):
                 if unhealthy:
                     log.warning("replacing silent camera pipelines: %s", sorted(unhealthy))
                 for stream_id in pipelines.reconcile(
-                    conn, cfg, app.state.services.client, unhealthy
+                    conn, cfg, app.state.services.client, unhealthy,
+                    writer=app.state.ingest.write,
                 ):
                     last_started[stream_id] = time.monotonic()
             except Exception:
@@ -183,7 +185,8 @@ async def lifespan(app: FastAPI):
     # A pass may already be waiting on the lifecycle lock. Let it finish before
     # stop_owned(), otherwise it can restart cameras after shutdown deleted them.
     supervisor.join()
-    pipelines.stop_owned(conn, cfg, app.state.services.client)
+    pipelines.stop_owned(
+        conn, cfg, app.state.services.client, writer=app.state.ingest.write)
     app.state.ingest.close()
     app.state.telemetry.close()
     app.state.services.close()

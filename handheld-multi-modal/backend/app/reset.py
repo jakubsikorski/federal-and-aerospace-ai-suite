@@ -199,7 +199,8 @@ def _clear_camera(conn, cfg: dict, client, ingest, stream_id: str) -> dict:
     # just repaired, so it must retry now rather than serve out a penalty
     # earned by the state we just cleared.
     pipelines.forget_backoff(stream_id)
-    started = pipelines.reconcile(conn, cfg, client)
+    started = pipelines.reconcile(
+        conn, cfg, client, writer=ingest.write if ingest is not None else None)
     log.warning("camera %s history cleared, generation=%s, restarted=%s",
                 stream_id, generation, stream_id in started)
     return {"stream_id": stream_id, "cleared": True, "history_generation": generation,
