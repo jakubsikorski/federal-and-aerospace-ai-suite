@@ -60,8 +60,8 @@
 
   #workspace {
     min-height: 0; padding: 10px; display: grid; gap: 10px;
-    grid-template-columns: minmax(0, 58fr) minmax(410px, 42fr);
-    grid-template-rows: minmax(0, 45fr) minmax(260px, 55fr);
+    grid-template-columns: minmax(0, 60fr) minmax(410px, 40fr);
+    grid-template-rows: minmax(0, 52fr) minmax(0, 48fr);
   }
   .panel {
     min-width: 0; min-height: 0; overflow: hidden;
@@ -86,7 +86,7 @@
   }
   .live-label { color: var(--accent); }
 
-  #lower { grid-column: 1; grid-row: 2; display: grid; grid-template-columns: 32% 68%; gap: 10px; min-height: 0; }
+  #lower { grid-column: 1; grid-row: 2; display: grid; grid-template-columns: 28% 72%; gap: 10px; min-height: 0; }
   #alerts, #telemetry { display: grid; grid-template-rows: 45px minmax(0, 1fr); }
   #alert-list { margin: 0; padding: 7px 12px; list-style: none; }
   #alert-list li {
@@ -96,12 +96,12 @@
   #alert-list li.empty { display: block; }
   .empty { color: var(--muted); padding: 18px 12px; }
   #telemetry-grid {
-    padding: 8px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
-    grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 7px;
+    padding: 6px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 6px;
   }
-  .metric-group { min-width: 0; overflow: hidden; padding: 7px 9px; border-radius: 9px; background: #09181d; }
-  .metric-group h3 { margin: 0 0 4px; font-size: 12px; color: var(--accent2); text-transform: uppercase; }
-  .metric-line { display: flex; justify-content: space-between; gap: 7px; font-size: 12px; white-space: nowrap; }
+  .metric-group { min-width: 0; overflow: hidden; padding: 5px 8px; border-radius: 9px; background: #09181d; }
+  .metric-group h3 { margin: 0 0 2px; font-size: 12px; color: var(--accent2); text-transform: uppercase; }
+  .metric-line { display: flex; justify-content: space-between; gap: 7px; font-size: 12px; line-height: 1.2; white-space: nowrap; }
   .metric-line span:first-child { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
   .metric-line strong { font-variant-numeric: tabular-nums; }
   .metric-line.unavailable strong { color: var(--warn); }
@@ -110,10 +110,13 @@
   .diagnostics summary { color: var(--accent2); cursor: pointer; font-size: 12px; font-weight: 700; text-transform: uppercase; }
   .diagnostics[open] { overflow: auto; }
   .spark-label {
-    margin-top: 4px; overflow: hidden; color: var(--muted); font-size: 10px;
+    margin-top: 2px; overflow: hidden; color: var(--muted); font-size: 10px; line-height: 1.1;
     text-overflow: ellipsis; white-space: nowrap;
   }
-  .spark { display: block; width: 100%; height: 13px; margin-top: 1px; }
+  .spark {
+    display: block; width: 100%; height: 18px; margin-top: 1px; border-radius: 4px;
+    background: linear-gradient(to top, rgba(49, 91, 103, .25) 1px, transparent 1px);
+  }
   .spark polyline { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
 
   #tracks-panel {
@@ -670,9 +673,9 @@ function sparkline(metric) {
   label.className = "spark-label";
   const collected = visible.length < 2 ? 0
     : Math.min(windowSeconds, Math.round((visible[visible.length - 1].at - visible[0].at) / 1000));
-  label.textContent = "Trend: " + metric.label + " · " + collected + " s collected / "
+  label.textContent = metric.label + " · " + collected + " / " + windowSeconds + " s";
+  label.title = "Trend: " + metric.label + " · " + collected + " s collected / "
     + windowSeconds + " s";
-  label.title = label.textContent;
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("class", "spark");
   svg.setAttribute("viewBox", "0 0 100 20");
@@ -712,7 +715,7 @@ function sparkline(metric) {
 function appendMetric(card, metric, noteText = null) {
   const line = document.createElement("div");
   line.className = "metric-line " + metric.state;
-  line.title = metric.source;
+  line.title = [metric.source, noteText || metric.note].filter(Boolean).join(" · ");
   const label = document.createElement("span");
   label.textContent = metric.label.replace(/^GPU |^NPU /, "");
   const value = document.createElement("strong");
@@ -735,11 +738,7 @@ function renderMetricGroup(box, metrics, title, ids, primaryId) {
   const heading = document.createElement("h3");
   heading.textContent = title;
   card.append(heading);
-  const visibleNotes = {
-    package_power_w: "Package domain, not wall power.",
-    npu_utilization_percent: "0% may hide load; SoC temp.",
-  };
-  available.forEach((metric) => appendMetric(card, metric, visibleNotes[metric.id]));
+  available.forEach((metric) => appendMetric(card, metric));
   const primary = metrics.get(primaryId);
   if (primary && typeof primary.value === "number" && primary.state !== "unavailable") {
     card.append(sparkline(primary));
