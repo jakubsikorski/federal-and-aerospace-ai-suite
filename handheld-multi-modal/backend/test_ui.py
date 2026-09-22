@@ -44,6 +44,18 @@ class Fixture(BaseHTTPRequestHandler):
         else:
             if self.path == '/api/streams':
                 data = [dict(stream_id=f'cam{i}', display_name=f'Camera {i}', feed={'ok': i != 3}, whep_path='/whep') for i in range(1, 4)]
+            elif self.path == '/api/mission/documents':
+                data = {
+                    'mode': 'ready', 'detail': 'Mission corpus is reconciled.', 'corpus_version': 3,
+                    'sources': [dict(filename='mission.pdf', status='ready', in_corpus=True)],
+                    'answer_citations_available': False,
+                    'citation_notice': 'Source list is an inventory, not an answer citation.',
+                }
+            elif self.path == '/api/mission/brief':
+                data = {
+                    'corpus_version': 3, 'stale': False, 'status': 'ready',
+                    'brief': {'objective': 'Secure the north entrance.', 'times': 'Not specified'},
+                }
             elif self.path == '/api/history/options':
                 data = {'classes': ['person', 'chair', 'car'], 'availability': [
                     {'stream_id': 'cam1', 'started_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time()-86400)), 'ended_utc': now},
@@ -88,6 +100,17 @@ class Fixture(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def do_POST(self):
+        if self.path == '/api/mission/ask':
+            payload = json.dumps({'data': {
+                'intent': 'mission_knowledge', 'answer_text': 'Mission answer.',
+                'answer_citations_available': False,
+            }}).encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return
         if self.path != '/api/ask':
             self.send_error(404)
             return
@@ -164,6 +187,10 @@ def main():
                 return request('POST', base + '/execute/sync', {'script': script, 'args': []})
             def async_js(script):
                 return request('POST', base + '/execute/async', {'script': script, 'args': []})
+            def click(selector):
+                element = request('POST', base + '/element', {'using': 'css selector', 'value': selector})
+                key = element['element-6066-11e4-a52e-4f735466cecf']
+                request('POST', base + '/element/' + key + '/click', {})
             request('POST', base + '/window/rect', {'width': 1280, 'height': 800})
             request('POST', base + '/url', {'url': f'http://127.0.0.1:{server.server_port}/'})
             for _ in range(100):
@@ -171,10 +198,27 @@ def main():
                     break
                 time.sleep(.1)
             assert js("return document.querySelectorAll('.track-card').length") == 40
-            def click(selector):
-                element = request('POST', base + '/element', {'using': 'css selector', 'value': selector})
-                key = element['element-6066-11e4-a52e-4f735466cecf']
-                request('POST', base + '/element/' + key + '/click', {})
+            click('#mission-toggle')
+            for _ in range(100):
+                if js("return document.getElementById('mission-status').textContent.includes('Ready')"):
+                    break
+                time.sleep(.05)
+            assert js("return !document.getElementById('mission-panel').hidden")
+            assert js("return document.getElementById('mission-sources').textContent.includes('mission.pdf')")
+            assert js("return document.getElementById('mission-brief').textContent.includes('Secure the north entrance.')")
+            assert js("return document.getElementById('mission-citation-note').textContent.includes('inventory')")
+            mission_error_check = '''(() => {
+              state.mission.brief = {
+                corpus_version: 3, stale: true, status: "ready",
+                brief: null, error: "Mission text generation is unavailable."
+              };
+              renderMission();
+              return $("mission-answer").textContent.includes("Mission Brief failed")
+                && $("mission-answer").textContent.includes("Retry Brief / Re-ingest")
+                && $("mission-reingest").textContent === "Retry Brief / Re-ingest";
+            })()'''
+            assert js('return window.eval(' + json.dumps(mission_error_check) + ')')
+            click('#close-mission')
             click('#video-fullscreen')
             time.sleep(.5)
             assert js('return document.fullscreenElement?.id') == 'video-wrap'

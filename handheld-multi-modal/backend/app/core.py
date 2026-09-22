@@ -22,6 +22,9 @@ request_id_var: ContextVar[str] = ContextVar("request_id", default="-")
 
 DEFAULTS: dict[str, Any] = {
     "db_path": "/data/app.db",
+    "mission_sources_dir": "/data/mission_sources",
+    "mission_ingest_timeout_seconds": 60.0,
+    "mission_ingest_poll_seconds": 0.25,
     "crop_dir": "/crops",
     "crop_cleanup_script": "/opt/handheld-crops/crop_candidates.py",
     "detector_metadata_path": "/config/detector/metadata.yaml",

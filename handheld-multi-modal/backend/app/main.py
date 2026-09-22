@@ -16,7 +16,7 @@ import time
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -30,6 +30,12 @@ from .assistant import (
 )
 from .adapters import Probe, Services
 from .ingest import Ingest
+from .mission import (
+    MAX_UPLOAD_BYTES,
+    MissionService,
+    MissionUnavailable,
+    MissionValidationError,
+)
 from .telemetry import Telemetry
 from .placement import Placement
 from .core import (
@@ -133,6 +139,9 @@ async def lifespan(app: FastAPI):
     app.state.telemetry = Telemetry(app.state.services, cfg["telemetry_host"])
     app.state.placement = Placement(app.state.services, cfg)
     app.state.assistant = Assistant(cfg, app.state.services)
+    app.state.mission = MissionService(
+        cfg, app.state.services, generate=app.state.assistant.complete)
+    app.state.assistant.mission = app.state.mission
     # Ingest before pipelines: a subscriber that starts second misses the first
     # observations of every camera it is supposed to be watching.
     app.state.ingest = Ingest(cfg, cfg["db_path"])
@@ -187,6 +196,9 @@ async def lifespan(app: FastAPI):
     supervisor = threading.Thread(target=supervise, name="pipeline-supervisor", daemon=True)
     supervisor.start()
     app.state.telemetry.start()
+    # Stock Chat Q&A keeps the vector store only in memory. Reconciliation is
+    # deliberately asynchronous so its degraded state remains visible to the UI.
+    app.state.mission.start()
     log.info("backend started with %d camera(s)", len(cfg["streams"]))
     try:
         yield
@@ -329,6 +341,94 @@ def create_app() -> FastAPI:
     @app.get("/api/history/options")
     def history_options(request: Request):
         return envelope(request.app.state.assistant.options())
+
+    # -- mission knowledge (Phase 6) -----------------------------------------
+    @app.get("/api/mission/documents")
+    def mission_documents(request: Request):
+        return envelope(request.app.state.mission.status())
+
+    @app.post("/api/mission/documents", status_code=201)
+    async def upload_mission_document(request: Request,
+                                      files: list[UploadFile] = File(...)):
+        if len(files) != 1:
+            return JSONResponse(status_code=422, content=envelope(error={
+                "code": "invalid_upload",
+                "message": "Upload exactly one PDF or DOCX mission document at a time.",
+            }))
+        document = files[0]
+        try:
+            # Read one extra byte so the service never retains an oversized upload.
+            content = await document.read(MAX_UPLOAD_BYTES + 1)
+            result = await asyncio.to_thread(
+                request.app.state.mission.upload, document.filename, content)
+        except MissionValidationError as exc:
+            return JSONResponse(status_code=422, content=envelope(error={
+                "code": "invalid_upload", "message": str(exc),
+            }))
+        except MissionUnavailable as exc:
+            return JSONResponse(status_code=503, content=envelope(error={
+                "code": "mission_unavailable", "message": str(exc),
+            }))
+        finally:
+            await document.close()
+        return envelope(result)
+
+    @app.delete("/api/mission/documents")
+    async def delete_mission_document(request: Request, document: str | None = None,
+                                      confirm: str = "", delete_all: bool = False):
+        try:
+            if delete_all:
+                result = await asyncio.to_thread(request.app.state.mission.clear, confirm)
+            elif document is not None:
+                result = await asyncio.to_thread(
+                    request.app.state.mission.delete, document, confirm)
+            else:
+                raise MissionValidationError("Specify one document or delete_all=true.")
+        except MissionValidationError as exc:
+            return JSONResponse(status_code=422, content=envelope(error={
+                "code": "invalid_mission_mutation", "message": str(exc),
+            }))
+        except MissionUnavailable as exc:
+            return JSONResponse(status_code=503, content=envelope(error={
+                "code": "mission_unavailable", "message": str(exc),
+            }))
+        return envelope(result)
+
+    @app.post("/api/mission/reingest")
+    def reingest_mission(request: Request, confirm: str = ""):
+        if confirm != "REINGEST MISSION":
+            return JSONResponse(status_code=422, content=envelope(error={
+                "code": "invalid_mission_mutation",
+                "message": "Confirmation must equal 'REINGEST MISSION'.",
+            }))
+        request.app.state.mission.start(retry_brief=True)
+        return envelope(request.app.state.mission.status())
+
+    @app.get("/api/mission/brief")
+    def mission_brief(request: Request):
+        return envelope(request.app.state.mission.brief())
+
+    @app.post("/api/mission/ask")
+    async def ask_mission(request: Request):
+        try:
+            body = await request.json()
+        except json.JSONDecodeError:
+            body = None
+        if not isinstance(body, dict) or set(body) != {"text"}:
+            return JSONResponse(status_code=422, content=envelope(error={
+                "code": "invalid_request", "message": "provide one mission question as text",
+            }))
+        try:
+            answer = await asyncio.to_thread(request.app.state.mission.answer, body["text"])
+        except MissionValidationError as exc:
+            return JSONResponse(status_code=422, content=envelope(error={
+                "code": "invalid_request", "message": str(exc),
+            }))
+        except MissionUnavailable as exc:
+            return JSONResponse(status_code=503, content=envelope(error={
+                "code": "mission_unavailable", "message": str(exc),
+            }))
+        return envelope(answer)
 
     @app.post("/api/ask")
     async def ask(request: Request):

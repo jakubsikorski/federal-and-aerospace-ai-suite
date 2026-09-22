@@ -21,6 +21,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import httpx
 import yaml
 
+from .mission import MissionUnavailable
+
 log = logging.getLogger("backend.assistant")
 
 SAFE_FAILURE = "I could not turn that into a query I can answer."
@@ -700,6 +702,7 @@ class Assistant:
         services,
         *,
         generate: Callable[[str], str] | None = None,
+        mission=None,
     ):
         self.cfg = cfg
         self.services = services
@@ -708,6 +711,7 @@ class Assistant:
         self.single_flight = threading.Lock()
         self.retention = timedelta(seconds=float(cfg.get("history_retention_seconds", 604800)))
         self.page_secret = secrets.token_bytes(32)
+        self.mission = mission
 
     def _chat(self, prompt: str) -> str:
         started = time.monotonic()
@@ -740,6 +744,16 @@ class Assistant:
             raise ServiceUnavailable("Chat Q&A completion is empty or oversized")
         log.info("chatqna /chat completed in %d ms", int((time.monotonic() - started) * 1000))
         return completion
+
+    def complete(self, prompt: str) -> str:
+        """Run every non-routing Chat Q&A request through the shared admission lock."""
+        if not self.queue.acquire(blocking=False):
+            raise QueueFull("language queue is full")
+        try:
+            with self.single_flight:
+                return self.generate(prompt)
+        finally:
+            self.queue.release()
 
     def options(self):
         now = datetime.now(UTC).replace(microsecond=0)
@@ -797,24 +811,35 @@ class Assistant:
         if selected_stream is not None and not isinstance(selected_stream, str):
             raise InvalidInput("selected_stream must be a camera id or null")
         emit = emit or (lambda event: None)
-        cutoff = datetime.now(UTC).replace(microsecond=0)
         try:
-            requested_window = clock_window(text, timezone, cutoff)
+            requested_window = clock_window(text, timezone, datetime.now(UTC).replace(microsecond=0))
         except InvalidInput as exc:
-            return clarification(str(exc), "future_window" if "future" in str(exc) else "invalid_window")
-        # These concepts have no detector evidence; never let a valid broad plan
-        # silently turn them into a different question.
-        if re.search(r"\b(weapons?|uniforms?|suspicious|behaviou?r|carrying|ownership|armed)\b", text, re.I):
-            return clarification("The detector cannot establish that concept. Choose a supported object type below; it cannot identify actions, ownership or intent.", "unsupported_concept")
-        if requested_window is None and not re.search(r"\b(last|past|previous|today|yesterday|since|between|before|after|ago|minutes?|hours?|days?)\b|\d{4}-\d{2}-\d{2}", text, re.I):
-            return clarification("What time window should I search? Include it in the question, for example ‘person tracks in the last ten minutes’.", "missing_window")
-        mentioned_camera = re.search(r"\b(?:camera\s*|cam)([1-9]\d*)\b", text, re.I)
-        if mentioned_camera and selected_stream != "cam" + mentioned_camera[1]:
-            return clarification("Your question names a different camera. Choose which camera to search.", "camera_mismatch", camera="cam" + mentioned_camera[1])
+            requested_window = None
+            clock_error = str(exc)
+        else:
+            clock_error = None
+        # An explicit malformed clock range cannot be a valid mission fact or
+        # general question. Reject it before contacting the model; all other
+        # history-only restrictions remain below intent classification.
+        if clock_error:
+            return clarification(
+                clock_error,
+                "future_window" if "future" in clock_error else "invalid_window",
+            )
+        if requested_window is None and re.fullmatch(
+                r"\s*(?:what|which)\s+(?:objects?\s+)?(?:were|was)\s+"
+                r"(?:seen|detected|recorded|observed)\s*\??\s*", text, re.I):
+            return clarification(
+                "What time window should I search? Include it in the question, for example ‘person tracks in the last ten minutes’.",
+                "missing_window",
+            )
         labels = detector_labels(self.cfg["detector_metadata_path"])
         direct = simple_plan(text, labels, requested_window)
         if direct is not None:
-            return self.search(direct, selected_stream, emit)
+            clarification_result = self._history_clarification(
+                text, selected_stream, requested_window, clock_error)
+            return clarification_result or self.search(direct, selected_stream, emit)
+        cutoff = datetime.now(UTC).replace(microsecond=0)
         if not self.queue.acquire(blocking=False):
             raise QueueFull("language queue is full")
         try:
@@ -854,28 +879,26 @@ class Assistant:
                         break
                     except json.JSONDecodeError:
                         retry_reason = "it contained text outside one JSON object"
-                        if attempt:
-                            return {
-                                "intent": None,
-                                "answer_text": SAFE_FAILURE,
-                                "spoken_text": None,
-                                "recovery": {"reason":"interpretation_failed"},
-                                "errors": [{"code": "invalid_query_plan",
-                                            "message": "Try naming an object and time window, e.g. person tracks in the last ten minutes.", "field": None}],
-                            }
                     except InvalidPlan as exc:
                         retry_reason = str(exc)
-                        if attempt:
-                            return {
-                                "intent": None,
-                                "answer_text": SAFE_FAILURE,
-                                "spoken_text": None,
-                                "recovery": {"reason":"interpretation_failed"},
-                                "errors": [{"code": "invalid_query_plan",
-                                            "message": "Try naming an object and time window, e.g. person tracks in the last ten minutes.", "field": None}],
-                            }
+                    if attempt:
+                        return {
+                            "intent": None, "answer_text": SAFE_FAILURE, "spoken_text": None,
+                            "recovery": {"reason": "interpretation_failed"},
+                            "errors": [{"code": "invalid_query_plan",
+                                        "message": "Try naming an object and time window, e.g. person tracks in the last ten minutes.", "field": None}],
+                        }
                 if route.intent == "clarification":
                     return clarification()
+                if route.intent == "mission_knowledge":
+                    if self.mission is None:
+                        raise ServiceUnavailable("Mission knowledge is not configured.")
+                    # Router owns queue + single-flight here; pass its low-level
+                    # generator so a mission answer does not reacquire itself.
+                    try:
+                        return self.mission.answer(text, generate=self.generate)
+                    except MissionUnavailable as exc:
+                        raise ServiceUnavailable(str(exc)) from exc
                 if route.intent != "video_history":
                     return {
                         "intent": route.intent,
@@ -883,11 +906,33 @@ class Assistant:
                         "spoken_text": None,
                         "errors": [],
                     }
+                clarification_result = self._history_clarification(
+                    text, selected_stream, requested_window, clock_error)
+                if clarification_result:
+                    return clarification_result
                 scope = {stream: current_scope[stream] for stream in route.plan["streams"]}
-                emit({"status":"Searching records…"})
+                emit({"status": "Searching records…"})
                 return self._execute(route.plan, cutoff, ceiling, scope)
         finally:
             self.queue.release()
+
+    def _history_clarification(self, text, selected_stream, requested_window, clock_error):
+        if clock_error:
+            return clarification(
+                clock_error,
+                "future_window" if "future" in clock_error else "invalid_window",
+            )
+        mentioned_camera = re.search(r"\b(?:camera\s*|cam)([1-9]\d*)\b", text, re.I)
+        if mentioned_camera and selected_stream != "cam" + mentioned_camera[1]:
+            return clarification(
+                "Your question names a different camera. Choose which camera to search.",
+                "camera_mismatch", camera="cam" + mentioned_camera[1],
+            )
+        if re.search(r"\b(weapons?|uniforms?|suspicious|behaviou?r|carrying|ownership|armed)\b", text, re.I):
+            return clarification("The detector cannot establish that concept. Choose a supported object type below; it cannot identify actions, ownership or intent.", "unsupported_concept")
+        if requested_window is None and not re.search(r"\b(last|past|previous|today|yesterday|since|between|before|after|ago|minutes?|hours?|days?)\b|\d{4}-\d{2}-\d{2}", text, re.I):
+            return clarification("What time window should I search? Include it in the question, for example ‘person tracks in the last ten minutes’.", "missing_window")
+        return None
 
     def page(self, token: object) -> dict:
         body = decode_page_token(token, self.page_secret)

@@ -7,6 +7,7 @@ Service adapters and the pipeline lifecycle are not mocked here - they are prove
 against the real pinned containers via /api/health and the Phase 2 evidence,
 which are the only assertions that actually mean anything for them.
 """
+import hashlib
 import json
 import sqlite3
 import sys
@@ -14,7 +15,9 @@ import tempfile
 import threading
 import time
 import types
+import zipfile
 from datetime import UTC, datetime, timedelta
+from io import BytesIO
 from pathlib import Path
 
 import httpx
@@ -22,6 +25,25 @@ import httpx
 sys.path.insert(0, str(Path(__file__).parent))
 
 from app.core import connect, envelope, load_config, migrate, request_id_var, sync_streams
+
+
+def _pdf_bytes(page_count=1, escaped_page_name=False):
+    page_type = b"/Pa#67e" if escaped_page_name else b"/Page"
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [" + b" ".join(
+            f"{index} 0 R".encode() for index in range(3, page_count + 3)
+        ) + f"] /Count {page_count} >>".encode(),
+    ] + [b"<< /Type " + page_type + b" /Parent 2 0 R /MediaBox [0 0 1 1] >>"] * page_count
+    output, offsets = bytearray(b"%PDF-1.7\n"), []
+    for index, body in enumerate(objects, 1):
+        offsets.append(len(output))
+        output.extend(f"{index} 0 obj\n".encode() + body + b"\nendobj\n")
+    xref = len(output)
+    output.extend(f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode())
+    output.extend(b"".join(f"{offset:010} 00000 n \n".encode() for offset in offsets))
+    output.extend(f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode())
+    return bytes(output)
 
 
 def test_config_derives_paths():
@@ -1273,7 +1295,8 @@ def test_handheld_search_fast_path_and_recovery():
         conn, cutoff, metadata = _phase5_fixture(root)
         a = Assistant({"db_path":str(root / "phase5.db"), "detector_metadata_path":str(metadata),
                        "assistant_queue_depth":1}, None,
-                      generate=lambda _: (_ for _ in ()).throw(AssertionError("unexpected inference")))
+                      generate=lambda _: json.dumps({"intent": "video_history", "plan": {
+                          "window": {"kind": "relative", "minutes": 10}, "classes": None}}))
         a.queue.acquire()
         with a.single_flight:
             answer = a.ask("Show me people in the last ten minutes", "cam1")
@@ -1333,9 +1356,7 @@ def test_history_ux_regressions():
     truth = {"total": 7, "class_counts": {"person": 7}, "warnings": []}
     assert _history_answer(truth) == "Found 7 person tracks in the requested window."
     a = Assistant({}, None, generate=lambda _: (_ for _ in ()).throw(AssertionError("unneeded model call")))
-    assert a.ask("Were there weapons in the last ten minutes?", "cam1")["intent"] == "clarification"
     assert a.ask("What was seen?", "cam1")["intent"] == "clarification"
-    assert a.ask("What did camera 2 see in the last ten minutes?", "cam1")["intent"] == "clarification"
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -1345,6 +1366,10 @@ def test_history_ux_regressions():
         calls = []
         a = Assistant({"db_path": str(root / "phase5.db"), "detector_metadata_path": str(metadata)},
                       None, generate=lambda prompt: calls.append(prompt) or broad)
+        assert a.ask(
+            "What did camera 2 see in the last ten minutes?", "cam1"
+        )["recovery"]["reason"] == "camera_mismatch"
+        calls.clear()
         answer = a.ask("Summarize evidence concerning person tracks in the last ten minutes?", "cam1")
         assert not answer.get("query") and len(calls) == 2
         conn.close()
@@ -1434,6 +1459,401 @@ def test_clock_time_history_question():
         assert result["intent"] == "video_history" and not prompts
         assert result["query"]["window"]["started_utc"] == window["start_utc"]
         conn.close()
+
+
+def test_mission_lifecycle_retains_reconciles_and_discloses_citation_limits():
+    """Phase 6 keeps originals outside stock in-memory FAISS and never fakes citations."""
+    from app.mission import (
+        BRIEF_FIELDS,
+        MissionService,
+        MissionValidationError,
+        validate_upload,
+    )
+
+    try:
+        validate_upload("not-a-pdf.pdf", b"not actually a PDF")
+    except MissionValidationError:
+        pass
+    else:
+        raise AssertionError("invalid PDF signature was accepted")
+    try:
+        validate_upload("../escape.pdf", b"%PDF-1.7")
+    except MissionValidationError:
+        pass
+    else:
+        raise AssertionError("path-like filename was accepted")
+
+    class StockDocuments:
+        def __init__(self):
+            self.documents = set()
+
+        def handler(self, request):
+            if request.url.path == "/documents" and request.method == "GET":
+                return httpx.Response(200, json={"metadata": {"documents": sorted(self.documents)}})
+            if request.url.path == "/documents" and request.method == "POST":
+                marker = b'filename="'
+                name = request.content.split(marker, 1)[1].split(b'"', 1)[0].decode()
+                self.documents.add(name)
+                return httpx.Response(200, json={"status": "Success"})
+            if request.url.path == "/documents" and request.method == "DELETE":
+                params = dict(request.url.params)
+                if params.get("delete_all") == "true":
+                    self.documents.clear()
+                else:
+                    self.documents.discard(params["document"])
+                return httpx.Response(204)
+            raise AssertionError(f"unexpected stock request {request.method} {request.url}")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        db = root / "app.db"
+        conn = connect(str(db))
+        migrate(conn)
+        conn.close()
+        stock = StockDocuments()
+        services = types.SimpleNamespace(
+            urls={"chatqna": "http://chatqna"},
+            client=httpx.Client(transport=httpx.MockTransport(stock.handler)),
+        )
+        brief = json.dumps({field: "Not specified" for field in BRIEF_FIELDS})
+        service = MissionService(
+            {"db_path": str(db), "mission_sources_dir": str(root / "mission_sources"),
+             "mission_ingest_timeout_seconds": 1, "mission_ingest_poll_seconds": 0},
+            services, generate=lambda prompt: brief if "exact keys" in prompt
+            else "That information is not available in the mission material.")
+        result = service.upload("mission.pdf", _pdf_bytes())
+        source = result["sources"][0]
+        assert source["filename"] == "mission.pdf" and source["status"] == "ready"
+        assert source["in_corpus"] and "mission.pdf" in stock.documents
+        assert (root / "mission_sources" / source["sha256"]).is_file()
+        assert result["answer_citations_available"] is False
+        assert "inventory" in result["citation_notice"]
+        service._generate_brief()
+        generated = service.brief()
+        assert generated["brief"] == {field: "Not specified" for field in BRIEF_FIELDS}
+        answer = service.answer("Who leads the mission?")
+        assert answer["intent"] == "mission_knowledge"
+        assert answer["answer_citations_available"] is False
+
+        # An empty inventory is the source-verified indication that Chat Q&A
+        # restarted and lost its in-memory FAISS state.
+        stock.documents.clear()
+        service._reconcile()
+        assert stock.documents == {"mission.pdf"}
+        recovered = service.status()
+        assert recovered["mode"] == "ready"
+        assert recovered["corpus_version"] > source["corpus_version"]
+
+        deleted = service.delete("mission.pdf", "mission.pdf")
+        assert not deleted["sources"] and not stock.documents
+        assert not (root / "mission_sources" / source["sha256"]).exists()
+        deadline = time.monotonic() + 1
+        while service._brief_running and time.monotonic() < deadline:
+            time.sleep(.01)
+        assert not service._brief_running
+        services.client.close()
+
+
+def test_mission_phase6_failure_matrix():
+    """Regression coverage for lifecycle serialization, corpus truth and bounded uploads."""
+    from app.assistant import Assistant, ServiceUnavailable
+    from app.mission import (
+        BRIEF_FIELDS,
+        MAX_DOCX_ENTRIES,
+        MAX_PDF_PAGES,
+        MissionService,
+        MissionUnavailable,
+        MissionValidationError,
+        validate_upload,
+    )
+
+    class StockDocuments:
+        def __init__(self):
+            self.documents = set()
+            self.post_started = threading.Event()
+            self.release_post = threading.Event()
+            self.block_posts = False
+
+        def handler(self, request):
+            if request.url.path == "/documents" and request.method == "GET":
+                return httpx.Response(200, json={"metadata": {"documents": sorted(self.documents)}})
+            if request.url.path == "/documents" and request.method == "POST":
+                self.post_started.set()
+                if self.block_posts:
+                    assert self.release_post.wait(2), "test upload was never released"
+                name = request.content.split(b'filename="', 1)[1].split(b'"', 1)[0].decode()
+                self.documents.add(name)
+                return httpx.Response(200, json={"status": "Success"})
+            if request.url.path == "/documents" and request.method == "DELETE":
+                params = dict(request.url.params)
+                if params.get("delete_all") == "true":
+                    self.documents.clear()
+                else:
+                    self.documents.discard(params["document"])
+                return httpx.Response(204)
+            raise AssertionError(f"unexpected stock request {request.method} {request.url}")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        db = root / "app.db"
+        conn = connect(str(db))
+        migrate(conn)
+        conn.close()
+        stock = StockDocuments()
+        services = types.SimpleNamespace(
+            urls={"chatqna": "http://chatqna"},
+            client=httpx.Client(transport=httpx.MockTransport(stock.handler)),
+        )
+        brief = json.dumps({field: "Not specified" for field in BRIEF_FIELDS})
+        service = MissionService(
+            {"db_path": str(db), "mission_sources_dir": str(root / "sources"),
+             "mission_ingest_timeout_seconds": 1, "mission_ingest_poll_seconds": 0},
+            services, generate=lambda prompt: brief if "exact keys" in prompt else "mission answer")
+        queue_brief = service._queue_brief
+        service._queue_brief = lambda: None
+
+        # Same digest under two names has one retained file; deleting either
+        # source must not break recovery of the other.
+        content = _pdf_bytes()
+        service.upload("first.pdf", content)
+        service.upload("second.pdf", content)
+        digest = service.status()["sources"][0]["sha256"]
+        service.delete("first.pdf", "first.pdf")
+        assert (root / "sources" / digest).is_file()
+        stock.documents.clear()
+        service._reconcile()
+        assert stock.documents == {"second.pdf"}
+
+        # Partial stock loss is unsafe, not ready: answer starts recovery and
+        # refuses generation until every retained source is present.
+        recovery_started = []
+        real_start = service.start
+        service.start = lambda **_: recovery_started.append(True)
+        stock.documents.clear()
+        try:
+            service.answer("What is the objective?")
+        except MissionUnavailable as exc:
+            assert "reingesting" in str(exc)
+        else:
+            raise AssertionError("answer ran with a missing corpus document")
+        assert recovery_started
+        service.start = real_start
+        service._reconcile()
+        assert stock.documents == {"second.pdf"}
+
+        # A clear waits for a pending upload's stock mutation and cannot leave
+        # it orphaned in Chat Q&A after deleting the local record.
+        stock.block_posts = True
+        stock.post_started.clear()
+        stock.release_post.clear()
+        upload_error = []
+        thread = threading.Thread(
+            target=lambda: _capture(upload_error, service.upload, "race.pdf", _pdf_bytes()))
+        thread.start()
+        assert stock.post_started.wait(1)
+        started = time.monotonic()
+        assert service.status()["mode"] in {"ingesting", "reingesting"}
+        assert time.monotonic() - started < .1, "status waited for stock ingestion"
+        clear_done = threading.Event()
+        clear_thread = threading.Thread(
+            target=lambda: (_capture([], service.clear, "DELETE MISSION"), clear_done.set()))
+        clear_thread.start()
+        assert not clear_done.wait(.1), "clear interleaved with upload"
+        stock.release_post.set()
+        thread.join(2)
+        clear_thread.join(2)
+        assert not upload_error and clear_done.is_set()
+        assert not stock.documents and not service.status()["sources"]
+
+        # Recovery queues a missing brief rather than leaving a ready corpus
+        # permanently stale after an interrupted or malformed generation.
+        service._queue_brief = queue_brief
+        stock.block_posts = False
+        service.upload("brief.pdf", _pdf_bytes())
+        with service._connection() as conn:
+            conn.execute("DELETE FROM mission_brief")
+            conn.commit()
+        service._reconcile()
+        for _ in range(50):
+            if not service.brief()["stale"]:
+                break
+            time.sleep(.01)
+        assert not service.brief()["stale"]
+
+        attempts = []
+        failing = MissionService(
+            {"db_path": str(db), "mission_sources_dir": str(root / "failed-sources"),
+             "mission_ingest_timeout_seconds": 1, "mission_ingest_poll_seconds": 0},
+            services, generate=lambda _: attempts.append(True) or (_ for _ in ()).throw(TimeoutError()))
+        failing.upload("timeout.pdf", _pdf_bytes())
+        deadline = time.monotonic() + 1
+        while failing._brief_running and time.monotonic() < deadline:
+            time.sleep(.01)
+        assert attempts == [True]
+        for _ in range(3):
+            assert failing.status()["mode"] == "ready"
+            assert failing.brief()["error"] == "Mission text generation is unavailable."
+        assert attempts == [True], "brief polling retried a timed-out stock generation"
+        failing.start(retry_brief=True)
+        deadline = time.monotonic() + 1
+        while attempts != [True, True] and time.monotonic() < deadline:
+            time.sleep(.01)
+        assert attempts == [True, True], "explicit retry did not resubmit the brief"
+
+        deadline = time.monotonic() + 1
+        while service._brief_running and time.monotonic() < deadline:
+            time.sleep(.01)
+        assert not service._brief_running
+        services.client.close()
+
+    # Structural bounds run before retention/forwarding.
+    pages = _pdf_bytes(MAX_PDF_PAGES + 1, escaped_page_name=True)
+    try:
+        validate_upload("many-pages.pdf", pages)
+    except MissionValidationError as exc:
+        assert "pages" in str(exc)
+    else:
+        raise AssertionError("oversized PDF page count accepted")
+    archive = BytesIO()
+    with zipfile.ZipFile(archive, "w") as docx:
+        docx.writestr("[Content_Types].xml", "x")
+        docx.writestr("word/document.xml", "x")
+        for index in range(MAX_DOCX_ENTRIES):
+            docx.writestr(f"word/media/{index}.bin", b"x")
+    try:
+        validate_upload("many-entries.docx", archive.getvalue())
+    except MissionValidationError:
+        pass
+    else:
+        raise AssertionError("oversized DOCX entry count accepted")
+
+    # Mission route must classify before history time/camera restrictions.
+    with tempfile.NamedTemporaryFile("w", suffix=".yaml") as metadata:
+        metadata.write("names: [person]\n")
+        metadata.flush()
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "app.db"
+            conn = connect(str(db))
+            migrate(conn)
+            conn.execute(
+                """INSERT INTO streams (stream_id, display_name, source_uri, annotated_path,
+                                        enabled, sort_order)
+                   VALUES ('cam1','Camera 1','rtsp://cam1','annotated1',1,0)"""
+            )
+            conn.commit()
+            conn.close()
+            mission = types.SimpleNamespace(answer=lambda text, generate=None: {
+                "intent": "mission_knowledge", "answer_text": text, "errors": []})
+            assistant = Assistant(
+                {"assistant_queue_depth": 1, "detector_metadata_path": metadata.name,
+                 "db_path": str(db)},
+                None, generate=lambda _: '{"intent":"mission_knowledge"}', mission=mission)
+            assert assistant.ask("What is the mission objective?")["intent"] == "mission_knowledge"
+            assert assistant.ask(
+                "What is the mission assignment for camera 1?", "cam2"
+            )["intent"] == "mission_knowledge"
+            assistant.mission = types.SimpleNamespace(
+                answer=lambda text, generate=None: (_ for _ in ()).throw(
+                    MissionUnavailable("No mission documents are ready.")))
+            try:
+                assistant.ask("What weapons are prohibited during the mission today?")
+            except ServiceUnavailable as exc:
+                assert "No mission documents" in str(exc)
+            else:
+                raise AssertionError("routed mission outage was not translated")
+
+    # Mission brief/answer generation uses the same bounded admission path as
+    # routing, so one in-flight Chat Q&A request blocks a second one.
+    started, release = threading.Event(), threading.Event()
+    def slow_generation(_):
+        started.set()
+        assert release.wait(1)
+        return "done"
+    coordinator = Assistant({"assistant_queue_depth": 1}, None, generate=slow_generation)
+    worker = threading.Thread(target=lambda: coordinator.complete("first"))
+    worker.start()
+    assert started.wait(1)
+    try:
+        coordinator.complete("second")
+    except Exception as exc:
+        from app.assistant import QueueFull
+        assert isinstance(exc, QueueFull)
+    else:
+        raise AssertionError("shared generation queue accepted concurrent mission work")
+    release.set()
+    worker.join(1)
+
+    # Former lock inversion: routed request held the language lock while a
+    # direct request held the mission lock and waited for language admission.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        db = root / "app.db"
+        conn = connect(str(db))
+        migrate(conn)
+        conn.execute(
+            """INSERT INTO streams (stream_id, display_name, source_uri, annotated_path,
+                                    enabled, sort_order)
+               VALUES ('cam1','Camera 1','rtsp://cam1','annotated1',1,0)"""
+        )
+        conn.commit()
+        conn.close()
+        metadata = root / "model.yaml"
+        metadata.write_text("names: [person]\n")
+        stock = StockDocuments()
+        stock.documents.add("mission.pdf")
+        services = types.SimpleNamespace(
+            urls={"chatqna": "http://chatqna"},
+            client=httpx.Client(transport=httpx.MockTransport(stock.handler)),
+        )
+        routing_started, release_routing = threading.Event(), threading.Event()
+        def coordinated_generation(prompt):
+            if "Classify the operator request" in prompt:
+                routing_started.set()
+                assert release_routing.wait(1)
+                return '{"intent":"mission_knowledge"}'
+            return "mission answer"
+        assistant = Assistant(
+            {"assistant_queue_depth": 2, "detector_metadata_path": str(metadata),
+             "db_path": str(db)}, None, generate=coordinated_generation)
+        mission = MissionService(
+            {"db_path": str(db), "mission_sources_dir": str(root / "sources"),
+             "mission_ingest_timeout_seconds": 1, "mission_ingest_poll_seconds": 0},
+            services, generate=assistant.complete)
+        content = _pdf_bytes()
+        digest = hashlib.sha256(content).hexdigest()
+        mission._store_original(digest, content)
+        with mission._connection() as conn:
+            conn.execute(
+                """INSERT INTO mission_sources
+                   (filename, sha256, uploaded_utc, status, corpus_version)
+                   VALUES (?, ?, ?, 'ready', 0)""",
+                ("mission.pdf", digest, datetime.now(UTC).isoformat()),
+            )
+            conn.commit()
+        mission._set_mode("ready", "Mission corpus is reconciled.")
+        assistant.mission = mission
+        errors = []
+        routed = threading.Thread(
+            target=lambda: _capture(errors, assistant.ask, "What is the mission objective?"))
+        routed.start()
+        assert routing_started.wait(1)
+        direct = threading.Thread(
+            target=lambda: _capture(errors, mission.answer, "What is the mission objective?"))
+        direct.start()
+        time.sleep(.05)
+        release_routing.set()
+        routed.join(1)
+        direct.join(1)
+        assert not routed.is_alive() and not direct.is_alive(), "mission request lock-order deadlock"
+        assert not errors, errors
+        services.client.close()
+
+
+def _capture(errors, call, *args):
+    try:
+        call(*args)
+    except Exception as exc:
+        errors.append(exc)
 
 
 if __name__ == "__main__":

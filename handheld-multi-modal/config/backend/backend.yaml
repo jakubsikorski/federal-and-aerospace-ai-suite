@@ -53,6 +53,11 @@ mqtt:
 detections_topic: detections/live
 
 db_path: /data/app.db
+mission_sources_dir: /data/mission_sources
+# Chat Q&A keeps its FAISS index in memory. Backend retains validated originals
+# here and polls the only supported stock document inventory after ingestion.
+mission_ingest_timeout_seconds: 60.0
+mission_ingest_poll_seconds: 0.25
 crop_dir: /crops
 crop_cleanup_script: /opt/handheld-crops/crop_candidates.py
 detector_metadata_path: /config/detector/metadata.yaml

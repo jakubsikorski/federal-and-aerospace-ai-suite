@@ -21,7 +21,7 @@ TLS_DIR := $(ASSET_ROOT)/config/tls
 ASSET_COMPOSE := docker compose -f compose/bootstrap-compose.yaml
 DEMO_COMPOSE := $(ASSET_COMPOSE) -f compose/cameras.yaml -f compose/phase4-demo.override.yaml -f "$(ASSET_ROOT)/config/devices.yaml"
 
-.PHONY: help tls model-downloader-up demo demo-assets demo-preflight demo-setup demo-up demo-stop demo-restart demo-down demo-status cameras cameras-down health test test-ui test-assets test-phase5
+.PHONY: help asset-permissions tls model-downloader-up demo demo-assets demo-preflight demo-setup demo-up demo-stop demo-restart demo-down demo-status cameras cameras-down health test test-ui test-assets test-phase5
 help:
 	@echo 'make demo          Download assets, prepare device, start and check the entire stack'
 	@echo 'make demo-assets   Download YOLO11s INT8 through Model Download and the pinned video'
@@ -90,7 +90,27 @@ json_ready() {
 
 endef
 
+# Containers can leave host bind mounts root-owned after an interrupted run.
+# Repair only assets Make owns; never touch DLSPS crop stores, which belong to
+# UID 1999 and can be mode 2700 while a producer is active.
+asset-permissions:
+	@$(ASSET_COMPOSE) run --rm --no-deps --user 0:0 --entrypoint /bin/sh \
+	  -e HOST_UID="$$(id -u)" -e HOST_GID="$$(id -g)" \
+	  -v "$$ASSET_ROOT:/bootstrap-assets" model-downloader -ec \
+	  'mkdir -p /bootstrap-assets/data/backend \
+	            /bootstrap-assets/data/model-download \
+	            /bootstrap-assets/data/dlsps/yolo_export \
+	            /bootstrap-assets/data/dlsps/demo-video \
+	            /bootstrap-assets/config/tls; \
+	   chown -R "$$HOST_UID:$$HOST_GID" \
+	     /bootstrap-assets/data/backend \
+	     /bootstrap-assets/data/model-download \
+	     /bootstrap-assets/data/dlsps/yolo_export \
+	     /bootstrap-assets/data/dlsps/demo-video \
+	     /bootstrap-assets/config/tls'
+
 model-downloader-up:
+	@$(MAKE) --no-print-directory asset-permissions
 	@$(readiness)
 	install -d -m 2775 "$$ASSET_ROOT/data/model-download"
 	$(ASSET_COMPOSE) up -d --no-deps model-downloader
@@ -139,7 +159,7 @@ demo-preflight:
 	[[ -e /dev/dri/renderD128 ]] || fail "/dev/dri/renderD128 is required"
 	[[ -e /dev/accel/accel0 ]] || fail "/dev/accel/accel0 is required"
 
-demo-setup: demo-preflight demo-assets tls
+demo-setup: demo-preflight asset-permissions demo-assets tls
 	@mkdir -p "$$ASSET_ROOT/data/backend"
 	install -d -m 2775 "$$ASSET_ROOT/data/dlsps/crops" "$$ASSET_ROOT/data/chatqna/model_cache"
 	python3 -c 'import json,os; print("services:"); [print("  " + service + ":\n    group_add: !override " + json.dumps(list(dict.fromkeys(os.environ[k] for k in keys)))) for service,keys in {"dlsps":("RENDER_GID","ACCEL_GID","ASSET_GID"), "chatqna":("RENDER_GID","ASSET_GID")}.items()]' > "$$ASSET_ROOT/config/devices.yaml"

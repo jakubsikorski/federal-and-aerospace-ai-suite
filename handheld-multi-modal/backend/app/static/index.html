@@ -32,6 +32,7 @@
   .camera[aria-pressed="true"] { border: 2px solid var(--accent); background: #35485e; }
   .camera.up small, #connection.live { color: var(--good); }
   .camera.down small { color: var(--bad); }
+  #mission-toggle { white-space: nowrap; }
   .top-status { margin-left: auto; text-align: right; white-space: nowrap; }
   .clock-status { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
   #operator-clock { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -54,6 +55,23 @@
   #model-detail-body dt { color: var(--muted); }
   #model-detail-body dd { margin: 0; overflow-wrap: anywhere; }
   #model-note { color: var(--muted); font-size: 13px; }
+  #mission-panel { position: fixed; top: 58px; right: 12px; width: min(440px, calc(100vw - 24px)); max-height: calc(100dvh - 72px); z-index: 11; overflow: auto; box-shadow: 0 12px 30px #0008; }
+  #mission-panel .panel-head button { margin-left: auto; }
+  #mission-body { padding: 12px; display: grid; gap: 12px; }
+  #mission-status { margin: 0; color: var(--muted); }
+  #mission-status[data-mode="ready"] { color: var(--good); }
+  #mission-status[data-mode="degraded"], #mission-status[data-mode="failed"] { color: var(--warn); }
+  #mission-upload, #mission-question { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
+  #mission-upload input, #mission-question input { min-width: 0; border: 1px solid var(--line); border-radius: 7px; padding: 6px; background: var(--bg); }
+  #mission-sources { margin: 0; padding: 0; list-style: none; }
+  #mission-sources li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  #mission-sources small { color: var(--muted); display: block; }
+  #mission-answer { margin: 0; white-space: pre-wrap; }
+  #mission-citation-note { margin: 0; color: var(--muted); font-size: 12px; }
+  #mission-brief { margin: 0; display: grid; grid-template-columns: 105px minmax(0, 1fr); gap: 5px 10px; }
+  #mission-brief dt { color: var(--muted); }
+  #mission-brief dd { margin: 0; overflow-wrap: anywhere; }
+  #mission-actions { display: flex; gap: 6px; flex-wrap: wrap; }
   #workspace { min-height: 0; overflow: auto; padding: 12px; display: grid; gap: 12px;
     grid-template-columns: minmax(0, 58fr) minmax(400px, 42fr);
     grid-template-rows: minmax(min-content, 1fr) minmax(min-content, .8fr); }
@@ -200,6 +218,7 @@
   <header>
     <div class="brand"><strong>Handheld ops</strong><span>Live evidence console</span></div>
     <nav id="cameras" aria-label="Camera selection"></nav>
+    <button id="mission-toggle" class="quiet-button" type="button" aria-controls="mission-panel" aria-expanded="false">Mission</button>
     <div class="top-status">
       <div class="clock-status"><time id="operator-clock" aria-label="Current local time"></time><div id="connection">connecting</div></div>
       <div id="operator-date"></div>
@@ -220,6 +239,28 @@
         <dt>Host</dt><dd id="model-host"></dd>
       </dl>
       <p id="model-note"></p>
+    </div>
+  </aside>
+  <aside id="mission-panel" class="panel" aria-labelledby="mission-title" hidden>
+    <div class="panel-head"><h2 id="mission-title">Mission knowledge</h2><button id="close-mission" class="quiet-button" type="button">Close</button></div>
+    <div id="mission-body">
+      <p id="mission-status">Loading mission corpus…</p>
+      <form id="mission-upload">
+        <input id="mission-file" type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" aria-label="Mission PDF or DOCX">
+        <button class="quiet-button" type="submit">Upload</button>
+      </form>
+      <ul id="mission-sources" aria-label="Mission source inventory"></ul>
+      <div id="mission-actions">
+        <button id="mission-reingest" class="quiet-button" type="button">Re-ingest</button>
+        <button id="mission-clear" class="quiet-button" type="button">Clear mission</button>
+      </div>
+      <form id="mission-question">
+        <input id="mission-question-text" type="text" maxlength="500" placeholder="Ask about the mission material" aria-label="Mission question">
+        <button class="quiet-button" type="submit">Ask</button>
+      </form>
+      <p id="mission-answer" role="status"></p>
+      <p id="mission-citation-note"></p>
+      <dl id="mission-brief"></dl>
     </div>
   </aside>
   <main id="workspace">
@@ -364,6 +405,7 @@ const state = {
   paused: false, held: false, pending: false, drawerTrack: null, selectedTrackKey: null,
   resource: "cpu", trackSignature: "", requestVersion: 0,
   models: [], selectedModel: null, modelsUnavailable: false,
+  mission: null,
   assistantToken: null, assistantBusy: false, assistantPrevious: null,
   assistantAnswer: null, assistantContext: null, assistantPages: new Map(),
   assistantReturn: false, assistantScroll: 0, assistantOptions: [], assistantAvailability: [],
@@ -390,6 +432,159 @@ async function postApi(path, payload) {
   }
   return body.data;
 }
+
+async function missionMutation(path, options) {
+  const response = await fetch(path, {headers: {accept: "application/json"}, ...options});
+  const body = await response.json();
+  if (!response.ok || body.error) {
+    throw new Error((body.error && body.error.message) || response.statusText);
+  }
+  state.mission = body.data;
+  renderMission();
+  return body.data;
+}
+
+function renderMission() {
+  const mission = state.mission || {};
+  const status = $("mission-status");
+  status.dataset.mode = mission.mode || "unknown";
+  status.textContent = [titleCase(mission.mode || "unavailable"), mission.detail].filter(Boolean).join(" · ");
+  $("mission-citation-note").textContent = mission.citation_notice
+    || "Answer-level citations are unavailable from this stock interface.";
+  const list = $("mission-sources");
+  list.replaceChildren();
+  const sources = Array.isArray(mission.sources) ? mission.sources : [];
+  if (!sources.length) {
+    const item = document.createElement("li");
+    item.className = "empty";
+    item.textContent = "No retained mission documents.";
+    list.append(item);
+  }
+  for (const source of sources) {
+    const item = document.createElement("li");
+    const copy = document.createElement("span");
+    const name = document.createElement("strong");
+    name.textContent = source.filename;
+    const detail = document.createElement("small");
+    detail.textContent = [titleCase(source.status), source.in_corpus ? "in corpus" : "not confirmed in corpus"].join(" · ");
+    copy.append(name, detail);
+    const remove = document.createElement("button");
+    remove.className = "quiet-button";
+    remove.type = "button";
+    remove.textContent = "Delete";
+    remove.onclick = async () => {
+      if (!window.confirm(`Delete ${source.filename} from the mission corpus and retained originals?`)) return;
+      try {
+        await missionMutation("/api/mission/documents?document=" + encodeURIComponent(source.filename)
+          + "&confirm=" + encodeURIComponent(source.filename), {method: "DELETE"});
+      } catch (error) {
+        $("mission-answer").textContent = error.message;
+      }
+    };
+    item.append(copy, remove);
+    list.append(item);
+  }
+  const brief = $("mission-brief");
+  brief.replaceChildren();
+  for (const [field, value] of Object.entries(mission.brief?.brief || {})) {
+    const term = document.createElement("dt");
+    const definition = document.createElement("dd");
+    term.textContent = titleCase(field);
+    definition.textContent = value;
+    brief.append(term, definition);
+  }
+  const briefError = mission.brief?.error;
+  $("mission-reingest").textContent = briefError ? "Retry Brief / Re-ingest" : "Re-ingest";
+  if (briefError) {
+    $("mission-answer").textContent = "Mission Brief failed: " + briefError
+      + " Select Retry Brief / Re-ingest to try again.";
+  } else if (mission.brief?.stale) {
+    $("mission-answer").textContent ||= "Mission Brief is being regenerated for corpus version "
+      + (mission.brief.corpus_version ?? mission.corpus_version ?? "unknown") + ".";
+  }
+}
+
+async function refreshMission() {
+  try {
+    const [status, brief] = await Promise.all([api("/api/mission/documents"), api("/api/mission/brief")]);
+    state.mission = {...status, brief};
+  } catch (error) {
+    state.mission = {mode: "degraded", detail: "Mission status unavailable: " + error.message};
+  }
+  renderMission();
+}
+
+function closeMission(restoreFocus = true) {
+  $("mission-panel").hidden = true;
+  $("mission-toggle").setAttribute("aria-expanded", "false");
+  if (restoreFocus) $("mission-toggle").focus();
+}
+
+$("mission-toggle").onclick = async () => {
+  const opening = $("mission-panel").hidden;
+  $("mission-panel").hidden = !opening;
+  $("mission-toggle").setAttribute("aria-expanded", String(opening));
+  if (opening) {
+    await refreshMission();
+    $("mission-file").focus();
+  }
+};
+$("close-mission").onclick = () => closeMission();
+$("mission-panel").addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeMission();
+});
+$("mission-upload").onsubmit = async (event) => {
+  event.preventDefault();
+  const file = $("mission-file").files[0];
+  if (!file) {
+    $("mission-answer").textContent = "Choose one PDF or DOCX document.";
+    return;
+  }
+  const form = new FormData();
+  form.append("files", file, file.name);
+  $("mission-answer").textContent = "Uploading and indexing " + file.name + "…";
+  try {
+    await missionMutation("/api/mission/documents", {method: "POST", body: form});
+    $("mission-file").value = "";
+    $("mission-answer").textContent = "Document is ready in the mission corpus.";
+    await refreshMission();
+  } catch (error) {
+    $("mission-answer").textContent = error.message;
+  }
+};
+$("mission-reingest").onclick = async () => {
+  if (!window.confirm("Re-ingest all retained mission documents into the stock corpus?")) return;
+  try {
+    await missionMutation("/api/mission/reingest?confirm=REINGEST%20MISSION", {
+      method: "POST",
+    });
+  } catch (error) {
+    $("mission-answer").textContent = error.message;
+  }
+};
+$("mission-clear").onclick = async () => {
+  if (!window.confirm("Delete every stock-corpus document and retained mission original? This does not clear camera history.")) return;
+  try {
+    await missionMutation("/api/mission/documents?delete_all=true&confirm=DELETE%20MISSION", {method: "DELETE"});
+    $("mission-answer").textContent = "Mission corpus cleared.";
+  } catch (error) {
+    $("mission-answer").textContent = error.message;
+  }
+};
+$("mission-question").onsubmit = async (event) => {
+  event.preventDefault();
+  const text = $("mission-question-text").value.trim();
+  if (!text) return;
+  $("mission-answer").textContent = "Checking mission material…";
+  try {
+    const answer = await postApi("/api/mission/ask", {text});
+    $("mission-answer").textContent = answer.answer_text;
+  } catch (error) {
+    $("mission-answer").textContent = error.message;
+  }
+};
+refreshMission();
+setInterval(refreshMission, 10000);
 
 const modelLabels = [["dlsps", "Vision"], ["chatqna", "LLM"], ["audio_analyzer", "Transcription"], ["tts", "Speech"]];
 
