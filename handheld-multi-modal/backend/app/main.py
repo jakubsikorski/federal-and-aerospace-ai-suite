@@ -326,32 +326,72 @@ def create_app() -> FastAPI:
         with read_connection(request) as conn:
             return envelope({"alerts": history.alerts(conn, limit=limit)})
 
+    @app.get("/api/history/options")
+    def history_options(request: Request):
+        return envelope(request.app.state.assistant.options())
+
     @app.post("/api/ask")
     async def ask(request: Request):
         try:
             body = await request.json()
         except json.JSONDecodeError:
             body = None
-        if not isinstance(body, dict) or set(body) - {"text", "selected_stream", "page_token"}:
+        if not isinstance(body, dict) or set(body) - {"text", "plan", "selected_stream", "page_token", "timezone"}:
             return JSONResponse(status_code=422, content=envelope(error={
                 "code": "invalid_request", "message": "invalid assistant request",
             }))
-        if ("text" in body) == ("page_token" in body):
+        if sum(key in body for key in ("text", "plan", "page_token")) != 1:
             return JSONResponse(status_code=422, content=envelope(error={
                 "code": "invalid_request",
-                "message": "provide exactly one of text or page_token",
+                "message": "provide exactly one of text, plan or page_token",
             }))
-        if "page_token" in body and "selected_stream" in body:
+        if "page_token" in body and ({"selected_stream", "timezone"} & body.keys()):
             return JSONResponse(status_code=422, content=envelope(error={
                 "code": "invalid_request",
                 "message": "selected_stream is not valid with page_token",
             }))
-        try:
+        def perform(emit=None):
+            assistant = request.app.state.assistant
             if "page_token" in body:
-                answer = request.app.state.assistant.page(body["page_token"])
-            else:
-                answer = request.app.state.assistant.ask(
-                    body["text"], body.get("selected_stream"))
+                return assistant.page(body["page_token"])
+            if "plan" in body:
+                return assistant.search(body["plan"], body.get("selected_stream"), emit=emit)
+            return assistant.ask(body["text"], body.get("selected_stream"),
+                **({"emit":emit} if emit else {}),
+                **({"timezone":body["timezone"]} if "timezone" in body else {}))
+        if "application/x-ndjson" in request.headers.get("accept", ""):
+            async def updates():
+                loop = asyncio.get_running_loop()
+                messages = asyncio.Queue()
+                def emit(event):
+                    # Serialize now: the worker may subsequently append warnings.
+                    loop.call_soon_threadsafe(messages.put_nowait, json.dumps(event) + "\n")
+                def run():
+                    try:
+                        answer = perform(emit)
+                        emit({"answer": answer, "done": True})
+                    except (InvalidInput, QueueFull, QueryBudgetExceeded, ServiceUnavailable) as exc:
+                        emit({"error": str(exc), "done": True})
+                    except Exception:
+                        log.exception("history request failed")
+                        emit({"error": "History query failed. Please try again.", "done": True})
+                    finally:
+                        loop.call_soon_threadsafe(messages.put_nowait, None)
+                worker = asyncio.create_task(asyncio.to_thread(run))
+                try:
+                    while True:
+                        event = await messages.get()
+                        if event is None:
+                            break
+                        yield event
+                finally:
+                    # Stock inference cannot be canceled. It keeps its admission
+                    # slot until completion, even if the browser disconnects.
+                    await asyncio.shield(worker)
+            return StreamingResponse(updates(), media_type="application/x-ndjson",
+                                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+        try:
+            answer = await asyncio.to_thread(perform)
         except InvalidInput as exc:
             return JSONResponse(status_code=422, content=envelope(error={
                 "code": "invalid_request", "message": str(exc),

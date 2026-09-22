@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Phase 5 typed-history contract and live stock-model smoke."""
+"""Phase 5 typed-history contract and live typed-query smoke."""
 
 import json
 import os
 import ssl
 import sys
+import time
 import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,7 +19,7 @@ import test_backend  # noqa: E402
 EVIDENCE = Path(os.environ.get(
     "PHASE5_EVIDENCE", ROOT / "docs/bootstrap/evidence/phase5"))
 URL = os.environ.get("PHASE5_URL", "https://127.0.0.1:8443/api/ask")
-ATTEMPTS = int(os.environ.get("PHASE5_ATTEMPTS", "5"))
+ATTEMPTS = 1  # first-submission reliability; never retry the smoke into a pass
 SAFE_FAILURE = "I could not turn that into a query I can answer."
 
 
@@ -35,8 +36,11 @@ def post(payload):
         method="POST",
     )
     context = ssl._create_unverified_context() if URL.startswith("https://") else None
+    started = time.monotonic()
     with urllib.request.urlopen(request, timeout=180, context=context) as response:
-        return json.load(response)
+        result = json.load(response)
+    result["elapsed_seconds"] = round(time.monotonic() - started, 3)
+    return result
 
 
 def verify_live(body):
@@ -46,6 +50,8 @@ def verify_live(body):
     query = data.get("query", {})
     if query.get("filters", {}).get("streams") != ["cam1"]:
         raise AssertionError("live query escaped the selected cam1 scope")
+    if query.get("filters", {}).get("classes") != ["person"]:
+        raise AssertionError("live question lost the requested person class")
     started = datetime.fromisoformat(query["window"]["started_utc"].replace("Z", "+00:00"))
     ended = datetime.fromisoformat(query["window"]["ended_utc"].replace("Z", "+00:00"))
     if not 599 <= (ended - started).total_seconds() <= 601:
@@ -65,6 +71,7 @@ def main():
         test_backend.test_phase5_plan_validation_retries_then_fails_safely,
         test_backend.test_phase5_interval_query_aggregates_completeness_and_safe_grounding,
         test_backend.test_phase5_readonly_budget_and_stable_paging,
+        test_backend.test_handheld_search_fast_path_and_recovery,
     ]
     for test in focused:
         test()
@@ -95,6 +102,12 @@ def main():
     }
 
     probes = []
+    for question in ("What was seen?", "Were there any weapons in the last ten minutes?",
+                     "What did camera 2 see in the last ten minutes?"):
+        body = post({"text": question, "selected_stream": "cam1"})
+        assert body["data"]["intent"] == "clarification", body
+        probes.append({"question": question, "intent": "clarification",
+                       "elapsed_seconds": body["elapsed_seconds"]})
     success = None
     for attempt in range(1, ATTEMPTS + 1):
         body = post({
@@ -106,6 +119,7 @@ def main():
             "question": "ten_minute_person_tracks",
             "attempt": attempt,
             "request_id": body.get("request_id"),
+            "elapsed_seconds": body["elapsed_seconds"],
             "intent": data.get("intent"),
             "answer_text": data.get("answer_text"),
             "error_codes": [item.get("code") for item in data.get("errors", [])],
@@ -117,10 +131,12 @@ def main():
             raise AssertionError("malformed stock-model output did not fail safely")
 
     if success is None:
+        write_json("route_probes.json", {"result": "FAIL", "first_submission_queries": probes})
         raise AssertionError(
-            f"stock model produced no valid strict plan in {ATTEMPTS} independent requests")
+            f"typed query produced no valid strict plan in {ATTEMPTS} independent requests")
     write_json("ten_minute_query.json", success)
 
+    hour_success = False
     for attempt in range(1, ATTEMPTS + 1):
         body = post({
             "text": "What was detected in the last 60 minutes?",
@@ -132,11 +148,16 @@ def main():
             "question": "paged_hour_history",
             "attempt": attempt,
             "request_id": body.get("request_id"),
+            "elapsed_seconds": body["elapsed_seconds"],
             "intent": data.get("intent"),
             "answer_text": data.get("answer_text"),
             "error_codes": [item.get("code") for item in data.get("errors", [])],
         })
         if query:
+            start = datetime.fromisoformat(query["window"]["started_utc"].replace("Z", "+00:00"))
+            end = datetime.fromisoformat(query["window"]["ended_utc"].replace("Z", "+00:00"))
+            assert (end-start).total_seconds() == 3600 and query["filters"]["classes"] is None
+            hour_success = True
             token = query.get("next_page_token")
             if token:
                 next_query = post({"page_token": token})["data"]["query"]
@@ -156,13 +177,15 @@ def main():
                 }
             break
         if data.get("answer_text") != SAFE_FAILURE:
-            raise AssertionError("malformed stock-model paging plan did not fail safely")
+            raise AssertionError("invalid paging response did not fail safely")
 
     write_json("route_probes.json", {
         "generated_utc": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-        "stock_model_attempts": probes,
+        "first_submission_queries": probes,
         "safe_failure": SAFE_FAILURE,
     })
+    if not hour_success:
+        raise AssertionError("hour-history question failed on its first submission")
     write_json("paging_stability.json", paging_evidence)
     print("PASS: Phase 5 strict plans, interval truth, paging, and live typed history")
 

@@ -593,6 +593,7 @@ def _pipeline_fixture(tmp):
     pipelines._failures.clear()
     pipelines._retry_after.clear()
     pipelines._accepted_at.clear()
+    pipelines._cleaned_terminal.clear()
     conn = connect(str(Path(tmp) / "app.db"))
     migrate(conn)
     sync_streams(conn, [{"stream_id": "cam1", "display_name": "cam1", "source_uri": "u",
@@ -679,6 +680,27 @@ def test_a_doomed_pipeline_backs_off_instead_of_spawning_replacements():
         client.doomed = False
         pipelines.reconcile(conn, cfg, client)
         assert len(client.starts) == 2, "forget_backoff must allow an immediate retry"
+        conn.close()
+
+
+def test_terminal_pipeline_publishers_are_cleaned_once_and_retried_on_failure():
+    with tempfile.TemporaryDirectory() as tmp:
+        pipelines, conn, cfg = _pipeline_fixture(tmp)
+        client = FakeDlsps()
+        client.instances.update(done="COMPLETED", failed="ERROR", aborted="ABORTED")
+        def delete(url, timeout=None):
+            instance = url.rsplit("/", 1)[-1]
+            client.deleted.append(instance)
+            if instance == "failed" and client.deleted.count(instance) == 1:
+                raise httpx.ConnectError("temporary failure")
+            # Stock service retains terminal status after DELETE.
+            return types.SimpleNamespace(raise_for_status=lambda: None)
+        client.delete = delete
+        for _ in range(3):
+            pipelines.reconcile(conn, cfg, client)
+        assert client.deleted.count("done") == client.deleted.count("aborted") == 1
+        assert client.deleted.count("failed") == 2
+        pipelines.stop_owned(conn, cfg, FakeDlsps())
         conn.close()
 
 
@@ -937,6 +959,9 @@ def _phase5_fixture(root: Path):
             )
 
     track(1, "person", 12, 8, [(12, 8)])
+    conn.execute("""INSERT INTO candidates(candidate_id, track_id, stream_id, tracking_session_id,
+        history_generation, tracker_id, observed_at_utc, storage_key, expires_at_utc, image_state)
+        VALUES ('crop1',1,'cam1','session-1','generation-1',1,'2026-09-21T00:00:00Z','fixture.jpg','2099-01-01T00:00:00Z','present')""")
     # Envelope overlaps the ten-minute window, but its only interval does not.
     track(2, "car", 30, 0, [(30, 25)])
     conn.executemany(
@@ -1018,7 +1043,7 @@ def test_phase5_plan_validation_retries_then_fails_safely():
              "detector_metadata_path": str(metadata),
              "history_retention_seconds": 604800},
             None, generate=lambda prompt: calls.append(prompt) or bad)
-        answer = assistant.ask("What was detected in the last ten minutes?", "cam1")
+        answer = assistant.ask("Summarize the recorded evidence during the last ten minutes?", "cam1")
         assert answer["answer_text"] == SAFE_FAILURE
         assert len(calls) == 2, "invalid plan gets one retry, never an unbounded loop"
         conn.close()
@@ -1037,7 +1062,6 @@ def test_phase5_interval_query_aggregates_completeness_and_safe_grounding():
                          "classes": None, "order": "last_observed_desc",
                          "page": 0, "page_size": 20},
             }),
-            "I saw 1 person moving around.",
         ])
         assistant = Assistant(
             {"db_path": str(root / "phase5.db"),
@@ -1053,7 +1077,21 @@ def test_phase5_interval_query_aggregates_completeness_and_safe_grounding():
         gap = next(w for w in query["warnings"] if w["reason"] == "no_signal")
         assert gap["gap_seconds_total"] == 120.0, gap
         assert answer["answer_text"].startswith("Found 1 person track")
-        assert any(w["code"] == "language_output_rejected" for w in query["warnings"])
+        assert query["with_crops_total"] == 1
+        assert not any(w["code"].startswith("language_") for w in query["warnings"])
+        # No second generation: the single routing fixture is now exhausted.
+        assert next(responses, None) is None
+        conn.execute("UPDATE candidates SET image_state='expired'")
+        conn.commit()
+        from app.assistant import query_history, validate_plan
+        cutoff = datetime.now(UTC).replace(microsecond=0)
+        plan = validate_plan({"window": {"kind": "relative", "minutes": 10}},
+            labels=("person", "car"), known_streams=("cam1",), selected_stream="cam1",
+            cutoff=cutoff, retention=timedelta(days=7))
+        without = query_history(str(root / "phase5.db"), plan, cutoff, 2,
+            {"cam1": {"tracking_session_id": "session-1", "history_generation": "generation-1"}})
+        assert without["total"] == 1 and without["with_crops_total"] == 0
+        assert without["tracks"] == [] and not without["truncated"]
         conn.close()
 
 
@@ -1099,6 +1137,12 @@ def test_phase5_readonly_budget_and_stable_paging():
              "page_size": 1},
             labels=("person", "car", "suitcase"), known_streams=("cam1",),
             selected_stream=None, cutoff=cutoff, retention=timedelta(days=7))
+        for tid in (3, 4):
+            conn.execute("""INSERT INTO candidates(candidate_id, track_id, stream_id, tracking_session_id,
+                history_generation, tracker_id, observed_at_utc, storage_key, expires_at_utc, image_state)
+                VALUES (?,?,'cam1','session-1','generation-1',?,'2026-09-21T00:00:00Z','fixture.jpg','2099-01-01T00:00:00Z','present')""",
+                (f"crop{tid}", tid, tid))
+        conn.commit()
         ceiling = 4
         scope = {"cam1": {
             "tracking_session_id": "session-1",
@@ -1106,8 +1150,13 @@ def test_phase5_readonly_budget_and_stable_paging():
         }}
         first = query_history(str(root / "phase5.db"), plan, cutoff, ceiling, scope)
         assert first["tracks"][0]["track_id"] == 3 and first["total"] == 3
+        # Expiry on an earlier page must not shift later tracks past OFFSET.
+        conn.execute("UPDATE candidates SET image_state='expired' WHERE track_id=3")
+        conn.commit()
+        expired = query_history(str(root / "phase5.db"), plan, cutoff, ceiling, scope)
+        assert expired["tracks"][0]["track_id"] == 4 and expired["truncated"]
         secret = b"phase5-test-secret"
-        token = encode_page_token(plan, cutoff, ceiling, scope, secret)
+        token = encode_page_token(plan, cutoff, ceiling, scope, secret, cursor=first["next_cursor"])
         try:
             decode_page_token(token[:-1] + ("A" if token[-1] != "A" else "B"), secret)
         except InvalidInput:
@@ -1145,8 +1194,36 @@ def test_phase5_readonly_budget_and_stable_paging():
             retention=timedelta(days=7))
         second = query_history(
             str(root / "phase5.db"), second_plan, cutoff, body["track_id_ceiling"],
-            body["scope"])
+            body["scope"], body["cursor"])
         assert second["tracks"][0]["track_id"] == 4, second["tracks"]
+
+        assert second["truncated"]
+        # A crop arriving on an earlier page must not duplicate later tracks.
+        conn.execute("UPDATE candidates SET image_state='present' WHERE track_id=3")
+        conn.commit()
+        third = query_history(str(root / "phase5.db"), {**second_plan, "page": 2},
+                              cutoff, ceiling, scope, second["next_cursor"])
+        assert [row["track_id"] for row in third["tracks"]] == [1]
+        assert not third["truncated"]
+        previous = query_history(str(root / "phase5.db"), second_plan, cutoff,
+                                 ceiling, scope, third["previous_cursor"])
+        assert [row["track_id"] for row in previous["tracks"]] == [4]
+        # An upcoming crop expires: seek skips it and still fills the next page.
+        conn.execute("UPDATE candidates SET image_state='expired' WHERE track_id=4")
+        conn.commit()
+        skipped = query_history(str(root / "phase5.db"), second_plan, cutoff,
+                                ceiling, scope, first["next_cursor"])
+        assert [row["track_id"] for row in skipped["tracks"]] == [1]
+        conn.execute("UPDATE candidates SET image_state='present'")
+        conn.commit()
+        ascending_plan = {**plan, "order": "last_observed_asc"}
+        ascending = query_history(str(root / "phase5.db"), ascending_plan, cutoff, ceiling, scope)
+        assert ascending["tracks"][0]["track_id"] == 1
+        conn.execute("UPDATE candidates SET image_state='expired' WHERE track_id=1")
+        conn.commit()
+        ascending_next = query_history(str(root / "phase5.db"), {**ascending_plan, "page": 1},
+                                       cutoff, ceiling, scope, ascending["next_cursor"])
+        assert ascending_next["tracks"][0]["track_id"] == 4
 
         # Signed paging for a selected camera remains valid when other cameras
         # are registered; page() reconstructs the original selected scope.
@@ -1173,6 +1250,189 @@ def test_phase5_readonly_budget_and_stable_paging():
                 pass
             else:
                 raise AssertionError("expensive query was not interrupted")
+        conn.close()
+
+
+
+
+def test_handheld_search_fast_path_and_recovery():
+    from app.assistant import Assistant, simple_plan, InvalidInput, encode_page_token, query_context, validate_plan
+    labels = ("person", "car")
+    for text, classes in [
+        ("Give me detected objects in the last ten minutes", None),
+        ("Show me people from 16:20 to 16:25", ["person"]),
+        ("Which cars appeared in the past five minutes?", ["car"]),
+        ("What was detected in the last 10 minutes?", None),
+    ]:
+        window = {"kind": "relative", "minutes": 10} if "16:20" in text else None
+        assert simple_plan(text, labels, window)["classes"] == classes
+    assert simple_plan("show cars from 16:20 to 16:25 near the gate", labels,
+                       {"kind":"relative", "minutes":10}) is None
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        conn, cutoff, metadata = _phase5_fixture(root)
+        a = Assistant({"db_path":str(root / "phase5.db"), "detector_metadata_path":str(metadata),
+                       "assistant_queue_depth":1}, None,
+                      generate=lambda _: (_ for _ in ()).throw(AssertionError("unexpected inference")))
+        a.queue.acquire()
+        with a.single_flight:
+            answer = a.ask("Show me people in the last ten minutes", "cam1")
+            assert answer["query"]["scope"] == "current_tracking_session"
+            assert answer["query"]["filters"]["classes"] == ["person"]
+            assert a.search({"window":{"kind":"relative", "minutes":10}, "classes":None}, "cam1")["query"]
+        a.queue.release()
+        assert a.ask("What was seen?", "cam1")["recovery"]["reason"] == "missing_window"
+        assert a.ask("Were there weapons in the last ten minutes?", "cam1")["recovery"]["reason"] == "unsupported_concept"
+        assert a.search({"window":{"kind":"relative", "minutes":10}, "classes":["invented"]}, "cam1")["recovery"]["reason"] == "invalid_filters"
+        known, ceiling, scope = query_context(str(root / "phase5.db"))
+        plan = validate_plan({"window":{"kind":"relative", "minutes":10}, "classes":None},
+            labels=labels, known_streams=known, selected_stream="cam1", cutoff=cutoff, retention=timedelta(days=7))
+        token = encode_page_token(plan, cutoff, ceiling, scope, a.page_secret)
+        page = a.page(token)["query"]
+        previous = a.page(page["previous_page_token"])["query"]
+        assert previous["page"] == 0 and previous["query_cutoff_utc"] == page["query_cutoff_utc"]
+        conn.execute("UPDATE streams SET tracking_session_id='new-session'")
+        conn.commit()
+        try:
+            a.page(token)
+        except InvalidInput as exc:
+            assert "session changed" in str(exc)
+        else:
+            raise AssertionError("old session token accepted")
+        conn.close()
+
+
+def test_search_options_current_session_availability():
+    from app.assistant import Assistant, _utc
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        conn, cutoff, metadata = _phase5_fixture(root)
+        assistant = Assistant({"db_path": str(root / "phase5.db"),
+                               "detector_metadata_path": str(metadata)}, None)
+        options = assistant.options()
+        assert options["classes"] == ("person", "car", "suitcase")
+        assert options["availability"] == [{"stream_id": "cam1",
+            "started_utc": _utc(cutoff - timedelta(minutes=30)),
+            "ended_utc": _utc(cutoff - timedelta(minutes=8))}]
+        conn.execute("UPDATE tracks SET history_generation='old' WHERE track_id=2")
+        conn.commit()
+        assert assistant.options()["availability"][0]["started_utc"] == _utc(cutoff - timedelta(minutes=12))
+        assistant.retention = timedelta(minutes=10)
+        assert assistant.options()["availability"][0]["started_utc"] >= _utc(cutoff - timedelta(minutes=10))
+        conn.execute("UPDATE streams SET tracking_session_id='new-session'")
+        conn.commit()
+        assert assistant.options()["availability"] == [{"stream_id": "cam1", "started_utc": None, "ended_utc": None}]
+        conn.close()
+
+
+def test_history_ux_regressions():
+    import asyncio
+    from types import SimpleNamespace
+    from app.main import create_app
+    from app.assistant import Assistant, _history_answer
+    truth = {"total": 7, "class_counts": {"person": 7}, "warnings": []}
+    assert _history_answer(truth) == "Found 7 person tracks in the requested window."
+    a = Assistant({}, None, generate=lambda _: (_ for _ in ()).throw(AssertionError("unneeded model call")))
+    assert a.ask("Were there weapons in the last ten minutes?", "cam1")["intent"] == "clarification"
+    assert a.ask("What was seen?", "cam1")["intent"] == "clarification"
+    assert a.ask("What did camera 2 see in the last ten minutes?", "cam1")["intent"] == "clarification"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        conn, _, metadata = _phase5_fixture(root)
+        broad = json.dumps({"intent": "video_history", "plan": {
+            "window": {"kind": "relative", "minutes": 10}, "classes": None}})
+        calls = []
+        a = Assistant({"db_path": str(root / "phase5.db"), "detector_metadata_path": str(metadata)},
+                      None, generate=lambda prompt: calls.append(prompt) or broad)
+        answer = a.ask("Summarize evidence concerning person tracks in the last ten minutes?", "cam1")
+        assert not answer.get("query") and len(calls) == 2
+        conn.close()
+
+    async def responsive():
+        app = create_app()
+        def slow(text, stream, emit=None):
+            if emit:
+                emit({"answer": {"answer_text": "early counts"}})
+            time.sleep(.25)
+            return {"answer_text": "finished"}
+        app.state.assistant = SimpleNamespace(ask=slow)
+        ticks = []
+        async def heartbeat():
+            for _ in range(25):
+                ticks.append(time.monotonic())
+                await asyncio.sleep(.02)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            beat = asyncio.create_task(heartbeat())
+            response = await client.post("/api/ask", json={"text": "test"})
+            await beat
+            assert response.status_code == 200
+            assert max(b-a for a,b in zip(ticks,ticks[1:])) < .15, "inference blocked event loop"
+            response = await client.post("/api/ask", json={"text": "test"}, headers={"accept": "application/x-ndjson"})
+            events = [json.loads(line) for line in response.text.splitlines()]
+            assert events[0]["answer"]["answer_text"] == "early counts"
+            assert events[-1]["done"] and events[-1]["answer"]["answer_text"] == "finished"
+    asyncio.run(responsive())
+
+    # A live span is checkpointed without being closed or losing its index.
+    with tempfile.TemporaryDirectory() as tmp:
+        ing = _ingest(tmp, cameras=("cam1",))
+        span = {"last_at": time.time(), "index": 2}
+        ing.open_intervals[("cam1", "s", "g", 1)] = span
+        written = []
+        ing._write_interval = lambda key, value: written.append((key, dict(value)))
+        ing._flush_intervals()
+        assert len(written) == 1 and ing.open_intervals
+        assert written[0][1]["index"] == 2
+        ing.conn.close()
+
+
+
+def test_clock_time_history_question():
+    from app.assistant import clock_window, InvalidInput, Assistant
+    now = datetime(2026, 9, 21, 14, 30, tzinfo=UTC)
+    question = "give me detected objects from 16:20 to 16:25"
+    expected = {"kind": "absolute", "start_utc": "2026-09-21T14:20:00Z", "end_utc": "2026-09-21T14:25:00Z"}
+    assert clock_window(question, "Europe/Warsaw", now) == expected
+    assert clock_window(question + " yesterday", "Europe/Warsaw", now)["start_utc"] == "2026-09-20T14:20:00Z"
+    assert clock_window(question + " on 2026-09-19", "Europe/Warsaw", now)["start_utc"] == "2026-09-19T14:20:00Z"
+    for text, tz in [(question, None), (question, "invalid/timezone"),
+                     ("objects from 26:20 to 26:25", "Europe/Warsaw"),
+                     ("objects from 16:25 to 16:20", "Europe/Warsaw"),
+                     ("objects from 17:20 to 17:25", "Europe/Warsaw"),
+                     ("objects from 02:20 to 02:25 on 2026-03-29", "Europe/Warsaw"),
+                     ("objects from 02:20 to 02:25 on 2025-10-26", "Europe/Warsaw")]:
+        try:
+            clock_window(text, tz, now)
+        except InvalidInput:
+            pass
+        else:
+            raise AssertionError((text,tz))
+    for clocks in ("4:20 to 4:25 pm", "4:20pm to 4:25pm",
+                   "4:20 PM to 4:25", "4:20 a.m. to 4:25 p.m."):
+        text = f"show cars from {clocks} yesterday"
+        def unexpected_generation(prompt):
+            raise AssertionError("AM/PM must be clarified before model routing")
+        result = Assistant({}, None, generate=unexpected_generation).ask(
+            text, timezone="Europe/Warsaw")
+        assert result["intent"] == "clarification", result
+        assert "24-hour" in result["answer_text"], result
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        conn, cutoff, metadata = _phase5_fixture(root)
+        from zoneinfo import ZoneInfo
+        start = (cutoff-timedelta(minutes=10)).astimezone(ZoneInfo("Europe/Warsaw")).strftime("%H:%M")
+        end = (cutoff-timedelta(minutes=5)).astimezone(ZoneInfo("Europe/Warsaw")).strftime("%H:%M")
+        text = f"give me detected objects from {start} to {end}"
+        window = clock_window(text, "Europe/Warsaw", cutoff)
+        prompts = []
+        def generate(prompt):
+            prompts.append(prompt)
+            return json.dumps({"intent":"video_history","plan":{"window":window,"classes":None}})
+        a = Assistant({"db_path":str(root/'phase5.db'), "detector_metadata_path":str(metadata)}, None, generate=generate)
+        result = a.ask(text, "cam1", timezone="Europe/Warsaw")
+        assert result["intent"] == "video_history" and not prompts
+        assert result["query"]["window"]["started_utc"] == window["start_utc"]
         conn.close()
 
 

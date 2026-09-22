@@ -17,6 +17,7 @@
   button, select, input { font: inherit; color: inherit; }
   button, select, summary { touch-action: manipulation; }
   button { cursor: pointer; }
+  button:not(:disabled):active { filter: brightness(1.15); }
   button:focus-visible, select:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
   button:disabled { opacity: .55; cursor: default; }
   [hidden] { display: none !important; }
@@ -31,7 +32,10 @@
   .camera[aria-pressed="true"] { border: 2px solid var(--accent); background: #35485e; }
   .camera.up small, #connection.live { color: var(--good); }
   .camera.down small { color: var(--bad); }
-  .top-status { margin-left: auto; text-align: right; }
+  .top-status { margin-left: auto; text-align: right; white-space: nowrap; }
+  .clock-status { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+  #operator-clock { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  #operator-date { color: var(--muted); font-size: 11px; }
   #connection { color: var(--warn); font-size: 13px; }
   #model-strip { display: flex; align-items: center; gap: 12px; padding: 4px 16px; border-bottom: 1px solid var(--line); }
   #model-strip > strong { font-size: 13px; white-space: nowrap; }
@@ -53,13 +57,15 @@
   #workspace { min-height: 0; overflow: auto; padding: 12px; display: grid; gap: 12px;
     grid-template-columns: minmax(0, 58fr) minmax(400px, 42fr);
     grid-template-rows: minmax(min-content, 1fr) minmax(min-content, .8fr); }
-  #workspace.resources-expanded { grid-template-rows: minmax(min-content, 1fr) minmax(min-content, 1.4fr); }
+  #workspace.resources-expanded #telemetry { position: absolute; inset: calc(-1 * var(--telemetry-rise)) 0 0; height: auto; z-index: 1; }
   .panel { min-width: 0; min-height: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
   .panel-head { min-height: 44px; padding: 0 12px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); }
   .panel-head h2 { margin: 0; font-size: 15px; font-weight: 600; }
   .panel-head small { margin-left: auto; color: var(--muted); font-size: 12px; }
-  .quiet-button { min-height: 44px; border: 0; border-radius: 6px; padding: 6px 10px; background: transparent; color: var(--accent); }
-  .quiet-button[aria-pressed="true"] { background: #35485e; }
+  .quiet-button { height: 32px; min-height: 32px; align-self: center; font-size: 13px; font-weight: 600; white-space: nowrap; border: 1px solid var(--line); border-radius: 6px; padding: 4px 9px; background: #292f38; color: var(--text); }
+  .quiet-button:not(:disabled):hover { border-color: var(--accent); }
+  .quiet-button[aria-pressed="true"], .quiet-button[aria-expanded="true"] { background: #35485e; border-color: var(--accent); }
+  #open-assistant { margin-left: auto; background: #35485e; border-color: var(--accent); }
   #video-panel { grid-column: 1; grid-row: 1; display: grid; grid-template-rows: 44px minmax(200px, 1fr) auto; }
   #video-wrap { contain: size; position: relative; min-height: 0; background: #171b20; }
   video { width: 100%; height: 100%; display: block; object-fit: contain; }
@@ -73,7 +79,7 @@
   #alert-list li { display: grid; grid-template-columns: 64px 1fr; gap: 8px; padding: 5px 0; font-size: 12px; }
   #alert-list li.empty { display: block; }
   .empty { color: var(--muted); padding: 16px; }
-  #lower { grid-column: 1; grid-row: 2; min-height: 0; }
+  #lower { position: relative; grid-column: 1; grid-row: 2; min-height: 0; }
   #telemetry { height: 100%; position: relative; display: grid; grid-template-rows: 44px auto minmax(0, 1fr); }
   #telemetry-status { white-space: nowrap; }
   #telemetry-grid { padding: 8px 10px 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
@@ -92,7 +98,7 @@
   #chart-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; }
   .legend-item { display: inline-flex; align-items: center; gap: 5px; }
   .swatch { width: 16px; border-top: 3px solid; }
-  #chart { display: block; width: 100%; height: 100%; min-height: 85px; }
+  #chart { contain: size; display: block; width: 100%; height: 100%; min-height: 85px; }
   #chart text { fill: var(--muted); font-size: 12px; }
   #chart .gridline { stroke: var(--line); stroke-width: 1; }
   #chart-note { color: var(--muted); font-size: 12px; min-height: 17px; }
@@ -109,6 +115,9 @@
   #presence.show { display: block; }
   #list-status { min-height: 44px; padding: 0 6px 0 12px; display: flex; align-items: center; gap: 4px; border-block: 1px solid var(--line); }
   #list-state { flex: 1; font-size: 12px; color: var(--muted); }
+  #list-state[data-state="live"] { color: var(--good); }
+  #list-state[data-state="paused"], #list-state[data-state="held"] { color: var(--warn); }
+  #apply-updates:not(:disabled) { background: #35485e; border-color: var(--accent); }
   #subtotals { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
   .subtotal { font-size: 12px; }
   #track-scroll { min-height: 0; overflow: auto; padding: 10px; scrollbar-color: var(--line) transparent; overflow-anchor: none; }
@@ -122,30 +131,57 @@
   .track-copy { padding: 8px 10px; }
   .track-copy strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .track-copy span { color: var(--muted); font-size: 12px; }
+  .track-copy .track-seen { display: block; color: var(--text); font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; margin: 4px 0; }
+  .track-images { display: block; }
   .camera-name { display: block; }
   #drawer { position: absolute; inset: 0; z-index: 5; display: none; grid-template-rows: 54px minmax(0, 1fr); background: var(--panel); }
   #drawer.open { display: grid; }
   #drawer-head { display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-bottom: 1px solid var(--line); }
-  #drawer-head button { min-width: 54px; min-height: 44px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
   #drawer-body { min-height: 0; overflow: auto; padding: 12px; }
   #large-crop { height: 46%; min-height: 190px; border-radius: 8px; }
   #candidate-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
   .candidate { min-height: 76px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 4px; overflow: hidden; }
   .candidate img { width: 100%; height: 58px; object-fit: contain; display: block; }
-  #drawer-detail { color: var(--muted); font-size: 13px; }
-  #assistant-panel { position: absolute; inset: 0; z-index: 6; display: none;
-    grid-template-rows: 54px auto auto auto minmax(0, 1fr) auto; background: var(--panel); }
-  #assistant-panel.open { display: grid; }
-  #assistant-head { display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-bottom: 1px solid var(--line); }
-  #assistant-head button { min-width: 54px; min-height: 44px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
-  #ask-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 10px 12px; }
-  #ask-text { min-width: 0; min-height: 44px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
-  #ask-submit { min-height: 44px; padding: 6px 16px; border: 1px solid var(--accent); border-radius: 8px; background: #35485e; }
-  #assistant-answer { padding: 0 12px 8px; font-size: 15px; }
-  #assistant-scope, #assistant-warnings { padding: 0 12px 8px; color: var(--muted); font-size: 12px; }
+  #drawer-detail { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 8px 12px; }
+  #drawer-detail dt { color: var(--muted); font-size: 13px; }
+  #drawer-detail dd { margin: 0; overflow-wrap: anywhere; }
+  #drawer-detail .evidence-time { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  #drawer-detail .evidence-secondary { color: var(--muted); font-size: 12px; }
+  #assistant-panel { position: absolute; inset: 0; z-index: 6; display: none; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  #assistant-panel.open { display: flex; flex-direction: column; }
+  #assistant-head { display: flex; align-items: center; gap: 16px; padding: 8px 12px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+  #assistant-head span { margin-left: auto; color: var(--muted); font-size: 13px; }
+  #assistant-panel select, #assistant-panel input { min-height: 48px; }
+  #assistant-workspace { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  #ask-form { flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; max-height: calc(100% - 160px); gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  #search-entry { display: flex; gap: 6px; flex-shrink: 0; }
+  #search-fields { min-height: 0; overflow: auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  #filter-fields { display: contents; }
+  #ask-form label { display: grid; gap: 3px; min-width: 0; font-size: 12px; }
+  #ask-form select, #ask-form input { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 6px; background: var(--bg); color: var(--text); font: inherit; }
+  #ask-text { flex: 1; }
+  #search-custom { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  #search-input-hint, #search-availability, #search-timezone { grid-column: 1 / -1; margin: 0; font-size: 12px; color: var(--muted); }
+  #search-availability { max-height: 20px; overflow: auto; }
+  #search-timezone { display: none; }
+  #assistant-editor-error { color: var(--warn); margin: 0; max-height: 40px; overflow: auto; font-size: 12px; }
+  #ask-submit { background: #35485e !important; border-color: var(--accent) !important; flex-shrink: 0; }
+  #assistant-output { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  #assistant-result-head { padding: 8px 10px 0; max-height: calc(100% - 144px); min-height: 0; overflow: auto; flex-shrink: 1; }
+  #assistant-submitted { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+  #assistant-submitted:empty, #assistant-editor-error:empty { display: none; }
+  #assistant-answer { font-size: 15px; margin-bottom: 8px; }
+  #assistant-progress, #assistant-warnings { font-size: 13px; margin-bottom: 8px; }
   #assistant-warnings { color: var(--warn); }
-  #assistant-results { min-height: 0; overflow: auto; padding: 10px; }
-  #assistant-next { min-height: 44px; margin: 0 12px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+  #assistant-scope { display: flex; flex-wrap: wrap; gap: 4px; color: var(--muted); font-size: 12px; }
+  #assistant-scope span { border: 1px solid var(--line); border-radius: 8px; padding: 3px 6px; }
+  #assistant-results { flex: 1; min-height: 80px; overflow: auto; padding: 10px; }
+  #assistant-results .track-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  #assistant-results .crop.missing { height: auto; min-height: 36px; }
+  #assistant-paging { display: flex; gap: 8px; align-items: center; padding: 8px 16px; border-top: 1px solid var(--line); flex-shrink: 0; }
+  #assistant-page-label { flex: 1; text-align: center; font-size: 12px; }
+  #drawer.from-assistant { z-index: 9; }
+
   #orientation { display: none; position: fixed; inset: 0; z-index: 20; place-items: center; padding: 28px; text-align: center; background: var(--bg); font-size: 18px; }
   @media (orientation: portrait) { #orientation { display: grid; } }
   @media (max-width: 1100px) {
@@ -165,8 +201,8 @@
     <div class="brand"><strong>Handheld ops</strong><span>Live evidence console</span></div>
     <nav id="cameras" aria-label="Camera selection"></nav>
     <div class="top-status">
-      <div id="connection">connecting</div>
-
+      <div class="clock-status"><time id="operator-clock" aria-label="Current local time"></time><div id="connection">connecting</div></div>
+      <div id="operator-date"></div>
     </div>
   </header>
 
@@ -222,15 +258,14 @@
 
     <section id="tracks-panel" class="panel" aria-labelledby="track-title">
       <div class="panel-head">
-        <h2 id="track-title">Evidence · object tracks</h2>
-        <small id="track-count">0 tracks</small>
+        <h2 id="track-title">Evidence</h2>
         <button id="open-assistant" class="quiet-button" type="button">Ask history</button>
       </div>
       <div id="track-controls">
         <label>View
           <select id="track-mode">
-            <option value="current">Current</option>
-            <option value="history" selected>History</option>
+            <option value="current" selected>Current</option>
+            <option value="history">History</option>
           </select>
         </label>
         <label>Show object type
@@ -252,34 +287,66 @@
       </div>
       <div id="track-scroll"><div class="track-grid"></div></div>
 
-      <aside id="assistant-panel" aria-label="Typed history question">
+      <aside id="assistant-panel" aria-label="Search camera history">
         <div id="assistant-head">
-          <button id="close-assistant" type="button" aria-label="Close history question">Back</button>
-          <strong>Ask camera history</strong>
-          <span class="micro">Typed input only</span>
+          <button id="close-assistant" class="quiet-button" type="button">Back</button>
+          <strong>Search camera history</strong>
+
         </div>
-        <form id="ask-form">
-          <input id="ask-text" type="text" maxlength="500" required
-                 placeholder="What person tracks appeared in the last ten minutes?"
-                 aria-label="Camera history question">
-          <button id="ask-submit" type="submit">Ask</button>
-        </form>
-        <div id="assistant-answer" role="status">Ask about recorded object tracks.</div>
-        <div id="assistant-scope"></div>
-        <div id="assistant-warnings"></div>
-        <div id="assistant-results"><div class="track-grid"></div></div>
-        <button id="assistant-next" type="button" hidden>Next page</button>
+        <div id="assistant-workspace">
+          <form id="ask-form">
+            <div id="search-entry">
+              <input id="ask-text" type="text" maxlength="500" aria-label="Optional history question" placeholder="Ask about objects and time, or use filters">
+              <button id="ask-submit" class="quiet-button" type="submit">Search</button>
+            </div>
+            <div id="search-fields">
+              <label>Camera<select id="search-camera"></select></label>
+              <div id="filter-fields">
+                <label>Object type<select id="search-class"><option value="">All object types</option></select></label>
+                <label>Time range<select id="search-period">
+                  <option value="10">Last 10 minutes</option><option value="60">Last hour</option>
+                  <option value="session">Available session history</option><option value="custom">Custom range</option>
+                </select></label>
+                <div id="search-custom" hidden>
+                  <label>From date<input id="search-date" type="date"></label>
+                  <label>From time<input id="search-start" type="time" step="1"></label>
+                  <label>To date<input id="search-end-date" type="date"></label>
+                  <label>To time<input id="search-end" type="time" step="1"></label>
+                </div>
+              </div>
+              <p id="search-input-hint" hidden>Clear the question to use object and time filters.</p>
+              <p id="search-availability"></p>
+              <p id="search-timezone"></p>
+            </div>
+            <p id="assistant-editor-error" role="status"></p>
+          </form>
+          <section id="assistant-output" aria-label="Search results">
+            <div id="assistant-result-head">
+              <p id="assistant-submitted"></p>
+              <div id="assistant-answer" role="status">Choose filters, then Search.</div>
+              <div id="assistant-progress" role="status"></div>
+              <div id="assistant-scope"></div>
+              <div id="assistant-warnings" role="status"></div>
+            </div>
+            <div id="assistant-results"><div class="track-grid"></div></div>
+            <nav id="assistant-paging" aria-label="History result pages">
+              <button id="assistant-previous" class="quiet-button" type="button" disabled>Previous</button>
+              <span id="assistant-page-label"></span>
+              <button id="assistant-next" class="quiet-button" type="button" disabled>Next</button>
+            </nav>
+          </section>
+        </div>
       </aside>
 
       <aside id="drawer" aria-label="Static track evidence">
         <div id="drawer-head">
-          <button id="close-drawer" type="button" aria-label="Close evidence drawer">Back</button>
+          <button id="close-drawer" class="quiet-button" type="button" aria-label="Close evidence drawer">Back</button>
           <strong id="drawer-title">Static evidence</strong>
           <span class="micro">Stored image</span>
         </div>
         <div id="drawer-body">
-          <div id="large-crop" class="crop missing">No stored crop</div>
-          <p id="drawer-detail"></p>
+          <div id="large-crop" class="crop missing">No stored image</div>
+          <dl id="drawer-detail"></dl>
           <div id="candidate-list"></div>
         </div>
       </aside>
@@ -293,11 +360,13 @@ const $ = (id) => document.getElementById(id);
 const state = {
   streams: [], selected: null, current: {}, recent: {}, alerts: [],
   telemetry: null, history: new Map(), whep: null, events: null,
-  filter: {mode: "history", classLabel: "", hasImage: false},
+  filter: {mode: "current", classLabel: "", hasImage: false},
   paused: false, held: false, pending: false, drawerTrack: null, selectedTrackKey: null,
   resource: "cpu", trackSignature: "", requestVersion: 0,
   models: [], selectedModel: null, modelsUnavailable: false,
-  assistantToken: null, assistantBusy: false,
+  assistantToken: null, assistantBusy: false, assistantPrevious: null,
+  assistantAnswer: null, assistantContext: null, assistantPages: new Map(),
+  assistantReturn: false, assistantScroll: 0, assistantOptions: [], assistantAvailability: [],
 };
 
 async function api(path) {
@@ -527,9 +596,29 @@ function selectCamera(streamId, firstLoad = false) {
 function shortTime(value) {
   const date = new Date(value);
   return Number.isNaN(date.valueOf()) ? "--:--" : date.toLocaleTimeString([], {
-    hour: "2-digit", minute: "2-digit", second: "2-digit"
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23"
   });
 }
+
+function evidenceTime(value, now = new Date()) {
+  const date = new Date(value);
+  if (!value || Number.isNaN(date.valueOf())) return "Unavailable";
+  const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
+  const day = date.toDateString() === now.toDateString() ? "Today"
+    : date.toDateString() === yesterday.toDateString() ? "Yesterday"
+    : date.toLocaleDateString([], {day: "2-digit", month: "short", year: "numeric"});
+  return day + " · " + shortTime(value);
+}
+
+function updateOperatorClock() {
+  const now = new Date();
+  $("operator-clock").dateTime = now.toISOString();
+  $("operator-clock").textContent = shortTime(now);
+  $("operator-date").textContent = now.toLocaleDateString([], {day: "2-digit", month: "short", year: "numeric"})
+    + " · " + Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+updateOperatorClock();
+setInterval(updateOperatorClock, 1000);
 
 function selectedStreams() {
   return state.selected === "all" ? state.streams
@@ -616,7 +705,6 @@ function renderTrackSummary(tracks) {
   $("scope-copy").textContent = [camera, history ? "History · current session" : "Current",
     type, history ? tracks.length + " of " + matched + " shown" : tracks.length + " observed",
     results.some((r) => r.truncated) && history ? "More results available" : ""].filter(Boolean).join(" · ");
-  $("track-count").textContent = "Tracks, not people";
 }
 
 function missingCrop(box, reason) {
@@ -643,41 +731,45 @@ function trackCard(track) {
   if (track.snip_url) {
     const image = document.createElement("img");
     image.src = track.snip_url;
-    image.alt = "Stored crop for " + track.class_label + " track";
+    image.alt = "Stored image for " + track.class_label + " track";
     image.onerror = () => {
       if (crop.isConnected) {
         delete crop.parentElement.dataset.imageKey;
         state.trackSignature = "";
       }
-      missingCrop(crop, "Crop missing or expired");
+      missingCrop(crop, "Image missing or expired");
     };
     crop.append(image);
   } else {
     const reasons = {
-      pending: "Crop pending",
-      expired: "Crop expired",
-      missing: "Crop missing",
-      superseded: "Crop superseded",
-      none: "No stored crop",
+      pending: "Image pending",
+      expired: "Image expired",
+      missing: "Image missing",
+      superseded: "Image superseded",
+      none: "No stored image",
     };
-    missingCrop(crop, reasons[track.snip_state] || "No stored crop");
+    missingCrop(crop, reasons[track.snip_state] || "No stored image");
   }
   const copy = document.createElement("div");
   copy.className = "track-copy";
   const title = document.createElement("strong");
   title.textContent = titleCase(track.class_label) + " track " + (track.track_id ? "#" + track.track_id : "(live)");
   const meta = document.createElement("span");
-  meta.textContent = "Seen " + shortTime(track.last_observed_utc) + " · " + (track.candidate_count || 0) + (track.candidate_count === 1 ? " image" : " images");
+  meta.className = "track-seen";
+  meta.textContent = "Last seen " + evidenceTime(track.last_observed_utc);
+  const images = document.createElement("span"); images.className = "track-images";
+  images.textContent = (track.candidate_count || 0) + (track.candidate_count === 1 ? " image" : " images");
   const camera = document.createElement("span");
   camera.className = "camera-name";
   camera.textContent = cameraName(track.stream_id);
-  copy.append(title, meta);
+  copy.append(title, meta, images);
   if (state.selected === "all") copy.append(camera);
   card.append(crop, copy);
   return card;
 }
 
 function updateListState() {
+  $("list-state").dataset.state = state.paused ? "paused" : state.held ? "held" : "live";
   $("list-state").textContent = state.paused ? "Paused · snapshot"
     : state.held ? "Held for inspection · snapshot" : "Live list";
   $("apply-updates").disabled = !state.pending || Boolean(state.drawerTrack);
@@ -715,8 +807,8 @@ function renderTracks(force = false) {
     if (!card) card = trackCard(track);
     else {
       card.onclick = () => openDrawer(track);
-      card.querySelector(".track-copy span").textContent = "Seen " + shortTime(track.last_observed_utc)
-        + " · " + (track.candidate_count || 0) + (track.candidate_count === 1 ? " image" : " images");
+      card.querySelector(".track-seen").textContent = "Last seen " + evidenceTime(track.last_observed_utc);
+      card.querySelector(".track-images").textContent = (track.candidate_count || 0) + (track.candidate_count === 1 ? " image" : " images");
       const imageKey = JSON.stringify([track.snip_url, track.snip_state]);
       if (card.dataset.imageKey !== imageKey) card.firstChild.replaceWith(trackCard(track).firstChild);
     }
@@ -958,27 +1050,34 @@ function renderTelemetryState() {
 }
 
 function candidateState(candidate) {
-  if (!candidate) return "No stored crop";
+  if (!candidate) return "No stored image";
   const labels = {
-    expired: "Crop expired by retention policy",
-    missing: "Crop file missing",
-    superseded: "Crop belongs to cleared history",
-    pending: "Crop pending",
+    expired: "Image expired by retention policy",
+    missing: "Image file missing",
+    superseded: "Image belongs to cleared history",
+    pending: "Image pending",
   };
-  return labels[candidate.image_state] || "Crop " + candidate.image_state;
+  return labels[candidate.image_state] || "Image " + candidate.image_state;
 }
 
 function renderDrawerDetail(candidate) {
   const track = state.drawerTrack;
   if (!track) return;
-  const capture = candidate && candidate.observed_at_utc
-    ? shortTime(candidate.observed_at_utc) : "unavailable";
-  $("drawer-detail").textContent = cameraName(track.stream_id)
-    + " / image captured " + capture
-    + " / track last seen " + shortTime(track.last_observed_utc)
-    + " / confidence "
-    + (track.peak_confidence == null ? "unavailable" : (track.peak_confidence * 100).toFixed(1) + "%")
-    + " / " + track.confidence_freshness + ". Static evidence for this track, not identity.";
+  const rows = [
+    ["Camera", cameraName(track.stream_id)],
+    ["Image captured", evidenceTime(candidate?.observed_at_utc), "evidence-time"],
+    ["Track last seen", evidenceTime(track.last_observed_utc), "evidence-time"],
+    ["Timezone", Intl.DateTimeFormat().resolvedOptions().timeZone, "evidence-secondary"],
+    ["Peak confidence", track.peak_confidence == null ? "Unavailable" : (track.peak_confidence * 100).toFixed(1) + "%", "evidence-secondary"],
+    ["Confidence source", (track.confidence_freshness || "Unavailable").replaceAll("_", " "), "evidence-secondary"],
+  ];
+  $("drawer-detail").replaceChildren();
+  for (const [label, value, style] of rows) {
+    const term = document.createElement("dt"), detail = document.createElement("dd");
+    term.textContent = label; detail.textContent = value;
+    if (style) detail.className = style;
+    $("drawer-detail").append(term, detail);
+  }
 }
 
 function showLargeCandidate(candidate) {
@@ -992,8 +1091,8 @@ function showLargeCandidate(candidate) {
   box.replaceChildren();
   const image = document.createElement("img");
   image.src = candidate.image_url;
-  image.alt = "Static stored crop";
-  image.onerror = () => missingCrop(box, "Crop missing or expired");
+  image.alt = "Static stored image";
+  image.onerror = () => missingCrop(box, "Image missing or expired");
   box.append(image);
 }
 
@@ -1011,9 +1110,9 @@ async function openDrawer(track) {
     + (track.track_id ? "#" + track.track_id : "(live)");
   renderDrawerDetail(null);
   $("candidate-list").replaceChildren();
-  missingCrop($("large-crop"), "Loading stored candidates...");
+  missingCrop($("large-crop"), "Loading stored images…");
   if (!track.track_id) {
-    missingCrop($("large-crop"), "Track is live; no committed crop yet");
+    missingCrop($("large-crop"), "Track is live; no stored image yet");
     return;
   }
   try {
@@ -1022,18 +1121,18 @@ async function openDrawer(track) {
     const candidates = result.candidates || [];
     showLargeCandidate(candidates[0]);
     if (!candidates.length) {
-      missingCrop($("large-crop"), "No stored crop");
+      missingCrop($("large-crop"), "No stored image");
       return;
     }
     for (const candidate of candidates) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "candidate";
-      button.title = "Candidate " + candidate.candidate_number + " / " + candidate.image_state;
+      button.title = "Image " + candidate.candidate_number + " / " + candidate.image_state;
       if (candidate.image_url) {
         const image = document.createElement("img");
         image.src = candidate.image_url;
-        image.alt = "Alternative static crop";
+        image.alt = "Alternative stored image";
         image.onerror = () => {
           button.replaceChildren(document.createTextNode("missing"));
         };
@@ -1050,7 +1149,7 @@ async function openDrawer(track) {
     }
   } catch (error) {
     if (state.drawerTrack !== track) return;
-    missingCrop($("large-crop"), "Candidates unavailable");
+    missingCrop($("large-crop"), "Images unavailable");
   }
 }
 
@@ -1059,6 +1158,17 @@ function closeDrawer() {
   state.drawerTrack = null;
   for (const child of $("tracks-panel").children) child.inert = false;
   updateListState();
+  if (state.assistantReturn) {
+    state.assistantReturn = false;
+    searchBackgroundInert(true);
+    $("drawer").classList.remove("from-assistant");
+    $("close-drawer").textContent = "Back";
+    $("assistant-results").scrollTop = state.assistantScroll;
+    const card = [...$("assistant-results").querySelectorAll(".track-card")]
+      .find(item => item.dataset.trackKey === state.selectedTrackKey);
+    (card || $("ask-submit")).focus({preventScroll: true});
+    return;
+  }
   const selected = [...document.querySelectorAll(".track-card")]
     .find((card) => card.dataset.trackKey === state.selectedTrackKey);
   if (selected) selected.focus({preventScroll: true});
@@ -1066,64 +1176,250 @@ function closeDrawer() {
 $("close-drawer").onclick = closeDrawer;
 $("drawer").addEventListener("keydown", (event) => { if (event.key === "Escape") closeDrawer(); });
 
-function openAssistant() {
+function searchBackgroundInert(value) {
+  for (const sibling of $("tracks-panel").children) {
+    if (!["assistant-panel", "drawer"].includes(sibling.id)) sibling.inert = value;
+  }
+}
+
+async function openAssistant() {
   $("assistant-panel").classList.add("open");
   $("open-assistant").setAttribute("aria-expanded", "true");
-  $("ask-text").focus();
+  searchBackgroundInert(true);
+  if (!$("search-camera").options.length) {
+    $("search-camera").replaceChildren(new Option("All cameras", "all"), ...state.streams.map(s => new Option(s.display_name, s.stream_id)));
+    $("search-camera").value = "all";
+    const end = new Date(), start = new Date(end - 600000);
+    $("search-date").value = localDateValue(start); $("search-end-date").value = localDateValue(end);
+    $("search-start").value = start.toTimeString().slice(0, 5); $("search-end").value = end.toTimeString().slice(0, 5);
+  }
+  $("search-timezone").textContent = "Times: " + Intl.DateTimeFormat().resolvedOptions().timeZone;
+  $("search-camera").focus();
+  await loadAssistantOptions();
+}
+
+async function loadAssistantOptions() {
+  try {
+    const options = await api("/api/history/options");
+    state.assistantOptions = (options.classes || []).slice().sort((a, b) => a.localeCompare(b));
+    state.assistantAvailability = options.availability || [];
+    const selected = $("search-class").value;
+    $("search-class").replaceChildren(new Option("All object types", ""), ...state.assistantOptions.map(label => new Option(titleCase(label), label)));
+    $("search-class").value = state.assistantOptions.includes(selected) ? selected : "";
+    updateSearchAvailability();
+    return true;
+  } catch {
+    state.assistantAvailability = [];
+    $("search-availability").textContent = "History availability could not be checked. Search will retry.";
+    return false;
+  }
+}
+
+function availableHistory(camera) {
+  return state.assistantAvailability.filter(row => !camera || camera === "all" || row.stream_id === camera);
+}
+
+function updateSearchAvailability() {
+  const rows = availableHistory($("search-camera").value);
+  $("search-availability").textContent = rows.length ? rows.map(row => cameraName(row.stream_id) + ": " +
+    (row.started_utc ? `${new Date(row.started_utc).toLocaleString([], {hourCycle: "h23"})} – ${new Date(row.ended_utc).toLocaleString([], {hourCycle: "h23"})}` : "no records yet")).join(" · ") : "No recorded history available.";
+}
+
+function updateQuestionFilters() {
+  const question = Boolean($("ask-text").value.trim());
+  $("search-class").disabled = question;
+  $("search-period").disabled = question;
+  $("search-custom").inert = question;
+  $("search-input-hint").hidden = !question;
 }
 
 function closeAssistant() {
   $("assistant-panel").classList.remove("open");
   $("open-assistant").setAttribute("aria-expanded", "false");
+  searchBackgroundInert(false);
   $("open-assistant").focus();
 }
 
-function renderAssistant(answer) {
-  $("assistant-answer").textContent = answer.answer_text || "No answer returned.";
-  const query = answer.query;
-  const grid = $("assistant-results").firstElementChild;
-  grid.replaceChildren();
-  if (!query) {
-    $("assistant-scope").textContent = "";
-    $("assistant-warnings").textContent = (answer.errors || []).map((error) => error.message).join(" ");
-    state.assistantToken = null;
-    $("assistant-next").hidden = true;
-    return;
-  }
-  $("assistant-scope").textContent = `${query.tracks.length} of ${query.total} tracks · `
-    + `${query.window.started_utc} to ${query.window.ended_utc} · ${query.filters.streams.join(", ")}`;
-  $("assistant-warnings").textContent = (query.warnings || [])
-    .map((warning) => warning.message).join(" ");
-  for (const track of query.tracks) {
-    const card = trackCard(track);
-    card.onclick = () => { closeAssistant(); openDrawer(track); };
-    grid.append(card);
-  }
-  if (!query.tracks.length) {
-    const empty = document.createElement("div");
-    empty.className = "empty";
-    empty.textContent = "No matching object tracks.";
-    grid.append(empty);
-  }
-  state.assistantToken = query.next_page_token;
-  $("assistant-next").hidden = !state.assistantToken;
+function updateAssistantPaging() {
+  $("assistant-next").disabled = state.assistantBusy || !state.assistantToken;
+  $("assistant-previous").disabled = state.assistantBusy || !(state.assistantPrevious ||
+    (state.assistantAnswer?.query?.page > 0 && state.assistantPages.has(state.assistantAnswer.query.page - 1)));
 }
 
-async function submitAssistant(payload) {
+function renderAssistant(answer) {
+  state.assistantAnswer = answer;
+  $("assistant-answer").textContent = answer.answer_text || "No answer returned.";
+  const query = answer.query, grid = $("assistant-results").firstElementChild;
+  grid.replaceChildren();
+  state.assistantToken = query?.next_page_token || null;
+  state.assistantPrevious = query?.previous_page_token || null;
+  updateAssistantPaging();
+  if (!query) {
+    $("assistant-scope").textContent = "";
+    $("assistant-page-label").textContent = "";
+    $("assistant-warnings").textContent = (answer.errors || []).map(error => error.message).join(" ");
+    $("assistant-editor-error").textContent = "Edit the question, or clear it to use filters. Then Search.";
+    return;
+  }
+  const visible = query.tracks.filter(track => track.snip_url);
+  const imageTotal = query.with_crops_total ?? query.total;
+  $("assistant-answer").textContent = `${query.total} matching tracks · ${imageTotal} with images`;
+  $("assistant-scope").replaceChildren();
+  const start = new Date(query.window.started_utc), end = new Date(query.window.ended_utc);
+  const clock = date => date.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", hourCycle: "h23"});
+  const timeRange = `${start.toLocaleDateString()} ${clock(start)} – ${start.toDateString() === end.toDateString() ? "" : end.toLocaleDateString() + " "}${clock(end)}`;
+  const scopeLabels = [query.filters.streams.map(cameraName).join(", "),
+    (query.filters.classes || []).map(titleCase).join(", ") || "All object types",
+    timeRange,
+    Intl.DateTimeFormat().resolvedOptions().timeZone];
+  for (const label of scopeLabels) {
+    const chip = document.createElement("span"); chip.textContent = label; $("assistant-scope").append(chip);
+  }
+  $("assistant-page-label").textContent = `Page ${query.page + 1} · ${visible.length} images`;
+  $("assistant-warnings").textContent = (query.warnings || []).map(w => w.message).join(" ");
+  function emptyMessage() {
+    if (!grid.children.length) {
+      const empty = document.createElement("div"); empty.className = "empty";
+      empty.textContent = query.total ? "No images available for these matching records. Change the camera or time range, then Search."
+        : query.warnings?.length ? "No matches in the searched records. Recording coverage is incomplete; this does not establish that nothing happened."
+        : "No matching records in this session and time window.";
+      grid.append(empty);
+    }
+  }
+  for (const track of visible) {
+    const card = trackCard(track);
+    card.querySelector(".track-seen").textContent = "Seen in range " + evidenceTime(track.matched_last_utc || track.last_observed_utc);
+    if (!card.querySelector(".camera-name")) {
+      const camera = document.createElement("span"); camera.className = "camera-name";
+      camera.textContent = cameraName(track.stream_id); card.querySelector(".track-copy").append(camera);
+    }
+    card.onclick = () => {
+      state.assistantScroll = $("assistant-results").scrollTop;
+      state.assistantReturn = true;
+      $("drawer").classList.add("from-assistant");
+      $("close-drawer").textContent = "Back to results";
+      openDrawer(track);
+    };
+    const image = card.querySelector("img");
+    if (image) image.onerror = () => {
+      card.remove();
+      $("assistant-page-label").textContent = `Page ${query.page + 1} · ${grid.querySelectorAll(".track-card").length} images`;
+      emptyMessage();
+    };
+    grid.append(card);
+  }
+  emptyMessage();
+  const oldScroll = state.assistantPages.get(query.page)?.scroll || 0;
+  state.assistantPages.set(query.page, {answer, scroll: oldScroll});
+  $("assistant-results").scrollTop = oldScroll;
+}
+
+function localDateValue(date) {
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
+async function applyAssistantFilters(event) {
+  event.preventDefault();
   if (state.assistantBusy) return;
+  $("assistant-editor-error").textContent = "";
+  const camera = $("search-camera").value;
+  if ($("ask-text").value.trim()) {
+    return submitAssistant({text: $("ask-text").value, selected_stream: camera === "all" ? null : camera,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone});
+  }
+  const period = $("search-period").value, label = $("search-class").value;
+  let window;
+  if (period === "custom") {
+    const start = new Date($("search-date").value + "T" + $("search-start").value);
+    const end = new Date($("search-end-date").value + "T" + $("search-end").value);
+    if (!Number.isFinite(start.valueOf()) || !Number.isFinite(end.valueOf()) || end <= start || end > new Date()) {
+      $("assistant-editor-error").textContent = "Choose a valid past range with the end after the start."; return;
+    }
+    window = {kind: "absolute", start_utc: start.toISOString(), end_utc: end.toISOString()};
+  } else if (period === "session") {
+    if (!await loadAssistantOptions()) { $("assistant-editor-error").textContent = "Could not check available history. Press Search to retry."; return; }
+    const rows = availableHistory(camera).filter(row => row.started_utc && row.ended_utc > row.started_utc);
+    if (!rows.length) { $("assistant-editor-error").textContent = "No records in this camera’s current session. Choose another camera."; return; }
+    window = {kind: "absolute", start_utc: rows.map(r => r.started_utc).sort()[0], end_utc: rows.map(r => r.ended_utc).sort().at(-1)};
+  } else window = {kind: "relative", minutes: Number(period)};
+  return submitAssistant({plan: {window, classes: label ? [label] : null}, selected_stream: camera === "all" ? null : camera},
+    `${$("search-class").selectedOptions[0].text} · ${$("search-period").selectedOptions[0].text}`);
+}
+
+async function submitAssistant(payload, label = null) {
+  if (state.assistantBusy) return;
+  if (!payload.page_token) {
+    state.assistantContext = {text: label || payload.text || "Filtered search", payload: structuredClone(payload)};
+    state.assistantPages.clear();
+    state.assistantAnswer = null;
+  } else if (state.assistantAnswer?.query) {
+    const saved = state.assistantPages.get(state.assistantAnswer.query.page);
+    if (saved) saved.scroll = $("assistant-results").scrollTop;
+  }
+  const context = state.assistantContext;
+  const scope = context?.payload.selected_stream;
+  const scopeLabel = scope ? state.streams.find(s => s.stream_id === scope)?.display_name || scope : "All cameras";
+  $("assistant-submitted").textContent = `${context?.text || "History"} · ${scopeLabel}`;
   state.assistantBusy = true;
+  $("assistant-previous").disabled = true;
+  $("search-fields").inert = true;
+  $("ask-text").disabled = true;
   $("ask-submit").disabled = true;
   $("assistant-next").disabled = true;
-  $("assistant-answer").textContent = "Querying recorded tracks…";
+  state.assistantToken = null;
+  $("assistant-page-label").textContent = "";
+  $("assistant-results").firstElementChild.replaceChildren();
+  $("assistant-scope").textContent = "";
+  $("assistant-warnings").textContent = "";
+  $("assistant-answer").textContent = "";
+  let stage = "Sending question…", received = false;
+  const started = Date.now();
+  const progress = () => { $("assistant-progress").textContent = `${stage} ${Math.floor((Date.now() - started) / 1000)}s`; };
+  progress();
+  const timer = setInterval(progress, 1000);
   try {
-    renderAssistant(await postApi("/api/ask", payload));
+    const response = await fetch("/api/ask", {method: "POST",
+      headers: {"content-type": "application/json", accept: "application/x-ndjson"},
+      body: JSON.stringify(payload)});
+    if (!response.ok) {
+      const body = await response.json();
+      throw new Error(body.error?.message || response.statusText);
+    }
+    if (!response.headers.get("content-type")?.includes("application/x-ndjson")) {
+      const body = await response.json();
+      if (body.error) throw new Error(body.error.message);
+      renderAssistant(body.data); received = true;
+    } else {
+      const reader = response.body.getReader(), decoder = new TextDecoder();
+      let pending = "", done = false;
+      while (!done) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        pending += decoder.decode(chunk.value, {stream: true});
+        let newline;
+        while ((newline = pending.indexOf("\n")) >= 0) {
+          const event = JSON.parse(pending.slice(0, newline));
+          pending = pending.slice(newline + 1);
+          if (event.error) throw new Error(event.error);
+          if (event.answer) { renderAssistant(event.answer); received = true; }
+          if (event.status) { stage = event.status; progress(); }
+          if (event.done) done = true;
+        }
+      }
+      if (!done) throw new Error("Connection interrupted. Submit the question again.");
+    }
   } catch (error) {
-    $("assistant-answer").textContent = "History query failed.";
+    if (!received) $("assistant-answer").textContent = "History query failed.";
     $("assistant-warnings").textContent = error.message;
+    $("assistant-editor-error").textContent = "Search failed. Your inputs are unchanged. Press Search to retry.";
   } finally {
+    clearInterval(timer);
+    $("assistant-progress").textContent = "";
     state.assistantBusy = false;
     $("ask-submit").disabled = false;
-    $("assistant-next").disabled = false;
+    $("search-fields").inert = false;
+    $("ask-text").disabled = false;
+    updateAssistantPaging();
   }
 }
 
@@ -1133,14 +1429,21 @@ $("close-assistant").onclick = closeAssistant;
 $("assistant-panel").addEventListener("keydown", (event) => {
   if (event.key === "Escape") closeAssistant();
 });
-$("ask-form").onsubmit = (event) => {
-  event.preventDefault();
-  submitAssistant({
-    text: $("ask-text").value,
-    selected_stream: state.selected === "all" ? null : state.selected,
-  });
-};
+$("ask-form").onsubmit = applyAssistantFilters;
+$("ask-text").oninput = updateQuestionFilters;
+$("search-period").onchange = () => { $("search-custom").hidden = $("search-period").value !== "custom"; };
+$("search-camera").onchange = updateSearchAvailability;
 $("assistant-next").onclick = () => submitAssistant({page_token: state.assistantToken});
+$("assistant-previous").onclick = () => {
+  const page = state.assistantAnswer?.query?.page;
+  const cached = state.assistantPages.get(page - 1);
+  if (cached) {
+    const current = state.assistantPages.get(page);
+    if (current) current.scroll = $("assistant-results").scrollTop;
+    renderAssistant(cached.answer);
+  }
+  else if (state.assistantPrevious) submitAssistant({page_token: state.assistantPrevious});
+};
 
 function historyQuery(includeLimit = true) {
   const query = new URLSearchParams();
@@ -1297,8 +1600,23 @@ document.addEventListener("fullscreenchange", () => {
   $("video-fullscreen").setAttribute("aria-pressed", String(fullscreen));
   $("video-fullscreen").setAttribute("aria-label", fullscreen ? "Exit video fullscreen" : "Enter video fullscreen");
 });
+function sizeExpandedTelemetry() {
+  const workspace = $("workspace"), lower = $("lower");
+  workspace.classList.remove("resources-expanded");
+  lower.style.minHeight = "";
+  const normal = $("telemetry").getBoundingClientRect();
+  lower.style.minHeight = normal.height + "px";
+  lower.style.setProperty("--telemetry-rise", (normal.top - $("video-panel").getBoundingClientRect().top) + "px");
+  workspace.classList.add("resources-expanded");
+}
 $("expand-telemetry").onclick = () => {
-  const expanded = $("workspace").classList.toggle("resources-expanded");
+  const expanded = !$("workspace").classList.contains("resources-expanded");
+  if (expanded) sizeExpandedTelemetry();
+  else {
+    $("workspace").classList.remove("resources-expanded");
+    $("lower").style.minHeight = "";
+  }
+  $("video-panel").inert = expanded;
   $("expand-telemetry").setAttribute("aria-pressed", String(expanded));
   $("expand-telemetry").textContent = expanded ? "Reduce" : "Expand";
   $("expand-telemetry").setAttribute("aria-label", expanded ? "Reduce resource chart" : "Expand resource chart");
@@ -1308,7 +1626,10 @@ $("toggle-diagnostics").onclick = () => {
   $("diagnostics").hidden = !$("diagnostics").hidden;
   $("toggle-diagnostics").setAttribute("aria-expanded", String(!$("diagnostics").hidden));
 };
-window.addEventListener("resize", renderChart);
+window.addEventListener("resize", () => {
+  if ($("workspace").classList.contains("resources-expanded")) sizeExpandedTelemetry();
+  renderChart();
+});
 // Re-evaluate freshness even when the event stream stops delivering samples.
 setInterval(() => { renderTelemetry(); renderPresence(); }, 1000);
 

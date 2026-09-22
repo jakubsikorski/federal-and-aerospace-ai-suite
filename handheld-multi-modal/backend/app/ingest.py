@@ -484,12 +484,12 @@ class Ingest:
              span["count"]))
 
     def _flush_intervals(self, force: bool = False) -> None:
-        now = time.time()
         for key, span in list(self.open_intervals.items()):
-            if force or now - span["last_at"] > self.gap:
-                self._write_interval(key, span)
-                if force:
-                    self.open_intervals.pop(key, None)
+            # Checkpoint live spans too, without closing them. History reads must
+            # include continuously visible tracks, not wait for an absence.
+            self._write_interval(key, span)
+            if force:
+                self.open_intervals.pop(key, None)
 
     def _bump_untracked(self, stream_id: str) -> None:
         self.conn.execute(

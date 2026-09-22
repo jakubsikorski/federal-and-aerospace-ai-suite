@@ -150,6 +150,21 @@ Stop the owning pipeline first; the lock rejects a live owner. Clear Backend his
 
 ## Checks in the current running container
 
+Takeover cleanup (2026-09-22): a worker checks ownership while idle and retires
+when its lock inode is replaced, even if DLSPS retains the callback object.
+Takeover and store operations share a directory lock: displaced workers cannot
+write, expire or announce the replacement's files. Retirement closes the crop
+lock and MQTT client, discards queued work, and prevents later frame callbacks
+from refreshing the old heartbeat. Normal explicit `close()` still drains work.
+This fixes the crop takeover leak; it does not claim to fix unrelated stock
+DLSPS resource leaks. No custom image is required.
+
+`test_crops.py` covers repeated retained-callback takeovers with and without
+MQTT, and takeover during frame mapping and JPEG encoding. Run the mounted
+script with `docker exec handheld-bootstrap-dlsps-1 python3 /opt/handheld-crops/test_crops.py`.
+Apply script updates to existing pipelines with `make demo-restart`, using the
+deployment's existing `ASSET_ROOT`.
+
 From the repo root (temporary container copy, no service config changes):
 
 ```bash

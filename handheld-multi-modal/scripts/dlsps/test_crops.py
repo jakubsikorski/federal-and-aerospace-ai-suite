@@ -3,9 +3,11 @@
 from contextlib import contextmanager
 import gc
 import json
+import os
 from pathlib import Path
 import random
 import tempfile
+import threading
 import time
 from types import SimpleNamespace
 import uuid
@@ -13,7 +15,7 @@ import weakref
 
 import cv2
 import numpy as np
-from crop_candidates import CropCandidates, Settings, Store, crop_rect
+from crop_candidates import CropCandidates, OwnershipLost, Settings, Store, crop_rect
 from crop_probe import CropProbe
 
 
@@ -65,7 +67,113 @@ def make(root, **overrides):
     return CropCandidates(str(config))
 
 
+def takeover_checks():
+    for mqtt_host in ("", "mqtt"):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = root / "config.json"
+            config.write_text(json.dumps(dict(output_dir=str(root / "store"),
+                stream_id="crop_validation", mqtt_host=mqtt_host, takeover_seconds=1)))
+            gc.collect()
+            baseline = len(os.listdir('/proc/self/fd'))
+            retained = []
+            try:
+                for _ in range(20):
+                    if retained:
+                        os.utime(retained[-1].store.status, (1, 1))
+                    current = CropCandidates(str(config))
+                    retained.append(current)
+                    for old in retained[:-1]:
+                        old.worker.join(timeout=2)
+                        assert not old.worker.is_alive() and old.store.lock.closed
+                        assert old.control['bytes'] == 0 and not old.pending
+                        before = current.store.status.read_bytes()
+                        old.last_report = 0
+                        old.process_frame(Frame([1]))
+                        assert current.store.status.read_bytes() == before
+                        for operation in (old.store.heartbeat, old.store.maintain,
+                                          lambda: old.store.save({}, b''),
+                                          lambda: old.store.publish_one(None)):
+                            try:
+                                operation()
+                                raise AssertionError('displaced store accepted an operation')
+                            except OwnershipLost:
+                                pass
+                current.close()
+                gc.collect()
+                assert len(os.listdir('/proc/self/fd')) == baseline
+            finally:
+                for producer in retained:
+                    producer.close()
+            print(f'PASS: 20 retained takeovers, mqtt={bool(mqtt_host)}, descriptors={baseline}')
+
+    # Displace a worker while it owns copied pixels inside the JPEG encoder.
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        old = make(root, takeover_seconds=1)
+        entered, release = threading.Event(), threading.Event()
+        encode = cv2.imencode
+        def slow_encode(*args, **kwargs):
+            entered.set()
+            assert release.wait(5)
+            return encode(*args, **kwargs)
+        cv2.imencode = slow_encode
+        replacement = None
+        try:
+            old.process_frame(Frame([1]))
+            assert entered.wait(2)
+            os.utime(old.store.status, (1, 1))
+            replacement = Store(old.c)
+            status = replacement.status.read_bytes()
+            release.set()
+            old.worker.join(timeout=2)
+            assert not old.worker.is_alive() and old.store.lock.closed
+            assert not list(replacement.root.glob('*.jpg'))
+            assert replacement.status.read_bytes() == status
+            assert old.control['bytes'] == 0 and not old.pending
+        finally:
+            release.set()
+            cv2.imencode = encode
+            old.close()
+            if replacement:
+                replacement.close()
+    print('PASS: takeover during JPEG encoding rejects the retired write')
+
+    with tempfile.TemporaryDirectory() as temporary:
+        old = make(Path(temporary), takeover_seconds=1)
+        entered, release = threading.Event(), threading.Event()
+        class SlowFrame(Frame):
+            @contextmanager
+            def data(self):
+                entered.set()
+                assert release.wait(5)
+                with super().data() as pixels:
+                    yield pixels
+        callback = threading.Thread(target=old.process_frame, args=(SlowFrame([1]),))
+        replacement = None
+        try:
+            callback.start()
+            assert entered.wait(2)
+            os.utime(old.store.status, (1, 1))
+            replacement = Store(old.c)
+            old.worker.join(timeout=2)
+            assert not old.worker.is_alive()
+            release.set()
+            callback.join(timeout=2)
+            assert not callback.is_alive()
+            assert not old.jobs and not old.pending and old.control['bytes'] == 0
+            assert not list(replacement.root.glob('*.jpg'))
+        finally:
+            release.set()
+            callback.join(timeout=2)
+            old.close()
+            if replacement:
+                replacement.close()
+    print('PASS: takeover during frame mapping releases reserved pixels')
+
+
 def run():
+    takeover_checks()
     rng = random.Random(8)
     for _ in range(2000):
         width, height = rng.randint(1, 1000), rng.randint(1, 1000)
@@ -105,11 +213,12 @@ def run():
         assert not producer.worker.is_alive()
         assert len(producer.tracks) <= 16
         assert producer.control["bytes"] == 0 and not producer.pending
-        assert producer.stats["saved"] == 2, producer.stats
-        assert producer.stats["writer_errors"] == 1, producer.stats
+        assert producer.stats["saved"] == 3 and producer.store.count == 2, producer.stats
+        assert producer.stats["writer_errors"] == 0 and producer.store.evicted == 1, producer.stats
         assert producer.stats["track_capacity"] > 0
         assert producer.stats["duplicate_track_roi"] == 1
-        for path in producer.store.root.glob("*.json"):
+        for image in producer.store.root.glob("*.jpg"):
+            path = image.with_suffix('.json')
             event = json.loads(path.read_text())
             pixels = cv2.imread(str(path.with_suffix(".jpg")))
             assert pixels is not None and pixels.max() > 100

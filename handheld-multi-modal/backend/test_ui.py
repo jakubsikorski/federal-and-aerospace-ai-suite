@@ -44,10 +44,14 @@ class Fixture(BaseHTTPRequestHandler):
         else:
             if self.path == '/api/streams':
                 data = [dict(stream_id=f'cam{i}', display_name=f'Camera {i}', feed={'ok': i != 3}, whep_path='/whep') for i in range(1, 4)]
+            elif self.path == '/api/history/options':
+                data = {'classes': ['person', 'chair', 'car'], 'availability': [
+                    {'stream_id': 'cam1', 'started_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time()-86400)), 'ended_utc': now},
+                    {'stream_id': 'cam2', 'started_utc': None, 'ended_utc': None}]}
             elif '/current' in self.path:
                 data = dict(tracks=tracks, current_presence='present', feed_ok=True)
             elif '/candidates' in self.path:
-                data = {'candidates': [dict(candidate_number=1, image_url='/fixture.svg', image_state='available', observed_at_utc=now)]}
+                data = {'candidates': [dict(candidate_number=1, image_url='/fixture.svg', image_state='available', observed_at_utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time()-60)))]}
             elif '/tracks?' in self.path:
                 from urllib.parse import parse_qs, urlsplit
                 label = parse_qs(urlsplit(self.path).query).get('classes', [''])[0]
@@ -101,7 +105,7 @@ class Fixture(BaseHTTPRequestHandler):
             'spoken_text': None,
             'errors': [],
             'query': {
-                'tracks': [track], 'total': 2, 'page': page, 'page_size': 1,
+                'tracks': [track, dict(track, track_id=999, snip_url=None)], 'total': 4, 'with_crops_total': 2, 'page': page, 'page_size': 2,
                 'truncated': page == 0, 'next_page_token': 'fixture-next' if page == 0 else None,
                 'window': {'started_utc': now, 'ended_utc': now},
                 'filters': {'streams': ['cam1'], 'classes': ['person'],
@@ -109,6 +113,15 @@ class Fixture(BaseHTTPRequestHandler):
                 'warnings': [{'message': 'cam1 has a 12 second feed gap.'}],
             },
         }
+        if 'application/x-ndjson' in self.headers.get('accept', ''):
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/x-ndjson')
+            self.end_headers()
+            self.wfile.write((json.dumps({'answer': data, 'status': 'Results ready'}) + '\n').encode())
+            self.wfile.flush()
+            time.sleep(.3)
+            self.wfile.write((json.dumps({'answer': data, 'done': True}) + '\n').encode())
+            return
         payload = json.dumps({'data': data}).encode()
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
@@ -172,17 +185,78 @@ def main():
             assert js('return document.getElementById("video-fullscreen").getAttribute("aria-pressed")') == 'false'
             result = async_js('''const done = arguments[arguments.length - 1];
               window.eval(`(async () => {
-                openAssistant(); $("ask-text").value = "What was seen?";
-                await submitAssistant({text: $("ask-text").value, selected_stream: "cam1"});
-                const first = $("assistant-results").querySelector(".track-card");
-                const initial = $("assistant-panel").classList.contains("open")
-                  && $("assistant-answer").textContent.includes("2 person tracks")
-                  && $("assistant-warnings").textContent.includes("12 second feed gap")
-                  && first?.dataset.trackKey === "cam1:41"
-                  && !$("assistant-next").hidden;
-                await submitAssistant({page_token: state.assistantToken});
-                return initial && $("assistant-results").querySelector(".track-card")?.dataset.trackKey === "cam1:42"
-                  && $("assistant-next").hidden;
+                if (state.filter.mode !== "current" || $("track-mode").value !== "current") return "wrong default view";
+                await openAssistant();
+                if ($("search-camera").value !== "all") return "search must default to all cameras";
+                if ([...$("search-class").options].map(o => o.value).join(",") !== ",car,chair,person") return "unsorted types";
+                if ($("filter-fields").hidden || $("ask-submit").textContent !== "Search") return "wrong initial flow";
+                $("search-camera").value = "cam1"; $("search-class").value = "person";
+                const button = $("ask-submit").getBoundingClientRect().toJSON();
+                await applyAssistantFilters({preventDefault(){}});
+                if (state.assistantContext.payload.plan.window.minutes !== 10 || state.assistantContext.payload.plan.classes[0] !== "person") return "wrong filter plan";
+                if ($("assistant-results").querySelectorAll(".track-card").length !== 1) return "imageless record shown";
+                if (!$("assistant-answer").textContent.includes("4 matching tracks · 2 with images")) return "missing counts";
+                await submitAssistant({page_token:state.assistantToken});
+                if (!$("assistant-next").disabled || $("assistant-next").hidden || $("assistant-previous").disabled) return "paging moved";
+                if ($("ask-submit").getBoundingClientRect().y !== button.y || $("filter-fields").hidden) return "controls moved";
+                return true;
+              })()`).then(done);
+            ''')
+            assert result is True, result
+            if args.screenshots:
+                args.screenshots.mkdir(parents=True, exist_ok=True)
+                (args.screenshots / 'search-results.png').write_bytes(base64.b64decode(request('GET', base + '/screenshot')))
+            click('#assistant-previous')
+            assert js('return document.querySelector("#assistant-results .track-card").dataset.trackKey') == 'cam1:41'
+            click('#assistant-results .track-card')
+            assert js('return document.getElementById("close-drawer").textContent') == 'Back to results'
+            click('#close-drawer')
+            assert js('return document.activeElement.dataset.trackKey') == 'cam1:41'
+            result = async_js('''const done = arguments[arguments.length - 1];
+              window.eval(`(async () => {
+                $("search-period").value = "session";
+                await applyAssistantFilters({preventDefault(){}});
+                const row = availableHistory("cam1")[0];
+                if (state.assistantContext.payload.plan.window.start_utc !== row.started_utc) return "session range changed";
+                $("search-camera").value = "cam2";
+                await applyAssistantFilters({preventDefault(){}});
+                if (!$("assistant-editor-error").textContent.includes("No records")) return "empty session";
+                $("search-camera").value = "cam1";
+                $("search-period").value = "custom"; $("search-period").onchange();
+                const end = new Date(Date.now()-3600000), start = new Date(end-300000);
+                $("search-date").value = localDateValue(start); $("search-end-date").value = localDateValue(end);
+                $("search-start").value = start.toTimeString().slice(0,8); $("search-end").value = end.toTimeString().slice(0,8);
+                await applyAssistantFilters({preventDefault(){}});
+                const window = state.assistantContext.payload.plan.window;
+                if (new Date(window.end_utc)-new Date(window.start_utc) !== 300000) return "custom range lost";
+                $("ask-text").value = "show cars from 4:20 to 4:25 pm yesterday";
+                updateQuestionFilters();
+                if (!$("search-class").disabled || !$("search-period").disabled) return "conflicting filters active";
+                const before = $("search-start").value;
+                await applyAssistantFilters({preventDefault(){}});
+                if (state.assistantContext.payload.text !== $("ask-text").value || state.assistantContext.payload.selected_stream !== "cam1") return "question lost";
+                renderAssistant({intent:"clarification",answer_text:"Use 24-hour times.", recovery:{reason:"invalid_window"}});
+                $("ask-text").value = ""; updateQuestionFilters();
+                if ($("search-start").value !== before) return "question overwrote custom time";
+                await applyAssistantFilters({preventDefault(){}});
+                $("assistant-results").querySelector("img").onerror();
+                if ($("assistant-results").querySelector(".track-card") || !$("assistant-results").textContent.includes("No images")) return "failed image retained";
+                return true;
+              })()`).then(done);
+            ''')
+            assert result is True, result
+            result = async_js('''const done = arguments[arguments.length - 1];
+              window.eval(`(async () => {
+                const original = window.fetch;
+                const inputs = ["search-camera","search-class","search-period","search-start"].map(id => $(id).value);
+                window.fetch = async () => { throw new Error("fixture offline"); };
+                try {
+                  await applyAssistantFilters({preventDefault(){}});
+                  return $("assistant-warnings").textContent.includes("fixture offline")
+                    && $("assistant-editor-error").textContent.includes("Press Search to retry")
+                    && !$("ask-submit").disabled && !$("filter-fields").hidden
+                    && JSON.stringify(inputs) === JSON.stringify(["search-camera","search-class","search-period","search-start"].map(id => $(id).value));
+                } finally { window.fetch = original; }
               })()`).then(done);
             ''')
             assert result is True, result
@@ -230,6 +304,8 @@ def main():
               return toggled && switched && panelClosed && outsideClosed && copying;
             })()''')
             check('''(() => {
+              $("track-mode").value = "history";
+              $("track-mode").dispatchEvent(new Event("change"));
               state.events.close(); state.events = null;
               window.savedCamera = $("cameras").children[1]; window.savedCard = document.querySelector(".track-card");
               savedCard.focus(); $("track-scroll").scrollTop = 100;
@@ -328,6 +404,19 @@ def main():
                     && $("track-scroll").inert && image === $("large-crop").firstChild; })()`)));
             ''')
             assert result is True, result
+            check('''(() => {
+              const rows = [...$("drawer-detail").querySelectorAll("dt")];
+              const detail = Object.fromEntries(rows.map(row => [row.textContent, row.nextElementSibling.textContent]));
+              const now = new Date(2026, 8, 22, 0, 1, 0), previous = new Date(2026, 8, 21, 23, 59, 0);
+              window.clockBeforeInspection = $("operator-clock").dateTime;
+              return detail["Image captured"] !== detail["Track last seen"]
+                && detail["Image captured"].includes(" · ") && detail["Timezone"]
+                && evidenceTime(previous.toISOString(), now) === "Yesterday · 23:59:00"
+                && evidenceTime(now.toISOString(), now) === "Today · 00:01:00"
+                && evidenceTime(null) === "Unavailable";
+            })()''')
+            if args.screenshots:
+                (args.screenshots / 'image-details.png').write_bytes(base64.b64decode(request('GET', base + '/screenshot')))
             # Thirty real seconds of incoming events while inspecting one image.
             check('''window.inspectedImage = $("large-crop").firstChild; window.inspectedCard = document.querySelector(".track-card"); true''')
             for tick in range(30):
@@ -338,7 +427,7 @@ def main():
                   return $("large-crop").firstChild === inspectedImage && document.querySelector(".track-card") === inspectedCard;
                 })()''')
                 time.sleep(1)
-            check('''(() => { closeDrawer(); return !$("track-scroll").inert && document.activeElement.classList.contains("track-card"); })()''')
+            check('''(() => { closeDrawer(); return $("operator-clock").dateTime !== clockBeforeInspection && !$("track-scroll").inert && document.activeElement.classList.contains("track-card"); })()''')
             check('''(() => {
               state.alerts = [{match_id: "test-alert", matched_utc: new Date().toISOString(), stream_id: "cam2",
                 class_label: "person", track_id: 8, rule_name: "Entry", dispatch_state: "delivered"}];
@@ -372,11 +461,21 @@ def main():
                 check('state.resource = "gpu"; renderTelemetry(); true')
                 for expanded in (False, True):
                     check(f'''(() => {{
-                      $("workspace").classList.toggle("resources-expanded", {str(expanded).lower()}); renderChart();
+                      if ($("workspace").classList.contains("resources-expanded") !== {str(expanded).lower()}) $("expand-telemetry").click();
+                      renderChart();
                       const chart = $("chart").getBoundingClientRect();
                       const panel = $("telemetry").getBoundingClientRect();
-                      const controls = [...document.querySelectorAll('#track-controls select, .camera, #pause-updates, .model-button')];
-                      const ok = document.body.scrollWidth === innerWidth && document.body.scrollHeight === innerHeight
+                      const controls = [...document.querySelectorAll('#track-controls select, .camera, .model-button')];
+                      const header = document.querySelector("header").getBoundingClientRect();
+                      const history = $("open-assistant").getBoundingClientRect();
+                      const evidenceHead = $("track-title").parentElement.getBoundingClientRect();
+                      const ok = header.height <= 64 && history.right <= evidenceHead.right
+                        && history.top >= evidenceHead.top && history.bottom <= evidenceHead.bottom
+                        && !$("track-count") && $("track-title").textContent === "Evidence"
+                        && getComputedStyle($("open-assistant")).backgroundColor !== getComputedStyle($("toggle-diagnostics")).backgroundColor
+                        && [...document.querySelectorAll(".quiet-button")].every(button => parseFloat(getComputedStyle(button).borderTopWidth) >= 1 && getComputedStyle(button).height === "32px" && getComputedStyle(button).fontSize === "13px")
+                        && parseFloat(getComputedStyle(document.querySelector(".track-seen")).fontSize) >= 15
+                        && document.body.scrollWidth === innerWidth && document.body.scrollHeight === innerHeight
                         && $("video-wrap").getBoundingClientRect().height >= 200
                         && $("video-wrap").getBoundingClientRect().bottom <= $("video-panel").getBoundingClientRect().bottom
                         && $("workspace").scrollWidth === $("workspace").clientWidth
@@ -388,11 +487,46 @@ def main():
                         boxes: Object.fromEntries(["workspace", "video-panel", "video-wrap", "telemetry", "chart", "chart-note", "track-scroll"]
                           .map(id => [id, $(id).getBoundingClientRect().toJSON()]))}};
                     }})()''')
+                check('''(() => {
+                  const expanded = $("telemetry").getBoundingClientRect();
+                  const video = $("video-panel").getBoundingClientRect();
+                  const tracks = $("tracks-panel").getBoundingClientRect();
+                  if (!$("video-panel").inert || Math.abs(expanded.top - video.top) > 1
+                      || Math.abs(expanded.bottom - tracks.bottom) > 1
+                      || $("expand-telemetry").textContent !== "Reduce") return "not fully expanded";
+                  $("expand-telemetry").click();
+                  const normal = $("telemetry").getBoundingClientRect();
+                  const restoredTracks = $("tracks-panel").getBoundingClientRect();
+                  const ok = expanded.height > normal.height * 1.5
+                    && !$("video-panel").inert && $("expand-telemetry").textContent === "Expand"
+                    && tracks.x === restoredTracks.x && tracks.height === restoredTracks.height;
+                  return ok || {expanded:expanded.height, normal:normal.height};
+                })()''')
+                check('''(() => {
+                  openAssistant();
+                  renderAssistant({answer_text:"Choose an object type and time window."});
+                  const intro = $("assistant-panel").getBoundingClientRect();
+                  if ($("assistant-paging").getBoundingClientRect().bottom > intro.bottom + 1) return {introOverflow: [innerWidth, innerHeight]};
+                  renderAssistant({answer_text:"No matching records.", query:{tracks:[], total:0, with_crops_total:0,
+                    page:0, page_size:20, filters:{streams:["cam1"], classes:null},
+                    window:{started_utc:new Date().toISOString(), ended_utc:new Date().toISOString()}, warnings:[]}});
+                  const panel = $("assistant-panel").getBoundingClientRect();
+                  const paging = $("assistant-paging").getBoundingClientRect();
+                  const host = $("tracks-panel").getBoundingClientRect();
+                  const ok = panel.left >= host.left && panel.right <= host.right + 1
+                    && !$("video-panel").inert && !$("telemetry").inert
+                    && !$("search-mode") && $("ask-text").getBoundingClientRect().height >= 48
+                    && paging.bottom <= panel.bottom + 1
+                    && $("assistant-results").clientHeight >= 80
+                    && ["search-camera","search-class","search-period"].every(id => $(id).getBoundingClientRect().height >= 48)
+                    && ["close-assistant","ask-submit","assistant-previous","assistant-next"].every(id => $(id).getBoundingClientRect().height === 32);
+                  closeAssistant(); return ok || {panel:panel.toJSON(), paging:paging.toJSON()};
+                })()''')
                 if args.screenshots:
-                    check('$("workspace").classList.remove("resources-expanded"); renderChart(); true')
+                    check('renderChart(); true')
                     data = request('GET', base + '/screenshot')
                     (args.screenshots / f'fixture-{width}x{height}.png').write_bytes(base64.b64decode(data))
-            print('PASS: typed history overlay/paging, stable evidence/focus/scroll, pending updates, reconnect pause/All, diagnostics, chart axes/gaps, stale readings, drawer, native video fullscreen, model placement/detail/failure states, filter failure recovery, repeated crop retry, 200px minimum video at 1280/1024 widths and 714/682/600/540 heights')
+            print('PASS: compact in-panel search without mode tabs, alphabetical types, session/custom ranges, question correction, images-only results, fixed Search/paging controls, typed history overlay/paging, stable evidence/focus/scroll, pending updates, reconnect pause/All, diagnostics, chart axes/gaps, stale readings, drawer, native video fullscreen, model placement/detail/failure states, filter failure recovery, repeated crop retry, 200px minimum video at 1280/1024 widths and 714/682/600/540 heights')
         finally:
             if session:
                 request('DELETE', f'/session/{session}')

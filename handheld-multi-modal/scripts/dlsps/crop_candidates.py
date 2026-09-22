@@ -5,8 +5,10 @@ from collections import Counter, OrderedDict, deque
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 import fcntl
+from functools import wraps
 import json
 import math
+import os
 from pathlib import Path
 import re
 import shutil
@@ -172,6 +174,18 @@ def directory_fd(path):
         os.close(fd)
 
 
+class OwnershipLost(RuntimeError):
+    """This producer's lock was replaced by a new owner."""
+
+
+def owned_operation(operation):
+    @wraps(operation)
+    def guarded(self, *args, **kwargs):
+        with self.owned():
+            return operation(self, *args, **kwargs)
+    return guarded
+
+
 class Store:
     """Single owner per directory; JSON sidecars are the durable event outbox."""
     def __init__(self, settings):
@@ -183,36 +197,66 @@ class Store:
         # Creation-ordered candidate stems, so rotation never scans the
         # directory. maintain() rebuilds it from disk whenever it walks.
         self.order = deque()
-        self.lock = self._acquire()
-        generation = self.root / "generation"
-        if not generation.exists():
-            atomic_write(generation, uuid.uuid4().hex.encode())
-        self.generation = generation.read_text().strip()
-        if not re.fullmatch(r"[a-f0-9]{32}", self.generation):
-            raise ValueError("invalid store generation")
-        # Immediately, so a pipeline that dies before its first report tick still
-        # leaves a timestamp for the next producer to judge it by.
-        self.heartbeat()
-        self.maintain()
+        self.lock = None
+        self._mutex = threading.RLock()
+        self._operation_fd = None
+        try:
+            with self.owned():
+                self.lock = self._acquire()
+                generation = self.root / "generation"
+                if not generation.exists():
+                    atomic_write(generation, uuid.uuid4().hex.encode())
+                self.generation = generation.read_text().strip()
+                if not re.fullmatch(r"[a-f0-9]{32}", self.generation):
+                    raise ValueError("invalid store generation")
+                # Immediately, so a pipeline that dies before its first report tick still
+                # leaves a timestamp for the next producer to judge it by.
+                self.heartbeat()
+                self.maintain()
+        except BaseException:
+            self.close()
+            raise
+
+    @contextmanager
+    def owned(self):
+        # Serialize takeover and file/outbox operations across producer objects
+        # and processes. Nested save -> maintain calls reuse the same flock.
+        with self._mutex:
+            if self._operation_fd is not None:
+                yield
+                return
+            with directory_fd(self.root) as fd:
+                fcntl.flock(fd, fcntl.LOCK_EX)
+                if self.lock is not None:
+                    try:
+                        valid = not self.lock.closed and os.path.samestat(
+                            os.fstat(self.lock.fileno()), (self.root / ".lock").stat())
+                    except FileNotFoundError:
+                        valid = False
+                    if not valid:
+                        raise OwnershipLost(f"{self.root} producer was displaced")
+                self._operation_fd = fd
+                try:
+                    yield
+                finally:
+                    self._operation_fd = None
 
     def _acquire(self):
         """Exclusive owner, with takeover of a store whose producer is gone.
 
-        gvapython in the pinned Pipeline Server image exposes no teardown hook
-        (only `process_frame`), so an aborted or deleted pipeline leaks this
-        callback object and its flock is never released - measured 2026-09-14,
-        docs/bootstrap/evidence/phase2/model_instance_isolation.txt. Without a
-        takeover the camera can never restart until the whole service restarts.
+        Normal callback destruction releases the lock. If DLSPS retains the
+        callback after a pipeline stops, finalization cannot run; takeover lets
+        a replacement start without restarting the whole service.
 
         Liveness is the status file's mtime, not the lock: a live producer
         refreshes it every report_seconds, a leaked one stops the moment frames
         stop. Unlinking before reopening is what actually breaks the tie - the
-        zombie keeps its lock on an now-unreachable inode and cannot conflict
-        with, or be confused for, the new owner.
+        old worker detects the replaced inode on its next pass and exits.
+        Store operations share a directory flock with takeover, so an old
+        producer cannot write or expire files after the new owner takes over.
 
         ponytail: mtime is the liveness signal. A producer stalled longer than
-        takeover_seconds while still alive would be displaced; it then writes at
-        most a few orphaned crops that `maintain` expires. Move to a pid/boot-id
+        takeover_seconds while still alive may be displaced. Move to a pid/boot-id
         claim only if stalls that long become normal.
         """
         path = self.root / ".lock"
@@ -236,6 +280,7 @@ class Store:
             path.unlink(missing_ok=True)
         raise RuntimeError(f"could not take over {self.root}")
 
+    @owned_operation
     def heartbeat(self, stats=None):
         """Liveness plus the counters that never reach MQTT (D17)."""
         atomic_write(self.status, json.dumps({
@@ -245,6 +290,7 @@ class Store:
             "stats": dict(stats or {}),
         }, allow_nan=False).encode())
 
+    @owned_operation
     def maintain(self):
         now = time.time()
         for path in self.root.iterdir():
@@ -319,6 +365,7 @@ class Store:
                 evicted += 1
         return evicted
 
+    @owned_operation
     def save(self, event, encoded):
         payload = json.dumps(event, allow_nan=False).encode()
         size = len(encoded) + len(payload)
@@ -344,6 +391,7 @@ class Store:
         # Newest at the right; _evict pops from the left.
         self.order.append(image.stem)
 
+    @owned_operation
     def publish_one(self, client):
         delivery = getattr(self, "delivery", None)
         if delivery is not None:
@@ -366,7 +414,9 @@ class Store:
         return False
 
     def close(self):
-        self.lock.close()
+        with self._mutex:
+            if self.lock is not None:
+                self.lock.close()
 
 
 class CropCandidates:
@@ -416,11 +466,11 @@ class CropCandidates:
         return context
 
     def process_frame(self, frame):
+        if self.control["stopping"]:
+            return True
         started = time.monotonic()
         self.frame_sequence += 1
         try:
-            if self.control["stopping"]:
-                return True
             context = self._identity(frame)
             info = frame.video_info()
             eligible = []
@@ -496,6 +546,8 @@ class CropCandidates:
                             event = dict(context, **obs, crop_rect=rect, **flags,
                                          frame_width=info.width, frame_height=info.height)
                             with self.condition:
+                                if self.control["stopping"]:
+                                    raise OwnershipLost("crop worker stopped during frame mapping")
                                 self.jobs[tid] = (state, event, copy, size)
                                 self.condition.notify()
                             submitted.add(tid)
@@ -512,7 +564,7 @@ class CropCandidates:
         finally:
             self.stats["frames"] += 1
             self.stats["callback_us"] += int((time.monotonic() - started) * 1e6)
-            if started - self.last_report >= self.c.report_seconds:
+            if not self.control["stopping"] and started - self.last_report >= self.c.report_seconds:
                 report = {"crop_stats": dict(self.stats), "pending_bytes": self.control["bytes"],
                           "pending_jobs": len(self.pending), "tracks": len(self.tracks),
                           # Store occupancy, so a full-and-rotating store is
@@ -522,29 +574,35 @@ class CropCandidates:
                           "evicted": self.store.evicted,
                           "session": self.session}
                 print(json.dumps(report), flush=True)
-                self.store.heartbeat(report)
+                try:
+                    self.store.heartbeat(report)
+                except OwnershipLost:
+                    with self.condition:
+                        self.control["stopping"] = True
+                        self.condition.notify_all()
                 self.last_report = started
         return True  # Crop failure never intentionally drops the video buffer.
 
     def _work(self):
         import cv2
         client = None
-        if self.c.mqtt_host:
-            import paho.mqtt.client as mqtt
-            client = mqtt.Client(client_id="crops-" + self.session)
-            client.max_queued_messages_set(1)
-            client.max_inflight_messages_set(1)
-            client.connect_async(self.c.mqtt_host, self.c.mqtt_port)
-            client.loop_start()
-        maintained = time.monotonic()
         try:
+            if self.c.mqtt_host:
+                import paho.mqtt.client as mqtt
+                client = mqtt.Client(client_id="crops-" + self.session)
+                client.max_queued_messages_set(1)
+                client.max_inflight_messages_set(1)
+                client.connect_async(self.c.mqtt_host, self.c.mqtt_port)
+                client.loop_start()
+            maintained = time.monotonic()
             while True:
+                with self.store.owned():
+                    pass  # Retire displaced workers even when no frames arrive.
                 with self.condition:
                     if not self.jobs and not self.control["stopping"]:
                         self.condition.wait(timeout=0.1)
                     if self.control["stopping"] and not self.jobs:
                         break
-                    item = self.jobs.popitem(last=False) if self.jobs else None
                 try:
                     if time.monotonic() - maintained >= 5:
                         self.store.maintain()
@@ -557,9 +615,13 @@ class CropCandidates:
                         maintained = time.monotonic()
                     if self.store.publish_one(client):
                         self.stats["published"] += 1
+                except OwnershipLost:
+                    raise
                 except Exception as exc:
                     self.stats["delivery_errors"] += 1
                     self.stats["last_error"] = str(exc)[:200]
+                with self.condition:
+                    item = self.jobs.popitem(last=False) if self.jobs else None
                 if item:
                     tid, (state, event, pixels, size) = item
                     try:
@@ -597,6 +659,8 @@ class CropCandidates:
                             state["saved"] += 1
                             state["score"] = score
                         self.stats["saved"] += 1
+                    except OwnershipLost:
+                        raise
                     except Exception as exc:
                         self.stats["writer_errors"] += 1
                         self.stats["last_error"] = str(exc)[:200]
@@ -604,11 +668,21 @@ class CropCandidates:
                         with self.condition:
                             self.pending.remove(tid)
                             self.control["bytes"] -= size
+        except OwnershipLost:
+            self.stats["ownership_lost"] += 1
         finally:
-            if client:
-                client.disconnect()
-                client.loop_stop()
-            self.store.close()
+            with self.condition:
+                self.control["stopping"] = True
+                for tid, (_, _, _, size) in self.jobs.items():
+                    self.pending.remove(tid)
+                    self.control["bytes"] -= size
+                self.jobs.clear()
+            try:
+                if client:
+                    client.disconnect()
+                    client.loop_stop()
+            finally:
+                self.store.close()
 
     @staticmethod
     def _stop(condition, control, worker):

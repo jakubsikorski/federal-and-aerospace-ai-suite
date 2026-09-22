@@ -45,6 +45,7 @@ ACTIVE_STATES = frozenset({"RUNNING", "QUEUED", "BACKOFF_WAIT", "RECONNECTING"})
 _failures: dict[str, int] = {}
 _retry_after: dict[str, float] = {}
 _accepted_at: dict[str, float] = {}
+_cleaned_terminal: set[str] = set()
 _lifecycle_lock = threading.RLock()
 shutdown = threading.Event()
 MAX_BACKOFF_PASSES = 32
@@ -180,6 +181,7 @@ def stop(client: httpx.Client, base: str, instance_id: str) -> None:
     # is hardcoded to return 400 NOT_IMPLEMENTED.
     reply = client.delete(f"{base}/pipelines/{instance_id}", timeout=10.0)
     reply.raise_for_status()
+    _cleaned_terminal.add(instance_id)
 
 
 def _write(conn: sqlite3.Connection, writer, operation):
@@ -257,9 +259,13 @@ def _reconcile(conn: sqlite3.Connection, cfg: dict, client: httpx.Client,
     # it, we stop it. Replacing a camera's pipeline without deleting the one it
     # replaces is what let instances accumulate - the old instance is exactly
     # the thing holding the resources the replacement needs.
+    _cleaned_terminal.intersection_update(live)
     for instance_id, state in live.items():
-        if instance_id in keep or state not in ACTIVE_STATES:
-            # Stock DLSPS retains terminal status records; do not delete again.
+        if instance_id in keep or (
+            state not in ACTIVE_STATES and instance_id in _cleaned_terminal
+        ):
+            # EOS/error ends GStreamer, but its publisher still needs DELETE.
+            # DLSPS retains status records after cleanup; delete only once.
             continue
         log.warning("deleting pipeline %s (state %s) that no camera owns",
                     instance_id, state)
@@ -368,7 +374,8 @@ def _stop_owned(conn: sqlite3.Connection, cfg: dict, client: httpx.Client,
     owned = {row["dlsps_instance_id"] for row in rows if row["dlsps_instance_id"]}
     try:
         live = running_instances(client, base)
-        pending = {i for i, state in live.items() if state in ACTIVE_STATES}
+        pending = {i for i, state in live.items()
+                   if state in ACTIVE_STATES or i not in _cleaned_terminal}
     except (httpx.HTTPError, ValueError):
         log.exception("cannot enumerate DLSPS; attempting persisted pipeline IDs")
         pending = owned
