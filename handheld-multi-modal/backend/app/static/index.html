@@ -169,21 +169,71 @@
   #assistant-panel.open { display: flex; flex-direction: column; }
   #assistant-head { display: flex; align-items: center; gap: 16px; padding: 8px 12px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
   #assistant-head span { margin-left: auto; color: var(--muted); font-size: 13px; }
+  #assistant-reset { margin-left: auto; }
+  #assistant-context-bar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; flex-shrink: 0; }
+  #conversation-note { flex: 1; color: var(--muted); font-size: 12px; }
+  #use-viewed-camera { flex-shrink: 0; font-size: 12px; }
+  #assistant-welcome { padding: 12px; }
+  #assistant-welcome h3 { margin: 6px 0 8px; font-size: 21px; font-weight: 600; }
+  #assistant-welcome p { color: var(--muted); line-height: 1.5; margin: 0 0 14px; }
+  .welcome-eyebrow { display: none; }
+  .starter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  #start-explain { grid-column: 1 / -1; }
+  .starter-grid button { text-align: left; display: grid; gap: 4px; padding: 12px; min-height: 64px; border: 1px solid var(--line); border-radius: 10px; background: #293745; color: var(--text); cursor: pointer; }
+  .starter-grid button:hover { border-color: var(--accent); background: #324657; }
+  .starter-grid button strong { font-size: 15px; }
+  .starter-grid button span { font-size: 12px; color: var(--muted); }
+  #assistant-welcome .welcome-footnote { margin-top: 14px; font-size: 12px; }
+  @media (max-height: 650px) {
+    #assistant-welcome { padding: 8px; }
+    #assistant-welcome h3, #assistant-welcome p { display: none; }
+    .starter-grid { gap: 6px; }
+    .starter-grid button { min-height: 56px; padding: 8px; gap: 2px; }
+    .starter-grid button span { font-size: 11px; }
+  }
+  #assistant-panel:not(.welcome) #assistant-welcome { display: none; }
+  #assistant-panel.welcome #assistant-result-head { display: none; }
+  #answer-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+  #answer-actions:empty { display: none; }
+  #answer-actions button { min-height: 44px; padding: 6px 10px; background: #293745; color: var(--text); border: 1px solid var(--line); border-radius: 20px; cursor: pointer; }
+  #answer-actions button:hover { border-color: var(--accent); }
+  #jump-latest { position: absolute; right: 20px; bottom: 166px; z-index: 2; background: #35485e; border-color: var(--accent); box-shadow: 0 3px 12px #0008; }
+
+  #assistant-transcript { flex-shrink: 0; }
+  .chat-turn { padding: 10px; border-bottom: 1px solid var(--line); }
+  .chat-turn p { margin: 4px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .chat-turn .chat-question { color: var(--accent); background: #304253; padding: 8px 10px; border-radius: 10px 10px 2px 10px; margin-left: 24px; }
+  #assistant-submitted { background: #304253; border-radius: 10px 10px 2px 10px; padding: 8px 10px; margin-left: 24px !important; color: var(--text) !important; }
+  .chat-turn p:not(.chat-question), #assistant-answer { line-height: 1.55; }
+  .chat-turn small { color: var(--muted); }
+  #assistant-panel #ask-form { order: 2; border-top: 1px solid var(--line); border-bottom: 0; }
+  #assistant-panel #assistant-output { overflow: auto; }
+  #assistant-panel #assistant-result-head { flex-shrink: 0; max-height: none; }
+  #assistant-panel #assistant-results { flex: none; min-height: 80px; overflow: visible; }
+  #assistant-panel:not(.has-results) #assistant-paging, #assistant-panel:not(.has-results) #assistant-results { display: none; }
+  #assistant-answer { white-space: pre-wrap; overflow-wrap: anywhere; }
+  #toggle-history-filters { grid-column: auto; }
+  #assistant-panel:not(.filters-open) #filter-fields,
+  #assistant-panel:not(.filters-open) #search-input-hint,
+  #assistant-panel:not(.filters-open) #search-availability { display: none; }
+  #assistant-panel.filters-open #filter-fields { display: contents; }
+  #assistant-panel.filters-open #toggle-history-filters { grid-column: auto; }
+
   #assistant-panel select, #assistant-panel input { min-height: 48px; }
   #assistant-workspace { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-  #ask-form { flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; max-height: calc(100% - 160px); gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  #ask-form { flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; max-height: calc(100% - 200px); gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
   #search-entry { display: flex; gap: 6px; flex-shrink: 0; }
   #search-fields { min-height: 0; overflow: auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
   #filter-fields { display: contents; }
   #ask-form label { display: grid; gap: 3px; min-width: 0; font-size: 12px; }
-  #ask-form select, #ask-form input { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 6px; background: var(--bg); color: var(--text); font: inherit; }
-  #ask-text { flex: 1; }
+  #ask-form select, #ask-form input, #ask-form textarea { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 6px; background: var(--bg); color: var(--text); font: inherit; }
+  #ask-text { flex: 1; height: 52px; min-height: 48px; resize: none; line-height: 1.4; }
   #search-custom { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
   #search-input-hint, #search-availability, #search-timezone { grid-column: 1 / -1; margin: 0; font-size: 12px; color: var(--muted); }
   #search-availability { max-height: 20px; overflow: auto; }
   #search-timezone { display: none; }
   #assistant-editor-error { color: var(--warn); margin: 0; max-height: 40px; overflow: auto; font-size: 12px; }
-  #ask-submit { background: #35485e !important; border-color: var(--accent) !important; flex-shrink: 0; }
+  #ask-submit { min-height: 48px; align-self: stretch; background: #35485e !important; border-color: var(--accent) !important; flex-shrink: 0; }
   #assistant-output { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   #assistant-result-head { padding: 8px 10px 0; max-height: calc(100% - 144px); min-height: 0; overflow: auto; flex-shrink: 1; }
   #assistant-submitted { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
@@ -300,7 +350,7 @@
     <section id="tracks-panel" class="panel" aria-labelledby="track-title">
       <div class="panel-head">
         <h2 id="track-title">Evidence</h2>
-        <button id="open-assistant" class="quiet-button" type="button">Ask history</button>
+        <button id="open-assistant" class="quiet-button" type="button">Ask</button>
       </div>
       <div id="track-controls">
         <label>View
@@ -328,20 +378,23 @@
       </div>
       <div id="track-scroll"><div class="track-grid"></div></div>
 
-      <aside id="assistant-panel" aria-label="Search camera history">
+      <aside id="assistant-panel" aria-label="Assistant">
         <div id="assistant-head">
           <button id="close-assistant" class="quiet-button" type="button">Back</button>
-          <strong>Search camera history</strong>
-
+          <strong>Assistant</strong>
+          <button id="assistant-reset" class="quiet-button" type="button">New conversation</button>
         </div>
         <div id="assistant-workspace">
+          <div id="assistant-context-bar"><span id="conversation-note" role="status">Ready when you are</span><button id="use-viewed-camera" class="quiet-button" type="button" hidden>Use on-screen camera</button></div>
           <form id="ask-form">
             <div id="search-entry">
-              <input id="ask-text" type="text" maxlength="500" aria-label="Optional history question" placeholder="Ask about objects and time, or use filters">
+              <textarea id="ask-text" rows="2" maxlength="500" aria-label="Your question" placeholder="Ask a question…"></textarea>
               <button id="ask-submit" class="quiet-button" type="submit">Search</button>
             </div>
             <div id="search-fields">
-              <label>Camera<select id="search-camera"></select></label>
+              <label>Camera scope<select id="search-camera"></select></label>
+              <label>Answer mode<select id="assistant-mode"><option value="auto">Ask anything</option><option value="general">General chat</option></select></label>
+              <button id="toggle-history-filters" class="quiet-button" type="button" aria-expanded="false">History filters</button>
               <div id="filter-fields">
                 <label>Object type<select id="search-class"><option value="">All object types</option></select></label>
                 <label>Time range<select id="search-period">
@@ -361,21 +414,35 @@
             </div>
             <p id="assistant-editor-error" role="status"></p>
           </form>
-          <section id="assistant-output" aria-label="Search results">
+          <section id="assistant-output" aria-label="Conversation">
+            <div id="assistant-welcome">
+              <span class="welcome-eyebrow">YOUR FIELD ASSISTANT</span>
+              <h3>What do you need to know?</h3>
+              <p>Choose a starting point, or type your question below.</p>
+              <div class="starter-grid">
+                <button id="start-people" type="button"><strong>Find people</strong><span>Recorded tracks · last 10 minutes</span></button>
+                <button id="start-mission" type="button"><strong>Mission objective</strong><span>Use the loaded mission documents</span></button>
+                <button id="start-explain" type="button"><strong>Explain a topic</strong><span>General conversation</span></button>
+              </div>
+              <p class="welcome-footnote">Camera results come from records. General answers do not describe what is happening on camera.</p>
+            </div>
+            <div id="assistant-transcript" aria-label="Previous messages"></div>
             <div id="assistant-result-head">
               <p id="assistant-submitted"></p>
-              <div id="assistant-answer" role="status">Choose filters, then Search.</div>
+              <div id="assistant-answer" role="status">Ask about this application, your mission, or recorded objects. Try “What can you do?”</div>
               <div id="assistant-progress" role="status"></div>
+              <div id="answer-actions" aria-label="Follow-up actions"></div>
               <div id="assistant-scope"></div>
               <div id="assistant-warnings" role="status"></div>
             </div>
             <div id="assistant-results"><div class="track-grid"></div></div>
-            <nav id="assistant-paging" aria-label="History result pages">
+          </section>
+          <nav id="assistant-paging" aria-label="History result pages">
               <button id="assistant-previous" class="quiet-button" type="button" disabled>Previous</button>
               <span id="assistant-page-label"></span>
               <button id="assistant-next" class="quiet-button" type="button" disabled>Next</button>
-            </nav>
-          </section>
+          </nav>
+          <button id="jump-latest" class="quiet-button" type="button" hidden>↓ Latest reply</button>
         </div>
       </aside>
 
@@ -769,6 +836,7 @@ async function attachWhep(stream) {
 function selectCamera(streamId, firstLoad = false) {
   if (state.drawerTrack) closeDrawer();
   state.selected = streamId;
+  updateAssistantCameraCue();
   state.held = false;
   $("track-scroll").scrollTop = 0;
   renderCameras();
@@ -1358,7 +1426,7 @@ function closeDrawer() {
     searchBackgroundInert(true);
     $("drawer").classList.remove("from-assistant");
     $("close-drawer").textContent = "Back";
-    $("assistant-results").scrollTop = state.assistantScroll;
+    $("assistant-output").scrollTop = state.assistantScroll;
     const card = [...$("assistant-results").querySelectorAll(".track-card")]
       .find(item => item.dataset.trackKey === state.selectedTrackKey);
     (card || $("ask-submit")).focus({preventScroll: true});
@@ -1389,7 +1457,10 @@ async function openAssistant() {
     $("search-start").value = start.toTimeString().slice(0, 5); $("search-end").value = end.toTimeString().slice(0, 5);
   }
   $("search-timezone").textContent = "Times: " + Intl.DateTimeFormat().resolvedOptions().timeZone;
-  $("search-camera").focus();
+  $("ask-text").focus();
+  updateQuestionFilters();
+  if (!state.assistantAnswer && !state.assistantBusy && !$("assistant-transcript").children.length) $("assistant-panel").classList.add("welcome");
+  updateAssistantCameraCue();
   await loadAssistantOptions();
 }
 
@@ -1420,12 +1491,120 @@ function updateSearchAvailability() {
     (row.started_utc ? `${new Date(row.started_utc).toLocaleString([], {hourCycle: "h23"})} – ${new Date(row.ended_utc).toLocaleString([], {hourCycle: "h23"})}` : "no records yet")).join(" · ") : "No recorded history available.";
 }
 
+let conversationId = crypto.randomUUID();
+let assistantRequestVersion = 0;
+let followLatest = true;
+function scrollChat(force = false) {
+  if (force) followLatest = true;
+  $("jump-latest").hidden = followLatest;
+  $("jump-latest").style.bottom = ($("ask-form").offsetHeight + $("assistant-paging").offsetHeight + 12) + "px";
+  if (followLatest) $("assistant-output").scrollTop = $("assistant-output").scrollHeight;
+}
+$("assistant-output").addEventListener("scroll", () => {
+  const view = $("assistant-output");
+  followLatest = view.scrollHeight - view.clientHeight - view.scrollTop < 40;
+  scrollChat();
+});
+$("jump-latest").onclick = () => scrollChat(true);
+function updateAssistantCameraCue() {
+  $("ask-text").placeholder = $("assistant-mode").value === "general" ? "What would you like explained?" : "Ask a question…";
+  const scope = $("search-camera").value || "all";
+  const camera = state.streams.find(s => s.stream_id === state.selected);
+  $("use-viewed-camera").hidden = !camera || scope === camera.stream_id;
+  if (camera) $("use-viewed-camera").textContent = "Use " + camera.display_name;
+  if (!state.assistantBusy) {
+    $("conversation-note").textContent = $("assistant-mode").value === "general"
+      ? "General conversation · not a live camera assessment"
+      : "Search scope: " + (scope === "all" ? "All cameras" : cameraName(scope));
+  }
+}
+function askFollowup(text, mode = "auto") {
+  if (state.assistantBusy) return;
+  $("ask-text").value = text;
+  $("assistant-mode").value = mode;
+  updateQuestionFilters();
+  return applyAssistantFilters({preventDefault(){}});
+}
+function renderAnswerActions(answer) {
+  const actions = $("answer-actions"); actions.replaceChildren();
+  function add(label, action) {
+    const button = document.createElement("button"); button.type = "button";
+    button.textContent = label; button.onclick = action; actions.append(button);
+  }
+  if (answer.broader_search) {
+    const alternative = answer.broader_search;
+    const excluded = [...alternative.excluded_attributes.map(a => `${a.name}=${a.value}`),
+      ...(alternative.excluded_conditions || [])].join(", ");
+    const note = document.createElement("span");
+    note.textContent = "Broader search will not check: " + excluded;
+    actions.append(note);
+    add("Show broader results", () => {
+      if (state.assistantBusy) return;
+      $("search-camera").value = alternative.selected_stream || "all";
+      return submitAssistant({plan:alternative.plan, selected_stream:alternative.selected_stream},
+        "Broader search · not checked: " + excluded);
+    });
+  }
+  if (["general_chat", "application_help"].includes(answer.intent)) {
+    add("Explain simply", () => askFollowup("Explain that more simply.", "general"));
+    add("Give an example", () => askFollowup("Give me an example.", "general"));
+  } else if (answer.intent === "mission_knowledge") {
+    add("Mission restrictions", () => askFollowup("What restrictions are specified in the mission documents?"));
+  } else if (answer.query) {
+    for (const camera of state.streams.filter(s => !answer.query.filters.streams.includes(s.stream_id)))
+      add("Compare " + camera.display_name, () => {
+        // Carry the actual result window, including when reopening an old result.
+        $("search-camera").value = camera.stream_id;
+        $("assistant-mode").value = "auto";
+        return submitAssistant({plan: {window: {kind:"absolute", start_utc:answer.query.window.started_utc,
+          end_utc:answer.query.window.ended_utc}, classes:answer.query.filters.classes, attributes:answer.query.filters.attributes || []},
+          selected_stream:camera.stream_id}, "Compare " + camera.display_name);
+      });
+  }
+  if (answer.answer_text) add("Copy answer", async () => {
+    try { await navigator.clipboard.writeText(answer.answer_text); $("conversation-note").textContent = "Answer copied"; }
+    catch { $("assistant-warnings").textContent = "Could not copy. Select the answer text to copy it."; }
+  });
+}
+function archiveAssistantTurn() {
+  const answer = state.assistantAnswer;
+  if (!answer || !state.assistantContext) return;
+  const item = document.createElement("article"); item.className = "chat-turn";
+  const question = document.createElement("p"); question.className = "chat-question";
+  question.textContent = state.assistantContext.text;
+  const body = document.createElement("p"); body.textContent = answer.answer_text;
+  const basis = document.createElement("small"); basis.textContent = answerBasis(answer);
+  item.append(question, body, basis);
+  if (answer.query) {
+    const view = document.createElement("button"); view.type = "button"; view.className = "quiet-button";
+    view.textContent = "Search this range again";
+    const saved = structuredClone(answer), context = structuredClone(state.assistantContext);
+    view.onclick = () => {
+      if (state.assistantBusy) return;
+      submitAssistant({plan: {window: {kind: "absolute", start_utc: saved.query.window.started_utc,
+        end_utc: saved.query.window.ended_utc}, classes: saved.query.filters.classes, attributes: saved.query.filters.attributes || []},
+        selected_stream: context.payload.selected_stream || null}, context.text);
+    };
+    item.append(view);
+  }
+  $("assistant-transcript").append(item);
+  // Keep the browser transcript bounded independently of the model's short memory.
+  while ($("assistant-transcript").children.length > 40) $("assistant-transcript").firstElementChild.remove();
+}
+function answerBasis(answer) {
+  return {general_chat: "General answer · not a camera observation",
+    mission_knowledge: "Mission material · answer-level citations unavailable",
+    video_history: "Recorded evidence · camera and time shown below",
+    application_help: "Application help"}[answer.intent] || "Clarification";
+}
+
 function updateQuestionFilters() {
   const question = Boolean($("ask-text").value.trim());
   $("search-class").disabled = question;
   $("search-period").disabled = question;
   $("search-custom").inert = question;
   $("search-input-hint").hidden = !question;
+  $("ask-submit").textContent = question || !$("assistant-panel").classList.contains("filters-open") ? "Send" : "Search";
 }
 
 function closeAssistant() {
@@ -1443,7 +1622,14 @@ function updateAssistantPaging() {
 
 function renderAssistant(answer) {
   state.assistantAnswer = answer;
+  $("assistant-panel").classList.remove("welcome");
+  renderAnswerActions(answer);
+  $("assistant-panel").classList.toggle("has-results", Boolean(answer.query));
+  // Only the operator toggles filters; an answer must not rearrange the composer.
+  $("toggle-history-filters").setAttribute("aria-expanded", String($("assistant-panel").classList.contains("filters-open")));
+  $("conversation-note").textContent = answerBasis(answer);
   $("assistant-answer").textContent = answer.answer_text || "No answer returned.";
+  $("assistant-editor-error").textContent = "";
   const query = answer.query, grid = $("assistant-results").firstElementChild;
   grid.replaceChildren();
   state.assistantToken = query?.next_page_token || null;
@@ -1453,7 +1639,13 @@ function renderAssistant(answer) {
     $("assistant-scope").textContent = "";
     $("assistant-page-label").textContent = "";
     $("assistant-warnings").textContent = (answer.errors || []).map(error => error.message).join(" ");
-    $("assistant-editor-error").textContent = "Edit the question, or clear it to use filters. Then Search.";
+
+    if (answer.intent === "general_chat") {
+      $("assistant-submitted").textContent = `${state.assistantContext?.text || "Question"} · General conversation`;
+    } else if (answer.intent === "mission_knowledge") {
+      $("assistant-submitted").textContent = `${state.assistantContext?.text || "Question"} · Mission knowledge`;
+    }
+    scrollChat();
     return;
   }
   const visible = query.tracks.filter(track => track.snip_url);
@@ -1465,6 +1657,7 @@ function renderAssistant(answer) {
   const timeRange = `${start.toLocaleDateString()} ${clock(start)} – ${start.toDateString() === end.toDateString() ? "" : end.toLocaleDateString() + " "}${clock(end)}`;
   const scopeLabels = [query.filters.streams.map(cameraName).join(", "),
     (query.filters.classes || []).map(titleCase).join(", ") || "All object types",
+    ...(query.filters.attributes || []).map(a => `${a.name}: ${a.value}`),
     timeRange,
     Intl.DateTimeFormat().resolvedOptions().timeZone];
   for (const label of scopeLabels) {
@@ -1489,7 +1682,7 @@ function renderAssistant(answer) {
       camera.textContent = cameraName(track.stream_id); card.querySelector(".track-copy").append(camera);
     }
     card.onclick = () => {
-      state.assistantScroll = $("assistant-results").scrollTop;
+      state.assistantScroll = $("assistant-output").scrollTop;
       state.assistantReturn = true;
       $("drawer").classList.add("from-assistant");
       $("close-drawer").textContent = "Back to results";
@@ -1506,7 +1699,8 @@ function renderAssistant(answer) {
   emptyMessage();
   const oldScroll = state.assistantPages.get(query.page)?.scroll || 0;
   state.assistantPages.set(query.page, {answer, scroll: oldScroll});
-  $("assistant-results").scrollTop = oldScroll;
+  $("assistant-output").scrollTop = oldScroll || ($("assistant-result-head").getBoundingClientRect().top
+    - $("assistant-output").getBoundingClientRect().top + $("assistant-output").scrollTop);
 }
 
 function localDateValue(date) {
@@ -1520,7 +1714,11 @@ async function applyAssistantFilters(event) {
   const camera = $("search-camera").value;
   if ($("ask-text").value.trim()) {
     return submitAssistant({text: $("ask-text").value, selected_stream: camera === "all" ? null : camera,
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone});
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, mode: $("assistant-mode").value});
+  }
+  if (!$("assistant-panel").classList.contains("filters-open")) {
+    $("assistant-editor-error").textContent = "Type a question, or open History filters.";
+    return;
   }
   const period = $("search-period").value, label = $("search-class").value;
   let window;
@@ -1543,19 +1741,26 @@ async function applyAssistantFilters(event) {
 
 async function submitAssistant(payload, label = null) {
   if (state.assistantBusy) return;
+  followLatest = true;
+  $("assistant-panel").classList.remove("welcome");
+  $("answer-actions").replaceChildren();
+  const requestVersion = ++assistantRequestVersion;
+  payload = {...payload, conversation_id: conversationId};
   if (!payload.page_token) {
+    archiveAssistantTurn();
     state.assistantContext = {text: label || payload.text || "Filtered search", payload: structuredClone(payload)};
     state.assistantPages.clear();
     state.assistantAnswer = null;
   } else if (state.assistantAnswer?.query) {
     const saved = state.assistantPages.get(state.assistantAnswer.query.page);
-    if (saved) saved.scroll = $("assistant-results").scrollTop;
+    if (saved) saved.scroll = $("assistant-output").scrollTop;
   }
   const context = state.assistantContext;
   const scope = context?.payload.selected_stream;
   const scopeLabel = scope ? state.streams.find(s => s.stream_id === scope)?.display_name || scope : "All cameras";
   $("assistant-submitted").textContent = `${context?.text || "History"} · ${scopeLabel}`;
   state.assistantBusy = true;
+  $("conversation-note").textContent = "Waiting for answer · scope: " + scopeLabel;
   $("assistant-previous").disabled = true;
   $("search-fields").inert = true;
   $("ask-text").disabled = true;
@@ -1569,13 +1774,14 @@ async function submitAssistant(payload, label = null) {
   $("assistant-answer").textContent = "";
   let stage = "Sending question…", received = false;
   const started = Date.now();
-  const progress = () => { $("assistant-progress").textContent = `${stage} ${Math.floor((Date.now() - started) / 1000)}s`; };
+  const progress = () => { if (requestVersion !== assistantRequestVersion) return; $("assistant-progress").textContent = `${stage} ${Math.floor((Date.now() - started) / 1000)}s`; };
   progress();
   const timer = setInterval(progress, 1000);
   try {
     const response = await fetch("/api/ask", {method: "POST",
       headers: {"content-type": "application/json", accept: "application/x-ndjson"},
       body: JSON.stringify(payload)});
+    if (requestVersion !== assistantRequestVersion) return;
     if (!response.ok) {
       const body = await response.json();
       throw new Error(body.error?.message || response.statusText);
@@ -1583,6 +1789,7 @@ async function submitAssistant(payload, label = null) {
     if (!response.headers.get("content-type")?.includes("application/x-ndjson")) {
       const body = await response.json();
       if (body.error) throw new Error(body.error.message);
+      if (requestVersion !== assistantRequestVersion) return;
       renderAssistant(body.data); received = true;
     } else {
       const reader = response.body.getReader(), decoder = new TextDecoder();
@@ -1595,6 +1802,12 @@ async function submitAssistant(payload, label = null) {
         while ((newline = pending.indexOf("\n")) >= 0) {
           const event = JSON.parse(pending.slice(0, newline));
           pending = pending.slice(newline + 1);
+          if (requestVersion !== assistantRequestVersion) continue;
+          if (event.delta) {
+            $("assistant-panel").classList.remove("has-results");
+            $("assistant-answer").textContent += event.delta;
+            scrollChat();
+          }
           if (event.error) throw new Error(event.error);
           if (event.answer) { renderAssistant(event.answer); received = true; }
           if (event.status) { stage = event.status; progress(); }
@@ -1604,11 +1817,16 @@ async function submitAssistant(payload, label = null) {
       if (!done) throw new Error("Connection interrupted. Submit the question again.");
     }
   } catch (error) {
-    if (!received) $("assistant-answer").textContent = "History query failed.";
+    if (requestVersion !== assistantRequestVersion) return;
+    if (!received) $("assistant-answer").textContent = "I couldn’t complete that answer.";
+    $("conversation-note").textContent = "Your question is saved below. You can edit it and try again.";
     $("assistant-warnings").textContent = error.message;
-    $("assistant-editor-error").textContent = "Search failed. Your inputs are unchanged. Press Search to retry.";
+    $("assistant-editor-error").textContent = "Request failed. Your inputs are unchanged. Retry when ready.";
   } finally {
     clearInterval(timer);
+    if (requestVersion !== assistantRequestVersion) return;
+    if (received && payload.text) $("ask-text").value = "";
+    updateQuestionFilters();
     $("assistant-progress").textContent = "";
     state.assistantBusy = false;
     $("ask-submit").disabled = false;
@@ -1621,20 +1839,82 @@ async function submitAssistant(payload, label = null) {
 $("open-assistant").onclick = openAssistant;
 $("open-assistant").setAttribute("aria-expanded", "false");
 $("close-assistant").onclick = closeAssistant;
+$("assistant-reset").onclick = async () => {
+  const previousId = conversationId;
+  conversationId = crypto.randomUUID();
+  ++assistantRequestVersion;
+  state.assistantBusy = false;
+  state.assistantAnswer = state.assistantContext = null;
+  state.assistantToken = state.assistantPrevious = null;
+  state.assistantPages.clear();
+  $("assistant-transcript").replaceChildren();
+  $("assistant-results").firstElementChild.replaceChildren();
+  for (const id of ["assistant-submitted", "assistant-warnings", "assistant-scope", "assistant-progress", "assistant-editor-error", "assistant-page-label"]) $(id).textContent = "";
+  $("ask-text").value = "";
+  $("assistant-mode").value = "auto";
+  updateAssistantCameraCue();
+  $("ask-text").disabled = $("ask-submit").disabled = false;
+  $("search-fields").inert = false;
+  $("assistant-panel").classList.add("welcome");
+  $("assistant-panel").classList.remove("has-results");
+  $("answer-actions").replaceChildren();
+  $("jump-latest").hidden = true;
+  followLatest = true;
+  $("assistant-panel").classList.remove("filters-open");
+  $("toggle-history-filters").setAttribute("aria-expanded", "false");
+  $("assistant-answer").textContent = "New conversation. What would you like to know?";
+  $("conversation-note").textContent = "New conversation · camera records and mission documents unchanged";
+  updateAssistantPaging(); updateQuestionFilters(); $("ask-text").focus();
+  try {
+    await postApi("/api/assistant/reset?conversation_id=" + encodeURIComponent(previousId), {});
+  } catch {
+    // The new ID isolates this thread even when cleanup of the old buffer fails.
+  }
+};
+$("toggle-history-filters").onclick = () => {
+  const expanded = $("assistant-panel").classList.toggle("filters-open");
+  $("toggle-history-filters").setAttribute("aria-expanded", String(expanded));
+  if (expanded) $("assistant-mode").value = "auto";
+  updateQuestionFilters();
+};
+$("start-people").onclick = () => {
+  if (state.assistantBusy) return;
+  $("assistant-mode").value = "auto";
+  const scope = $("search-camera").value;
+  return submitAssistant({plan:{window:{kind:"relative",minutes:10},classes:["person"]},
+    selected_stream:scope === "all" ? null : scope}, "People · last 10 minutes");
+};
+$("start-mission").onclick = () => askFollowup("What is the objective in the mission documents?");
+$("start-explain").onclick = () => {
+  $("assistant-mode").value = "general";
+  $("ask-text").placeholder = "What would you like explained?";
+  updateAssistantCameraCue(); $("ask-text").focus();
+};
+$("use-viewed-camera").onclick = () => {
+  if (!state.selected || state.selected === "all") return;
+  $("search-camera").value = state.selected;
+  updateSearchAvailability(); updateAssistantCameraCue();
+};
+$("assistant-mode").onchange = updateAssistantCameraCue;
+$("ask-text").addEventListener("keydown", event => {
+  if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+    event.preventDefault(); applyAssistantFilters(event);
+  }
+});
 $("assistant-panel").addEventListener("keydown", (event) => {
   if (event.key === "Escape") closeAssistant();
 });
 $("ask-form").onsubmit = applyAssistantFilters;
 $("ask-text").oninput = updateQuestionFilters;
 $("search-period").onchange = () => { $("search-custom").hidden = $("search-period").value !== "custom"; };
-$("search-camera").onchange = updateSearchAvailability;
+$("search-camera").onchange = () => {updateSearchAvailability(); updateAssistantCameraCue();};
 $("assistant-next").onclick = () => submitAssistant({page_token: state.assistantToken});
 $("assistant-previous").onclick = () => {
   const page = state.assistantAnswer?.query?.page;
   const cached = state.assistantPages.get(page - 1);
   if (cached) {
     const current = state.assistantPages.get(page);
-    if (current) current.scroll = $("assistant-results").scrollTop;
+    if (current) current.scroll = $("assistant-output").scrollTop;
     renderAssistant(cached.answer);
   }
   else if (state.assistantPrevious) submitAssistant({page_token: state.assistantPrevious});

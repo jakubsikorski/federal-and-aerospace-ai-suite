@@ -23,6 +23,8 @@ from .core import connect
 
 log = logging.getLogger("backend.mission")
 
+OPERATOR_GUIDE = Path(__file__).with_name("operator-guide.md").read_text(encoding="utf-8")
+
 BRIEF_FIELDS = (
     "objective", "times", "locations", "people_units", "restrictions",
     "resources", "dependencies", "risks",
@@ -115,7 +117,13 @@ def validate_upload(filename: object, content: object) -> tuple[str, bytes, str]
 def _brief_prompt() -> str:
     fields = ", ".join(BRIEF_FIELDS)
     example = json.dumps({field: "Not specified" for field in BRIEF_FIELDS}, separators=(",", ":"))
-    return f"""Use only the mission documents in the retrieved context. Produce one JSON object only.
+    return f"""Application background (not mission evidence):
+{OPERATOR_GUIDE}
+
+You are preparing the document-based Mission Brief shown in this application.
+Never fill mission fields from the application guide, camera configuration, or
+assumed live observations. Do not turn application capabilities into mission resources.
+Use only the mission documents in the retrieved context. Produce one JSON object only.
 Its exact keys are: {fields}. Each value must be a concise string drawn from the
 material, or exactly "Not specified" when the material does not establish it.
 Do not infer facts. Do not include citations, filenames, page numbers, markdown,
@@ -135,10 +143,18 @@ Operator question: {question}"""
 class MissionService:
     """Own retained originals; leave all retrieval/vector work to stock Chat Q&A."""
 
-    def __init__(self, cfg: dict, services, *, generate: Callable[[str], str] | None = None):
+    def __init__(
+        self,
+        cfg: dict,
+        services,
+        *,
+        generate: Callable[[str], str] | None = None,
+        on_corpus_change: Callable[[], object] | None = None,
+    ):
         self.cfg = cfg
         self.services = services
         self.generate = generate
+        self.on_corpus_change = on_corpus_change
         self.db_path = cfg["db_path"]
         self.source_dir = Path(cfg["mission_sources_dir"])
         self.source_dir.mkdir(parents=True, exist_ok=True)
@@ -183,6 +199,10 @@ class MissionService:
         conn.execute("UPDATE mission_brief SET stale = 1 WHERE stale = 0")
         self._set_brief_error(conn, None)
         return version
+
+    def _notify_corpus_change(self) -> None:
+        if self.on_corpus_change is not None:
+            self.on_corpus_change()
 
     def _brief_error(self, conn) -> str | None:
         row = conn.execute("SELECT value FROM app_state WHERE key = 'mission_brief_error'").fetchone()
@@ -378,6 +398,8 @@ class MissionService:
                 needs_brief = (bool(sources) and self._brief_is_stale(conn)
                                and self._brief_error(conn) is None
                                and not self._brief_active())
+            if missing:
+                self._notify_corpus_change()
             if needs_brief:
                 self._queue_brief()
         except (MissionError, OSError) as exc:
@@ -467,6 +489,7 @@ class MissionService:
             self._set_mode("ready", "Mission corpus is reconciled.")
             needs_brief = True
         if needs_brief:
+            self._notify_corpus_change()
             self._queue_brief()
         return self.status()
 
@@ -497,6 +520,7 @@ class MissionService:
             self._bump_version(conn)
             conn.commit()
             self._set_mode("ready", "Mission corpus is reconciled.")
+        self._notify_corpus_change()
         self._queue_brief()
         return self.status()
 
@@ -519,6 +543,7 @@ class MissionService:
             self._bump_version(conn)
             conn.commit()
             self._set_mode("ready", "Mission corpus is empty.")
+        self._notify_corpus_change()
         return self.status()
 
     def _generate_brief(self) -> None:

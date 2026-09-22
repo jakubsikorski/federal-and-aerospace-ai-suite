@@ -297,12 +297,42 @@ class Ingest:
             if confidence is not None:
                 entry["peak_confidence"] = max(entry["peak_confidence"] or 0.0, confidence)
             self._touch_interval(key, observed_at, stamp)
+            self._store_attributes(obj, key, entry, observed_at, stamp)
 
         self.frames_since_commit += 1
         if self.frames_since_commit >= 30:
             self._flush_intervals()
             self.conn.commit()
             self.frames_since_commit = 0
+
+    def _store_attributes(self, obj, key, entry, observed_at, stamp):
+        # Stock classification dictionaries sit beside detection; names are data.
+        source = {}
+        for name, value in obj.items():
+            if name == "detection" or not isinstance(value, dict):
+                continue
+            label = value.get("label")
+            if (isinstance(name, str) and 0 < len(name) <= 128
+                    and isinstance(label, str) and 0 < len(label) <= 256):
+                model = value.get("model")
+                model = model.get("name") if isinstance(model, dict) else None
+                source[name] = {"label": label, "model": str(model)[:256] if model else None}
+        if not source or len(source) > 32:
+            entry.pop("attribute_sample", None)
+            return
+        signature = json.dumps(source, sort_keys=True, separators=(",", ":"))
+        previous = entry.get("attribute_sample")
+        if previous and previous[0] == signature and 0 <= observed_at - previous[2] <= self.gap:
+            sample_id = previous[1]
+            self.conn.execute("UPDATE attribute_samples SET ended_utc=?, observation_count=observation_count+1 WHERE sample_id=?",
+                              (stamp, sample_id))
+        else:
+            cursor = self.conn.execute("""INSERT INTO attribute_samples
+                (track_id, started_utc, ended_utc, attributes_json, source_json)
+                VALUES (?,?,?,?,?)""", (self._track_id(key), stamp, stamp,
+                json.dumps({name: value["label"] for name, value in source.items()}, sort_keys=True), signature))
+            sample_id = cursor.lastrowid
+        entry["attribute_sample"] = (signature, sample_id, observed_at)
 
     def _apply_crop(self, event: dict) -> None:
         """Section 8.1: attach a finished crop to its track, or park it."""
@@ -446,6 +476,8 @@ class Ingest:
         Reaping on the window alone would delete rows ~20 s before
         `_attach_parked` stops trying to use them.
         """
+        self.conn.execute("DELETE FROM attribute_samples WHERE ended_utc < ?",
+                          (_utc(time.time() - self.cfg.get("history_retention_seconds", 604800)),))
         removed = self.conn.execute(
             "DELETE FROM candidates WHERE track_id IS NULL AND observed_at_utc < ?",
             (_utc(time.time() - self.pending_ttl * 2),)).rowcount

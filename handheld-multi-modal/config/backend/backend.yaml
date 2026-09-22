@@ -11,6 +11,8 @@
 # stock DLSPS MQTT publisher and REST WebRTC frame destination. Bounded queues
 # keep observations current instead of retaining a multi-second backlog.
 max_streams: 3
+# Optional per-camera description: real location, coverage, blind spots, live/replay.
+# Omit unknown details; the assistant reports unconfigured coverage honestly.
 streams:
   - stream_id: cam1
     display_name: Camera 1

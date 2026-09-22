@@ -7,6 +7,7 @@ Service adapters and the pipeline lifecycle are not mocked here - they are prove
 against the real pinned containers via /api/health and the Phase 2 evidence,
 which are the only assertions that actually mean anything for them.
 """
+from contextlib import nullcontext
 import hashlib
 import json
 import sqlite3
@@ -23,6 +24,9 @@ from pathlib import Path
 import httpx
 
 sys.path.insert(0, str(Path(__file__).parent))
+
+# Enough distinct pipeline metadata field names to exceed the described subset.
+CATALOG_OVERFLOW = 130
 
 from app.core import connect, envelope, load_config, migrate, request_id_var, sync_streams
 
@@ -1003,7 +1007,7 @@ def _phase5_fixture(root: Path):
 
 
 def test_phase5_plan_validation_retries_then_fails_safely():
-    from app.assistant import Assistant, InvalidPlan, SAFE_FAILURE, validate_route
+    from app.assistant import Assistant, InvalidPlan, validate_route
 
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
@@ -1066,8 +1070,131 @@ def test_phase5_plan_validation_retries_then_fails_safely():
              "history_retention_seconds": 604800},
             None, generate=lambda prompt: calls.append(prompt) or bad)
         answer = assistant.ask("Summarize the recorded evidence during the last ten minutes?", "cam1")
-        assert answer["answer_text"] == SAFE_FAILURE
+        assert answer["recovery"]["reason"] == "unmapped_conditions"
         assert len(calls) == 2, "invalid plan gets one retry, never an unbounded loop"
+        conn.close()
+
+
+def test_phase7_general_conversation_context_and_echo_adapter():
+    from app.assistant import (
+        CHAT_ANSWER_MARKER,
+        CONTEXT_IDLE_SECONDS,
+        Assistant,
+        InvalidPlan,
+        ServiceUnavailable,
+        adapt_chat_response,
+        decode_route_completion,
+        validate_route,
+    )
+
+    echoed = "rendered prompt\n" + CHAT_ANSWER_MARKER + "General answer."
+    assert adapt_chat_response(echoed) == "General answer."
+    for invalid in ("Answer:\nunsafe echo", CHAT_ANSWER_MARKER):
+        try:
+            adapt_chat_response(invalid)
+        except ServiceUnavailable:
+            pass
+        else:
+            raise AssertionError("invalid stock response was exposed")
+    assert decode_route_completion(
+        '{"intent":"general_chat"}\nUnsolicited answer.'
+    ) == {"intent": "general_chat"}
+    assert decode_route_completion(
+        '{"intent":"general_chat","response":"Unsolicited answer."}'
+    ) == {"intent": "general_chat"}
+    try:
+        decode_route_completion(
+            '{"intent":"video_history","plan":{}}\nUnsolicited answer.'
+        )
+    except json.JSONDecodeError:
+        pass
+    else:
+        raise AssertionError("malformed video route prefix was repaired")
+    for invalid_route in (
+        '{"intent":"mission_knowledge"}\nUnsolicited answer.',
+        '{"intent":"app_control","response":"Unsolicited answer."}',
+        '{"intent":"general_chat","response":"answer","extra":true}',
+    ):
+        try:
+            route = decode_route_completion(invalid_route)
+            validate_route(
+                route,
+                labels=("person",),
+                known_streams=("cam1",),
+                selected_stream="cam1",
+                cutoff=datetime.now(UTC),
+                retention=timedelta(hours=1),
+            )
+        except (json.JSONDecodeError, InvalidPlan):
+            pass
+        else:
+            raise AssertionError(f"unsafe malformed route was accepted: {invalid_route}")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        conn, _, metadata = _phase5_fixture(root)
+        prompts = []
+        def generate(prompt):
+            if "Classify the operator request" in prompt:
+                return '{"intent":"general_chat"}'
+            prompts.append(prompt)
+            return "General reply " + str(len(prompts))
+
+        assistant = Assistant(
+            {"db_path": str(root / "phase5.db"),
+             "detector_metadata_path": str(metadata)},
+            None, generate=generate)
+        for index in range(6):
+            answer = assistant.ask(f"General question {index}?")
+            assert answer["intent"] == "general_chat" and not answer.get("query")
+            assert answer["conversation"]["turns"] <= 4
+            assert answer["conversation"]["characters"] <= 1200
+        assert "General question 0?" not in prompts[-1]
+        assert "General question 1?" in prompts[-1]
+        assert "not mission material, camera" in prompts[-1]
+
+        assistant.reset_context()
+        assistant.ask("Fresh question?")
+        assert "General question 5?" not in prompts[-1]
+
+        assistant.ask("Idle context seed?")
+        assistant._conversation_state().updated = time.monotonic() - CONTEXT_IDLE_SECONDS - 1
+        assistant.ask("After idle?")
+        assert "Idle context seed?" not in prompts[-1]
+
+        assistant.ask("Before history?")
+        assistant.search(
+            {"window": {"kind": "relative", "minutes": 10}, "classes": None},
+            "cam1",
+        )
+        assistant.ask("After history?")
+        assert "Before history?" not in prompts[-1]
+
+        assistant._remember_general("Long question", "x" * 5000)
+        assert assistant.context_status()["characters"] <= 1200
+        assert assistant.context_status()["turns"] <= 4
+
+        generation_started, release_generation = threading.Event(), threading.Event()
+        def blocked_generate(prompt):
+            if "Classify the operator request" in prompt:
+                return '{"intent":"general_chat"}'
+            generation_started.set()
+            assert release_generation.wait(1)
+            return "Late reply"
+        blocked = Assistant(
+            {"db_path": str(root / "phase5.db"),
+             "detector_metadata_path": str(metadata)},
+            None, generate=blocked_generate)
+        errors = []
+        worker = threading.Thread(
+            target=lambda: _capture(errors, blocked.ask, "Question before reset?"))
+        worker.start()
+        assert generation_started.wait(1)
+        blocked.reset_context()
+        release_generation.set()
+        worker.join(1)
+        assert not worker.is_alive() and not errors
+        assert blocked.context_status()["turns"] == 0, "late completion repopulated reset context"
         conn.close()
 
 
@@ -1081,7 +1208,7 @@ def test_phase5_interval_query_aggregates_completeness_and_safe_grounding():
             json.dumps({
                 "intent": "video_history",
                 "plan": {"window": {"kind": "relative", "minutes": 10},
-                         "classes": None, "order": "last_observed_desc",
+                         "classes": None, "attributes": [], "order": "last_observed_desc",
                          "page": 0, "page_size": 20},
             }),
         ])
@@ -1285,6 +1412,7 @@ def test_handheld_search_fast_path_and_recovery():
         ("Show me people from 16:20 to 16:25", ["person"]),
         ("Which cars appeared in the past five minutes?", ["car"]),
         ("What was detected in the last 10 minutes?", None),
+        ("How many people were detected in the last 10 minutes?", ["person"]),
     ]:
         window = {"kind": "relative", "minutes": 10} if "16:20" in text else None
         assert simple_plan(text, labels, window)["classes"] == classes
@@ -1296,7 +1424,7 @@ def test_handheld_search_fast_path_and_recovery():
         a = Assistant({"db_path":str(root / "phase5.db"), "detector_metadata_path":str(metadata),
                        "assistant_queue_depth":1}, None,
                       generate=lambda _: json.dumps({"intent": "video_history", "plan": {
-                          "window": {"kind": "relative", "minutes": 10}, "classes": None}}))
+                          "window": {"kind": "relative", "minutes": 10}, "classes": None, "attributes": []}}))
         a.queue.acquire()
         with a.single_flight:
             answer = a.ask("Show me people in the last ten minutes", "cam1")
@@ -1305,7 +1433,8 @@ def test_handheld_search_fast_path_and_recovery():
             assert a.search({"window":{"kind":"relative", "minutes":10}, "classes":None}, "cam1")["query"]
         a.queue.release()
         assert a.ask("What was seen?", "cam1")["recovery"]["reason"] == "missing_window"
-        assert a.ask("Were there weapons in the last ten minutes?", "cam1")["recovery"]["reason"] == "unsupported_concept"
+        a.generate = lambda _: '{"intent":"clarification"}'
+        assert a.ask("Were there weapons in the last ten minutes?", "cam1")["recovery"]["reason"] == "unmapped_conditions"
         assert a.search({"window":{"kind":"relative", "minutes":10}, "classes":["invented"]}, "cam1")["recovery"]["reason"] == "invalid_filters"
         known, ceiling, scope = query_context(str(root / "phase5.db"))
         plan = validate_plan({"window":{"kind":"relative", "minutes":10}, "classes":None},
@@ -1362,7 +1491,7 @@ def test_history_ux_regressions():
         root = Path(tmp)
         conn, _, metadata = _phase5_fixture(root)
         broad = json.dumps({"intent": "video_history", "plan": {
-            "window": {"kind": "relative", "minutes": 10}, "classes": None}})
+            "window": {"kind": "relative", "minutes": 10}, "classes": None, "attributes": []}})
         calls = []
         a = Assistant({"db_path": str(root / "phase5.db"), "detector_metadata_path": str(metadata)},
                       None, generate=lambda prompt: calls.append(prompt) or broad)
@@ -1381,7 +1510,7 @@ def test_history_ux_regressions():
                 emit({"answer": {"answer_text": "early counts"}})
             time.sleep(.25)
             return {"answer_text": "finished"}
-        app.state.assistant = SimpleNamespace(ask=slow)
+        app.state.assistant = SimpleNamespace(ask=slow, conversation=lambda _: nullcontext())
         ticks = []
         async def heartbeat():
             for _ in range(25):
@@ -1605,10 +1734,12 @@ def test_mission_phase6_failure_matrix():
             client=httpx.Client(transport=httpx.MockTransport(stock.handler)),
         )
         brief = json.dumps({field: "Not specified" for field in BRIEF_FIELDS})
+        context_resets = []
         service = MissionService(
             {"db_path": str(db), "mission_sources_dir": str(root / "sources"),
              "mission_ingest_timeout_seconds": 1, "mission_ingest_poll_seconds": 0},
-            services, generate=lambda prompt: brief if "exact keys" in prompt else "mission answer")
+            services, generate=lambda prompt: brief if "exact keys" in prompt else "mission answer",
+            on_corpus_change=lambda: context_resets.append(True))
         queue_brief = service._queue_brief
         service._queue_brief = lambda: None
 
@@ -1617,6 +1748,7 @@ def test_mission_phase6_failure_matrix():
         content = _pdf_bytes()
         service.upload("first.pdf", content)
         service.upload("second.pdf", content)
+        assert len(context_resets) == 2
         digest = service.status()["sources"][0]["sha256"]
         service.delete("first.pdf", "first.pdf")
         assert (root / "sources" / digest).is_file()
@@ -1854,6 +1986,332 @@ def _capture(errors, call, *args):
         call(*args)
     except Exception as exc:
         errors.append(exc)
+
+
+def test_chat_sessions_streaming_and_followups():
+    from app.assistant import Assistant, InvalidInput, ServiceUnavailable
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        conn, _, metadata = _phase5_fixture(root)
+        conn.execute("INSERT INTO streams (stream_id,display_name,source_uri,annotated_path,enabled,sort_order) VALUES ('cam2','Camera 2','rtsp://cam2','annotated2',1,1)")
+        conn.commit()
+        prompts = []
+        def generate(prompt):
+            prompts.append(prompt)
+            return '{"intent":"general_chat"}' if "Classify the operator request" in prompt else "A short answer."
+        assistant = Assistant({"db_path": str(root / "phase5.db"),
+            "detector_metadata_path": str(metadata), "streams": [
+                {"stream_id": "cam1", "display_name": "Camera 1", "description": "Configured test coverage."}]},
+            None, generate=generate)
+        for invalid in ([], {}, "unknown"):
+            try:
+                assistant.ask("question", mode=invalid)
+            except InvalidInput:
+                pass
+            else:
+                raise AssertionError("invalid answer mode accepted")
+        first, second = "a" * 32, "b" * 32
+        with assistant.conversation(first):
+            assistant.ask("My reference is ORANGE-17.")
+            calls = len(prompts)
+            assistant.ask("Explain that more simply.")
+            assert len(prompts) == calls + 1, "clear general followup used a routing call"
+            assert "ORANGE-17" in prompts[-1]
+            calls = len(prompts)
+            assistant.ask("Why is the sky blue?", mode="general")
+            assert len(prompts) == calls + 1, "explicit general chat called the router"
+            assert "Configured test coverage" in prompts[-1]
+        with assistant.conversation(second):
+            assistant.ask("What do you remember?")
+            assert "ORANGE-17" not in prompts[-1], "browser contexts mixed"
+        assistant.reset_context(first)
+        with assistant.conversation(first):
+            assert assistant.context_status()["turns"] == 0
+        with assistant.conversation(second):
+            assert assistant.context_status()["turns"] == 1, "reset affected another conversation"
+        with assistant.conversation(first):
+            calls = len(prompts)
+            assert assistant.ask("What can you do?")["intent"] == "application_help"
+            assert "Configured test coverage" in assistant.ask("What does camera 1 cover?")["answer_text"]
+            assert len(prompts) == calls, "configured help invoked the model"
+            assistant.remember_result(assistant.search({"window": {"kind": "relative", "minutes": 30}, "classes": ["person"]}, "cam1"))
+            result = assistant.ask("And camera 2?")
+            assert result["query"]["filters"]["streams"] == ["cam2"]
+            assert result["query"]["filters"]["classes"] == ["person"]
+            assert len(prompts) == calls, "camera comparison invoked the model"
+        conn.close()
+
+    wire = b'data: Hello\n\n\n\ndata: world.\n\n'
+    class Stream(httpx.SyncByteStream):
+        def __iter__(self):
+            for offset in range(0, len(wire), 3):
+                yield wire[offset:offset + 3]
+    requests = []
+    def handler(request):
+        requests.append(json.loads(request.content))
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=Stream())
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    assistant = Assistant({}, types.SimpleNamespace(client=client, urls={"chatqna": "http://stock"}))
+    events = []
+    assert assistant._chat_stream("question", events.append) == "Hello\n\nworld."
+    assert "".join(e["delta"] for e in events if "delta" in e) == "Hello\n\nworld."
+    assert requests == [{"input": "question", "stream": True}]
+    assert events[-1]["timing"]["generation_ms"] >= 0
+    client.close()
+    calls = []
+    def timeout(request):
+        calls.append(1)
+        raise httpx.ReadTimeout("test timeout")
+    client = httpx.Client(transport=httpx.MockTransport(timeout))
+    assistant.services.client = client
+    try:
+        assistant._chat_stream("question", lambda _: None)
+    except ServiceUnavailable as exc:
+        assert "not retried" in str(exc)
+    else:
+        raise AssertionError("stream timeout accepted")
+    assert calls == [1]
+    client.close()
+
+
+
+def test_application_knowledge_grounding():
+    from app.assistant import Assistant, _routing_prompt
+    from app.mission import _brief_prompt, OPERATOR_GUIDE
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        conn, _, metadata = _phase5_fixture(root)
+        prompts = []
+        def generate(prompt):
+            prompts.append(prompt)
+            if "Classify the operator request" in prompt:
+                return '{"intent":"application_help"}'
+            return "Pause freezes list updates, not the camera pipeline."
+        assistant = Assistant({"db_path": str(root / "phase5.db"),
+            "detector_metadata_path": str(metadata), "streams": [
+                {"stream_id":"cam1", "display_name":"Entrance", "description":"Test doorway."}]},
+            None, generate=generate)
+        with assistant.conversation("c" * 32):
+            for question, phrase in [("What does Pause do?", "Live video and"),
+                    ("How is Mission Brief generated in this system?", "stock Chat Q&A"),
+                    ("Can you see camera video?", "cannot see or watch")]:
+                direct = assistant.ask(question)
+                assert direct["intent"] == "application_help" and phrase in direct["answer_text"]
+            assert not prompts, "control explanations invoked inference"
+            answer = assistant.ask("How does this application store evidence?", selected_stream="cam1")
+            assert answer["intent"] == "application_help"
+            assert OPERATOR_GUIDE in prompts[-1]
+            assert "Test doorway." in prompts[-1] and '"selected_camera": "cam1"' in prompts[-1]
+            assert "is not documented" in prompts[-1]
+            assert len(prompts) == 2
+            assistant.ask("Explain that more simply.")
+            assert len(prompts) == 3 and "How does this application store evidence?" in prompts[-1]
+            assistant.ask("What are the limitations of this application?", mode="general")
+            assert len(prompts) == 4 and OPERATOR_GUIDE in prompts[-1]
+        routing = _routing_prompt("How do I search camera history?", ("person",), None, None)
+        assert "application_help" in routing and "HOW to use a control" in routing
+        brief = _brief_prompt()
+        assert OPERATOR_GUIDE in brief
+        assert "Never fill mission fields from the application guide" in brief
+        assert '"Not specified"' in brief
+        conn.close()
+
+
+def test_partial_clarification_offers_broader_search():
+    from app.assistant import Assistant, InvalidPlan, validate_route
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        conn, cutoff, metadata = _phase5_fixture(root)
+        proposal = {"intent":"clarification", "plan":{"window":{"kind":"relative","minutes":10},
+            "classes":["person"], "attributes":[]}, "unresolved_conditions":["wearing red shirts"]}
+        responses = iter(['{"intent":"clarification"}', json.dumps(proposal)])
+        a = Assistant({"db_path":str(root/'phase5.db'),"detector_metadata_path":str(metadata)},
+            None, generate=lambda _: next(responses))
+        answer = a.ask("How many people wearing red shirts were detected in the last 10 minutes?", "cam1")
+        assert 'query' not in answer, 'partial proposal ran automatically'
+        alternative = answer['broader_search']
+        assert alternative['excluded_conditions'] == ['other conditions in the original question']
+        assert alternative['plan']['classes'] == ['person'] and alternative['plan']['streams'] == ['cam1']
+        assert alternative['plan']['window']['kind'] == 'absolute'
+        result = a.search(alternative['plan'],alternative['selected_stream'])
+        assert result['query']['total'] == 1
+        assert result['query']['window']['started_utc'] == alternative['plan']['window']['start_utc']
+        for changes in ({'unresolved_conditions':[]}, {'unresolved_conditions':['x'*257]},
+                        {'plan':dict(proposal['plan'],classes=None)}):
+            try:
+                validate_route(dict(proposal,**changes), labels=('person',), known_streams=('cam1',),
+                    selected_stream='cam1',cutoff=cutoff,retention=timedelta(days=7))
+            except InvalidPlan:
+                pass
+            else:
+                raise AssertionError('unsafe partial proposal accepted')
+        a.generate = lambda _: '{"intent":"clarification"}'
+        assert 'broader_search' not in a.ask('What happened?', 'cam1'), 'invented scope for ambiguous request'
+        short = a.ask('red shirt in the last 10 minutes', 'cam1')
+        assert short['broader_search']['plan']['classes'] is None
+        assert 'all recorded object types' in short['answer_text']
+        assert short['broader_search']['plan']['window']['kind'] == 'absolute'
+
+        responses = iter(['not JSON', json.dumps(proposal) + '\nUntrusted extra commentary.'])
+        a.generate = lambda _: next(responses)
+        recovered = a.ask('How many people wearing red shirts were detected in the last 10 minutes?', 'cam1')
+        assert recovered['broader_search']['excluded_conditions'] == ['wearing red shirts']
+        assert 'query' not in recovered and 'Untrusted extra' not in recovered['answer_text']
+        a.generate = lambda _: 'not JSON'
+        assert a.ask('How many people wearing red shirts were detected in the last 10 minutes?', 'cam1')['broader_search']['plan']['classes'] == ['person']
+
+
+        conn.close()
+
+
+def test_dynamic_classification_metadata_queries():
+    from app.assistant import Assistant, attribute_catalog, _utc
+    with tempfile.TemporaryDirectory() as tmp:
+        ing = _ingest(tmp)
+        root = Path(tmp)
+        metadata = root / 'labels.yaml'
+        metadata.write_text('names:\n  0: person\n')
+        now = datetime.now(UTC).replace(microsecond=0)
+        def frame(camera, tracker, seconds, attributes):
+            body = json.loads(_observation(camera, tracker, observed_at=now.timestamp()+seconds))
+            body['metadata']['objects'][0].update({name:{'label':value, 'confidence':.9,
+                'model':{'name':'fixture-classifier'}} for name,value in attributes.items()})
+            ing._on_message(None, None, types.SimpleNamespace(topic='detections/live', payload=json.dumps(body).encode()))
+        frame('cam1', 1, -120, {'upper_color':'red', 'lower_color':'white', 'garment_type':'shirt'})
+        frame('cam1', 1, -119, {'upper_color':'red', 'lower_color':'white', 'garment_type':'shirt'})
+        frame('cam1', 1, -118, {'upper_color':'blue', 'lower_color':'black', 'garment_type':'shirt'})
+        frame('cam1', 2, -117, {})
+        frame('cam1', 3, -116, {'surface_finish':'A42'})
+        frame('cam2', 1, -115, {'upper_color':'red','garment_type':'shirt'})
+        ing._flush_intervals(force=True)
+        ing.conn.commit()
+        samples = ing.conn.execute('SELECT * FROM attribute_samples ORDER BY sample_id').fetchall()
+        assert len(samples) == 4 and samples[0]['observation_count'] == 2
+        assert json.loads(samples[0]['source_json'])['upper_color']['model'] == 'fixture-classifier'
+        cfg = dict(ing.cfg, db_path=str(root/'ingest.db'), detector_metadata_path=str(metadata))
+        prompts = []
+        def generate(prompt):
+            prompts.append(prompt)
+            return json.dumps({'intent':'video_history','plan':{'window':{'kind':'relative','minutes':10},
+                'classes':['person'], 'attributes':[{'name':'upper_color','value':'red'},{'name':'garment_type','value':'shirt'}]}})
+        a = Assistant(cfg, None, generate=generate)
+        def search(attributes, camera='cam1', window=None):
+            return a.search({'window':window or {'kind':'relative','minutes':10},
+                'classes':['person'], 'attributes':[{'name':k,'value':v} for k,v in attributes.items()]},camera)
+        red = search({'upper_color':'red'})
+        assert red['query']['total'] == 1
+        from app.assistant import encode_page_token, query_context, validate_plan
+        known, ceiling, scope = query_context(cfg['db_path'])
+        plan = validate_plan({'window':{'kind':'relative','minutes':10}, 'classes':['person'],
+            'attributes':[{'name':'upper_color','value':'red'}]}, labels=('person',), known_streams=known,
+            selected_stream='cam1', cutoff=now, retention=timedelta(days=7))
+        token = encode_page_token(plan, now, ceiling, {'cam1':scope['cam1']}, a.page_secret)
+        assert a.page(token)['query']['filters']['attributes'] == plan['attributes']
+
+        assert red['query']['attribute_coverage'] == {'candidate_tracks':3,'tracks_with_fields':1,'tracks_without_fields':2}
+        assert search({'upper_color':'red','lower_color':'black'})['query']['total'] == 0, 'labels from different moments combined'
+        assert search({'upper_color':'purple'})['query']['total'] == 0, 'unseen value treated as unsupported taxonomy'
+        assert search({'surface_finish':'A42'})['query']['total'] == 1, 'domain vocabulary was hardcoded'
+        assert search({'surface_finish':'A42'},'cam2')['recovery']['reason'] == 'attribute_data_unavailable'
+        window = {'kind':'absolute','start_utc':_utc(now-timedelta(seconds=118)), 'end_utc':_utc(now-timedelta(seconds=100))}
+        assert search({'upper_color':'red'},window=window)['query']['total'] == 0, 'old attributes leaked into later window'
+        assert search({'invented_field':'x'})['recovery']['reason'] == 'attribute_data_unavailable'
+        unavailable = search({'upper_color':'red','invented_field':'x'})
+        alternative = unavailable['broader_search']
+        assert alternative['excluded_attributes'] == [{'name':'invented_field','value':'x'}]
+        assert alternative['plan']['attributes'] == [{'name':'upper_color','value':'red'}]
+        assert alternative['plan']['classes'] == ['person'] and alternative['plan']['streams'] == ['cam1']
+        assert alternative['plan']['window']['kind'] == 'absolute'
+        assert a.search(alternative['plan'], alternative['selected_stream'])['query']['total'] == 1
+        empty = search({'upper_color':'purple'})
+        assert empty['query']['total'] == 0 and empty['broader_search']['plan']['attributes'] == []
+        assert empty['broader_search']['plan']['window']['start_utc'] == empty['query']['window']['started_utc']
+
+        assert {r['name'] for r in attribute_catalog(cfg['db_path'],'cam2')} == {'upper_color','garment_type'}
+        with a.conversation('d'*32):
+            answer = a.ask('How many people wearing red shirts were detected in the last 10 minutes?', 'cam1')
+            assert answer['query']['total'] == 1 and 'upper_color' in prompts[-1]
+            assert a.ask('And camera 2?')['query']['filters']['attributes'] == [{'name':'upper_color','value':'red'},{'name':'garment_type','value':'shirt'}]
+        # A new camera/session doesn't inherit old classification capabilities.
+        ing._on_message(None,None,types.SimpleNamespace(topic='detections/live',payload=_observation('cam1',1,
+            observed_at=now.timestamp()-10,session='s2')))
+        ing._flush_intervals(force=True); ing.conn.commit()
+        assert attribute_catalog(cfg['db_path'],'cam1') == []
+        assert search({'upper_color':'red'})['recovery']['reason'] == 'attribute_data_unavailable'
+        ing.conn.execute("DELETE FROM tracks WHERE stream_id='cam1'")
+        ing.conn.commit()
+        assert ing.conn.execute('SELECT count(*) FROM attribute_samples').fetchone()[0] == 1
+        ing.conn.close()
+
+
+def test_unmapped_conditions_and_catalog_overflow_degrade_safely():
+    """A qualified question must never be answered by an unqualified search."""
+    from app.assistant import Assistant, _utc, attribute_catalog
+
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        conn, _, metadata = _phase5_fixture(root)
+        cfg = {"db_path": str(root / "phase5.db"), "detector_metadata_path": str(metadata),
+               "history_retention_seconds": 604800,
+               "streams": [{"stream_id": "cam1", "display_name": "Camera 1", "enabled": True}]}
+        base = {"window": {"kind": "relative", "minutes": 10}, "order": "last_observed_desc",
+                "page": 0, "page_size": 20}
+
+        def router(classes, attributes):
+            return lambda _prompt: json.dumps({"intent": "video_history",
+                "plan": dict(base, classes=classes, attributes=attributes)})
+
+        # The model keeps the supported class and drops the quality beside it.
+        dropped = Assistant(cfg, None, generate=router(["person"], []))
+        for question in ("Show people carrying weapons in the last ten minutes",
+                         "Show suspicious people in the last ten minutes",
+                         "Which people in uniform were seen in the last ten minutes"):
+            answer = dropped.ask(question, "cam1")
+            assert "query" not in answer, f"unfiltered search answered {question!r}"
+            assert answer["intent"] == "clarification", answer
+            assert answer["broader_search"]["plan"]["classes"] == ["person"], answer
+            assert "will not check" in answer["answer_text"] or "not check" in answer["answer_text"]
+        # The same guard must not block an ordinary question.
+        plain = dropped.ask("Show people in the last ten minutes", "cam1")
+        assert plain["intent"] == "video_history" and plain["query"]["total"] == 1, plain
+
+        # A quality the plan genuinely filters on stays answerable.
+        now = datetime.now(UTC)
+        conn.execute("""INSERT INTO attribute_samples (track_id, started_utc, ended_utc,
+            attributes_json, source_json) VALUES (1,?,?,?,'{}')""",
+            (_utc(now - timedelta(minutes=10)), _utc(now - timedelta(minutes=8)),
+             json.dumps({"clothing": "uniform"})))
+        conn.commit()
+        mapped = Assistant(cfg, None, generate=router(["person"], [{"name": "clothing", "value": "uniform"}]))
+        answer = mapped.ask("Which people in uniform were seen in the last ten minutes", "cam1")
+        assert answer["intent"] == "video_history" and answer["query"]["total"] == 1, answer
+
+        # Field names come from pipeline metadata, so their count is unbounded.
+        for index in range(CATALOG_OVERFLOW):
+            conn.execute("""INSERT INTO attribute_samples (track_id, started_utc, ended_utc,
+                attributes_json, source_json) VALUES (1,?,?,?,'{}')""",
+                (_utc(now - timedelta(minutes=5)), _utc(now - timedelta(minutes=4)),
+                 json.dumps({f"field_{index:04}": "value"})))
+        conn.commit()
+        describing = Assistant(cfg, None, generate=lambda _prompt: "An answer.")
+        options = describing.options()
+        assert len(options["attributes"]) == 128 and options["attributes_truncated"] is True, options
+        assert describing.ask("Why is the sky blue?", None, mode="general")["intent"] == "general_chat"
+        assert attribute_catalog(cfg["db_path"]).truncated is True
+
+        # An exact membership test must not be answered from a truncated list.
+        conn.execute("""INSERT INTO attribute_samples (track_id, started_utc, ended_utc,
+            attributes_json, source_json) VALUES (1,?,?,?,'{}')""",
+            (_utc(now - timedelta(minutes=9)), _utc(now - timedelta(minutes=8)),
+             json.dumps({"zzz_sorts_after_truncation": "present"})))
+        conn.commit()
+        late = Assistant(cfg, None, generate=router(
+            ["person"], [{"name": "zzz_sorts_after_truncation", "value": "present"}]))
+        answer = late.ask(
+            "Show person tracks with zzz_sorts_after_truncation present in the last ten minutes", "cam1")
+        assert answer["intent"] == "video_history", (
+            "a field sorting past the description limit was reported unavailable")
+        conn.close()
 
 
 if __name__ == "__main__":

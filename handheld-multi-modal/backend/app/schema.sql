@@ -132,3 +132,18 @@ FROM tracks t;
 CREATE VIEW IF NOT EXISTS q_intervals AS
 SELECT track_id, stream_id, started_utc, ended_utc, observation_count
 FROM track_intervals;
+
+-- Classification observations belong to the same track/session as detections.
+-- Identical consecutive label sets share an interval; missing metadata ends it.
+CREATE TABLE IF NOT EXISTS attribute_samples (
+    sample_id INTEGER PRIMARY KEY,
+    track_id INTEGER NOT NULL REFERENCES tracks(track_id) ON DELETE CASCADE,
+    started_utc TEXT NOT NULL,
+    ended_utc TEXT NOT NULL,
+    attributes_json TEXT NOT NULL,
+    source_json TEXT NOT NULL,
+    observation_count INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS ix_attributes_track_time
+    ON attribute_samples(track_id, started_utc, ended_utc);
+CREATE INDEX IF NOT EXISTS ix_attributes_time ON attribute_samples(ended_utc);

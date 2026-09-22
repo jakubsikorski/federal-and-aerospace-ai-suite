@@ -100,6 +100,14 @@ class Fixture(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def do_POST(self):
+        if self.path.startswith('/api/assistant/reset'):
+            payload = json.dumps({'data': {'cleared': True, 'turns': 0, 'characters': 0}}).encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return
         if self.path == '/api/mission/ask':
             payload = json.dumps({'data': {
                 'intent': 'mission_knowledge', 'answer_text': 'Mission answer.',
@@ -233,7 +241,16 @@ def main():
                 await openAssistant();
                 if ($("search-camera").value !== "all") return "search must default to all cameras";
                 if ([...$("search-class").options].map(o => o.value).join(",") !== ",car,chair,person") return "unsorted types";
-                if ($("filter-fields").hidden || $("ask-submit").textContent !== "Search") return "wrong initial flow";
+                if ($("filter-fields").hidden || $("ask-submit").textContent !== "Send") return "wrong initial flow";
+                $("ask-text").value = "How does RTSP work?"; updateQuestionFilters();
+                if ($("ask-submit").textContent !== "Send") return "question action not labelled Ask";
+                renderAssistant({intent:"general_chat",answer_text:"General answer.",conversation:{turns:1,characters:40},errors:[]});
+                if ($("assistant-editor-error").textContent || !$("assistant-submitted").textContent.includes("General conversation")) return "general answer shown as history";
+                $("assistant-reset").click();
+                await new Promise(resolve => setTimeout(resolve, 50));
+                if (!$("assistant-answer").textContent.includes("New conversation")) return "conversation reset failed";
+                $("ask-text").value = ""; updateQuestionFilters();
+                $("toggle-history-filters").click();
                 $("search-camera").value = "cam1"; $("search-class").value = "person";
                 const button = $("ask-submit").getBoundingClientRect().toJSON();
                 await applyAssistantFilters({preventDefault(){}});
@@ -242,7 +259,7 @@ def main():
                 if (!$("assistant-answer").textContent.includes("4 matching tracks · 2 with images")) return "missing counts";
                 await submitAssistant({page_token:state.assistantToken});
                 if (!$("assistant-next").disabled || $("assistant-next").hidden || $("assistant-previous").disabled) return "paging moved";
-                if ($("ask-submit").getBoundingClientRect().y !== button.y || $("filter-fields").hidden) return "controls moved";
+                if ($("filter-fields").hidden || $("ask-submit").disabled) return "controls unavailable";
                 return true;
               })()`).then(done);
             ''')
@@ -278,7 +295,7 @@ def main():
                 if (!$("search-class").disabled || !$("search-period").disabled) return "conflicting filters active";
                 const before = $("search-start").value;
                 await applyAssistantFilters({preventDefault(){}});
-                if (state.assistantContext.payload.text !== $("ask-text").value || state.assistantContext.payload.selected_stream !== "cam1") return "question lost";
+                if (state.assistantContext.payload.text !== "show cars from 4:20 to 4:25 pm yesterday" || $("ask-text").value !== "" || state.assistantContext.payload.selected_stream !== "cam1") return "question lost";
                 renderAssistant({intent:"clarification",answer_text:"Use 24-hour times.", recovery:{reason:"invalid_window"}});
                 $("ask-text").value = ""; updateQuestionFilters();
                 if ($("search-start").value !== before) return "question overwrote custom time";
@@ -297,7 +314,7 @@ def main():
                 try {
                   await applyAssistantFilters({preventDefault(){}});
                   return $("assistant-warnings").textContent.includes("fixture offline")
-                    && $("assistant-editor-error").textContent.includes("Press Search to retry")
+                    && $("assistant-editor-error").textContent.includes("Retry when ready")
                     && !$("ask-submit").disabled && !$("filter-fields").hidden
                     && JSON.stringify(inputs) === JSON.stringify(["search-camera","search-class","search-period","search-start"].map(id => $(id).value));
                 } finally { window.fetch = original; }
@@ -517,7 +534,7 @@ def main():
                         && history.top >= evidenceHead.top && history.bottom <= evidenceHead.bottom
                         && !$("track-count") && $("track-title").textContent === "Evidence"
                         && getComputedStyle($("open-assistant")).backgroundColor !== getComputedStyle($("toggle-diagnostics")).backgroundColor
-                        && [...document.querySelectorAll(".quiet-button")].every(button => parseFloat(getComputedStyle(button).borderTopWidth) >= 1 && getComputedStyle(button).height === "32px" && getComputedStyle(button).fontSize === "13px")
+                        && [...document.querySelectorAll(".quiet-button:not(#ask-submit):not(#use-viewed-camera)")].every(button => parseFloat(getComputedStyle(button).borderTopWidth) >= 1 && getComputedStyle(button).height === "32px" && getComputedStyle(button).fontSize === "13px")
                         && parseFloat(getComputedStyle(document.querySelector(".track-seen")).fontSize) >= 15
                         && document.body.scrollWidth === innerWidth && document.body.scrollHeight === innerHeight
                         && $("video-wrap").getBoundingClientRect().height >= 200
@@ -554,6 +571,7 @@ def main():
                   renderAssistant({answer_text:"No matching records.", query:{tracks:[], total:0, with_crops_total:0,
                     page:0, page_size:20, filters:{streams:["cam1"], classes:null},
                     window:{started_utc:new Date().toISOString(), ended_utc:new Date().toISOString()}, warnings:[]}});
+                  if (!$("assistant-panel").classList.contains("filters-open")) $("toggle-history-filters").click();
                   const panel = $("assistant-panel").getBoundingClientRect();
                   const paging = $("assistant-paging").getBoundingClientRect();
                   const host = $("tracks-panel").getBoundingClientRect();
@@ -563,13 +581,121 @@ def main():
                     && paging.bottom <= panel.bottom + 1
                     && $("assistant-results").clientHeight >= 80
                     && ["search-camera","search-class","search-period"].every(id => $(id).getBoundingClientRect().height >= 48)
-                    && ["close-assistant","ask-submit","assistant-previous","assistant-next"].every(id => $(id).getBoundingClientRect().height === 32);
+                    && ["close-assistant","assistant-previous","assistant-next"].every(id => $(id).getBoundingClientRect().height === 32) && $("ask-submit").getBoundingClientRect().height >= 48;
                   closeAssistant(); return ok || {panel:panel.toJSON(), paging:paging.toJSON()};
                 })()''')
                 if args.screenshots:
                     check('renderChart(); true')
                     data = request('GET', base + '/screenshot')
                     (args.screenshots / f'fixture-{width}x{height}.png').write_bytes(base64.b64decode(data))
+            result = async_js(r'''const done = arguments[arguments.length - 1];
+              window.eval(`(async () => {
+                await openAssistant(); await $("assistant-reset").onclick();
+                const original = window.fetch;
+                let controller;
+                const encoder = new TextEncoder();
+                try {
+                  window.fetch = async (url, options) => {
+                    if (url !== "/api/ask") return original(url, options);
+                    return new Response(new ReadableStream({start(c){controller=c;}}),
+                      {headers:{"content-type":"application/x-ndjson"}});
+                  };
+                  const firstId = conversationId;
+                  $("ask-text").value = "Explain daylight";
+                  const pending = submitAssistant({text:"Explain daylight",mode:"general"});
+                  await new Promise(r=>setTimeout(r,20));
+                  controller.enqueue(encoder.encode(JSON.stringify({delta:"First words"})+"\\n"));
+                  await new Promise(r=>setTimeout(r,20));
+                  if ($("assistant-answer").textContent !== "First words") return "tokens not visible before completion";
+                  await $("assistant-reset").onclick();
+                  if (conversationId === firstId || $("ask-text").value) return "new conversation kept old identity/input";
+                  controller.enqueue(encoder.encode(JSON.stringify({answer:{intent:"general_chat",answer_text:"Late old answer",errors:[]},done:true})+"\\n"));
+                  controller.close(); await pending;
+                  if (!$("assistant-answer").textContent.startsWith("New conversation")) return "late result entered new conversation";
+                  state.assistantContext = {text:"First question",payload:{}};
+                  renderAssistant({intent:"general_chat",answer_text:"First answer",errors:[]});
+                  archiveAssistantTurn();
+                  renderAssistant({intent:"general_chat",answer_text:"Second answer",errors:[]});
+                  if (!$("assistant-transcript").textContent.includes("First answer")) return "previous exchange lost";
+                  await $("assistant-reset").onclick();
+                  if ($("assistant-transcript").children.length) return "new conversation kept transcript";
+                  return true;
+                } finally {window.fetch=original;}
+              })()`).then(done).catch(e=>done(String(e)));
+            ''')
+            assert result is True, result
+            result = async_js(r'''const done = arguments[arguments.length - 1];
+              window.eval(`(async () => {
+                await openAssistant(); await $("assistant-reset").onclick();
+                if (!$("assistant-panel").classList.contains("welcome") || $("start-people").getBoundingClientRect().height < 44) return "missing usable starting points";
+                if ($("start-explain").getBoundingClientRect().bottom > $("assistant-output").getBoundingClientRect().bottom + 1) return "starting points clipped on small screen";
+                $("start-explain").click();
+                if ($("assistant-mode").value !== "general" || document.activeElement.id !== "ask-text") return "explain action did not prepare composer";
+                state.selected = "cam1"; $("search-camera").value = "all"; updateAssistantCameraCue();
+                if ($("use-viewed-camera").hidden) return "no explicit camera shortcut";
+                $("use-viewed-camera").click();
+                if ($("search-camera").value !== "cam1") return "wrong camera selected";
+                await $("start-people").onclick();
+                if (state.assistantContext.payload.plan.classes[0] !== "person" || state.assistantContext.payload.selected_stream !== "cam1" || state.assistantContext.payload.plan.window.minutes !== 10) return "starter search scope wrong";
+                const classified = structuredClone(state.assistantAnswer);
+                classified.query.filters.attributes = [{name:"surface_finish", value:"A42"}];
+                renderAssistant(classified);
+                if (!$("assistant-scope").textContent.includes("surface_finish: A42")) return "attribute filter not visible";
+                if (!$("answer-actions").textContent.includes("Compare Camera 2")) return "no camera comparison action";
+                const compare = [...$("answer-actions").children].find(b=>b.textContent==="Compare Camera 2");
+                await compare.onclick();
+                if (state.assistantContext.payload.selected_stream !== "cam2" || state.assistantContext.payload.plan.window.kind !== "absolute") return "comparison lost exact window";
+                if (state.assistantContext.payload.plan.attributes[0].value !== "A42") return "comparison dropped attribute filter";
+                renderAssistant({intent:"clarification",answer_text:"Requested field unavailable.",errors:[],
+                  broader_search:{excluded_attributes:[{name:"unrecorded_field",value:"x"}],excluded_conditions:["an unresolved condition"],
+                    selected_stream:"cam1", plan:{window:{kind:"absolute",start_utc:"2026-09-21T10:00:00Z",end_utc:"2026-09-21T10:10:00Z"},
+                      classes:["person"],streams:["cam1"],attributes:[{name:"surface_finish",value:"A42"}]}}});
+                if (!$("answer-actions").textContent.includes("will not check: unrecorded_field=x, an unresolved condition")) return "broader search hides dropped condition";
+                const broader = [...$("answer-actions").children].find(b=>b.textContent==="Show broader results");
+                $("assistant-panel").classList.remove("filters-open");
+                $("toggle-history-filters").setAttribute("aria-expanded", "false");
+                const composerBefore = $("ask-form").getBoundingClientRect();
+                const inputBefore = $("ask-text").getBoundingClientRect();
+                await broader.onclick();
+                const composerAfter = $("ask-form").getBoundingClientRect();
+                if ($("assistant-panel").classList.contains("filters-open")
+                    || $("toggle-history-filters").getAttribute("aria-expanded") !== "false"
+                    || Math.abs(composerBefore.bottom - composerAfter.bottom) > 1
+                    || Math.abs(inputBefore.top - $("ask-text").getBoundingClientRect().top) > 1
+                    || composerAfter.top < $("assistant-output").getBoundingClientRect().bottom - 1)
+                  return "broader results moved composer or expanded filters";
+                $("toggle-history-filters").click();
+                renderAssistant(state.assistantAnswer);
+                if (!$("assistant-panel").classList.contains("filters-open")) return "answer collapsed operator-opened filters";
+                $("toggle-history-filters").click();
+                if (state.assistantContext.payload.plan.attributes[0].value !== "A42"
+                    || state.assistantContext.payload.selected_stream !== "cam1"
+                    || !state.assistantContext.text.includes("not checked: unrecorded_field=x")) return "broader search changed scope or lost disclosure";
+                renderAssistant({intent:"general_chat",answer_text:"An explanation.",errors:[]});
+                if (!$("answer-actions").textContent.includes("Explain simply") || !$("answer-actions").textContent.includes("Copy answer")) return "missing answer actions";
+                const shiftEnter = new KeyboardEvent("keydown",{key:"Enter",shiftKey:true,cancelable:true});
+                $("ask-text").dispatchEvent(shiftEnter);
+                if (shiftEnter.defaultPrevented || $("ask-text").tagName !== "TEXTAREA") return "multiline composer unavailable";
+                for(let i=0;i<20;i++) {
+                  const item=document.createElement("p");item.textContent="Earlier message "+i;item.style.height="40px";$("assistant-transcript").append(item);
+                }
+                $("assistant-output").scrollTop=0;
+                $("assistant-output").dispatchEvent(new Event("scroll"));
+                $("assistant-answer").textContent += "More streamed text.";
+                scrollChat();
+                if ($("assistant-output").scrollTop !== 0 || $("jump-latest").hidden) return "reading position stolen";
+                $("jump-latest").click();
+                if ($("assistant-output").scrollTop === 0 || !$("jump-latest").hidden) return "jump to latest failed";
+                await $("assistant-reset").onclick();
+                return true;
+              })()`).then(done).catch(e=>done(String(e)));
+            ''')
+            assert result is True, result
+            if args.screenshots:
+                request('POST', base + '/window/rect', {'width': 1280, 'height': 800})
+                (args.screenshots / 'operator-welcome.png').write_bytes(base64.b64decode(request('GET', base + '/screenshot')))
+                js('return window.eval(' + json.dumps('state.assistantContext={text:"What can you do?",payload:{}}; renderAssistant({intent:"application_help",answer_text:"I can search recorded tracks, answer mission questions and explain general topics. I cannot see the live video.",errors:[]}); archiveAssistantTurn(); state.assistantContext={text:"Why is the sky blue?",payload:{}}; $("assistant-mode").value="general"; renderAssistant({intent:"general_chat",answer_text:"Air scatters blue sunlight more strongly than red light, so the daytime sky looks blue.",conversation:{turns:1},errors:[]});') + ')')
+                (args.screenshots / 'conversation.png').write_bytes(base64.b64decode(request('GET', base + '/screenshot')))
             print('PASS: compact in-panel search without mode tabs, alphabetical types, session/custom ranges, question correction, images-only results, fixed Search/paging controls, typed history overlay/paging, stable evidence/focus/scroll, pending updates, reconnect pause/All, diagnostics, chart axes/gaps, stale readings, drawer, native video fullscreen, model placement/detail/failure states, filter failure recovery, repeated crop retry, 200px minimum video at 1280/1024 widths and 714/682/600/540 heights')
         finally:
             if session:

@@ -1,0 +1,105 @@
+# Handheld ops — operator guide
+
+This application is a local edge camera-evidence console. The operator watches live
+annotated video, inspects recorded object tracks and cropped evidence, searches
+camera history, reads mission documents and monitors computing resources.
+
+## Cameras and evidence
+Choose Camera 1, Camera 2 or another configured camera in the top bar for live
+video. All cameras gives an evidence overview; choose one camera to watch video.
+Fullscreen enlarges video.
+Open an evidence card for its image and track details. Crops are selected snapshots,
+not full recordings. One track is not necessarily one unique person. Tracking IDs
+cannot identify people or link identities across cameras. Missing detections or
+images do not prove absence. Classification fields depend on the pipeline metadata. The Assistant discovers
+named categorical labels recorded for each camera/session and can filter those
+labels in a time window. Missing fields are unknown, not a negative classification.
+Example values are observed examples, not the classifier’s complete taxonomy.
+Opaque field names may require clarification; do not invent their meaning. Feed gaps, occlusion and stale data limit conclusions.
+Search covers retained records in each camera's current tracking session, not all
+past sessions. A pipeline restart starts a new tracking session.
+
+## Assistant controls
+Open Assistant beside the live video. Find people searches recorded person tracks
+in the last ten minutes. Camera scope is independent of the video selection:
+choose a camera or All cameras, or press Use Camera N to adopt the on-screen camera.
+History filters select object type and time when the question is empty. For a typed
+search, name the object and time window: "Show person tracks in the last ten minutes."
+Compare Camera N repeats a result's exact time window on another camera.
+Ask anything routes questions to records, mission documents or conversation.
+General chat answers explanations without searching camera records. It can also
+explain this application using this guide. The model cannot see live video.
+Explain simply and Give an example continue the answer. Copy answer copies its
+text. Enter sends; Shift+Enter inserts a line. Latest reply returns to the newest
+answer after reading older messages. New conversation clears chat context, not
+camera records or mission documents. Conversation context is short and temporary,
+not durable memory. Backend retains at most four recent general exchanges for ten
+minutes of inactivity; changing between camera history and conversation resets it.
+
+## Mission and Mission Brief
+Open Mission in the top bar. Upload a PDF or DOCX (one at a time, up to 25 MiB).
+The application retains originals and indexes them through stock Chat Q&A.
+Mission Brief summarizes objective, times, locations, people/units, restrictions,
+resources, dependencies and risks from uploaded documents. Not specified means
+that the documents did not establish that field. It is not a live situation report,
+and does not incorporate current detections. It regenerates after confirmed document
+changes. A stale brief may describe an older document set; check its status.
+Reingesting means retained documents are being restored to the retrieval service;
+mission answers wait until ready. Re-ingest explicitly retries ingestion or brief
+failure. Filenames list available sources, not verified answer-level citations.
+Delete removes the named mission source; Clear mission removes mission documents
+and originals, not camera records. Ask about objectives or restrictions to consult
+mission material. Application capabilities do not establish mission facts.
+
+## Resources, services and limitations
+Resources shows CPU, memory, GPU/NPU and power telemetry when available. Details
+shows component readings; Expand enlarges the chart. Stale or unavailable readings
+are not zero. Models & devices shows model, device and host information; configured
+placement is different from service-reported execution. This guide cannot establish
+current health, resource readings or what a camera is observing.
+DL Streamer detects/tracks objects and creates crops; MediaMTX carries video directly
+to the browser. Backend stores observations and serves evidence and queries; it does
+not analyze video with the language model. Stock Chat Q&A provides language inference
+and mission retrieval. Speech services may be deployed, but operator speech actions
+and alert-rule editing are not implemented in this UI. Chat cannot restart services,
+clear records, change rules or execute operator actions. Unknown camera coverage,
+locations, model versions and hardware details must not be invented.
+
+
+## Pause control
+Pause freezes updates to the evidence list so you can inspect it. Live video and
+camera processing continue. Press Resume to resume list updates. It does not pause
+video playback or stop collection of observations.
+
+## Brief generation
+Mission Brief is generated by stock Chat Q&A from the uploaded PDF/DOCX mission
+documents. It summarizes objective, times, locations, people/units, restrictions,
+resources, dependencies and risks. Missing information is shown as Not specified.
+The brief regenerates after confirmed document changes. It does not watch cameras
+or describe live conditions. Open Mission to see its sources and freshness; use
+Re-ingest to retry a failed generation.
+
+## Search camera scope
+The camera shown in live video and the camera selected for Assistant searches are
+independent. Use Camera scope to choose one camera or All cameras. Use Camera N
+adopts the on-screen camera explicitly. Compare Camera N searches another camera
+over the exact time window of the current result.
+
+## New conversation control
+New conversation clears the visible chat and starts a fresh conversation context.
+It does not delete camera history, evidence images, or mission documents. The
+assistant only retains a short, temporary conversation context, not permanent memory.
+
+## Video understanding
+The language model cannot see or watch live camera video. DL Streamer detects and
+tracks objects; the Assistant searches those recorded observations and evidence
+images. General chat explains topics and application controls, not live scenes.
+
+
+## Broader results
+When requested fields are unavailable, Show broader results offers the same object
+types, cameras and exact time window while dropping only the unavailable attribute
+conditions. The excluded conditions are shown before selection. If an exact search
+has no matches, the option removes its attribute filters while keeping object type,
+cameras and time. These are broader records for inspection, not verified matches to
+the excluded conditions or a visual-similarity ranking.

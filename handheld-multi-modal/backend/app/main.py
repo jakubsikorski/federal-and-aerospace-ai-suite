@@ -9,10 +9,12 @@ import asyncio
 import json
 import logging
 import os
+import re
 import shutil
 import sqlite3
 import threading
 import time
+import uuid
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 
@@ -140,7 +142,10 @@ async def lifespan(app: FastAPI):
     app.state.placement = Placement(app.state.services, cfg)
     app.state.assistant = Assistant(cfg, app.state.services)
     app.state.mission = MissionService(
-        cfg, app.state.services, generate=app.state.assistant.complete)
+        cfg, app.state.services,
+        generate=app.state.assistant.complete,
+        on_corpus_change=app.state.assistant.reset_context,
+    )
     app.state.assistant.mission = app.state.mission
     # Ingest before pipelines: a subscriber that starts second misses the first
     # observations of every camera it is supposed to be watching.
@@ -436,7 +441,7 @@ def create_app() -> FastAPI:
             body = await request.json()
         except json.JSONDecodeError:
             body = None
-        if not isinstance(body, dict) or set(body) - {"text", "plan", "selected_stream", "page_token", "timezone"}:
+        if not isinstance(body, dict) or set(body) - {"text", "plan", "selected_stream", "page_token", "timezone", "conversation_id", "mode"}:
             return JSONResponse(status_code=422, content=envelope(error={
                 "code": "invalid_request", "message": "invalid assistant request",
             }))
@@ -450,15 +455,19 @@ def create_app() -> FastAPI:
                 "code": "invalid_request",
                 "message": "selected_stream is not valid with page_token",
             }))
+        conversation_id = body.get("conversation_id", uuid.uuid4().hex)
         def perform(emit=None):
             assistant = request.app.state.assistant
-            if "page_token" in body:
-                return assistant.page(body["page_token"])
-            if "plan" in body:
-                return assistant.search(body["plan"], body.get("selected_stream"), emit=emit)
-            return assistant.ask(body["text"], body.get("selected_stream"),
-                **({"emit":emit} if emit else {}),
-                **({"timezone":body["timezone"]} if "timezone" in body else {}))
+            with assistant.conversation(conversation_id):
+                if "page_token" in body:
+                    return assistant.page(body["page_token"])
+                if "plan" in body:
+                    return assistant.remember_result(assistant.search(
+                        body["plan"], body.get("selected_stream"), emit=emit))
+                return assistant.ask(body["text"], body.get("selected_stream"),
+                    **({"emit":emit} if emit else {}),
+                    **({"timezone":body["timezone"]} if "timezone" in body else {}),
+                    **({"mode":body["mode"]} if "mode" in body else {}))
         if "application/x-ndjson" in request.headers.get("accept", ""):
             async def updates():
                 loop = asyncio.get_running_loop()
@@ -509,6 +518,12 @@ def create_app() -> FastAPI:
                 "code": "language_service_unavailable", "message": str(exc),
             }))
         return envelope(answer)
+
+    @app.post("/api/assistant/reset")
+    def reset_assistant_context(request: Request, conversation_id: str):
+        if not re.fullmatch(r"[a-f0-9-]{32,36}", conversation_id):
+            raise HTTPException(status_code=422, detail="Invalid conversation_id")
+        return envelope(request.app.state.assistant.reset_context(conversation_id))
 
     @app.get("/api/stream")
     async def live_stream(request: Request, classes: str | None = None,
@@ -644,6 +659,7 @@ def create_app() -> FastAPI:
                 error={"code": "clear_incomplete", "message": str(exc)}))
         finally:
             state.clear_lock.release()
+        state.assistant.reset_context()
         return envelope(result)
 
     static = Path(__file__).parent / "static"
