@@ -32,6 +32,11 @@
   .camera[aria-pressed="true"] { border: 2px solid var(--accent); background: #35485e; }
   .camera.up small, #connection.live { color: var(--good); }
   .camera.down small { color: var(--bad); }
+  /* A camera that has never delivered a frame is not a failure to chase: it is
+     usually not provisioned in this deployment. Alarm colour is reserved for a
+     feed that was working and stopped, so a permanent tile cannot train the
+     operator to ignore a real one. */
+  .camera.idle small { color: var(--muted); }
   #mission-toggle { white-space: nowrap; }
   .top-status { margin-left: auto; text-align: right; white-space: nowrap; }
   .clock-status { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
@@ -42,8 +47,8 @@
   #model-strip > strong { font-size: 13px; white-space: nowrap; }
   #model-buttons { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; flex: 1; min-width: 0; }
   .model-button { min-height: 46px; min-width: 0; padding: 3px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); text-align: left; }
-  .model-button strong { display: block; font-size: 13px; }
-  .model-button small { display: block; font-size: 11px; color: var(--muted); }
+  .model-button strong { display: block; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .model-button small { display: block; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .model-button[data-status="ready"] small { color: var(--good); }
   .model-button[data-status="unavailable"] small, .model-button[data-status="mismatch"] small { color: var(--warn); }
   .model-button[aria-expanded="true"] { border-color: var(--accent); background: #35485e; }
@@ -132,6 +137,7 @@
   #presence { display: none; padding: 8px 12px; color: var(--warn); background: #443c2f; }
   #presence.show { display: block; }
   #list-status { min-height: 44px; padding: 0 6px 0 12px; display: flex; align-items: center; gap: 4px; border-block: 1px solid var(--line); }
+  #people-only[aria-pressed="true"] { border-color: var(--accent); background: #35485e; }
   #list-state { flex: 1; font-size: 12px; color: var(--muted); }
   #list-state[data-state="live"] { color: var(--good); }
   #list-state[data-state="paused"], #list-state[data-state="held"] { color: var(--warn); }
@@ -173,6 +179,9 @@
   #assistant-context-bar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; flex-shrink: 0; }
   #conversation-note { flex: 1; color: var(--muted); font-size: 12px; }
   #use-viewed-camera { flex-shrink: 0; font-size: 12px; }
+  /* Camera scope is stated once, where the question is typed. */
+  .scope-field { display: grid; gap: 3px; min-width: 0; align-content: start; }
+  .scope-field #use-viewed-camera { min-height: 32px; width: 100%; }
   #assistant-welcome { padding: 12px; }
   #assistant-welcome h3 { margin: 6px 0 8px; font-size: 21px; font-weight: 600; }
   #assistant-welcome p { color: var(--muted); line-height: 1.5; margin: 0 0 14px; }
@@ -190,6 +199,13 @@
     .starter-grid { gap: 6px; }
     .starter-grid button { min-height: 56px; padding: 8px; gap: 2px; }
     .starter-grid button span { font-size: 11px; }
+    /* The workspace rows are floored by the video and telemetry minimums, so on
+       a short screen the panel that hosts the assistant is taller than the
+       visible area and the composer starts below the fold. Anchor the open
+       assistant to the viewport instead: the question box is the control used
+       on every interaction and must never need a scroll gesture to find. */
+    #assistant-panel.open { position: fixed; inset: 58px 12px 12px; z-index: 12; }
+    #ask-form { max-height: calc(100% - 120px); }
   }
   #assistant-panel:not(.welcome) #assistant-welcome { display: none; }
   #assistant-panel.welcome #assistant-result-head { display: none; }
@@ -373,6 +389,7 @@
       <div id="presence"></div>
       <div id="list-status">
         <span id="list-state" role="status">Live list</span>
+        <button id="people-only" class="quiet-button" type="button" aria-pressed="false">People only</button>
         <button id="apply-updates" class="quiet-button" disabled>Updates available</button>
         <button id="pause-updates" class="quiet-button" type="button" aria-pressed="false">Pause</button>
       </div>
@@ -385,14 +402,14 @@
           <button id="assistant-reset" class="quiet-button" type="button">New conversation</button>
         </div>
         <div id="assistant-workspace">
-          <div id="assistant-context-bar"><span id="conversation-note" role="status">Ready when you are</span><button id="use-viewed-camera" class="quiet-button" type="button" hidden>Use on-screen camera</button></div>
+          <div id="assistant-context-bar"><span id="conversation-note" role="status">Ready when you are</span></div>
           <form id="ask-form">
             <div id="search-entry">
               <textarea id="ask-text" rows="2" maxlength="500" aria-label="Your question" placeholder="Ask a question…"></textarea>
               <button id="ask-submit" class="quiet-button" type="submit">Search</button>
             </div>
             <div id="search-fields">
-              <label>Camera scope<select id="search-camera"></select></label>
+              <div class="scope-field"><label>Camera scope<select id="search-camera"></select></label><button id="use-viewed-camera" class="quiet-button" type="button" hidden>Use on-screen camera</button></div>
               <label>Answer mode<select id="assistant-mode"><option value="auto">Ask anything</option><option value="general">General chat</option></select></label>
               <button id="toggle-history-filters" class="quiet-button" type="button" aria-expanded="false">History filters</button>
               <div id="filter-fields">
@@ -563,8 +580,8 @@ function renderMission() {
   const briefError = mission.brief?.error;
   $("mission-reingest").textContent = briefError ? "Retry Brief / Re-ingest" : "Re-ingest";
   if (briefError) {
-    $("mission-answer").textContent = "Mission Brief failed: " + briefError
-      + " Select Retry Brief / Re-ingest to try again.";
+    $("mission-answer").textContent = "Mission Brief failed. " + briefError
+      + " Automatic retries have stopped; select Retry Brief / Re-ingest to try again.";
   } else if (mission.brief?.stale) {
     $("mission-answer").textContent ||= "Mission Brief is being regenerated for corpus version "
       + (mission.brief.corpus_version ?? mission.corpus_version ?? "unknown") + ".";
@@ -686,8 +703,14 @@ function renderModels() {
     const status = placementStatus(model);
     const reported = model?.runtime_device && status !== "unknown" && status !== "unavailable";
     const device = reported ? model.runtime_device : model?.configured_device;
-    button.firstChild.textContent = label + " · " + (device || "Unknown device");
-    button.lastChild.textContent = titleCase(status) + (device && !reported ? " · assigned" : "");
+    // The model identity is the point of this product, so it belongs on the
+    // face of the control rather than behind Details.
+    const full = model?.runtime_model || model?.configured_model || "";
+    const short = full.split(" · ")[0].split("/").pop();
+    button.firstChild.textContent = label + (short ? " · " + short : "");
+    button.lastChild.textContent = (device || "Unknown device") + " · " + titleCase(status)
+      + (device && !reported ? " · configured" : "");
+    button.title = full ? label + ": " + full : label;
     button.dataset.status = status;
     button.setAttribute("aria-expanded", String(state.selectedModel === id && !$("model-details").hidden));
   }
@@ -700,10 +723,10 @@ function renderModels() {
   $("model-configured").textContent = model?.runtime_model || model?.configured_model || "Unknown";
   $("model-device").textContent = (reported ? model.runtime_device : model?.configured_device) || "Unknown";
   $("model-host").textContent = model?.host || "Unknown";
-  $("model-note").textContent = status === "unavailable" ? "Service offline. Showing assigned model and device."
-    : status === "unknown" ? "Live status unavailable. Showing last known assignment."
+  $("model-note").textContent = status === "unavailable" ? "Service offline. Showing configured model and device."
+    : status === "unknown" ? "Live status unavailable. Showing last known configuration."
     : status === "mismatch" ? "Service settings differ from the deployment."
-    : reported ? "Device reported by the service." : "Assigned device; runtime device is not reported.";
+    : reported ? "Device reported by the service." : "Configured device; runtime device is not reported.";
 
 }
 
@@ -749,7 +772,15 @@ function cameraName(streamId) {
 }
 
 function feedClass(feed) {
-  return feed && feed.ok === true ? "up" : feed && feed.ok === false ? "down" : "unknown";
+  if (!feed || feed.ok === null || feed.ok === undefined) return "unknown";
+  if (feed.ok === true) return "up";
+  return feed.reason === "no_signal_yet" ? "idle" : "down";
+}
+
+function feedStatus(feed) {
+  if (!feed || feed.ok === null || feed.ok === undefined) return "Unknown";
+  if (feed.ok === true) return "Live";
+  return feed.reason === "no_signal_yet" ? "Awaiting source" : "Signal lost";
 }
 
 function renderCameras() {
@@ -765,12 +796,14 @@ function renderCameras() {
       button.onclick = () => selectCamera(stream.stream_id);
       nav.append(button);
     }
-    const status = stream.stream_id === "all" ? "Evidence overview"
-      : stream.feed?.ok === true ? "Live" : stream.feed?.ok === false ? "No signal" : "Unknown";
+    const status = stream.stream_id === "all" ? "Evidence overview" : feedStatus(stream.feed);
     button.className = "camera " + feedClass(stream.feed);
     button.setAttribute("aria-pressed", String(state.selected === stream.stream_id));
     button.firstChild.textContent = stream.display_name;
     button.lastChild.textContent = status;
+    button.title = stream.feed?.reason === "no_signal_yet"
+      ? "No frames received yet. This camera may not be provisioned in this deployment."
+      : "";
   }
   [...nav.children].filter((node) => !choices.some((s) => s.stream_id === node.dataset.stream))
     .forEach((node) => node.remove());
@@ -814,12 +847,15 @@ async function attachWhep(stream) {
   if (!response.ok) {
     const codecs = (RTCRtpReceiver.getCapabilities("video")?.codecs || [])
       .map((codec) => codec.mimeType.replace("video/", ""))
-      .filter((codec, index, all) => all.indexOf(codec) === index)
-      .join(", ");
+      .filter((codec, index, all) => all.indexOf(codec) === index);
     note.textContent = response.status === 400
-      ? stream.display_name + ": codec offer rejected; browser provides "
-        + (codecs || "no video codecs")
+      ? stream.display_name + ": this browser cannot play the annotated video stream."
+        + " Use a browser with H.264 support, or deploy a pipeline variant that"
+        + " encodes a codec this browser offers."
       : stream.display_name + ": live video unavailable (" + response.status + ")";
+    note.title = response.status === 400
+      ? "Browser video codecs offered: " + (codecs.join(", ") || "none")
+      : "";
     pc.close();
     if (state.whep === current) state.whep = null;
     return;
@@ -957,6 +993,7 @@ function renderClassFilter() {
     }
   }
   select.value = selected;
+  $("people-only").setAttribute("aria-pressed", String(selected === "person"));
 }
 
 function renderTrackSummary(tracks) {
@@ -1515,7 +1552,7 @@ function updateAssistantCameraCue() {
   if (!state.assistantBusy) {
     $("conversation-note").textContent = $("assistant-mode").value === "general"
       ? "General conversation · not a live camera assessment"
-      : "Search scope: " + (scope === "all" ? "All cameras" : cameraName(scope));
+      : "Camera records and mission documents";
   }
 }
 function askFollowup(text, mode = "auto") {
@@ -2047,6 +2084,17 @@ async function changeFilters() {
   }
 }
 $("class-filter").onchange = changeFilters;
+// Looking for people is the common case; it should not cost two interactions
+// through a list that is mostly furniture.
+$("people-only").onclick = () => {
+  const select = $("class-filter");
+  const wanted = state.filter.classLabel === "person" ? "" : "person";
+  if (wanted && ![...select.options].some((option) => option.value === wanted)) {
+    select.append(new Option(titleCase(wanted), wanted));
+  }
+  select.value = wanted;
+  changeFilters();
+};
 $("image-filter").onchange = changeFilters;
 $("pause-updates").onclick = () => {
   state.paused = !state.paused;

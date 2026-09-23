@@ -29,6 +29,27 @@ BRIEF_FIELDS = (
     "objective", "times", "locations", "people_units", "restrictions",
     "resources", "dependencies", "risks",
 )
+# Phase 6 anchored this by pasting the whole operator guide into the brief
+# prompt. Live generation showed the model answering *about* the guide -- it
+# described the Pause control instead of emitting a brief -- so the exclusion
+# is stated in one line and the guide text is kept out of the prompt.
+BRIEF_EXCLUSION = (
+    "Never fill mission fields from the application guide, its controls, camera\n"
+    "configuration, or assumed live observations. Do not turn application\n"
+    "capabilities into mission resources."
+)
+NOT_SPECIFIED = "Not specified"
+BRIEF_QUESTIONS = {
+    "objective": "What is the mission objective?",
+    "times": "What times, dates or schedule does the mission specify?",
+    "locations": "What locations or areas of operation does the mission specify?",
+    "people_units": "Which people or units are assigned to the mission?",
+    "restrictions": "What restrictions, prohibitions or rules of engagement apply?",
+    "resources": "What equipment or resources are provided for the mission?",
+    "dependencies": "What does the mission depend on or coordinate with?",
+    "risks": "What risks or hazards does the mission identify?",
+}
+MAX_BRIEF_FIELD_CHARS = 500
 MAX_FILENAME = 128
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 MAX_PDF_PAGES = 200
@@ -52,6 +73,25 @@ class MissionUnavailable(MissionError):
 
 class MissionValidationError(MissionError):
     pass
+
+
+def brief_failure_message(exc: BaseException) -> str:
+    """Name a brief-generation failure in words an operator can act on.
+
+    MissionError messages are operator-safe by contract and pass through. The
+    leak was everything else: a raw decoder string or a bare exception class
+    name, which told the operator nothing and read as an unhandled crash.
+    """
+    if isinstance(exc, MissionError):
+        return str(exc)
+    text = str(exc).lower()
+    if isinstance(exc, TimeoutError) or "timed out" in text:
+        return "Brief generation timed out."
+    if any(word in text for word in ("connection", "unavailable", "request failed", "invalid json")):
+        return "The language service is not responding."
+    if isinstance(exc, (ValueError, TypeError)):
+        return "The language model returned an unusable answer."
+    return "Brief generation failed unexpectedly."
 
 
 def _utc() -> str:
@@ -114,20 +154,21 @@ def validate_upload(filename: object, content: object) -> tuple[str, bytes, str]
     return name, content, hashlib.sha256(content).hexdigest()
 
 
-def _brief_prompt() -> str:
-    fields = ", ".join(BRIEF_FIELDS)
-    example = json.dumps({field: "Not specified" for field in BRIEF_FIELDS}, separators=(",", ":"))
-    return f"""Application background (not mission evidence):
-{OPERATOR_GUIDE}
+def _brief_prompt(field: str) -> str:
+    """Ask one grounded question per brief field.
 
-You are preparing the document-based Mission Brief shown in this application.
-Never fill mission fields from the application guide, camera configuration, or
-assumed live observations. Do not turn application capabilities into mission resources.
-Use only the mission documents in the retrieved context. Produce one JSON object only.
-Its exact keys are: {fields}. Each value must be a concise string drawn from the
-material, or exactly "Not specified" when the material does not establish it.
+    A single request for a whole JSON object failed every time against the
+    stock 7B RAG model: it summarised the retrieved context in prose instead of
+    emitting an object, so the operator never saw a brief at all. One short
+    question per field uses the same path that already answers mission
+    questions correctly, and needs no structured decoding.
+    """
+    return f"""{BRIEF_QUESTIONS[field]}
+{BRIEF_EXCLUSION}
+Answer with one concise sentence drawn only from the mission documents in the
+retrieved context, or exactly "{NOT_SPECIFIED}" when they do not establish it.
 Do not infer facts. Do not include citations, filenames, page numbers, markdown,
-or any text outside the JSON object. Example shape: {example}"""
+or any commentary outside the sentence."""
 
 
 def _mission_prompt(question: str) -> str:
@@ -313,7 +354,7 @@ class MissionService:
             log.exception("mission brief worker failed")
             try:
                 with self._lock, self._connection() as conn:
-                    self._set_brief_error(conn, f"Mission Brief generation failed: {type(exc).__name__}")
+                    self._set_brief_error(conn, brief_failure_message(exc))
                     conn.commit()
             except Exception:
                 log.exception("could not persist mission brief worker failure")
@@ -402,12 +443,23 @@ class MissionService:
                 self._notify_corpus_change()
             if needs_brief:
                 self._queue_brief()
-        except (MissionError, OSError) as exc:
-            log.warning("mission reconciliation failed: %s", exc)
-            with self._lock, self._connection() as conn:
-                conn.execute("UPDATE mission_sources SET status = 'failed' WHERE status = 'reingesting'")
-                conn.commit()
-                self._set_mode("degraded", str(exc))
+        except Exception as exc:
+            # Anything escaping here used to kill the worker thread and strand
+            # the panel in "reingesting" with no way back. A visible degraded
+            # state with a Retry action is always better than a silent hang.
+            log.warning("mission reconciliation failed: %s", exc, exc_info=not isinstance(
+                exc, (MissionError, OSError)))
+            message = str(exc) if isinstance(exc, MissionError) else (
+                "Mission recovery failed. Select Retry Brief / Re-ingest to try again.")
+            try:
+                with self._lock, self._connection() as conn:
+                    conn.execute(
+                        "UPDATE mission_sources SET status = 'failed' WHERE status = 'reingesting'")
+                    conn.commit()
+                    self._set_mode("degraded", message)
+            except Exception:
+                log.exception("mission reconciliation could not record its own failure")
+                self._set_mode("degraded", message)
 
     def status(self) -> dict:
         needs_brief = False
@@ -554,22 +606,26 @@ class MissionService:
             except MissionUnavailable:
                 return
         try:
-            completion = self._complete(_brief_prompt())
-            body = json.loads(completion)
-            if not isinstance(body, dict) or set(body) != set(BRIEF_FIELDS):
-                raise MissionError("Mission Brief generation returned an invalid structure.")
             brief = {}
             for field in BRIEF_FIELDS:
-                value = body[field]
-                if not isinstance(value, str) or len(value.strip()) > 500:
-                    raise MissionError("Mission Brief generation returned an invalid field.")
-                brief[field] = value.strip() or "Not specified"
+                answer = self._complete(_brief_prompt(field)).strip()
+                # The model paraphrases the sentinel ("not specified in the
+                # given context"), which reads as content in a field list.
+                # Only short answers are folded back, so a substantive answer
+                # that merely mentions the phrase is preserved.
+                if len(answer) <= 120 and NOT_SPECIFIED.lower() in answer.lower():
+                    answer = NOT_SPECIFIED
+                # A wordy answer to one field must not discard the whole brief;
+                # clamp it and keep the other seven fields the operator asked for.
+                if len(answer) > MAX_BRIEF_FIELD_CHARS:
+                    answer = answer[:MAX_BRIEF_FIELD_CHARS].rsplit(" ", 1)[0] + "…"
+                brief[field] = answer or NOT_SPECIFIED
         except (MissionError, ValueError, TypeError) as exc:
             log.warning("mission brief generation failed: %s", exc)
             with self._lock, self._connection() as conn:
                 conn.execute(
                     "UPDATE mission_brief SET stale = 1 WHERE corpus_version = ?", (version,))
-                self._set_brief_error(conn, str(exc))
+                self._set_brief_error(conn, brief_failure_message(exc))
                 conn.commit()
             return
         with self._lock, self._connection() as conn:

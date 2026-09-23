@@ -21,13 +21,14 @@ TLS_DIR := $(ASSET_ROOT)/config/tls
 ASSET_COMPOSE := docker compose -f compose/bootstrap-compose.yaml
 DEMO_COMPOSE := $(ASSET_COMPOSE) -f compose/cameras.yaml -f compose/phase4-demo.override.yaml -f "$(ASSET_ROOT)/config/devices.yaml"
 
-.PHONY: help asset-permissions tls model-downloader-up demo demo-assets demo-preflight demo-setup demo-up demo-stop demo-restart demo-down demo-status cameras cameras-down health test test-ui test-assets test-phase5
+.PHONY: help asset-permissions tls model-downloader-up demo demo-assets demo-preflight demo-setup demo-up demo-stop demo-mission demo-restart demo-down demo-status cameras cameras-down health test test-ui test-assets test-phase5
 help:
 	@echo 'make demo          Download assets, prepare device, start and check the entire stack'
 	@echo 'make demo-assets   Download YOLO11s INT8 through Model Download and the pinned video'
 	@echo 'make demo-up       Same complete setup/start flow as demo'
 	@echo 'make model-downloader-up  Start stock downloader (--plugins ultralytics, port 8200)'
 	@echo 'make demo-stop     Stop all application services (including stuck pipelines)'
+	@echo 'make demo-mission  Load the synthetic demo mission packet for Mission answers'
 	@echo 'make demo-restart  Restart all services and verify application'
 	@echo 'make demo-down     Remove application containers; preserve assets and history'
 	@echo 'make demo-status  Show containers and camera feeds'
@@ -225,6 +226,19 @@ demo-up: demo-setup
 
 demo-stop:
 	$(DEMO_COMPOSE) --profile assets stop
+
+# Load a synthetic exercise packet so Mission answers can be demonstrated
+# without an operator's real document. Explicit, not part of demo-up: mission
+# content belongs to the operator and must not be written behind their back.
+demo-mission:
+	python3 scripts/demo_assets.py mission
+	packet="$$ASSET_ROOT/data/backend/demo/demo-mission-packet.pdf"
+	name="demo-mission-packet.pdf"
+	curl -sk --max-time 60 -X DELETE \
+	  "https://127.0.0.1:8443/api/mission/documents?document=$$name&confirm=$$name" >/dev/null || true
+	curl -skfsS --max-time 60 -X POST https://127.0.0.1:8443/api/mission/documents \
+	  -F "files=@$$packet;type=application/pdf" | python3 -m json.tool
+	printf 'Demo mission packet loaded. Open Mission in the UI to see the brief.\n'
 
 # Restart every application service; reuse verified models and retained caches.
 demo-restart: demo-stop demo-up

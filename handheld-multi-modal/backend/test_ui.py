@@ -333,7 +333,7 @@ def main():
               const stable = !$("model-details").hidden && before === document.querySelector('[data-model="chatqna"]')
                 && document.activeElement === $("close-model-details")
                 && $("model-device").textContent === "GPU" && $("model-status").textContent === "Unavailable"
-                && $("model-note").textContent === "Service offline. Showing assigned model and device.";
+                && $("model-note").textContent === "Service offline. Showing configured model and device.";
               state.modelsUnavailable = true; renderModels();
               const unknown = $("model-status").textContent === "Unknown" && $("model-device").textContent === "GPU";
               state.modelsUnavailable = false;
@@ -564,6 +564,22 @@ def main():
                   return ok || {expanded:expanded.height, normal:normal.height};
                 })()''')
                 check('''(() => {
+                  // The welcome state is what a demonstration opens on, and it is
+                  // taller than a results view. The question box must be reachable
+                  // without hunting for an inner scroll container.
+                  openAssistant();
+                  $("assistant-panel").classList.add("welcome");
+                  const fits = (id) => {
+                    const box = $(id).getBoundingClientRect();
+                    return box.top >= 0 && box.bottom <= innerHeight + 1
+                      && box.left >= 0 && box.right <= innerWidth + 1;
+                  };
+                  const unreachable = ["ask-text", "ask-submit", "search-camera"].filter(id => !fits(id));
+                  closeAssistant();
+                  return unreachable.length === 0
+                    || {welcomeComposerOffscreen: unreachable, viewport: [innerWidth, innerHeight]};
+                })()''')
+                check('''(() => {
                   openAssistant();
                   renderAssistant({answer_text:"Choose an object type and time window."});
                   const intro = $("assistant-panel").getBoundingClientRect();
@@ -575,14 +591,22 @@ def main():
                   const panel = $("assistant-panel").getBoundingClientRect();
                   const paging = $("assistant-paging").getBoundingClientRect();
                   const host = $("tracks-panel").getBoundingClientRect();
-                  const ok = panel.left >= host.left && panel.right <= host.right + 1
+                  // On a short screen the open assistant is anchored to the
+                  // viewport instead of the evidence column, so it is bounded by
+                  // the window rather than by its host panel.
+                  const overlay = getComputedStyle($("assistant-panel")).position === "fixed";
+                  const bounded = overlay
+                    ? panel.left >= 0 && panel.right <= innerWidth + 1
+                      && panel.top >= 0 && panel.bottom <= innerHeight + 1
+                    : panel.left >= host.left && panel.right <= host.right + 1;
+                  const ok = bounded
                     && !$("video-panel").inert && !$("telemetry").inert
                     && !$("search-mode") && $("ask-text").getBoundingClientRect().height >= 48
                     && paging.bottom <= panel.bottom + 1
                     && $("assistant-results").clientHeight >= 80
                     && ["search-camera","search-class","search-period"].every(id => $(id).getBoundingClientRect().height >= 48)
                     && ["close-assistant","assistant-previous","assistant-next"].every(id => $(id).getBoundingClientRect().height === 32) && $("ask-submit").getBoundingClientRect().height >= 48;
-                  closeAssistant(); return ok || {panel:panel.toJSON(), paging:paging.toJSON()};
+                  closeAssistant(); return ok || {panel:panel.toJSON(), paging:paging.toJSON(), overlay};
                 })()''')
                 if args.screenshots:
                     check('renderChart(); true')

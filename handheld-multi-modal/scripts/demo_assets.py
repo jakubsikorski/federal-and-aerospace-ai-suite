@@ -130,6 +130,90 @@ def download_video(root):
     print(f"Downloaded pinned demo video: {target}")
 
 
+MISSION_DEMO_LINES = [
+    "HANDHELD DEMONSTRATION MISSION PACKET",
+    "Synthetic content. Not a real operation, location, unit or order.",
+    "",
+    "OBJECTIVE",
+    "The handheld operator demonstrates camera evidence review, mission document",
+    "questions and general assistant conversation within one 20 minute window.",
+    "Exercise AMBER FIELD is a daylight familiarisation walk-through.",
+    "",
+    "TIMES",
+    "Exercise start time is 09:00 local. Exercise end time is 09:20 local.",
+    "Phase one runs 09:00 to 09:05. Phase two runs 09:05 to 09:15.",
+    "Phase three runs 09:15 to 09:20.",
+    "",
+    "LOCATIONS",
+    "The exercise is held in a single instrumented classroom, Building 2, Room 14.",
+    "The assembly point is the north corridor door.",
+    "The area of operations does not extend beyond that room and corridor.",
+    "",
+    "PEOPLE AND UNITS",
+    "One handheld operator conducts the walk-through.",
+    "Two role players act as visitors and one acts as staff.",
+    "The safety officer for this exercise is the range warden on duty.",
+    "",
+    "RESTRICTIONS",
+    "No hazardous material and no live equipment are permitted at any point.",
+    "Role players must not leave the instrumented classroom during the exercise.",
+    "Recorded evidence images must not leave the handheld device.",
+    "",
+    "RESOURCES",
+    "One handheld device running the assistant and camera evidence application.",
+    "Three provisioned classroom cameras and this mission packet.",
+    "",
+    "DEPENDENCIES",
+    "Phase two depends on phase one confirming that each provisioned camera",
+    "reports a live feed. Phase three depends on this packet being loaded.",
+    "Primary reporting is by handheld assistant; there is no radio net.",
+    "",
+    "RISKS",
+    "A camera that reports no signal delays phase two.",
+    "Role player movement outside camera coverage produces incomplete tracks.",
+    "Report any equipment fault to the safety officer directly.",
+]
+
+
+def _pdf_bytes(lines):
+    """A minimal one-page PDF, so the demo packet needs no document toolchain."""
+    def escape(text):
+        return text.replace("\\", r"\\").replace("(", r"\(").replace(")", r"\)")
+
+    content = ["BT", "/F1 11 Tf", "14 TL", "54 760 Td"]
+    for line in lines:
+        content.append(f"({escape(line)}) Tj T*")
+    content.append("ET")
+    stream = "\n".join(content).encode("ascii", "replace")
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+        b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream",
+    ]
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for number, body in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out += f"{number} 0 obj\n".encode() + body + b"\nendobj\n"
+    start = len(out)
+    out += f"xref\n0 {len(objects) + 1}\n".encode() + b"0000000000 65535 f \n"
+    for offset in offsets:
+        out += f"{offset:010d} 00000 n \n".encode()
+    out += (f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+            f"startxref\n{start}\n%%EOF\n").encode()
+    return bytes(out)
+
+
+def write_mission(root):
+    target = root / "data/backend/demo/demo-mission-packet.pdf"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(_pdf_bytes(MISSION_DEMO_LINES))
+    print(f"Wrote synthetic demo mission packet: {target}")
+
+
 def repair_chat_cache(directory, models):
     """Stock conversion skips existing directories, even interrupted exports."""
     files = ("openvino_model.xml", "openvino_model.bin", "openvino_tokenizer.xml",
@@ -144,7 +228,7 @@ def repair_chat_cache(directory, models):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["check-model", "model", "video"])
+    parser.add_argument("action", choices=["check-model", "model", "video", "mission"])
     parser.add_argument("--root", type=Path, default=Path(os.environ.get("ASSET_ROOT", REPO)))
     parser.add_argument("--timeout", type=int, default=3600)
     args = parser.parse_args()
@@ -155,6 +239,8 @@ def main():
             return 0 if verify_model(args.root / MODEL_DIR) else 2
         if args.action == "model":
             download_model(args.root, args.timeout)
+        elif args.action == "mission":
+            write_mission(args.root)
         else:
             download_video(args.root)
     return 0

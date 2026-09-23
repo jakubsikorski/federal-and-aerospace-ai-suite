@@ -63,7 +63,40 @@ mission_ingest_poll_seconds: 0.25
 crop_dir: /crops
 crop_cleanup_script: /opt/handheld-crops/crop_candidates.py
 detector_metadata_path: /config/detector/metadata.yaml
+# Both of the following are resolved from the deployed component configuration
+# at startup and only need setting to override that. Leaving them unset is the
+# supported path, because a value repeated here is a value that can drift.
+#
+# The pipeline definition Backend owns. Taken from the single pipeline declared
+# by the mounted DLSPS config (config/dlsps/${DLSPS_CONFIG_VARIANT}/config.json),
+# so switching variant switches the pipeline with no edit here. Set only when a
+# config declares more than one definition.
+# dlsps_pipeline_name: handheld_npu_detect
+#
+# The prompt tail the model echoes back before its answer. Taken from whatever
+# follows the last {question} placeholder in the deployed PROMPT_TEMPLATE, so a
+# model swap that changes the chat format needs no Backend change. Startup
+# fails with a named error if this is set and is not the template's tail.
+# chat_answer_marker: "\n### Assistant:\nAnswer:\n"
+#
+# Qualities the detector cannot establish on its own. A question naming one of
+# these is refused with an explanation instead of being answered from a filter
+# that silently ignored it. Extend this list rather than editing Backend when a
+# deployment's operators use different vocabulary. Entries are regex alternatives.
+# unsupported_concept_terms:
+#   - "weapons?"
+#   - "uniforms?"
+#   - "suspicious"
+#   - "behaviou?rs?"
+#   - "carrying"
+#   - "ownership"
+#   - "armed"
 history_retention_seconds: 604800
+# Classes listed first in the unfiltered evidence view, ahead of recency.
+# Static furniture is re-observed continuously and otherwise outranks people.
+# Ordering only; nothing is hidden and every class stays counted and filterable.
+evidence_priority_classes:
+  - person
 assistant_chat_timeout_seconds: 60
 assistant_queue_depth: 4
 # How often to replace pipelines that are no longer RUNNING.

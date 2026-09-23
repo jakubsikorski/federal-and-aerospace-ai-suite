@@ -199,13 +199,25 @@ def recent(conn: sqlite3.Connection, ingest, cfg: dict, stream_id: str,
             """EXISTS (SELECT 1 FROM candidates c
                        WHERE c.track_id = t.track_id AND c.image_state = 'present')""")
     filtered_where = " AND ".join(filtered_clauses)
+    # A stationary chair is re-observed continuously and so outranks a person
+    # seen minutes ago. Recency alone therefore buries the classes an operator
+    # is looking for, and buries them below the result limit as well. Demote
+    # rather than hide: every detection stays counted and reachable.
+    configured = cfg.get("evidence_priority_classes", ["person"])
+    priority = [label for label in (configured or []) if isinstance(label, str)]
+    priority_order, priority_args = "", []
+    if priority and not class_labels:
+        placeholders = ",".join("?" for _ in priority)
+        priority_order = f"CASE WHEN t.class_label IN ({placeholders}) THEN 0 ELSE 1 END, "
+        priority_args = priority
+    scope["priority_classes"] = priority_args
     matched_count = conn.execute(
         f"SELECT count(*) AS n FROM tracks t WHERE {filtered_where}",
         filtered_args).fetchone()["n"]
     rows = conn.execute(
         f"""SELECT t.* FROM tracks t WHERE {filtered_where}
-            ORDER BY t.last_observed_utc DESC LIMIT ?""",
-        [*filtered_args, limit + 1]).fetchall()
+            ORDER BY {priority_order}t.last_observed_utc DESC LIMIT ?""",
+        [*filtered_args, *priority_args, limit + 1]).fetchall()
     truncated = len(rows) > limit
     rows = rows[:limit]
 

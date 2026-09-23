@@ -9,19 +9,81 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import shlex
 import sqlite3
 import threading
 import time
 import uuid
 from contextlib import contextmanager
+from pathlib import Path
 
 import httpx
+import yaml
 
 from .core import crop_store_busy
 
 log = logging.getLogger("backend.pipelines")
 
-PIPELINE = "user_defined_pipelines/handheld_npu_detect"
+# The CPU, GPU and NPU variants each declare a differently named pipeline, so a
+# name hardcoded here works for exactly one of them and silently leaves the
+# others unstartable. Take the name from the same config file DLSPS loads.
+PIPELINE_CONFIG_PATH = "/config/model-placement/dlsps.json"
+DEFAULT_PIPELINE_NAME = "handheld_npu_detect"
+PIPELINE = f"user_defined_pipelines/{DEFAULT_PIPELINE_NAME}"
+
+
+def resolve_pipeline_name(path: str = PIPELINE_CONFIG_PATH, override: str | None = None) -> str:
+    """Name of the single pipeline definition the deployed DLSPS config declares."""
+    if override:
+        name = override
+    else:
+        body = json.loads(Path(path).read_text())
+        names = [entry["name"] for entry in body["config"]["pipelines"]]
+        if len(names) != 1:
+            raise ValueError(
+                f"expected exactly one DLSPS pipeline definition in {path}, found {names}; "
+                "set dlsps_pipeline_name in backend.yaml to choose one")
+        name = names[0]
+    if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", name):
+        raise ValueError(f"unusable DLSPS pipeline name {name!r}")
+    return name
+
+
+def configure(name: str) -> None:
+    """Point Backend at the pipeline definition it owns, before any camera starts."""
+    global PIPELINE
+    PIPELINE = f"user_defined_pipelines/{name}"
+
+
+def detector_taxonomy_warning(metadata_path: str, path: str = PIPELINE_CONFIG_PATH) -> str | None:
+    """Flag a class taxonomy that does not describe the model the pipeline runs.
+
+    The detector model lives in the pipeline string while its class names are
+    mounted separately from the export directory. When those two are changed
+    out of step the divergence is otherwise silent: the assistant offers
+    classes the detector can never emit and refuses classes it does emit.
+    Reported rather than fatal, because a naming heuristic must not be able to
+    stop a working deployment from starting.
+    """
+    try:
+        body = json.loads(Path(path).read_text())
+        element = next(part for part in body["config"]["pipelines"][0]["pipeline"].split("!")
+                       if "gvadetect " in part)
+        model = next(token.split("=", 1)[1] for token in shlex.split(element)
+                     if token.startswith("model="))
+        metadata = yaml.safe_load(Path(metadata_path).read_text())
+    except (OSError, ValueError, KeyError, IndexError, StopIteration, yaml.YAMLError) as exc:
+        return f"detector taxonomy could not be cross-checked against the pipeline: {exc}"
+    described = str(metadata.get("description", "")).lower()
+    stem = Path(model).stem.lower()
+    if stem and stem not in described:
+        return (f"pipeline runs {model!r} but the mounted class taxonomy describes "
+                f"{metadata.get('description')!r}; classes may not match detections")
+    if metadata.get("task") != "detect":
+        return (f"mounted class taxonomy declares task {metadata.get('task')!r}, "
+                "which is not an object detector")
+    return None
 # Every camera needs its own crop store: the producer holds an exclusive flock
 # on <output_dir>/.lock, so a shared directory would fail the second pipeline.
 CROP_CONFIG_DIR = "/opt/handheld-crops-config"

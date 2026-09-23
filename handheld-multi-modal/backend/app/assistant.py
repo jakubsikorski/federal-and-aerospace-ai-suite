@@ -27,6 +27,10 @@ from .mission import MissionUnavailable, OPERATOR_GUIDE
 
 log = logging.getLogger("backend.assistant")
 
+# Prompt tail the stock backend echoes before the completion. Derived from the
+# deployed PROMPT_TEMPLATE at startup (resolve_answer_marker) so a template
+# change for a different chat format cannot silently desynchronise the adapter.
+# This default matches the pinned neural-chat-7b-v3-3 template.
 CHAT_ANSWER_MARKER = "### Assistant:\nAnswer:\n"
 APPLICATION_TOPICS = dict(re.findall(r"^## ([^\n]+)\n(.*?)(?=^## |\Z)", OPERATOR_GUIDE, re.M | re.S))
 CONTEXT_MAX_TURNS = 4
@@ -34,8 +38,12 @@ CONTEXT_MAX_CHARS = 1200
 CONTEXT_IDLE_SECONDS = 600
 CATALOG_MAX_FIELDS = 128
 # Qualities the detector cannot establish by itself. They are answerable only
-# when the routed plan maps them onto a recorded classification field.
-UNSUPPORTED_CONCEPTS = r"\b(weapons?|uniforms?|suspicious|behaviou?rs?|carrying|ownership|armed)\b"
+# when the routed plan maps them onto a recorded classification field. Extend
+# through unsupported_concept_terms in backend.yaml, not by editing this list.
+UNSUPPORTED_CONCEPT_TERMS = [
+    "weapons?", "uniforms?", "suspicious", "behaviou?rs?", "carrying", "ownership", "armed",
+]
+UNSUPPORTED_CONCEPTS = r"\b(" + "|".join(UNSUPPORTED_CONCEPT_TERMS) + r")\b"
 INTENTS = frozenset({
     "clarification", "video_history", "mission_knowledge", "general_chat", "application_help", "rule_mutation", "app_control",
 })
@@ -65,10 +73,37 @@ class ServiceUnavailable(AssistantError):
     pass
 
 
-def adapt_chat_response(metadata: object) -> str:
-    if not isinstance(metadata, str) or CHAT_ANSWER_MARKER not in metadata:
+def resolve_answer_marker(template: object, override: str | None = None) -> str:
+    """The prompt tail a model echoes before its answer, taken from the template.
+
+    Swapping the language model normally means swapping the chat template, so a
+    marker hardcoded in Backend would have to be edited and rebuilt in lockstep.
+    Everything after the last `{question}` placeholder is that tail by
+    construction, whatever chat format the deployed model uses.
+    """
+    if override is not None:
+        marker = override
+    elif isinstance(template, str) and "{question}" in template:
+        marker = template.rsplit("{question}", 1)[1]
+    else:
+        raise InvalidInput("Chat Q&A prompt template has no {question} placeholder")
+    if not isinstance(marker, str) or not marker.strip():
+        raise InvalidInput("Chat Q&A prompt template ends at {question}; no answer marker to match")
+    if isinstance(template, str) and not template.endswith(marker):
+        raise InvalidInput("chat_answer_marker is not the tail of the deployed prompt template")
+    return marker
+
+
+def load_prompt_template(directory: str = "/config/model-placement") -> str:
+    """PROMPT_TEMPLATE out of the same Chat Q&A config the service is given."""
+    body = yaml.safe_load((Path(directory) / "chatqna.yaml").read_text())
+    return body["model_settings"]["PROMPT_TEMPLATE"]
+
+
+def adapt_chat_response(metadata: object, marker: str = CHAT_ANSWER_MARKER) -> str:
+    if not isinstance(metadata, str) or marker not in metadata:
         raise ServiceUnavailable("Chat Q&A response marker is missing")
-    answer = metadata.rsplit(CHAT_ANSWER_MARKER, 1)[1].strip()
+    answer = metadata.rsplit(marker, 1)[1].strip()
     if not answer:
         raise ServiceUnavailable("Chat Q&A completion is empty")
     if len(answer) > 16 * 1024:
@@ -909,12 +944,18 @@ def capability_clarification(catalog):
         "unmapped_conditions", available_attributes=catalog)
 
 
-def unmapped_conditions(text, plan):
+def unsupported_concept_pattern(terms: object = None) -> str:
+    """Regex matching qualities the detector cannot establish by itself."""
+    words = terms if isinstance(terms, list) and terms else UNSUPPORTED_CONCEPT_TERMS
+    return r"\b(" + "|".join(str(word) for word in words) + r")\b"
+
+
+def unmapped_conditions(text, plan, pattern: str | None = None):
     """Qualities named in the question that the plan about to run does not filter on."""
     mapped = " ".join(f"{attribute['name']} {attribute['value']}"
                       for attribute in (plan.get("attributes") or ())).casefold()
     found = []
-    for match in re.finditer(UNSUPPORTED_CONCEPTS, text, re.I):
+    for match in re.finditer(pattern or UNSUPPORTED_CONCEPTS, text, re.I):
         phrase = match[0].casefold()
         if phrase not in mapped and phrase not in found:
             found.append(phrase)
@@ -986,6 +1027,9 @@ class Assistant:
     ):
         self.cfg = cfg
         self.services = services
+        self.answer_marker = cfg.get("chat_answer_marker") or CHAT_ANSWER_MARKER
+        self.unsupported_concepts = unsupported_concept_pattern(
+            cfg.get("unsupported_concept_terms"))
         self.generate = generate or self._chat
         self._stream_answers = generate is None
         self.queue = threading.BoundedSemaphore(int(cfg.get("assistant_queue_depth", 4)))
@@ -1050,7 +1094,7 @@ class Assistant:
         metadata = body.get("metadata") if body.get("status") == "Success" else None
         if not isinstance(metadata, str) or len(metadata) > 128 * 1024:
             raise ServiceUnavailable("Chat Q&A response is invalid or oversized")
-        completion = adapt_chat_response(metadata)
+        completion = adapt_chat_response(metadata, self.answer_marker)
         log.info("chatqna /chat completed in %d ms", int((time.monotonic() - started) * 1000))
         return completion
 
@@ -1386,7 +1430,7 @@ class Assistant:
                 text, selected_stream, requested_window, clock_error)
             if clarification_result:
                 return clarification_result
-            if unmapped_conditions(text, direct):
+            if unmapped_conditions(text, direct, self.unsupported_concepts):
                 # The fast path recognises only classes and a window, so it can
                 # never have filtered on a quality named beside them.
                 return capability_clarification(attribute_catalog(
@@ -1529,7 +1573,7 @@ class Assistant:
                 # The routing prompt asks the model to preserve every condition,
                 # but only Backend can guarantee an unfiltered search is never
                 # presented as the answer to a qualified question.
-                unmapped = unmapped_conditions(text, route.plan)
+                unmapped = unmapped_conditions(text, route.plan, self.unsupported_concepts)
                 if unmapped:
                     return condition_proposal(route.plan, catalog, unmapped)
                 scope = {stream: current_scope[stream] for stream in route.plan["streams"]}

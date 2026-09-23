@@ -155,7 +155,10 @@ def connect(db_path: str) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
-    conn.execute("PRAGMA busy_timeout=5000")
+    # Continuous track ingestion from every camera keeps the write lock busy.
+    # Five seconds was not enough for the slower mission and history writers,
+    # which surfaced as "database is locked" during corpus reconciliation.
+    conn.execute("PRAGMA busy_timeout=30000")
     return conn
 
 

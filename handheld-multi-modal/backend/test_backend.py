@@ -31,6 +31,12 @@ CATALOG_OVERFLOW = 130
 from app.core import connect, envelope, load_config, migrate, request_id_var, sync_streams
 
 
+def _is_brief_prompt(prompt):
+    """Brief generation now asks one grounded question per field."""
+    from app.mission import BRIEF_QUESTIONS
+    return any(question in prompt for question in BRIEF_QUESTIONS.values())
+
+
 def _pdf_bytes(page_count=1, escaped_page_name=False):
     page_type = b"/Pa#67e" if escaped_page_name else b"/Page"
     objects = [
@@ -413,7 +419,8 @@ def test_history_filters_before_limit_and_reports_scope():
         assert answer["matched_count"] == 5 and answer["truncated"] is True, answer
         assert answer["class_counts"] == {"chair": 55, "person": 5}, answer
         assert answer["scope"] == {
-            "kind": "tracking_session", "since_utc": None, "limit": 3}, answer
+            "kind": "tracking_session", "since_utc": None, "limit": 3,
+            "priority_classes": []}, answer
 
         with_image = history.recent(
             ing.conn, ing, ing.cfg, "cam1", limit=3,
@@ -1644,11 +1651,10 @@ def test_mission_lifecycle_retains_reconciles_and_discloses_citation_limits():
             urls={"chatqna": "http://chatqna"},
             client=httpx.Client(transport=httpx.MockTransport(stock.handler)),
         )
-        brief = json.dumps({field: "Not specified" for field in BRIEF_FIELDS})
         service = MissionService(
             {"db_path": str(db), "mission_sources_dir": str(root / "mission_sources"),
              "mission_ingest_timeout_seconds": 1, "mission_ingest_poll_seconds": 0},
-            services, generate=lambda prompt: brief if "exact keys" in prompt
+            services, generate=lambda prompt: "Not specified" if _is_brief_prompt(prompt)
             else "That information is not available in the mission material.")
         result = service.upload("mission.pdf", _pdf_bytes())
         source = result["sources"][0]
@@ -1733,12 +1739,12 @@ def test_mission_phase6_failure_matrix():
             urls={"chatqna": "http://chatqna"},
             client=httpx.Client(transport=httpx.MockTransport(stock.handler)),
         )
-        brief = json.dumps({field: "Not specified" for field in BRIEF_FIELDS})
         context_resets = []
         service = MissionService(
             {"db_path": str(db), "mission_sources_dir": str(root / "sources"),
              "mission_ingest_timeout_seconds": 1, "mission_ingest_poll_seconds": 0},
-            services, generate=lambda prompt: brief if "exact keys" in prompt else "mission answer",
+            services, generate=lambda prompt: "Not specified" if _is_brief_prompt(prompt)
+            else "mission answer",
             on_corpus_change=lambda: context_resets.append(True))
         queue_brief = service._queue_brief
         service._queue_brief = lambda: None
@@ -2110,8 +2116,8 @@ def test_application_knowledge_grounding():
             assert len(prompts) == 4 and OPERATOR_GUIDE in prompts[-1]
         routing = _routing_prompt("How do I search camera history?", ("person",), None, None)
         assert "application_help" in routing and "HOW to use a control" in routing
-        brief = _brief_prompt()
-        assert OPERATOR_GUIDE in brief
+        brief = _brief_prompt("objective")
+        assert OPERATOR_GUIDE not in brief, "guide text derails brief generation"
         assert "Never fill mission fields from the application guide" in brief
         assert '"Not specified"' in brief
         conn.close()
@@ -2311,6 +2317,180 @@ def test_unmapped_conditions_and_catalog_overflow_degrade_safely():
             "Show person tracks with zzz_sorts_after_truncation present in the last ten minutes", "cam1")
         assert answer["intent"] == "video_history", (
             "a field sorting past the description limit was reported unavailable")
+        conn.close()
+
+
+def test_deployed_component_config_matches_backend_expectations():
+    """Static checks for the two settings a model or pipeline swap can desynchronise.
+
+    Both failures used to appear only at runtime: an unstartable camera, and a
+    missing response marker on the operator's first question.
+    """
+    import yaml
+    from app.assistant import (
+        InvalidInput, ServiceUnavailable, adapt_chat_response, resolve_answer_marker,
+    )
+    from app.pipelines import resolve_pipeline_name
+
+    repo = Path(__file__).resolve().parent.parent
+    for variant in ("cpu", "gpu", "npu"):
+        config = repo / "config/dlsps" / variant / "config.json"
+        name = resolve_pipeline_name(str(config))
+        assert name, variant
+        declared = [p["name"] for p in json.loads(config.read_text())["config"]["pipelines"]]
+        assert name in declared, (
+            f"{variant} variant would leave Backend requesting a pipeline it does not declare")
+
+    template = yaml.safe_load(
+        (repo / "config/chatqna/config.yaml").read_text())["model_settings"]["PROMPT_TEMPLATE"]
+    marker = resolve_answer_marker(template)
+    assert template.endswith(marker) and marker.strip()
+    assert adapt_chat_response("echoed prompt" + marker + "Answer body.", marker) == "Answer body."
+    for bad in ("Answer:\nunmarked", marker):
+        try:
+            adapt_chat_response(bad, marker)
+        except ServiceUnavailable:
+            pass
+        else:
+            raise AssertionError("an unmarked completion was exposed to the operator")
+    try:
+        resolve_answer_marker(template, "### Nothing like the template:\n")
+    except InvalidInput:
+        pass
+    else:
+        raise AssertionError("a marker unrelated to the template was accepted")
+
+
+def test_brief_fields_are_generated_one_grounded_question_at_a_time():
+    """A single JSON request never produced a brief against the stock 7B model."""
+    from app.mission import (BRIEF_FIELDS, BRIEF_QUESTIONS, BRIEF_EXCLUSION, MissionService,
+                             OPERATOR_GUIDE, _brief_prompt, MAX_BRIEF_FIELD_CHARS)
+    from app.core import connect, migrate
+    assert set(BRIEF_QUESTIONS) == set(BRIEF_FIELDS)
+    for field in BRIEF_FIELDS:
+        prompt = _brief_prompt(field)
+        assert BRIEF_QUESTIONS[field] in prompt
+        assert BRIEF_EXCLUSION in prompt
+        assert '"Not specified"' in prompt
+        assert OPERATOR_GUIDE not in prompt, "guide text derails brief generation"
+        assert "JSON" not in prompt and "keys" not in prompt
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        db = root / "mission.db"
+        conn = connect(str(db)); migrate(conn); conn.close()
+        documents = set()
+        def handler(request):
+            if request.method == "GET":
+                return httpx.Response(200, json={"metadata": {"documents": sorted(documents)}})
+            if request.method == "POST":
+                name = request.content.split(b'filename="', 1)[1].split(b'"', 1)[0].decode()
+                documents.add(name)
+                return httpx.Response(200, json={"status": "Success"})
+            return httpx.Response(204)
+        services = types.SimpleNamespace(
+            urls={"chatqna": "http://chatqna"},
+            client=httpx.Client(transport=httpx.MockTransport(handler)))
+        asked = []
+        def generate(prompt):
+            asked.append(prompt)
+            if BRIEF_QUESTIONS["objective"] in prompt:
+                return "  Hold the north gate.  "
+            if BRIEF_QUESTIONS["risks"] in prompt:
+                return "risk " * 400            # a wordy field must not lose the brief
+            if BRIEF_QUESTIONS["locations"] in prompt:
+                return "The locations are not specified in the given context."
+            if BRIEF_QUESTIONS["people_units"] in prompt:
+                # Long, substantive, and merely mentions the sentinel phrase.
+                return ("Two role players act as visitors and one acts as staff; the "
+                        "relieving shift is not specified in the given context, so the "
+                        "walk-through is conducted by the single handheld operator on duty.")
+            return "Not specified"
+        service = MissionService(
+            {"db_path": str(db), "mission_sources_dir": str(root / "sources"),
+             "mission_ingest_timeout_seconds": 1, "mission_ingest_poll_seconds": 0},
+            services, generate=generate)
+        service.upload("mission.pdf", _pdf_bytes())
+        deadline = time.monotonic() + 5
+        while service._brief_running and time.monotonic() < deadline:
+            time.sleep(.01)
+        body = service.brief()
+        assert body["error"] is None, body["error"]
+        fields = body["brief"]
+        assert set(fields) == set(BRIEF_FIELDS)
+        assert fields["objective"] == "Hold the north gate."
+        assert fields["times"] == "Not specified"
+        assert fields["locations"] == "Not specified", "paraphrased sentinel reads as content"
+        assert fields["people_units"].startswith("Two role players"), "substantive answer kept"
+        assert len(fields["risks"]) <= MAX_BRIEF_FIELD_CHARS + 1
+        assert fields["risks"].endswith("\u2026")
+        assert len([p for p in asked if any(q in p for q in BRIEF_QUESTIONS.values())]) == 8
+
+
+def test_brief_failures_are_named_for_the_operator():
+    from app.assistant import ServiceUnavailable
+    from app.mission import MissionError, MissionUnavailable, brief_failure_message
+
+    try:
+        json.loads("")
+    except ValueError as exc:
+        decoded = exc
+    cases = {
+        decoded: "The language model returned an unusable answer.",
+        MissionUnavailable("Mission text generation is unavailable."):
+            "Mission text generation is unavailable.",
+        MissionError("Mission Brief generation returned an invalid structure."):
+            "Mission Brief generation returned an invalid structure.",
+        TimeoutError(): "Brief generation timed out.",
+        ServiceUnavailable("Chat Q&A connection failed"):
+            "The language service is not responding.",
+        RuntimeError("worker exploded"): "Brief generation failed unexpectedly.",
+    }
+    for exc, expected in cases.items():
+        actual = brief_failure_message(exc)
+        assert actual == expected, (type(exc).__name__, actual)
+        assert "line 1 column 1" not in actual and "Traceback" not in actual
+        assert actual and actual[0].isupper() and actual.endswith(".")
+
+
+def test_priority_classes_survive_the_evidence_limit():
+    from app import history
+    from app.assistant import _utc
+
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        conn, cutoff, _metadata = _phase5_fixture(root)
+        cfg = {"evidence_priority_classes": ["person"]}
+        # Furniture observed more recently than the person, as on a real feed.
+        for index in range(30):
+            conn.execute(
+                """INSERT INTO tracks (
+                     track_id, stream_id, tracking_session_id, history_generation, tracker_id,
+                     class_label, first_observed_utc, last_observed_utc, observation_count,
+                     peak_confidence, confidence_freshness, closed_at, closure_reason)
+                   VALUES (?, 'cam1', 'session-1', 'generation-1', ?, 'chair', ?, ?, 5, .9,
+                           'tracker_metadata_unverified', ?, 'timeout')""",
+                (5000 + index, 5000 + index,
+                 _utc(cutoff - timedelta(minutes=2)), _utc(cutoff - timedelta(minutes=1)),
+                 _utc(cutoff - timedelta(seconds=45))))
+        conn.commit()
+
+        result = history.recent(conn, None, cfg, "cam1", limit=5)
+        labels = [track["class_label"] for track in result["tracks"]]
+        assert "person" in labels, (
+            "people were pushed below the result limit by more recent furniture")
+        assert result["scope"]["priority_classes"] == ["person"]
+        assert result["class_counts"].get("chair"), "non-priority classes must stay counted"
+        assert result["matched_count"] > len(result["tracks"])
+
+        # An explicit class filter is the operator's choice and overrides priority.
+        chairs = history.recent(conn, None, cfg, "cam1", limit=5, class_labels=("chair",))
+        assert {track["class_label"] for track in chairs["tracks"]} == {"chair"}
+        assert chairs["scope"]["priority_classes"] == []
+
+        # Recency alone buries the person: that is what the priority order fixes.
+        unset = history.recent(conn, None, {"evidence_priority_classes": []}, "cam1", limit=5)
+        assert "person" not in [track["class_label"] for track in unset["tracks"]]
         conn.close()
 
 

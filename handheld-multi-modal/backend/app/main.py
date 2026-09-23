@@ -29,6 +29,8 @@ from .assistant import (
     QueueFull,
     QueryBudgetExceeded,
     ServiceUnavailable,
+    load_prompt_template,
+    resolve_answer_marker,
 )
 from .adapters import Probe, Services
 from .ingest import Ingest
@@ -140,6 +142,18 @@ async def lifespan(app: FastAPI):
     app.state.services = Services(cfg["services"], cfg["timeout_seconds"])
     app.state.telemetry = Telemetry(app.state.services, cfg["telemetry_host"])
     app.state.placement = Placement(app.state.services, cfg)
+    # Resolve the two settings that must agree with deployed component config
+    # before anything uses them. Both fail the process with a named cause
+    # rather than surfacing later as an unstartable camera or a missing
+    # response marker on the operator's first question.
+    pipelines.configure(pipelines.resolve_pipeline_name(
+        override=cfg.get("dlsps_pipeline_name")))
+    log.info("DLSPS pipeline definition: %s", pipelines.PIPELINE)
+    mismatch = pipelines.detector_taxonomy_warning(cfg["detector_metadata_path"])
+    if mismatch:
+        log.warning("detector taxonomy check: %s", mismatch)
+    cfg["chat_answer_marker"] = resolve_answer_marker(
+        load_prompt_template(), cfg.get("chat_answer_marker"))
     app.state.assistant = Assistant(cfg, app.state.services)
     app.state.mission = MissionService(
         cfg, app.state.services,
