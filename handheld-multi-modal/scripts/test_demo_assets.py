@@ -113,11 +113,12 @@ def main():
             check=True, capture_output=True, text=True).stdout
         assert not dry_root.exists()
         assert '--profile assets stop' in dry_run
+        assert ':/bootstrap/config/dlsps/detector-profile.json:ro' in dry_run
         # Exercise the actual Make recipe with different device groups, without Docker.
         group_root = root / 'groups'
         (group_root / 'config').mkdir(parents=True)
         subprocess.run(['make', '--no-print-directory', '-C', str(assets.REPO), 'demo-setup',
-                        '-o', 'demo-preflight', '-o', 'demo-assets', '-o', 'tls',
+                        '-o', 'demo-preflight', '-o', 'asset-permissions', '-o', 'demo-assets', '-o', 'tls',
                         f'ASSET_ROOT={group_root}', 'RENDER_GID=12345', 'ACCEL_GID=23456',
                         'HOST_IP=192.0.2.10', 'COTURN_EXTERNAL_IP=192.0.2.10'], check=True)
         groups = [json.loads(line.split('!override ')[1]) for line in (group_root / 'config/devices.yaml').read_text().splitlines() if '!override' in line]

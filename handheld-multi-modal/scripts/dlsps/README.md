@@ -109,19 +109,19 @@ Important defaults (starting values to calibrate, not measured optimal settings)
 | queue_jobs / queue_bytes | 8 / 32 MiB | Include reservations and worker's in-flight original crop |
 | max_frame_pixels | 8294400 | Bound source mapping size, independently of queue bytes |
 | max_dimension / jpeg_quality | 640 / 85 | Preserve aspect ratio; never upscale |
-| store_bytes / store_candidates | 512 MiB / 5000 | Stop writes at either quota |
+| store_bytes / store_candidates | 256 MiB / 1500 | Evict oldest candidates to admit new evidence |
 | free_disk_bytes | 64 MiB | Keep a free-space reserve |
-| retention_seconds | 86400 | Images and events expire together after one day |
+| retention_seconds | 3600 | Images and events expire together after one hour |
 
 Every ROI remains in the observation JSON. Untracked, unstable, low-confidence, tiny, duplicate-ID or over-budget candidates do not force image work. First snapshots take precedence over improvements; least recently attempted candidates go first within each group. One pending job per track; an already queued job is kept rather than replaced, avoiding repeated copies during slow writes. No heuristic identity merging, re-identification or location-based suppression occurs.
 
 The quality heuristic uses the original object's area, detector metadata confidence, and sharpness measured inside the object, with an edge penalty. The contextual background area is not rewarded. Labels are recorded per candidate and are never stabilized by rewriting history. The pinned tracker's confidence freshness is not proven; events explicitly label it `tracker_metadata_unverified`.
 
-The global bucket bounds pixel-copy attempts even during ID churn. The queue owns copied pixels and never retains borrowed views after unmapping. Source mapping/YUV conversion and encoder scratch allocations are additional to queue_bytes; this is not a total process RSS limit. Object size/frame limits bound those allocations. Python/GStreamer ROI inspection still costs time on every frame.
+The global bucket bounds pixel-copy attempts even during ID churn. The queue owns copied pixels and never retains borrowed views after unmapping. Source mapping, temporary region-conversion buffers and encoder scratch allocations are additional to queue_bytes; this is not a total process RSS limit. Object size/frame limits bound those allocations. The producer reuses parsed gvametaconvert objects (pixel x/y/w/h, tracker id, region_id, confidence and roi_type). It preserves the full observation JSON, including classifier fields, and does not enumerate native ROIs. The measurement probe retains native ROI inspection.
 
 At most three candidates are retained per active selector entry. If an ID reappears after the selector TTL, it can become eligible again; the global rate and disk caps still apply. Restart the callback with the tracker so its new session namespaces reset/reused IDs. Silent tracker resets within one callback lifetime are not automatically detectable; do not reuse this callback across such resets.
 
-Worker failure/backpressure never intentionally drops the video buffer. Disk failures pause admissions until the next maintenance pass (five seconds). Periodic `crop_stats` reports saved/published counts, rate/queue/store rejection counts, errors, tracked entries and pending bytes. These logs are an integration surface for future health reporting, not a new dashboard.
+Worker failure/backpressure never intentionally drops the video buffer. Disk failures pause admissions until the next maintenance pass (five seconds). Worker-written periodic `crop_stats` reports saved/published counts, rate/queue/store rejection counts, errors, tracked entries and pending bytes. These logs are an integration surface for future health reporting, not a new dashboard.
 
 ## Files, events and history boundary
 
@@ -138,7 +138,7 @@ Each event includes stream/session/tracker identity, candidate ID, generation, l
 
 Serve storage keys through Backend HTTP, confined beneath the shared directory. The UI never reads raw filesystem paths. Crops can arrive before or after observations and must be joined by identity and frame sequence. A crop is evidence for its own observation time, not proof that the object is currently visible.
 
-Expired images and sidecars are removed together, including undelivered events. Backend must honor expires_at and handle an expired image as unavailable, rather than promising indefinite evidence retention. Disk quotas do not force early deletion of still-valid evidence: admissions stop instead. Directory maintenance is a bounded-by-quota scan in the writer; if measured disk scale makes this expensive, replace it with a storage index.
+Expired images and sidecars are removed together, including undelivered events. Backend must honor expires_at and handle an expired image as unavailable, rather than promising indefinite evidence retention. Disk quotas evict oldest candidates, including still-valid evidence, to keep admitting current crops. The writer keeps ordered expiration and pending-publication indexes, recovered at startup and reconciled against disk every 60 seconds. Expiration still runs every five seconds without a full directory scan.
 
 Clear history is deliberately coordinated with producer shutdown, not by deleting files under a live writer:
 
@@ -158,6 +158,13 @@ lock and MQTT client, discards queued work, and prevents later frame callbacks
 from refreshing the old heartbeat. Normal explicit `close()` still drains work.
 This fixes the crop takeover leak; it does not claim to fix unrelated stock
 DLSPS resource leaks. No custom image is required.
+
+The frame callback queues a single latest status report; the writer performs its
+logging and durable heartbeat write. The heartbeat timestamp and file mtime
+reflect frame progress, not worker activity. Stale queued reports are discarded,
+so idle workers cannot keep a stalled producer alive. Admission capacity is
+checked before sorting, and rectangles are calculated only while crop capacity
+remains. Image quality, sampling budgets and first-snapshot priority are unchanged.
 
 `test_crops.py` covers repeated retained-callback takeovers with and without
 MQTT, and takeover during frame mapping and JPEG encoding. Run the mounted
@@ -205,3 +212,33 @@ The corrected real NPU/VA run passed with probe IDs **1, 2, 3**, producer IDs
 The three probe JPEGs were also inspected visually and show different subjects
 in different parts of the source frame. These IDs still represent tracks, not
 re-identified individuals. See `diversity/result.json` and `diversity-live.log`.
+
+### Region-only conversion (2026-09-23)
+
+The producer maps each admitted frame once and converts only selected crop
+regions. NV12/I420 regions expand to complete 2×2 chroma blocks before conversion,
+then trim back to the exact crop rectangle. BGRA/BGRx conversion also operates
+on the selected region; BGR crops are copied directly. Queued pixels own their
+exact-size allocations after unmapping. Sampling, geometry, sharpness scoring
+and JPEG settings are unchanged. GPU buffer mapping/synchronization still occurs, but the producer now reads
+validated plane offsets/strides directly and avoids gstgva full-frame repacking. The measurement probe retains its original
+full-frame conversion. Correctness tests compare regional output against that
+conversion, including odd coordinates and frame edges. Live throughput is recorded in
+`docs/bootstrap/evidence/crop-optimizations-2026-09-23/`; no controlled
+before/after benchmark was run.
+
+### Stride and failure handling (2026-09-23)
+
+The producer uses bounds-checked read-only plane views from the raw mapped
+GStreamer buffer. GstVideoMeta supplies offsets and row strides; negotiated
+VideoInfo supplies them when the buffer has no video meta. NV12 and I420 crops
+copy only aligned regional pixels, including correctly spaced I420 U/V rows.
+The pinned gstgva has no public buffer accessor, so private buffer access is
+isolated in `mapped_planes`; revalidate this adapter on a library upgrade.
+
+A candidate larger than the store byte quota is rejected before eviction. An
+unexpected writer failure disables crops, logs an error, and leaves observation
+identity/context flowing. The failed worker only watches for shutdown/takeover;
+it does not refresh the heartbeat. Takeover or explicit shutdown retires it and
+closes its resources. Conversion remains in the video callback; moving it into
+the worker was not part of this change.

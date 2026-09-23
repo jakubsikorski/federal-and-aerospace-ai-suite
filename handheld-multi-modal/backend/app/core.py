@@ -28,7 +28,7 @@ DEFAULTS: dict[str, Any] = {
     "crop_dir": "/crops",
     "crop_cleanup_script": "/opt/handheld-crops/crop_candidates.py",
     "detector_metadata_path": "/config/detector/metadata.yaml",
-    "max_streams": 3,  # required and measured, see config/backend/backend.yaml
+    "max_streams": 3,  # current operator deployment; configurable in backend.yaml
     "streams": [
         {"stream_id": "cam1", "display_name": "Camera 1", "sort_order": 0, "enabled": True},
     ],
@@ -65,6 +65,7 @@ DEFAULTS: dict[str, Any] = {
     # Section 8.1: a crop that arrives before its observation waits this long for
     # a track to attach to. Bounded by age alone.
     "pending_association_seconds": 120.0,
+    "detector_profile_path": "/config/detector-profile.json",
     "history_retention_seconds": 604800,
     "assistant_chat_timeout_seconds": 60.0,
     "assistant_queue_depth": 4,
@@ -99,6 +100,16 @@ def load_config(path: str | None = None) -> dict[str, Any]:
     file = Path(path)
     if file.is_file():
         cfg = _merge(cfg, yaml.safe_load(file.read_text()) or {})
+    # The demo publisher count is authoritative only in the demo Compose override.
+    demo_count = os.environ.get("BACKEND_DEMO_CAMERAS")
+    if demo_count is not None:
+        count = int(demo_count)
+        wanted = {f"cam{i}" for i in range(1, count + 1)}
+        available = {stream["stream_id"] for stream in cfg["streams"] if stream.get("enabled", True)}
+        if count < 1 or not wanted <= available:
+            raise ValueError("demo camera count must name enabled cam1…camN sources in backend.yaml")
+        for stream in cfg["streams"]:
+            stream["enabled"] = stream["stream_id"] in wanted
     for stream in cfg["streams"]:
         stream.setdefault("annotated_path", "annotated" + stream["stream_id"].removeprefix("cam"))
         stream.setdefault("source_uri", f"{cfg['rtsp_base']}/{stream['stream_id']}")

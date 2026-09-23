@@ -154,7 +154,8 @@ def _snip(conn: sqlite3.Connection, track_id: int) -> tuple[str | None, str]:
 
 def recent(conn: sqlite3.Connection, ingest, cfg: dict, stream_id: str,
            *, limit: int = 50, since_utc: str | None = None,
-           class_labels: tuple[str, ...] = (), has_image: bool = False) -> dict:
+           class_labels: tuple[str, ...] = (), has_image: bool = False,
+           prioritize: bool = True) -> dict:
     """Closed and open tracks for the history strip, newest first.
 
     Unlike `current` this is deliberately not filtered by freshness or feed
@@ -206,7 +207,7 @@ def recent(conn: sqlite3.Connection, ingest, cfg: dict, stream_id: str,
     configured = cfg.get("evidence_priority_classes", ["person"])
     priority = [label for label in (configured or []) if isinstance(label, str)]
     priority_order, priority_args = "", []
-    if priority and not class_labels:
+    if prioritize and priority and not class_labels:
         placeholders = ",".join("?" for _ in priority)
         priority_order = f"CASE WHEN t.class_label IN ({placeholders}) THEN 0 ELSE 1 END, "
         priority_args = priority
@@ -216,7 +217,7 @@ def recent(conn: sqlite3.Connection, ingest, cfg: dict, stream_id: str,
         filtered_args).fetchone()["n"]
     rows = conn.execute(
         f"""SELECT t.* FROM tracks t WHERE {filtered_where}
-            ORDER BY {priority_order}t.last_observed_utc DESC LIMIT ?""",
+            ORDER BY {priority_order}t.last_observed_utc DESC, t.track_id DESC LIMIT ?""",
         [*filtered_args, *priority_args, limit + 1]).fetchall()
     truncated = len(rows) > limit
     rows = rows[:limit]

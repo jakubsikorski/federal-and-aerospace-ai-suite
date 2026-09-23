@@ -7,9 +7,9 @@
 # ponytail: static camera list. A registration API only becomes worthwhile when
 # cameras arrive at runtime, which is not a demo requirement.
 
-# Required and measured on this host: 3 cameras run concurrently through the
-# stock DLSPS MQTT publisher and REST WebRTC frame destination. Bounded queues
-# keep observations current instead of retaining a multi-second backlog.
+# Operator deployment: three cameras, each with an independent DLSPS pipeline.
+# The stock MQTT publisher and REST WebRTC destination use bounded queues
+# to keep observations current instead of retaining a multi-second backlog.
 max_streams: 3
 # Optional per-camera description: real location, coverage, blind spots, live/replay.
 # Omit unknown details; the assistant reports unconfigured coverage honestly.
@@ -63,6 +63,8 @@ mission_ingest_poll_seconds: 0.25
 crop_dir: /crops
 crop_cleanup_script: /opt/handheld-crops/crop_candidates.py
 detector_metadata_path: /config/detector/metadata.yaml
+# Reviewed weights and ordered taxonomy; shared with demo asset validation.
+detector_profile_path: /config/detector-profile.json
 # Both of the following are resolved from the deployed component configuration
 # at startup and only need setting to override that. Leaving them unset is the
 # supported path, because a value repeated here is a value that can drift.

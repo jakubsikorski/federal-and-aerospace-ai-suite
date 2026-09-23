@@ -32,10 +32,7 @@
   .camera[aria-pressed="true"] { border: 2px solid var(--accent); background: #35485e; }
   .camera.up small, #connection.live { color: var(--good); }
   .camera.down small { color: var(--bad); }
-  /* A camera that has never delivered a frame is not a failure to chase: it is
-     usually not provisioned in this deployment. Alarm colour is reserved for a
-     feed that was working and stopped, so a permanent tile cannot train the
-     operator to ignore a real one. */
+  /* Disabled sources are omitted by Backend; only bounded startup is neutral. */
   .camera.idle small { color: var(--muted); }
   #mission-toggle { white-space: nowrap; }
   .top-status { margin-left: auto; text-align: right; white-space: nowrap; }
@@ -112,6 +109,7 @@
   .resource span { color: var(--muted); font-size: 12px; }
   .resource strong { font-size: 21px; font-variant-numeric: tabular-nums; line-height: 1.3; }
   .resource small { font-size: 11px; color: var(--muted); }
+  .resource[data-resource="gpu"] strong { font-size: 16px; white-space: nowrap; }
   .resource meter { appearance: none; border: 0; background: var(--line); border-radius: 3px; display: block; width: 100%; height: 7px; margin-top: 4px; }
   meter::-moz-meter-bar { background: var(--accent); }
   meter::-webkit-meter-bar { background: var(--line); border: 0; }
@@ -204,7 +202,7 @@
        visible area and the composer starts below the fold. Anchor the open
        assistant to the viewport instead: the question box is the control used
        on every interaction and must never need a scroll gesture to find. */
-    #assistant-panel.open { position: fixed; inset: 58px 12px 12px; z-index: 12; }
+    #assistant-panel.open { position: fixed; inset: var(--compact-top, 64px) 12px auto; height: calc(var(--usable-height, 100dvh) - var(--compact-top, 64px) - 12px); z-index: 12; }
     #ask-form { max-height: calc(100% - 120px); }
   }
   #assistant-panel:not(.welcome) #assistant-welcome { display: none; }
@@ -266,6 +264,10 @@
   #assistant-page-label { flex: 1; text-align: center; font-size: 12px; }
   #drawer.from-assistant { z-index: 9; }
 
+  @media (max-height: 650px) {
+    #assistant-panel.open #ask-form { max-height: calc(100% - 100px); }
+    #drawer.from-assistant { position: fixed; inset: var(--compact-top, 64px) 12px 12px; z-index: 13; }
+  }
   #orientation { display: none; position: fixed; inset: 0; z-index: 20; place-items: center; padding: 28px; text-align: center; background: var(--bg); font-size: 18px; }
   @media (orientation: portrait) { #orientation { display: grid; } }
   @media (max-width: 1100px) {
@@ -326,6 +328,7 @@
       </form>
       <p id="mission-answer" role="status"></p>
       <p id="mission-citation-note"></p>
+      <p id="mission-brief-status" role="status"></p>
       <dl id="mission-brief"></dl>
     </div>
   </aside>
@@ -337,7 +340,7 @@
       <div id="video-wrap" class="inactive">
         <video id="video" autoplay muted playsinline></video>
         <button id="video-fullscreen" class="quiet-button" type="button" aria-label="Enter video fullscreen" aria-pressed="false">Fullscreen</button>
-        <div id="video-note">Select a camera.</div>
+        <div id="video-note" role="status">Select a camera.</div>
       </div>
       <details id="alerts">
         <summary id="alert-summary">Global alerts · No alerts</summary>
@@ -372,7 +375,7 @@
         <label>View
           <select id="track-mode">
             <option value="current" selected>Current</option>
-            <option value="history">History</option>
+            <option value="history">History · priority</option><option value="history_newest">History · newest</option>
           </select>
         </label>
         <label>Show object type
@@ -389,7 +392,7 @@
       <div id="presence"></div>
       <div id="list-status">
         <span id="list-state" role="status">Live list</span>
-        <button id="people-only" class="quiet-button" type="button" aria-pressed="false">People only</button>
+        <button id="people-only" hidden class="quiet-button" type="button" aria-pressed="false">Priority only</button>
         <button id="apply-updates" class="quiet-button" disabled>Updates available</button>
         <button id="pause-updates" class="quiet-button" type="button" aria-pressed="false">Pause</button>
       </div>
@@ -437,7 +440,7 @@
               <h3>What do you need to know?</h3>
               <p>Choose a starting point, or type your question below.</p>
               <div class="starter-grid">
-                <button id="start-people" type="button"><strong>Find people</strong><span>Recorded tracks · last 10 minutes</span></button>
+                <button id="start-people" hidden type="button"><strong>Find priority objects</strong><span>Recorded tracks · last 10 minutes</span></button>
                 <button id="start-mission" type="button"><strong>Mission objective</strong><span>Use the loaded mission documents</span></button>
                 <button id="start-explain" type="button"><strong>Explain a topic</strong><span>General conversation</span></button>
               </div>
@@ -485,6 +488,7 @@ const $ = (id) => document.getElementById(id);
 const state = {
   streams: [], selected: null, current: {}, recent: {}, alerts: [],
   telemetry: null, history: new Map(), whep: null, events: null,
+  whepSerial: 0, whepFailures: 0, whepLeaving: false,
   filter: {mode: "current", classLabel: "", hasImage: false},
   paused: false, held: false, pending: false, drawerTrack: null, selectedTrackKey: null,
   resource: "cpu", trackSignature: "", requestVersion: 0,
@@ -492,7 +496,7 @@ const state = {
   mission: null,
   assistantToken: null, assistantBusy: false, assistantPrevious: null,
   assistantAnswer: null, assistantContext: null, assistantPages: new Map(),
-  assistantReturn: false, assistantScroll: 0, assistantOptions: [], assistantAvailability: [],
+  assistantReturn: false, assistantScroll: 0, assistantOptions: [], assistantAvailability: [], priorityClasses: [],
 };
 
 async function api(path) {
@@ -574,18 +578,25 @@ function renderMission() {
     const term = document.createElement("dt");
     const definition = document.createElement("dd");
     term.textContent = titleCase(field);
-    definition.textContent = value;
+    if (value.length > 500) {
+      const details = document.createElement("details"), summary = document.createElement("summary");
+      summary.textContent = value.slice(0, 500) + "… Show full section";
+      const full = document.createElement("p"); full.textContent = value;
+      details.append(summary, full); definition.append(details);
+    } else definition.textContent = value;
     brief.append(term, definition);
   }
   const briefError = mission.brief?.error;
   $("mission-reingest").textContent = briefError ? "Retry Brief / Re-ingest" : "Re-ingest";
-  if (briefError) {
-    $("mission-answer").textContent = "Mission Brief failed. " + briefError
-      + " Automatic retries have stopped; select Retry Brief / Re-ingest to try again.";
-  } else if (mission.brief?.stale) {
-    $("mission-answer").textContent ||= "Mission Brief is being regenerated for corpus version "
-      + (mission.brief.corpus_version ?? mission.corpus_version ?? "unknown") + ".";
-  }
+  $("mission-brief-status").textContent = briefError
+    ? "Mission Brief failed. " + briefError + " Select Retry Brief / Re-ingest to try again."
+    : mission.brief?.stale && sources.length
+      ? "Preparing brief for document version " + mission.brief.corpus_version + "…"
+      : mission.brief?.brief
+        ? "Brief ready · document version " + mission.brief.corpus_version
+          + (mission.brief.generated_utc ? " · " + evidenceTime(mission.brief.generated_utc) : "")
+        : "No brief available.";
+
 }
 
 async function refreshMission() {
@@ -609,7 +620,9 @@ $("mission-toggle").onclick = async () => {
   $("mission-panel").hidden = !opening;
   $("mission-toggle").setAttribute("aria-expanded", String(opening));
   if (opening) {
+    closeAssistant(false);
     await refreshMission();
+    $("close-mission").focus();
     $("mission-file").focus();
   }
 };
@@ -774,13 +787,13 @@ function cameraName(streamId) {
 function feedClass(feed) {
   if (!feed || feed.ok === null || feed.ok === undefined) return "unknown";
   if (feed.ok === true) return "up";
-  return feed.reason === "no_signal_yet" ? "idle" : "down";
+  return feed.reason === "starting" ? "idle" : "down";
 }
 
 function feedStatus(feed) {
   if (!feed || feed.ok === null || feed.ok === undefined) return "Unknown";
   if (feed.ok === true) return "Live";
-  return feed.reason === "no_signal_yet" ? "Awaiting source" : "Signal lost";
+  return feed.reason === "starting" ? "Starting" : feed.reason === "no_signal_yet" ? "No frames received" : "Signal lost";
 }
 
 function renderCameras() {
@@ -802,74 +815,157 @@ function renderCameras() {
     button.firstChild.textContent = stream.display_name;
     button.lastChild.textContent = status;
     button.title = stream.feed?.reason === "no_signal_yet"
-      ? "No frames received yet. This camera may not be provisioned in this deployment."
+      ? "Required source has not delivered frames. Check its publisher and connection; Backend retries automatically."
       : "";
   }
   [...nav.children].filter((node) => !choices.some((s) => s.stream_id === node.dataset.stream))
     .forEach((node) => node.remove());
 }
 
+function releaseWhep(current) {
+  clearTimeout(current.timeout);
+  clearTimeout(current.disconnectTimer);
+  clearTimeout(current.mediaTimer);
+  current.abort.abort();
+  // Delete before closing the peer, but an unreachable server must not block switching.
+  if (!current.cleanup) current.cleanup = (async () => {
+    if (current.resource) {
+      try { await fetch(current.resource, {method: "DELETE", signal: AbortSignal.timeout(2000), keepalive: true}); } catch (_) {}
+    }
+    current.pc.close();
+  })();
+  return current.cleanup;
+}
+
 async function detachWhep() {
+  ++state.whepSerial;
   const previous = state.whep;
   state.whep = null;
   $("video").srcObject = null;
   if (!previous) return;
-  if (previous.resource) {
-    try { await fetch(previous.resource, {method: "DELETE"}); } catch (_) {}
-  }
-  previous.pc.close();
+  clearTimeout(previous.retryTimer);
+  await releaseWhep(previous);
 }
 
-async function attachWhep(stream) {
-  await detachWhep();
-  const note = $("video-note");
-  $("video-wrap").classList.remove("inactive");
-  note.textContent = "Connecting to " + stream.display_name + "...";
-  const pc = new RTCPeerConnection({bundlePolicy: "max-bundle"});
-  const current = {pc, resource: null};
-  state.whep = current;
-  pc.addTransceiver("video", {direction: "recvonly"});
-  pc.ontrack = (event) => { $("video").srcObject = event.streams[0]; };
-  pc.onconnectionstatechange = () => {
-    if (state.whep !== current) return;
-    note.textContent = stream.display_name + ": " + pc.connectionState;
-  };
-  await pc.setLocalDescription(await pc.createOffer());
-  await new Promise((resolve) => {
-    if (pc.iceGatheringState === "complete") return resolve();
-    pc.onicegatheringstatechange = () => pc.iceGatheringState === "complete" && resolve();
-  });
-  const response = await fetch(new URL(stream.whep_path, location.origin), {
-    method: "POST",
-    headers: {"content-type": "application/sdp"},
-    body: pc.localDescription.sdp,
-  });
-  if (!response.ok) {
-    const codecs = (RTCRtpReceiver.getCapabilities("video")?.codecs || [])
-      .map((codec) => codec.mimeType.replace("video/", ""))
-      .filter((codec, index, all) => all.indexOf(codec) === index);
-    note.textContent = response.status === 400
-      ? stream.display_name + ": this browser cannot play the annotated video stream."
-        + " Use a browser with H.264 support, or deploy a pipeline variant that"
-        + " encodes a codec this browser offers."
-      : stream.display_name + ": live video unavailable (" + response.status + ")";
-    note.title = response.status === 400
-      ? "Browser video codecs offered: " + (codecs.join(", ") || "none")
-      : "";
-    pc.close();
-    if (state.whep === current) state.whep = null;
-    return;
-  }
-  current.resource = response.headers.get("location");
-  const answer = await response.text();
-  if (state.whep !== current) {
-    pc.close();
-    return;
-  }
-  await pc.setRemoteDescription({type: "answer", sdp: answer});
+function retryWhep(current, reason) {
+  if (state.whep !== current || current.retrying || state.whepLeaving) return;
+  current.retrying = true;
+  const delay = Math.min(30000, 1000 * 2 ** Math.min(state.whepFailures++, 5));
+  $("video").srcObject = null;
+  $("video-wrap").classList.add("inactive");
+  $("video-note").textContent = current.stream.display_name + ": " + reason
+    + " Reconnecting in " + delay / 1000 + "s…";
+  releaseWhep(current);
+  current.retryTimer = setTimeout(() => {
+    if (state.whep === current && state.selected === current.stream.stream_id && !state.whepLeaving) {
+      attachWhep(current.stream, true);
+    }
+  }, delay);
 }
+
+async function attachWhep(stream, retry = false) {
+  const cleanup = detachWhep(), serial = state.whepSerial;
+  if (!retry) state.whepFailures = 0;
+  await cleanup;
+  if (serial !== state.whepSerial || state.selected !== stream.stream_id || state.whepLeaving) return;
+  const note = $("video-note");
+  note.title = "";
+  $("video-wrap").classList.remove("inactive");
+  note.textContent = (retry ? "Reconnecting to " : "Connecting to ") + stream.display_name + "…";
+  const current = {stream, resource: null, abort: new AbortController(), pc: null};
+  const active = () => state.whep === current && !current.retrying;
+  try {
+    const pc = current.pc = new RTCPeerConnection({bundlePolicy: "max-bundle"});
+    state.whep = current;
+    current.timeout = setTimeout(() => retryWhep(current, "Connection timed out."), 15000);
+    pc.addTransceiver("video", {direction: "recvonly"});
+    pc.ontrack = event => {
+      if (!active()) return;
+      $("video").srcObject = event.streams[0];
+      event.track.onended = () => retryWhep(current, "Video connection ended.");
+      event.track.onmute = () => {
+        if (active()) current.mediaTimer ||= setTimeout(() => retryWhep(current, "Video stopped arriving."), 10000);
+      };
+      event.track.onunmute = () => { clearTimeout(current.mediaTimer); current.mediaTimer = null; };
+      if (event.track.muted) event.track.onmute();
+    };
+    pc.onconnectionstatechange = pc.oniceconnectionstatechange = () => {
+      if (!active()) return;
+      const states = [pc.connectionState, pc.iceConnectionState];
+      if (states.includes("failed") || states.includes("closed")) {
+        retryWhep(current, "Video connection lost.");
+      } else if (states.includes("disconnected")) {
+        note.textContent = stream.display_name + ": Connection interrupted. Reconnecting…";
+        // Allow a brief network interruption to recover without replacing a healthy peer.
+        current.disconnectTimer ||= setTimeout(() => retryWhep(current, "Video connection lost."), 3000);
+      } else if (pc.connectionState === "connected") {
+        clearTimeout(current.timeout);
+        clearTimeout(current.disconnectTimer); current.disconnectTimer = null;
+        state.whepFailures = 0;
+        note.textContent = stream.display_name + ": Connected";
+      }
+    };
+    await pc.setLocalDescription(await pc.createOffer());
+    await new Promise((resolve, reject) => {
+      const cancelled = () => reject(new DOMException("Connection cancelled", "AbortError"));
+      if (current.abort.signal.aborted) return cancelled();
+      if (pc.iceGatheringState === "complete") return resolve();
+      current.abort.signal.addEventListener("abort", cancelled, {once: true});
+      pc.onicegatheringstatechange = () => {
+        if (pc.iceGatheringState === "complete") {
+          current.abort.signal.removeEventListener("abort", cancelled); resolve();
+        }
+      };
+    });
+    if (!active()) return;
+    const endpoint = new URL(stream.whep_path, location.origin);
+    const response = await fetch(endpoint, {
+      method: "POST", headers: {"content-type": "application/sdp"},
+      body: pc.localDescription.sdp, signal: current.abort.signal,
+    });
+    // A switched-away request can still receive a session Location. Clean it up too.
+    const resource = response.headers.get("location");
+    if (resource) current.resource = new URL(resource, endpoint).href;
+    if (!active()) {
+      current.cleanup = null;
+      await releaseWhep(current); return;
+    }
+    if (!response.ok) {
+      const detail = await response.text();
+      if (!active()) return;
+      // A missing publisher can also return 400. Only an explicit codec error is permanent.
+      if (response.status === 400 && /codec/i.test(detail)) {
+        current.retrying = true;
+        note.textContent = stream.display_name + ": This browser cannot play the stream's video codec. Use a compatible browser.";
+        note.title = detail;
+        await releaseWhep(current); return;
+      }
+      throw new Error("Video unavailable (" + response.status + ").");
+    }
+    const answer = await response.text();
+    if (!active()) return;
+    await pc.setRemoteDescription({type: "answer", sdp: answer});
+  } catch (error) {
+    if (current.pc && state.whep === current) retryWhep(current,
+      error.name === "AbortError" ? "Connection timed out." : "Video connection unavailable.");
+    else if (serial === state.whepSerial) note.textContent = stream.display_name + ": Video connections are unavailable in this browser.";
+  }
+}
+
+function resumeWhep() {
+  if (state.whepLeaving || document.hidden) return;
+  const stream = state.streams.find(item => item.stream_id === state.selected);
+  if (stream && (!state.whep || state.whep.retryTimer || state.whep.pc.connectionState !== "connected")) {
+    attachWhep(stream);
+  }
+}
+window.addEventListener("online", resumeWhep);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) resumeWhep(); });
+window.addEventListener("pagehide", () => { state.whepLeaving = true; detachWhep(); });
+window.addEventListener("pageshow", () => { state.whepLeaving = false; resumeWhep(); });
 
 function selectCamera(streamId, firstLoad = false) {
+  if (!firstLoad && compactAssistant()) closeAssistant(false);
   if (state.drawerTrack) closeDrawer();
   state.selected = streamId;
   updateAssistantCameraCue();
@@ -935,7 +1031,12 @@ function visibleTracks() {
     ((source[stream.stream_id] || {}).tracks || []).filter(filterTrack).map((track, index) => ({
       ...track, stream_id: stream.stream_id, liveIndex: index
     }))
-  ).sort((a, b) => String(b.last_observed_utc).localeCompare(String(a.last_observed_utc)));
+  ).sort((a, b) => {
+    const priority = state.filter.prioritize !== false && !state.filter.classLabel ? state.priorityClasses : [];
+    return Number(priority.includes(b.class_label)) - Number(priority.includes(a.class_label))
+      || String(b.last_observed_utc).localeCompare(String(a.last_observed_utc))
+      || a.stream_id.localeCompare(b.stream_id) || (b.track_id || 0) - (a.track_id || 0);
+  });
 }
 
 function renderPresence() {
@@ -993,7 +1094,10 @@ function renderClassFilter() {
     }
   }
   select.value = selected;
-  $("people-only").setAttribute("aria-pressed", String(selected === "person"));
+  const priority = state.priorityClasses[0];
+  $("people-only").hidden = !priority;
+  $("people-only").textContent = (priority ? titleCase(priority) : "Priority") + " only";
+  $("people-only").setAttribute("aria-pressed", String(Boolean(priority) && selected === priority));
 }
 
 function renderTrackSummary(tracks) {
@@ -1004,7 +1108,9 @@ function renderTrackSummary(tracks) {
   const history = state.filter.mode === "history";
   $("scope-copy").textContent = [camera, history ? "History · current session" : "Current",
     type, history ? tracks.length + " of " + matched + " shown" : tracks.length + " observed",
-    results.some((r) => r.truncated) && history ? "More results available" : ""].filter(Boolean).join(" · ");
+    results.some((r) => r.truncated) && history ? "More results available" : "",
+    state.filter.prioritize !== false && !state.filter.classLabel && state.priorityClasses.length
+      ? "Priority: " + state.priorityClasses.map(titleCase).join(", ") + " · newest within group" : "Newest first"].filter(Boolean).join(" · ");
 }
 
 function missingCrop(box, reason) {
@@ -1228,14 +1334,23 @@ function renderTelemetry() {
     // Absent series are omitted; explicitly unsupported values remain unavailable.
     button.hidden = !metrics.length;
     if (!metrics.length) continue;
-    const primary = metrics[0];
+    const live = metrics.filter(metric => metricState(metric) === "live");
+    const stale = metrics.filter(metric => metricState(metric) === "stale");
+    const candidates = live.length ? live : stale;
+    const primary = group.id === "gpu" && candidates.length
+      ? candidates.reduce((highest, metric) => metric.value > highest.value ? metric : highest) : metrics[0];
     const status = metricState(primary);
     button.dataset.state = status;
     button.setAttribute("aria-pressed", String(state.resource === group.id));
     button.querySelector("span").textContent = group.label;
-    button.querySelector("strong").textContent = group.id === "gpu" ? metrics.length + " engines" : formatted(primary);
-    button.querySelector("small").textContent = group.id === "gpu" ? "View readings"
+    const engine = primary.id.match(/^gpu_engine_(.+)_percent$/)?.[1]?.toUpperCase();
+    button.querySelector("strong").textContent = group.id === "gpu"
+      ? status === "unavailable" ? "Unavailable" : formatted(primary) + " " + engine : formatted(primary);
+    button.querySelector("small").textContent = group.id === "gpu"
+      ? metrics.length + " engines · " + (status === "live" ? (live.length < metrics.length ? "Partial · View" : "View") : titleCase(status))
       : status === "live" ? (group.id === "npu" ? "Zero ≠ idle" : "Live") : titleCase(status);
+    button.title = group.id === "gpu" ? (status === "live" ? "Highest current engine usage" : "No current engine readings")
+      + "; " + live.length + " of " + metrics.length + " engines current. Select to view all engines." : "";
     const meter = button.querySelector("meter");
     meter.hidden = primary.unit !== "%" || status !== "live" || group.id === "gpu";
     meter.value = primary.value ?? 0;
@@ -1482,8 +1597,22 @@ function searchBackgroundInert(value) {
   }
 }
 
+function compactAssistant() { return matchMedia("(max-height: 650px)").matches; }
+function sizeAssistant() {
+  const focused = compactAssistant() && $("assistant-panel").classList.contains("open");
+  document.documentElement.style.setProperty("--compact-top", document.querySelector("header").getBoundingClientRect().bottom + "px");
+  document.documentElement.style.setProperty("--usable-height", (window.visualViewport?.height || innerHeight) + "px");
+  $("close-assistant").textContent = focused ? "Back to camera" : "Back";
+  $("close-assistant").title = focused ? "Focused chat view. Return to live camera and telemetry." : "Return to evidence";
+  $("model-strip").inert = focused;
+  $("lower").inert = focused;
+  $("video-panel").inert = focused || $("workspace").classList.contains("resources-expanded");
+}
+window.visualViewport?.addEventListener("resize", sizeAssistant);
 async function openAssistant() {
+  closeMission(false);
   $("assistant-panel").classList.add("open");
+  sizeAssistant();
   $("open-assistant").setAttribute("aria-expanded", "true");
   searchBackgroundInert(true);
   if (!$("search-camera").options.length) {
@@ -1506,6 +1635,11 @@ async function loadAssistantOptions() {
     const options = await api("/api/history/options");
     state.assistantOptions = (options.classes || []).slice().sort((a, b) => a.localeCompare(b));
     state.assistantAvailability = options.availability || [];
+    state.priorityClasses = (options.priority_classes || []).filter(label => state.assistantOptions.includes(label));
+    const priority = state.priorityClasses[0];
+    $("start-people").hidden = !priority;
+    $("start-people").querySelector("strong").textContent = "Find " + (priority || "priority objects");
+    renderClassFilter();
     const selected = $("search-class").value;
     $("search-class").replaceChildren(new Option("All object types", ""), ...state.assistantOptions.map(label => new Option(titleCase(label), label)));
     $("search-class").value = state.assistantOptions.includes(selected) ? selected : "";
@@ -1644,11 +1778,12 @@ function updateQuestionFilters() {
   $("ask-submit").textContent = question || !$("assistant-panel").classList.contains("filters-open") ? "Send" : "Search";
 }
 
-function closeAssistant() {
+function closeAssistant(restoreFocus = true) {
   $("assistant-panel").classList.remove("open");
   $("open-assistant").setAttribute("aria-expanded", "false");
   searchBackgroundInert(false);
-  $("open-assistant").focus();
+  sizeAssistant();
+  if (restoreFocus) $("open-assistant").focus();
 }
 
 function updateAssistantPaging() {
@@ -1918,8 +2053,10 @@ $("start-people").onclick = () => {
   if (state.assistantBusy) return;
   $("assistant-mode").value = "auto";
   const scope = $("search-camera").value;
-  return submitAssistant({plan:{window:{kind:"relative",minutes:10},classes:["person"]},
-    selected_stream:scope === "all" ? null : scope}, "People · last 10 minutes");
+  const priority = state.priorityClasses[0];
+  if (!priority) return;
+  return submitAssistant({plan:{window:{kind:"relative",minutes:10},classes:[priority]},
+    selected_stream:scope === "all" ? null : scope}, titleCase(priority) + " · last 10 minutes");
 };
 $("start-mission").onclick = () => askFollowup("What is the objective in the mission documents?");
 $("start-explain").onclick = () => {
@@ -1960,6 +2097,7 @@ $("assistant-previous").onclick = () => {
 function historyQuery(includeLimit = true) {
   const query = new URLSearchParams();
   if (includeLimit) query.set("limit", "50");
+  query.set("prioritize", String(state.filter.prioritize !== false));
   if (state.filter.classLabel) query.set("classes", state.filter.classLabel);
   if (state.filter.hasImage) query.set("has_image", "true");
   return query.toString();
@@ -2057,10 +2195,11 @@ function connectEvents() {
 }
 
 $("track-mode").onchange = (event) => {
-  state.filter.mode = event.target.value;
+  state.filter.mode = event.target.value === "current" ? "current" : "history";
+  state.filter.prioritize = event.target.value !== "history_newest";
   state.held = false;
   $("track-scroll").scrollTop = 0;
-  renderTracks(true);
+  changeFilters();
 };
 async function changeFilters() {
   state.events?.close();
@@ -2088,7 +2227,9 @@ $("class-filter").onchange = changeFilters;
 // through a list that is mostly furniture.
 $("people-only").onclick = () => {
   const select = $("class-filter");
-  const wanted = state.filter.classLabel === "person" ? "" : "person";
+  const priority = state.priorityClasses[0];
+  if (!priority) return;
+  const wanted = state.filter.classLabel === priority ? "" : priority;
   if (wanted && ![...select.options].some((option) => option.value === wanted)) {
     select.append(new Option(titleCase(wanted), wanted));
   }
@@ -2150,13 +2291,16 @@ $("toggle-diagnostics").onclick = () => {
   $("toggle-diagnostics").setAttribute("aria-expanded", String(!$("diagnostics").hidden));
 };
 window.addEventListener("resize", () => {
+  sizeAssistant();
   if ($("workspace").classList.contains("resources-expanded")) sizeExpandedTelemetry();
   renderChart();
 });
 // Re-evaluate freshness even when the event stream stops delivering samples.
 setInterval(() => { renderTelemetry(); renderPresence(); }, 1000);
 
-refreshState().then(() => {
+refreshState().then(async () => {
+  await loadAssistantOptions();
+  renderTracks(true);
   selectCamera(state.selected, true);
   connectEvents();
 }).catch((error) => {
@@ -2165,6 +2309,7 @@ refreshState().then(() => {
 });
 
 window.addEventListener("beforeunload", () => {
+  state.whepLeaving = true;
   if (state.events) state.events.close();
   detachWhep();
 });

@@ -7,7 +7,8 @@ camera history, reads mission documents and monitors computing resources.
 ## Cameras and evidence
 Choose Camera 1, Camera 2 or another configured camera in the top bar for live
 video. All cameras gives an evidence overview; choose one camera to watch video.
-Fullscreen enlarges video.
+Fullscreen enlarges video. Lost video connections retry automatically; the video
+panel shows reconnection status. Switching cameras cancels the previous retry.
 Open an evidence card for its image and track details. Crops are selected snapshots,
 not full recordings. One track is not necessarily one unique person. Tracking IDs
 cannot identify people or link identities across cameras. Missing detections or
@@ -20,8 +21,10 @@ Search covers retained records in each camera's current tracking session, not al
 past sessions. A pipeline restart starts a new tracking session.
 
 ## Assistant controls
-Open Assistant beside the live video. Find people searches recorded person tracks
-in the last ten minutes. Camera scope is independent of the video selection:
+Open Assistant beside the live video. On short screens it opens a focused chat
+view: camera status stays in the top bar, and Back to camera returns to video.
+The Find shortcut searches the configured priority object type (person by default)
+in the last ten minutes. History offers priority-first or newest-first ordering. Camera scope is independent of the video selection:
 choose a camera or All cameras, or press Use Camera N to adopt the on-screen camera.
 History filters select object type and time when the question is empty. For a typed
 search, name the object and time window: "Show person tracks in the last ten minutes."
@@ -103,3 +106,8 @@ conditions. The excluded conditions are shown before selection. If an exact sear
 has no matches, the option removes its attribute filters while keeping object type,
 cameras and time. These are broader records for inspection, not verified matches to
 the excluded conditions or a visual-similarity ranking.
+
+## GPU engine summary
+The GPU tile shows the highest current engine usage and its engine name, plus the
+number of engines. Select it to see every engine. Partial means some readings are
+not current; Stale readings are historical, and Unavailable is not zero usage.

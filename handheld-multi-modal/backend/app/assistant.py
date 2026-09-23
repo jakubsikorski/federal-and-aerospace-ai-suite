@@ -259,7 +259,7 @@ def query_context(db_path: str) -> tuple[tuple[str, ...], int, dict[str, dict]]:
     with readonly_connection(db_path) as conn:
         stream_rows = guarded_query(
             conn, """SELECT stream_id, tracking_session_id, history_generation
-                     FROM streams ORDER BY sort_order, stream_id""")
+                     FROM streams WHERE enabled = 1 ORDER BY sort_order, stream_id""")
         streams = tuple(row["stream_id"] for row in stream_rows)
         scope = {
             row["stream_id"]: {
@@ -1253,10 +1253,13 @@ class Assistant:
                   AND t.history_generation = s.history_generation
                 LEFT JOIN track_intervals i ON i.track_id = t.track_id
                   AND i.ended_utc > :oldest AND i.started_utc < :now
+                WHERE s.enabled = 1
                 GROUP BY s.stream_id ORDER BY s.sort_order, s.stream_id
             """, {"oldest": _utc(now - self.retention), "now": _utc(now)})
         catalog = attribute_catalog(self.cfg["db_path"], start=_utc(now - self.retention))
         return {"classes": detector_labels(self.cfg["detector_metadata_path"]),
+                "priority_classes": [label for label in self.cfg.get("evidence_priority_classes", ["person"])
+                                     if label in detector_labels(self.cfg["detector_metadata_path"])],
                 "attributes": catalog,
                 "attributes_truncated": catalog.truncated,
                 "availability": availability,

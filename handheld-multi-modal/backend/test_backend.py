@@ -10,6 +10,7 @@ which are the only assertions that actually mean anything for them.
 from contextlib import nullcontext
 import hashlib
 import json
+import os
 import sqlite3
 import sys
 import tempfile
@@ -24,6 +25,9 @@ from pathlib import Path
 import httpx
 
 sys.path.insert(0, str(Path(__file__).parent))
+# `make test` runs inside the deployed Backend, whose demo camera count must not
+# rewrite the fixture configs these tests load.
+os.environ.pop("BACKEND_DEMO_CAMERAS", None)
 
 # Enough distinct pipeline metadata field names to exceed the described subset.
 CATALOG_OVERFLOW = 130
@@ -63,6 +67,24 @@ def test_config_derives_paths():
     stream = cfg["streams"][0]
     assert stream["annotated_path"] == "annotated3", stream
     assert stream["source_uri"] == "rtsp://mediamtx:8554/cam3", stream
+
+
+def test_demo_camera_count_enables_only_named_sources():
+    with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as fh:
+        fh.write("streams:\n" + "".join(
+            f"  - {{stream_id: cam{i}, display_name: C{i}, sort_order: {i}}}\n" for i in (1, 2, 3)))
+    try:
+        os.environ["BACKEND_DEMO_CAMERAS"] = "2"
+        enabled = {s["stream_id"]: s["enabled"] for s in load_config(fh.name)["streams"]}
+        assert enabled == {"cam1": True, "cam2": True, "cam3": False}, enabled
+        os.environ["BACKEND_DEMO_CAMERAS"] = "4"
+        try:
+            load_config(fh.name)
+            raise AssertionError("accepted a camera count with no configured source")
+        except ValueError:
+            pass
+    finally:
+        os.environ.pop("BACKEND_DEMO_CAMERAS", None)
 
 
 def test_loading_config_twice_does_not_edit_defaults():
@@ -2364,7 +2386,7 @@ def test_deployed_component_config_matches_backend_expectations():
 def test_brief_fields_are_generated_one_grounded_question_at_a_time():
     """A single JSON request never produced a brief against the stock 7B model."""
     from app.mission import (BRIEF_FIELDS, BRIEF_QUESTIONS, BRIEF_EXCLUSION, MissionService,
-                             OPERATOR_GUIDE, _brief_prompt, MAX_BRIEF_FIELD_CHARS)
+                             OPERATOR_GUIDE, _brief_prompt)
     from app.core import connect, migrate
     assert set(BRIEF_QUESTIONS) == set(BRIEF_FIELDS)
     for field in BRIEF_FIELDS:
@@ -2399,7 +2421,7 @@ def test_brief_fields_are_generated_one_grounded_question_at_a_time():
             if BRIEF_QUESTIONS["risks"] in prompt:
                 return "risk " * 400            # a wordy field must not lose the brief
             if BRIEF_QUESTIONS["locations"] in prompt:
-                return "The locations are not specified in the given context."
+                return "Two guards; relief not specified."
             if BRIEF_QUESTIONS["people_units"] in prompt:
                 # Long, substantive, and merely mentions the sentinel phrase.
                 return ("Two role players act as visitors and one acts as staff; the "
@@ -2420,10 +2442,9 @@ def test_brief_fields_are_generated_one_grounded_question_at_a_time():
         assert set(fields) == set(BRIEF_FIELDS)
         assert fields["objective"] == "Hold the north gate."
         assert fields["times"] == "Not specified"
-        assert fields["locations"] == "Not specified", "paraphrased sentinel reads as content"
+        assert fields["locations"] == "Two guards; relief not specified.", "short known fact must survive"
         assert fields["people_units"].startswith("Two role players"), "substantive answer kept"
-        assert len(fields["risks"]) <= MAX_BRIEF_FIELD_CHARS + 1
-        assert fields["risks"].endswith("\u2026")
+        assert fields["risks"] == ("risk " * 400).strip(), "full text remains available"
         assert len([p for p in asked if any(q in p for q in BRIEF_QUESTIONS.values())]) == 8
 
 
@@ -2489,9 +2510,59 @@ def test_priority_classes_survive_the_evidence_limit():
         assert chairs["scope"]["priority_classes"] == []
 
         # Recency alone buries the person: that is what the priority order fixes.
-        unset = history.recent(conn, None, {"evidence_priority_classes": []}, "cam1", limit=5)
+        unset = history.recent(conn, None, cfg, "cam1", limit=5, prioritize=False)
         assert "person" not in [track["class_label"] for track in unset["tracks"]]
         conn.close()
+
+
+def test_profile_validation_and_required_source_startup():
+    import hashlib
+    from app.pipelines import resolve_pipeline_name, validate_detector_profile
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        model = root / "model.xml"; model.write_text("test model")
+        weights = root / "model.bin"; weights.write_bytes(b"test weights")
+        metadata = root / "metadata.yaml"
+        metadata.write_text("task: detect\nnames: {0: vehicle}\n")
+        definition = {"name": "chosen", "pipeline": "gvadetect model=/models/model.xml device=CPU",
+            "parameters": {"properties": {key: {"type": "string"}
+                for key in ("crop-config", "model_instance")}}}
+        pipeline = root / "pipeline.json"
+        pipeline.write_text(json.dumps({"config": {"pipelines": [dict(definition, name="other", pipeline="gvadetect model=/different/model.xml"), definition]}}))
+        profile = root / "profile.json"
+        profile.write_text(json.dumps({"pipeline_model": "/models/model.xml", "classes": ["vehicle"],
+            "artifact_sets": [{p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in (model, weights)}]}))
+        assert resolve_pipeline_name(str(pipeline), "chosen") == "chosen"
+        validate_detector_profile(str(metadata), str(profile), str(pipeline), "chosen")
+        for bad in ("absent", ""):
+            try: resolve_pipeline_name(str(pipeline), bad)
+            except ValueError: pass
+            else: raise AssertionError("invalid override accepted")
+        metadata.write_text("task: detect\nnames: {0: wrong}\n")
+        try: validate_detector_profile(str(metadata), str(profile), str(pipeline), "chosen")
+        except ValueError: pass
+        else: raise AssertionError("mismatched taxonomy accepted")
+        metadata.write_text("task: detect\nnames: {0: vehicle}\n")
+        weights.write_bytes(b"different weights")
+        try: validate_detector_profile(str(metadata), str(profile), str(pipeline), "chosen")
+        except ValueError: pass
+        else: raise AssertionError("mismatched weights accepted")
+        del definition["parameters"]["properties"]["crop-config"]
+        pipeline.write_text(json.dumps({"config": {"pipelines": [definition]}}))
+        try: resolve_pipeline_name(str(pipeline), "chosen")
+        except ValueError: pass
+        else: raise AssertionError("missing crop contract accepted")
+    with tempfile.TemporaryDirectory() as tmp:
+        ing = _ingest(tmp)
+        assert ing.initial_feed_reason(ing.started_at + 1) == "starting"
+        assert ing.initial_feed_reason(ing.started_at + 181) == "no_signal_yet"
+        ing.conn.close()
+    from unittest.mock import patch
+    import os
+    with patch.dict(os.environ, {"BACKEND_DEMO_CAMERAS": "2"}):
+        cfg = load_config(str(Path(__file__).resolve().parent.parent / "config/backend/backend.yaml"))
+        assert [s["stream_id"] for s in cfg["streams"] if s["enabled"]] == ["cam1", "cam2"]
+
 
 
 if __name__ == "__main__":

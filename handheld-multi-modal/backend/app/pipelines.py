@@ -8,6 +8,7 @@ the camera's MediaMTX peer ID.
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import re
 import shlex
@@ -35,18 +36,24 @@ PIPELINE = f"user_defined_pipelines/{DEFAULT_PIPELINE_NAME}"
 
 def resolve_pipeline_name(path: str = PIPELINE_CONFIG_PATH, override: str | None = None) -> str:
     """Name of the single pipeline definition the deployed DLSPS config declares."""
-    if override:
-        name = override
-    else:
-        body = json.loads(Path(path).read_text())
-        names = [entry["name"] for entry in body["config"]["pipelines"]]
-        if len(names) != 1:
-            raise ValueError(
-                f"expected exactly one DLSPS pipeline definition in {path}, found {names}; "
-                "set dlsps_pipeline_name in backend.yaml to choose one")
-        name = names[0]
+    body = json.loads(Path(path).read_text())
+    definitions = body["config"]["pipelines"]
+    names = [entry["name"] for entry in definitions]
+    if not override and len(names) != 1:
+        raise ValueError(f"select dlsps_pipeline_name from {names}")
+    name = override if override is not None else names[0]
     if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", name):
         raise ValueError(f"unusable DLSPS pipeline name {name!r}")
+    if names.count(name) != 1:
+        raise ValueError(f"DLSPS pipeline {name!r} must occur exactly once in {path}; available: {names}")
+    definition = next(entry for entry in definitions if entry["name"] == name)
+    properties = definition.get("parameters", {}).get("properties", {})
+    for required in ("crop-config", "model_instance"):
+        if properties.get(required, {}).get("type") != "string":
+            raise ValueError(f"DLSPS pipeline {name!r} must accept string parameter {required!r}")
+    required = set(definition.get("parameters", {}).get("required", []))
+    if required - {"crop-config", "model_instance"}:
+        raise ValueError(f"DLSPS pipeline {name!r} requires unsupported parameters: {sorted(required)}")
     return name
 
 
@@ -56,34 +63,44 @@ def configure(name: str) -> None:
     PIPELINE = f"user_defined_pipelines/{name}"
 
 
-def detector_taxonomy_warning(metadata_path: str, path: str = PIPELINE_CONFIG_PATH) -> str | None:
-    """Flag a class taxonomy that does not describe the model the pipeline runs.
+def validate_detector_profile(metadata_path: str, profile_path: str,
+                              path: str = PIPELINE_CONFIG_PATH, name: str | None = None) -> None:
+    """Bind the selected pipeline to approved weights and ordered class metadata."""
+    name = resolve_pipeline_name(path, name)
+    body = json.loads(Path(path).read_text())
+    definition = next(p for p in body["config"]["pipelines"] if p["name"] == name)
+    detectors = [part for part in definition["pipeline"].split("!") if "gvadetect " in part]
+    if len(detectors) != 1:
+        raise ValueError("detector profile requires exactly one declared gvadetect stage")
+    properties = dict(token.split("=", 1) for token in shlex.split(detectors[0]) if "=" in token)
+    profile = json.loads(Path(profile_path).read_text())
+    if properties.get("model") != profile["pipeline_model"]:
+        raise ValueError("selected pipeline model does not match the approved detector profile")
+    metadata = yaml.safe_load(Path(metadata_path).read_text())
+    names = metadata.get("names")
+    if isinstance(names, dict):
+        keys = sorted(names, key=lambda key: int(key))
+        if [int(key) for key in keys] != list(range(len(keys))):
+            raise ValueError("detector class IDs must match the approved zero-based taxonomy")
+        names = [names[key] for key in keys]
+    if metadata.get("task") != "detect" or names != profile["classes"]:
+        raise ValueError("detector class metadata does not match the approved model taxonomy")
+    model = Path(profile["pipeline_model"])
+    required_files = {model.name, model.with_suffix(".bin").name}
+    if not profile["artifact_sets"] or any(set(approved) != required_files for approved in profile["artifact_sets"]):
+        raise ValueError("detector profile must pin both IR model and weights")
+    directory = Path(metadata_path).parent
+    actual = {}
+    for filename in {filename for approved in profile["artifact_sets"] for filename in approved}:
+        if Path(filename).name != filename:
+            raise ValueError("detector profile artifact must be a filename")
+        with (directory / filename).open("rb") as handle:
+            actual[filename] = hashlib.file_digest(handle, "sha256").hexdigest()
+    if not any(approved and all(actual[file] == digest for file, digest in approved.items())
+               for approved in profile["artifact_sets"]):
+        raise ValueError("detector artifacts do not match approved profile digests")
 
-    The detector model lives in the pipeline string while its class names are
-    mounted separately from the export directory. When those two are changed
-    out of step the divergence is otherwise silent: the assistant offers
-    classes the detector can never emit and refuses classes it does emit.
-    Reported rather than fatal, because a naming heuristic must not be able to
-    stop a working deployment from starting.
-    """
-    try:
-        body = json.loads(Path(path).read_text())
-        element = next(part for part in body["config"]["pipelines"][0]["pipeline"].split("!")
-                       if "gvadetect " in part)
-        model = next(token.split("=", 1)[1] for token in shlex.split(element)
-                     if token.startswith("model="))
-        metadata = yaml.safe_load(Path(metadata_path).read_text())
-    except (OSError, ValueError, KeyError, IndexError, StopIteration, yaml.YAMLError) as exc:
-        return f"detector taxonomy could not be cross-checked against the pipeline: {exc}"
-    described = str(metadata.get("description", "")).lower()
-    stem = Path(model).stem.lower()
-    if stem and stem not in described:
-        return (f"pipeline runs {model!r} but the mounted class taxonomy describes "
-                f"{metadata.get('description')!r}; classes may not match detections")
-    if metadata.get("task") != "detect":
-        return (f"mounted class taxonomy declares task {metadata.get('task')!r}, "
-                "which is not an object detector")
-    return None
+
 # Every camera needs its own crop store: the producer holds an exclusive flock
 # on <output_dir>/.lock, so a shared directory would fail the second pipeline.
 CROP_CONFIG_DIR = "/opt/handheld-crops-config"

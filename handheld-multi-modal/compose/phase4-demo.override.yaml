@@ -13,9 +13,11 @@ services:
     volumes:
       - ${ASSET_ROOT:?set ASSET_ROOT}/data/chatqna/model_cache:/tmp/model_cache
   backend:
+    environment:
+      BACKEND_DEMO_CAMERAS: ${CAMERAS:-3}
     volumes:
       - ../config/backend/backend.yaml:/config/backend.yaml:ro
-      - ${ASSET_ROOT:?set ASSET_ROOT}/data/dlsps/yolo_export/yolo11s_int8_openvino_model/metadata.yaml:/config/detector/metadata.yaml:ro
+      - ${ASSET_ROOT:?set ASSET_ROOT}/data/dlsps/yolo_export/yolo11s_int8_openvino_model:/config/detector:ro
       - ${ASSET_ROOT:?set ASSET_ROOT}/data/backend:/data
       - ${ASSET_ROOT:?set ASSET_ROOT}/data/dlsps/crops:/crops
       - ../scripts/dlsps/crop_candidates.py:/opt/handheld-crops/crop_candidates.py:ro

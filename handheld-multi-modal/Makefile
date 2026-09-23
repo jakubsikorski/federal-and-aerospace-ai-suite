@@ -4,7 +4,7 @@ SHELL := /bin/bash
 .ONESHELL:
 .DEFAULT_GOAL := help
 
-CAMERAS ?= 2
+CAMERAS ?= 3
 ASSET_ROOT ?= $(CURDIR)
 export ASSET_ROOT := $(abspath $(ASSET_ROOT))
 export WAIT_SECONDS ?= 360
@@ -21,7 +21,7 @@ TLS_DIR := $(ASSET_ROOT)/config/tls
 ASSET_COMPOSE := docker compose -f compose/bootstrap-compose.yaml
 DEMO_COMPOSE := $(ASSET_COMPOSE) -f compose/cameras.yaml -f compose/phase4-demo.override.yaml -f "$(ASSET_ROOT)/config/devices.yaml"
 
-.PHONY: help asset-permissions tls model-downloader-up demo demo-assets demo-preflight demo-setup demo-up demo-stop demo-mission demo-restart demo-down demo-status cameras cameras-down health test test-ui test-assets test-phase5
+.PHONY: help asset-permissions tls model-downloader-up demo demo-assets demo-preflight demo-setup demo-up demo-stop demo-mission demo-pipelines-restart demo-restart demo-down demo-status cameras cameras-down health test test-ui test-assets test-phase5
 help:
 	@echo 'make demo          Download assets, prepare device, start and check the entire stack'
 	@echo 'make demo-assets   Download YOLO11s INT8 through Model Download and the pinned video'
@@ -30,6 +30,7 @@ help:
 	@echo 'make demo-stop     Stop all application services (including stuck pipelines)'
 	@echo 'make demo-mission  Load the synthetic demo mission packet for Mission answers'
 	@echo 'make demo-restart  Restart all services and verify application'
+	@echo 'make demo-pipelines-restart  Restart Backend and DLSPS; keep language models loaded'
 	@echo 'make demo-down     Remove application containers; preserve assets and history'
 	@echo 'make demo-status  Show containers and camera feeds'
 	@echo 'make test-phase5  Verify typed history against the running full demo'
@@ -182,6 +183,7 @@ demo-up: demo-setup
 	$(DEMO_COMPOSE) run --rm --no-deps --entrypoint python3 \
 	  -v "$(CURDIR)/scripts:/bootstrap/scripts:ro" \
 	  -v "$(CURDIR)/config/model-download:/bootstrap/config/model-download:ro" \
+	  -v "$(CURDIR)/config/dlsps/detector-profile.json:/bootstrap/config/dlsps/detector-profile.json:ro" \
 	  -e PYTHONPATH=/bootstrap/scripts chatqna -c 'import pathlib,yaml; from demo_assets import repair_chat_cache; models=yaml.safe_load(pathlib.Path("/tmp/model_config/config.yaml").read_text())["model_settings"]; repair_chat_cache(pathlib.Path("/tmp/model_cache"), [models[role + "_MODEL_ID"] for role in ("LLM", "EMBEDDING", "RERANKER")])'
 
 	$(DEMO_COMPOSE) stop cam1 cam2 cam3 cam4
@@ -240,6 +242,19 @@ demo-mission:
 	  -F "files=@$$packet;type=application/pdf" | python3 -m json.tool
 	printf 'Demo mission packet loaded. Open Mission in the UI to see the brief.\n'
 
+# DLSPS must stop with Backend: a failed publisher can retain crop locks.
+demo-pipelines-restart:
+	@$(readiness)
+	$(DEMO_COMPOSE) stop backend dlsps
+	$(DEMO_COMPOSE) up -d --no-deps dlsps
+	wait_for "DLSPS" curl -fsS --max-time 5 http://127.0.0.1:8080/pipelines
+	$(DEMO_COMPOSE) up -d --no-deps backend
+	wait_for "Backend through TLS proxy" curl -skfsS --max-time 5 https://127.0.0.1:8443/api/streams
+	streams=(); paths=()
+	for ((i = 1; i <= CAMERAS; i++)); do streams+=("cam$$i"); paths+=("annotated$$i"); done
+	wait_for "Backend MQTT feed state" feeds_ready "$$(IFS=,; echo "$${streams[*]}")"
+	wait_for "annotated WebRTC publishers" paths_ready "$$(IFS=,; echo "$${paths[*]}")"
+
 # Restart every application service; reuse verified models and retained caches.
 demo-restart: demo-stop demo-up
 
@@ -260,7 +275,7 @@ health:
 	curl -skf --max-time 5 https://127.0.0.1:8443/api/health | python3 -m json.tool
 
 test:
-	$(DEMO_COMPOSE) exec -T backend python3 test_backend.py
+	docker run --rm --network none -v "$(CURDIR):/srv" -w /srv/backend handheld/backend:dev python3 test_backend.py
 
 test-assets:
 	python3 scripts/test_demo_assets.py

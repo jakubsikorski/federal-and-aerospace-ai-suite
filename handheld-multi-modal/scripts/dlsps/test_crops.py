@@ -13,9 +13,11 @@ from types import SimpleNamespace
 import uuid
 import weakref
 
+from unittest.mock import patch
+
 import cv2
 import numpy as np
-from crop_candidates import CropCandidates, OwnershipLost, Settings, Store, crop_rect
+from crop_candidates import CropCandidates, OwnershipLost, Settings, Store, crop_rect, json_observations, observations, bgr_crop, frame_planes, mapped_planes
 from crop_probe import CropProbe
 
 
@@ -38,9 +40,26 @@ class Frame:
     def __init__(self, ids, broken=False):
         self.ids, self.broken = ids, broken
         self.maps = 0
-        self.text = [json.dumps({"objects": [{"id": i} for i in ids], "frame_id": 42})]
+        self.text = [json.dumps({"objects": [{"id": i, "region_id": 77,
+            "x": 30, "y": 30, "w": 30, "h": 40, "roi_type": "person",
+            "detection": {"label": "person", "confidence": 0.9},
+            "custom_classifier": {"label": "example", "confidence": 0.8}}
+            for i in ids], "frame_id": 42})]
     def video_info(self):
-        return SimpleNamespace(width=120, height=100, finfo=SimpleNamespace(name="BGR"))
+        return SimpleNamespace(width=120, height=100, finfo=SimpleNamespace(name="BGR", n_planes=1),
+                               n_planes=1, offset=[0], stride=[360])
+    def video_meta(self):
+        return None
+    @property
+    def _VideoFrame__buffer(self):
+        from gi.repository import Gst
+        Gst.init(None)
+        self.maps += 1
+        if self.broken:
+            raise RuntimeError("injected map failure")
+        pixels = np.zeros((100, 120, 3), dtype=np.uint8)
+        pixels[30:70, 30:60] = (20, 180, 240)
+        return Gst.Buffer.new_wrapped(pixels.tobytes())
     def regions(self):
         return (ROI(i) for i in self.ids)
     def messages(self):
@@ -91,7 +110,7 @@ def takeover_checks():
                         old.last_report = 0
                         old.process_frame(Frame([1]))
                         assert current.store.status.read_bytes() == before
-                        for operation in (old.store.heartbeat, old.store.maintain,
+                        for operation in (old.store.heartbeat, old.store.maintain, old.store.expire,
                                           lambda: old.store.save({}, b''),
                                           lambda: old.store.publish_one(None)):
                             try:
@@ -143,12 +162,11 @@ def takeover_checks():
         old = make(Path(temporary), takeover_seconds=1)
         entered, release = threading.Event(), threading.Event()
         class SlowFrame(Frame):
-            @contextmanager
-            def data(self):
+            @property
+            def _VideoFrame__buffer(self):
                 entered.set()
                 assert release.wait(5)
-                with super().data() as pixels:
-                    yield pixels
+                return super()._VideoFrame__buffer
         callback = threading.Thread(target=old.process_frame, args=(SlowFrame([1]),))
         replacement = None
         try:
@@ -172,7 +190,213 @@ def takeover_checks():
     print('PASS: takeover during frame mapping releases reserved pixels')
 
 
+
+def limited_conversion_checks():
+    rng = np.random.default_rng(12)
+    width, height = 120, 100
+    rectangles = [(0,0,1,1), (119,99,1,1), (1,3,37,29), (0,0,120,100),
+                  (3,5,117,95), (30,30,30,40)]
+    rectangles += [(x,y,int(rng.integers(1,width-x+1)),int(rng.integers(1,height-y+1)))
+                   for x,y in zip(rng.integers(0,width,30), rng.integers(0,height,30))]
+    for fmt, channels in (("BGR",3), ("BGRA",4), ("BGRx",4), ("NV12",1), ("I420",1)):
+        shape = (height,width,channels) if channels > 1 else (height*3//2,width,1)
+        data = rng.integers(0,256,shape,dtype=np.uint8)
+        info = SimpleNamespace(width=width,height=height,finfo=SimpleNamespace(name=fmt))
+        code = {"BGRA":cv2.COLOR_BGRA2BGR,"BGRx":cv2.COLOR_BGRA2BGR,
+                "NV12":cv2.COLOR_YUV2BGR_NV12,"I420":cv2.COLOR_YUV2BGR_I420}.get(fmt)
+        reference = data if code is None else cv2.cvtColor(data if channels > 1 else data.reshape(height*3//2,width),code)
+        if fmt == "NV12":
+            layout = SimpleNamespace(n_planes=2,offset=[0,width*height],stride=[width,width])
+        elif fmt == "I420":
+            layout = SimpleNamespace(n_planes=3,offset=[0,width*height,width*height*5//4],stride=[width,width//2,width//2])
+        else:
+            layout = SimpleNamespace(n_planes=1,offset=[0],stride=[width*channels])
+        planes = frame_planes(data,info,layout)
+        for rect in rectangles:
+            x,y,w,h = rect
+            crop = bgr_crop(planes,info,rect)
+            assert np.array_equal(crop,reference[y:y+h,x:x+w]), (fmt,rect)
+            assert crop.flags.owndata and crop.nbytes == w*h*3
+            assert not np.shares_memory(crop,data)
+        if channels == 1:
+            convert = cv2.cvtColor
+            with patch("cv2.cvtColor", wraps=convert) as tracked:
+                crop = bgr_crop(planes,info,(1,3,37,29))
+                assert tracked.call_args.args[0].shape == (30*3//2,38)
+        offsets, strides, cursor = [], [], 7
+        for plane in planes:
+            offsets.append(cursor); strides.append(plane.shape[1]+8)
+            cursor += (plane.shape[0]+2)*strides[-1]
+        raw = np.full(cursor,199,dtype=np.uint8)
+        for plane,offset,stride in zip(planes,offsets,strides):
+            target = np.ndarray(plane.shape,dtype=np.uint8,buffer=raw,offset=offset,strides=(stride,1))
+            target[:] = plane
+        padded_layout = SimpleNamespace(n_planes=len(planes),offset=offsets,stride=strides)
+        padded = frame_planes(raw,info,padded_layout)
+        assert all(np.shares_memory(plane,raw) for plane in padded)
+        for rect in rectangles:
+            x,y,w,h=rect
+            assert np.array_equal(bgr_crop(padded,info,rect),reference[y:y+h,x:x+w]),(fmt,rect)
+        # Exercise the real pinned GStreamer mapping API with padded metadata.
+        import gi
+        gi.require_version("Gst", "1.0")
+        gi.require_version("GstVideo", "1.0")
+        from gi.repository import Gst, GstVideo
+        from gstgva import VideoFrame
+        Gst.init(None)
+        caps=Gst.Caps.from_string(f"video/x-raw,format={fmt},width={width},height={height},framerate=30/1")
+        real_info=GstVideo.VideoInfo.new_from_caps(caps)
+        buffer=Gst.Buffer.new_wrapped(raw.tobytes())
+        GstVideo.buffer_add_video_meta_full(buffer,GstVideo.VideoFrameFlags.NONE,
+            real_info.finfo.format,width,height,len(planes),
+            offsets+[0]*(4-len(offsets)),strides+[0]*(4-len(strides)))
+        real_frame=VideoFrame(buffer,video_info=real_info)
+        with patch.object(VideoFrame,"data",side_effect=AssertionError("full-frame repack")):
+            with mapped_planes(real_frame,real_info) as mapped:
+                for rect in rectangles:
+                    x,y,w,h=rect
+                    assert np.array_equal(bgr_crop(mapped,real_info,rect),reference[y:y+h,x:x+w]),(fmt,rect)
+        for bad in (SimpleNamespace(n_planes=len(planes),offset=offsets,stride=[1]*len(planes)),
+                    SimpleNamespace(n_planes=len(planes),offset=[-1]*len(planes),stride=strides),
+                    SimpleNamespace(n_planes=len(planes),offset=[raw.nbytes]*len(planes),stride=strides)):
+            try:
+                frame_planes(raw,info,bad)
+                raise AssertionError("unsafe plane layout accepted")
+            except ValueError:
+                pass
+        data[:] = 0
+        assert crop.any(), "crop retained mapped frame memory"
+    print("PASS: region-only conversion matches full-frame BGR/BGRA/BGRx/NV12/I420, odd edges, owned exact-size pixels")
+
+
+def optimization_checks():
+    frame = Frame([None, 1, 2])
+    objects = json.loads(frame.text[0])["objects"]
+    assert list(json_observations(objects)) == list(observations(frame))
+    invalid = [None, {}, dict(objects[1], x=1.5), dict(objects[1],
+               detection={"confidence": float("nan")})]
+    assert list(json_observations(invalid)) == []
+    with tempfile.TemporaryDirectory() as temporary:
+        producer = make(Path(temporary), rate=0.01, burst=1)
+        try:
+            with patch.object(Frame, "regions", side_effect=AssertionError("native ROI traversal")):
+                producer.process_frame(frame)
+                assert not producer.stats["callback_errors"], producer.stats
+                assert json.loads(frame.text[0])["objects"] == objects
+                producer.tokens = 0
+                with patch("crop_candidates.crop_rect", side_effect=AssertionError("budget exhausted")):
+                    producer.process_frame(Frame([1, 2, 3]))
+                assert not producer.stats["callback_errors"], producer.stats
+                assert producer.tracks[2]["seen"] == 2 and 3 in producer.tracks
+        finally:
+            producer.close()
+
+    # Even a blocked heartbeat must not block process_frame. Its timestamp is
+    # the frame's progress time, not the delayed worker's write time.
+    with tempfile.TemporaryDirectory() as temporary:
+        producer = make(Path(temporary))
+        entered, release = threading.Event(), threading.Event()
+        heartbeat = producer.store.heartbeat
+        caller = []
+        def blocked_heartbeat(*args, **kwargs):
+            caller.append(threading.current_thread())
+            entered.set()
+            assert release.wait(3)
+            return heartbeat(*args, **kwargs)
+        producer.store.heartbeat = blocked_heartbeat
+        producer.last_report = 0
+        callback = threading.Thread(target=producer.process_frame, args=(Frame([]),))
+        try:
+            callback.start()
+            assert entered.wait(2)
+            callback.join(timeout=1)
+            assert not callback.is_alive(), "heartbeat blocks video callback"
+            assert caller == [producer.worker]
+        finally:
+            release.set()
+            callback.join(timeout=3)
+            producer.close()
+
+    with tempfile.TemporaryDirectory() as temporary:
+        settings = Settings(output_dir=temporary, mqtt_host="unused")
+        store = Store(settings)
+        live, expired = uuid.uuid4().hex, uuid.uuid4().hex
+        store.save({"storage_key": live+".jpg", "expires_at": time.time()+100}, b"image")
+        store.save({"storage_key": expired+".jpg", "expires_at": 0}, b"expired")
+        store.close()
+        store = Store(settings)
+        class Result:
+            rc = 0
+            def is_published(self):
+                return True
+        client = SimpleNamespace(is_connected=lambda: True, publish=lambda *a, **k: Result())
+        try:
+            assert list(store.outbox) == [live] and store.count == 1
+            # Add an expired entry after recovery, so expire must use the index.
+            store.save({"storage_key": expired+".jpg", "expires_at": 0}, b"expired")
+            with patch.object(Path, "iterdir", side_effect=AssertionError("directory scan")), \
+                 patch.object(Path, "glob", side_effect=AssertionError("outbox scan")):
+                store.expire()
+                assert store.count == 1 and expired not in store.outbox
+                store.publish_one(client)
+                assert store.publish_one(client)
+                assert not store.outbox and not store.publish_one(client)
+            assert (store.root / (live+".json")).exists()
+            stamp = time.time() - 20
+            store.heartbeat({"frames": 1}, observed_at=stamp)
+            assert abs(store.status.stat().st_mtime - stamp) < 0.001
+            assert json.loads(store.status.read_text())["updated_at"] == stamp
+        finally:
+            store.close()
+    print("PASS: JSON/native identity equivalence, metadata preservation, early budget gate, indexed outbox/expiry, asynchronous frame-timed heartbeat")
+
+
+
+def failure_safety_checks():
+    with tempfile.TemporaryDirectory() as root:
+        store=Store(Settings(output_dir=root,store_bytes=1000,free_disk_bytes=0))
+        try:
+            for _ in range(2):
+                store.save({"storage_key":uuid.uuid4().hex+".jpg","expires_at":time.time()+100},b"x"*100)
+            before={p.name:p.read_bytes() for p in store.root.iterdir() if p.suffix in (".jpg",".json")}
+            try:
+                store.save({"storage_key":uuid.uuid4().hex+".jpg","expires_at":time.time()+100},b"x"*2000)
+                raise AssertionError("oversized candidate accepted")
+            except ValueError:
+                pass
+            assert store.count==2 and store.evicted==0
+            assert before=={p.name:p.read_bytes() for p in store.root.iterdir() if p.suffix in (".jpg",".json")}
+        finally:
+            store.close()
+    with tempfile.TemporaryDirectory() as root:
+        # Fail writer startup without involving a real broker or production store.
+        import paho.mqtt.client as mqtt
+        with patch.object(mqtt.Client,"connect_async",side_effect=RuntimeError("injected worker failure")):
+            producer=make(Path(root),mqtt_host="unused",takeover_seconds=1)
+            replacement=None
+            try:
+                for _ in range(100):
+                    if producer.control["worker_failed"]: break
+                    time.sleep(.01)
+                assert producer.control["worker_failed"] and not producer.control["stopping"]
+                frame=Frame([1]); producer.process_frame(frame)
+                assert "crop_context" in json.loads(frame.text[0]) and frame.maps==0
+                os.utime(producer.store.status,(1,1))
+                replacement=Store(producer.c)
+                producer.worker.join(timeout=2)
+                assert not producer.worker.is_alive() and producer.store.lock.closed
+                retired=Frame([1]); producer.process_frame(retired)
+                assert "crop_context" not in json.loads(retired.text[0])
+            finally:
+                producer.close()
+                if replacement: replacement.close()
+    print("PASS: oversized admission preserves evidence; failed writer preserves observations and retires on takeover")
+
+
 def run():
+    failure_safety_checks()
+    limited_conversion_checks()
+    optimization_checks()
     takeover_checks()
     rng = random.Random(8)
     for _ in range(2000):

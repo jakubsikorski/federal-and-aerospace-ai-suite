@@ -149,9 +149,8 @@ async def lifespan(app: FastAPI):
     pipelines.configure(pipelines.resolve_pipeline_name(
         override=cfg.get("dlsps_pipeline_name")))
     log.info("DLSPS pipeline definition: %s", pipelines.PIPELINE)
-    mismatch = pipelines.detector_taxonomy_warning(cfg["detector_metadata_path"])
-    if mismatch:
-        log.warning("detector taxonomy check: %s", mismatch)
+    pipelines.validate_detector_profile(cfg["detector_metadata_path"],
+        cfg["detector_profile_path"], name=pipelines.PIPELINE.split("/")[-1])
     cfg["chat_answer_marker"] = resolve_answer_marker(
         load_prompt_template(), cfg.get("chat_answer_marker"))
     app.state.assistant = Assistant(cfg, app.state.services)
@@ -323,14 +322,14 @@ def create_app() -> FastAPI:
     @app.get("/api/streams/{stream_id}/tracks")
     def tracks(request: Request, stream_id: str, limit: int = 50,
                since_utc: str | None = None, classes: str | None = None,
-               has_image: bool = False):
+               has_image: bool = False, prioritize: bool = True):
         _known(request, stream_id)
         state = request.app.state
         with read_connection(request) as conn:
             return envelope(history.recent(conn, state.ingest, state.cfg, stream_id,
                                            limit=limit, since_utc=since_utc,
                                            class_labels=track_classes(classes),
-                                           has_image=has_image))
+                                           has_image=has_image, prioritize=prioritize))
 
     @app.get("/api/tracks/{track_id}/candidates")
     def track_candidates(request: Request, track_id: int):
@@ -541,7 +540,7 @@ def create_app() -> FastAPI:
 
     @app.get("/api/stream")
     async def live_stream(request: Request, classes: str | None = None,
-                          has_image: bool = False):
+                          has_image: bool = False, prioritize: bool = True):
         """Current-state SSE. Reconnect is a full resync; no replay ring exists."""
         class_labels = track_classes(classes)
 
@@ -557,6 +556,8 @@ def create_app() -> FastAPI:
                     state = request.app.state
                     feeds = state.ingest.snapshot()
                     for stream in state.cfg["streams"]:
+                        if not stream.get("enabled", True):
+                            continue
                         stream_id = stream["stream_id"]
                         feed = feeds.get(stream_id, {"ok": None, "reason": "unknown"})
                         yield _event("feed", {"stream_id": stream_id, "feed": feed})
@@ -566,7 +567,7 @@ def create_app() -> FastAPI:
                                 conn, state.ingest, state.cfg, stream_id),
                             "recent": history.recent(
                                 conn, state.ingest, state.cfg, stream_id, limit=50,
-                                class_labels=class_labels, has_image=has_image),
+                                class_labels=class_labels, has_image=has_image, prioritize=prioritize),
                         })
                     yield _event("alert", {
                         "stream_id": None,

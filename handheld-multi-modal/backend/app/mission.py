@@ -49,7 +49,6 @@ BRIEF_QUESTIONS = {
     "dependencies": "What does the mission depend on or coordinate with?",
     "risks": "What risks or hazards does the mission identify?",
 }
-MAX_BRIEF_FIELD_CHARS = 500
 MAX_FILENAME = 128
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 MAX_PDF_PAGES = 200
@@ -609,16 +608,10 @@ class MissionService:
             brief = {}
             for field in BRIEF_FIELDS:
                 answer = self._complete(_brief_prompt(field)).strip()
-                # The model paraphrases the sentinel ("not specified in the
-                # given context"), which reads as content in a field list.
-                # Only short answers are folded back, so a substantive answer
-                # that merely mentions the phrase is preserved.
-                if len(answer) <= 120 and NOT_SPECIFIED.lower() in answer.lower():
+                # Preserve mixed known/unknown facts and the complete generated text.
+                # Only an exact absence answer is safe to normalize.
+                if answer.rstrip(".").casefold() == NOT_SPECIFIED.casefold():
                     answer = NOT_SPECIFIED
-                # A wordy answer to one field must not discard the whole brief;
-                # clamp it and keep the other seven fields the operator asked for.
-                if len(answer) > MAX_BRIEF_FIELD_CHARS:
-                    answer = answer[:MAX_BRIEF_FIELD_CHARS].rsplit(" ", 1)[0] + "…"
                 brief[field] = answer or NOT_SPECIFIED
         except (MissionError, ValueError, TypeError) as exc:
             log.warning("mission brief generation failed: %s", exc)

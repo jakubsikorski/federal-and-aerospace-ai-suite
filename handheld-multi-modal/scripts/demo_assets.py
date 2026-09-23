@@ -21,14 +21,9 @@ SOURCE = "c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9"
 EXPORT_SCRIPT = "4d22f42ffe1df79800dc2ef1749f7e37f3d47bf1"
 VIDEO_URL = f"https://raw.githubusercontent.com/open-edge-platform/edge-ai-libraries/{SOURCE}/microservices/dlstreamer-pipeline-server/resources/videos/classroom.avi"
 VIDEO_SHA = "ca6d1b53d54a40ffda9d4ca1d0ab0cc43f744583324aaf97146c820e2b62a2fa"
-LEGACY_HASHES = {
-    "yolo11s.xml": "61e8501fa5a11fa012921d5f7c65f0ff05fa78f2d2bf0a37fc1fe7fdf8630d45",
-    "yolo11s.bin": "8bb1f5d1b46de8c09fe26d0379072cfddf847e4d627696ccd59374b4a623d51d",
-}
-APPROVED_HASHES = (LEGACY_HASHES, {
-    "yolo11s.xml": "fe835c8f856f48d43a2f7fe36ec5abbedded776a1d64e234a01e3e9e32d82d79",
-    "yolo11s.bin": "5ece73c778c60c6164bc71cc8ca6b6ac1a413c91587d78d9202cf09cbde3613f",
-})
+APPROVED_HASHES = tuple(json.loads(
+    (REPO / "config/dlsps/detector-profile.json").read_text())["artifact_sets"])
+LEGACY_HASHES = APPROVED_HASHES[0]
 FILES = (*LEGACY_HASHES, "metadata.yaml")
 MODEL_DIR = Path("data/dlsps/yolo_export/yolo11s_int8_openvino_model")
 API = "http://127.0.0.1:8200/api/v1"

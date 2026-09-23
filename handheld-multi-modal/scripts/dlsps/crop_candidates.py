@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bounded contextual crop callback for gvapython. See README.md for placement."""
 import argparse
-from collections import Counter, OrderedDict, deque
+from collections import Counter, OrderedDict
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 import fcntl
@@ -134,6 +134,85 @@ def bgr_frame(frame, max_pixels):
         yield pixels
 
 
+
+def frame_planes(data, info, layout):
+    """Bounded zero-copy plane views over a mapped buffer, including row padding."""
+    import numpy as np
+    width, height, fmt = info.width, info.height, info.finfo.name
+    if width <= 0 or height <= 0:
+        raise ValueError("invalid frame dimensions")
+    if fmt in ("NV12", "I420"):
+        if width % 2 or height % 2:
+            raise ValueError("YUV420 requires even dimensions")
+        shapes = [(height, width), (height//2, width)] if fmt == "NV12" else [
+            (height, width), (height//2, width//2), (height//2, width//2)]
+    elif fmt in ("BGR", "BGRA", "BGRx"):
+        shapes = [(height, width * (3 if fmt == "BGR" else 4))]
+    else:
+        raise ValueError(f"unsupported frame format: {fmt}")
+    size = memoryview(data).nbytes
+    planes = []
+    if int(layout.n_planes) != len(shapes):
+        raise ValueError("plane count does not match format")
+    for index, (rows, columns) in enumerate(shapes):
+        offset, stride = int(layout.offset[index]), int(layout.stride[index])
+        if offset < 0 or stride < columns or offset + (rows-1)*stride + columns > size:
+            raise ValueError("plane exceeds mapped buffer or has unsupported stride")
+        plane = np.ndarray((rows, columns), dtype=np.uint8, buffer=data,
+                           offset=offset, strides=(stride, 1))
+        plane.flags.writeable = False
+        planes.append(plane)
+    return planes
+
+
+@contextmanager
+def mapped_planes(frame, info):
+    import gi
+    gi.require_version("Gst", "1.0")
+    from gi.repository import Gst
+    from gstgva.util import gst_buffer_data
+    # Pinned gstgva exposes no public raw-buffer accessor. Isolate this access;
+    # unlike frame.data(), it does not repack entire padded frames.
+    with gst_buffer_data(frame._VideoFrame__buffer, Gst.MapFlags.READ) as data:
+        layout = frame.video_meta()
+        if layout is None:
+            layout = SimpleNamespace(n_planes=info.finfo.n_planes, offset=info.offset, stride=info.stride)
+        yield frame_planes(data, info, layout)
+
+
+def bgr_crop(planes, info, rect):
+    """Own an exact BGR crop; convert only a chroma-aligned region for YUV420."""
+    import cv2
+    import numpy as np
+    x, y, w, h = rect
+    width, height, fmt = info.width, info.height, info.finfo.name
+    if w <= 0 or h <= 0 or x < 0 or y < 0 or x+w > width or y+h > height:
+        raise ValueError("crop outside frame")
+    if fmt in ("BGR", "BGRA", "BGRx"):
+        channels = 3 if fmt == "BGR" else 4
+        crop = planes[0][y:y+h, x*channels:(x+w)*channels].reshape(h, w, channels)
+        return crop.copy() if channels == 3 else cv2.cvtColor(crop, cv2.COLOR_BGRA2BGR)
+    if fmt not in ("NV12", "I420") or width % 2 or height % 2:
+        raise ValueError(f"unsupported crop format or dimensions: {fmt}")
+    # Include complete 2x2 chroma blocks, then trim back to the original rect.
+    left, top = x & ~1, y & ~1
+    right, bottom = (x+w+1) & ~1, (y+h+1) & ~1
+    cw, ch = right-left, bottom-top
+    packed = np.empty((ch * 3 // 2, cw), dtype=np.uint8)
+    packed[:ch] = planes[0][top:bottom, left:right]
+    if fmt == "NV12":
+        packed[ch:] = planes[1][top//2:bottom//2, left:right]
+        code = cv2.COLOR_YUV2BGR_NV12
+    else:
+        chroma = packed.reshape(-1)[cw*ch:].reshape(2, ch//2, cw//2)
+        for index, plane in enumerate(planes[1:]):
+            chroma[index] = plane[top//2:bottom//2, left//2:right//2]
+        code = cv2.COLOR_YUV2BGR_I420
+    converted = cv2.cvtColor(packed, code)
+    # Exact allocation: queued bytes exclude alignment padding and borrowed views.
+    return converted[y-top:y-top+h, x-left:x-left+w].copy()
+
+
 def observations(frame):
     for roi in frame.regions():
         try:
@@ -144,6 +223,23 @@ def observations(frame):
             yield {"tracker_id": roi.object_id(), "region_id": roi.region_id(),
                    "label": roi.label(), "confidence": confidence, "detection_rect": box}
         except (ValueError, RuntimeError, TypeError):
+            continue
+
+
+def json_observations(objects):
+    """Use gvametaconvert's pixel rectangle, never its normalized detection box."""
+    for obj in objects:
+        try:
+            box = tuple(obj[key] for key in ("x", "y", "w", "h"))
+            detection = obj["detection"]
+            confidence = float(detection["confidence"])
+            if (not all(isinstance(v, int) and not isinstance(v, bool) for v in box)
+                    or not math.isfinite(confidence) or not 0 <= confidence <= 1):
+                continue
+            yield {"tracker_id": obj.get("id"), "region_id": obj["region_id"],
+                   "label": obj.get("roi_type", detection.get("label", "")),
+                   "confidence": confidence, "detection_rect": box}
+        except (KeyError, ValueError, TypeError, AttributeError):
             continue
 
 
@@ -196,7 +292,8 @@ class Store:
         self.evicted = 0
         # Creation-ordered candidate stems, so rotation never scans the
         # directory. maintain() rebuilds it from disk whenever it walks.
-        self.order = deque()
+        self.order = OrderedDict()  # stem -> expiry, in creation order
+        self.outbox = OrderedDict()  # pending stems, recovered at startup
         self.lock = None
         self._mutex = threading.RLock()
         self._operation_fd = None
@@ -281,18 +378,22 @@ class Store:
         raise RuntimeError(f"could not take over {self.root}")
 
     @owned_operation
-    def heartbeat(self, stats=None):
+    def heartbeat(self, stats=None, observed_at=None):
         """Liveness plus the counters that never reach MQTT (D17)."""
+        stamp = time.time() if observed_at is None else observed_at
         atomic_write(self.status, json.dumps({
             "stream_id": self.settings.stream_id,
             "generation": self.generation,
-            "updated_at": time.time(),
+            "updated_at": stamp,
             "stats": dict(stats or {}),
         }, allow_nan=False).encode())
+        # Queued reports must not make a stalled frame producer look alive.
+        os.utime(self.status, (stamp, stamp))
 
     @owned_operation
     def maintain(self):
         now = time.time()
+        events = {}
         for path in self.root.iterdir():
             if re.fullmatch(r"[a-f0-9]{32}\.(jpg|json|pending)\.tmp", path.name):
                 path.unlink()
@@ -305,6 +406,8 @@ class Store:
                 if event["expires_at"] <= now:
                     path.with_suffix(".jpg").unlink(missing_ok=True)
                     path.unlink()
+                else:
+                    events[path.stem] = event["expires_at"]
         files = list(self.root.iterdir())
         self.bytes = sum(p.stat().st_size for p in files if p.is_file())
         self.count = sum(p.suffix == ".jpg" for p in files)
@@ -313,7 +416,34 @@ class Store:
         live = sorted(
             (p.stat().st_mtime, p.stem) for p in files
             if p.suffix in (".json", ".pending") and re.fullmatch(r"[a-f0-9]{32}", p.stem))
-        self.order = deque(stem for _, stem in live)
+        self.order = OrderedDict((stem, events[stem]) for _, stem in live)
+        self.outbox = OrderedDict((p.stem, None) for p in files
+                                  if p.suffix == ".pending" and p.stem in events)
+
+    def _remove(self, stem):
+        had_image = False
+        for suffix in (".jpg", ".json", ".pending"):
+            path = self.root / (stem + suffix)
+            try:
+                size = path.stat().st_size
+                path.unlink()
+            except FileNotFoundError:
+                continue
+            self.bytes = max(0, self.bytes - size)
+            if suffix == ".jpg":
+                had_image = True
+                self.count = max(0, self.count - 1)
+        self.order.pop(stem, None)
+        self.outbox.pop(stem, None)
+        return had_image
+
+    @owned_operation
+    def expire(self):
+        now = time.time()
+        # Bounded by store_candidates; no disk reads for unexpired entries.
+        for stem, expiry in list(self.order.items()):
+            if expiry <= now:
+                self._remove(stem)
 
     def _evict(self, needed):
         """Rotate the store: drop the oldest candidates to make room for a new one.
@@ -324,8 +454,8 @@ class Store:
         *oldest* evidence and discards everything happening now. Rotation makes
         the store a rolling window instead: the newest candidate always gets in.
 
-        Eviction order is the in-memory `order` deque, oldest first, so this
-        costs a pop rather than a directory scan. `maintain` rebuilds it from
+        Eviction order is the in-memory `order` index, oldest first, so this
+        uses the oldest entry rather than a directory scan. `maintain` rebuilds it from
         disk on the walk it already does, which is also what recovers the order
         after a restart or a takeover, when memory starts empty. Scanning per
         save instead would re-list, re-stat and re-sort the whole directory on
@@ -348,21 +478,8 @@ class Store:
         evicted = 0
         while self.order and (self.count >= c.store_candidates
                               or self.bytes + needed > c.store_bytes):
-            stem = self.order.popleft()
-            freed, had_image = 0, False
-            for suffix in (".jpg", ".json", ".pending"):
-                path = self.root / (stem + suffix)
-                try:
-                    size = path.stat().st_size
-                    path.unlink()
-                except OSError:
-                    continue
-                freed += size
-                had_image = had_image or suffix == ".jpg"
-            self.bytes = max(0, self.bytes - freed)
-            if had_image:
-                self.count = max(0, self.count - 1)
-                evicted += 1
+            stem = next(iter(self.order))
+            evicted += self._remove(stem)
         return evicted
 
     @owned_operation
@@ -370,6 +487,8 @@ class Store:
         payload = json.dumps(event, allow_nan=False).encode()
         size = len(encoded) + len(payload)
         c = self.settings
+        if size > c.store_bytes:
+            raise ValueError("individual crop exceeds store byte budget")
         if self.count >= c.store_candidates or self.bytes + size > c.store_bytes:
             self.evicted += self._evict(size)
         # Free space is the one limit rotation cannot fix: the shortfall is not
@@ -389,7 +508,9 @@ class Store:
         self.bytes += size
         self.count += 1
         # Newest at the right; _evict pops from the left.
-        self.order.append(image.stem)
+        self.order[image.stem] = event["expires_at"]
+        if c.mqtt_host:
+            self.outbox[image.stem] = None
 
     @owned_operation
     def publish_one(self, client):
@@ -399,16 +520,23 @@ class Store:
             if result.is_published():
                 if path.exists():
                     path.replace(path.with_suffix(".json"))
+                self.outbox.pop(path.stem, None)
                 self.delivery = None
                 return True
             return False  # Paho owns retries; do not enqueue duplicates each tick.
-        path = next(self.root.glob("*.pending"), None)
-        if path is None or client is None or not client.is_connected():
+        if not self.outbox or client is None or not client.is_connected():
             return False
-        event = json.loads(path.read_text())
-        if event["expires_at"] <= time.time():
+        stem = next(iter(self.outbox))
+        path = self.root / (stem + ".pending")
+        if self.order[stem] <= time.time():
+            self._remove(stem)
             return False
-        result = client.publish(self.settings.mqtt_topic, path.read_bytes(), qos=1, retain=False)
+        try:
+            payload = path.read_bytes()
+        except FileNotFoundError:
+            self.outbox.pop(stem, None)
+            return False
+        result = client.publish(self.settings.mqtt_topic, payload, qos=1, retain=False)
         if result.rc == 0:
             self.delivery = (path, result)
         return False
@@ -431,7 +559,7 @@ class CropCandidates:
         self.tracks = OrderedDict()
         self.jobs = OrderedDict()
         self.pending = set()
-        self.control = {"bytes": 0, "stopping": False, "store_blocked": False}  # Includes in-flight crop bytes.
+        self.control = {"bytes": 0, "stopping": False, "store_blocked": False, "report": None, "worker_failed": False}  # Includes in-flight crop bytes.
         self.condition = threading.Condition()
         self.stats = Counter()
         self.tokens = float(self.c.burst)
@@ -452,9 +580,11 @@ class CropCandidates:
                    "tracking_session_id": self.session, "generation": self.store.generation,
                    "frame_sequence": self.frame_sequence, "observed_at": time.time()}
         found = False
+        objects = []
         for message in list(frame.messages()):
             data = json.loads(message)
             if isinstance(data, dict) and ("objects" in data or "resolution" in data):
+                objects.extend(data.get("objects") or [])
                 data["crop_context"] = context
                 if "frame_id" in data:
                     context["source_frame_id"] = data["frame_id"]
@@ -463,7 +593,7 @@ class CropCandidates:
                 found = True
         if not found:
             raise ValueError("place callback after gvametaconvert: missing observation JSON")
-        return context
+        return context, objects
 
     def process_frame(self, frame):
         if self.control["stopping"]:
@@ -471,7 +601,13 @@ class CropCandidates:
         started = time.monotonic()
         self.frame_sequence += 1
         try:
-            context = self._identity(frame)
+            if self.control["worker_failed"]:
+                # Keep camera attribution after writer failure, but never after takeover.
+                with self.store.owned():
+                    pass
+            context, objects = self._identity(frame)
+            if self.control["worker_failed"]:
+                return True
             info = frame.video_info()
             eligible = []
             with self.condition:
@@ -480,10 +616,10 @@ class CropCandidates:
                 while self.tracks and next(iter(self.tracks.values()))["last"] < started - self.c.track_ttl_seconds:
                     self.tracks.popitem(last=False)
                 seen_ids = set()
-                for obs in observations(frame):
+                for obs in json_observations(objects):
                     tid = obs["tracker_id"]
                     self.stats["observations"] += 1
-                    if tid is None or not isinstance(tid, int) or tid < 0:
+                    if tid is None or not isinstance(tid, int) or isinstance(tid, bool) or tid < 0:
                         self.stats["untracked"] += 1
                         continue
                     if tid in seen_ids:
@@ -509,26 +645,38 @@ class CropCandidates:
                             or obs["confidence"] < self.c.min_confidence
                             or min(obs["detection_rect"][2:]) < self.c.min_object_pixels):
                         continue
-                    try:
-                        rect, flags = crop_rect(obs["detection_rect"], info.width, info.height,
-                                                self.c.padding, self.c.aspect_ratio)
-                    except ValueError:
-                        self.stats["invalid_box"] += 1
-                        continue
-                    eligible.append((state["saved"] > 0, state["attempt"], tid, state, obs, rect, flags))
-            # First snapshots first, then least recently attempted. No pixel work for rejected jobs.
-            eligible.sort(key=lambda item: item[:3])
-            admitted = []
-            with self.condition:
-                for _, _, tid, state, obs, rect, flags in eligible:
-                    size = rect[2] * rect[3] * 3
                     if self.control["store_blocked"]:
                         self.stats["store_limited"] += 1
                         continue
                     if self.tokens < 1:
                         self.stats["rate_limited"] += 1
                         continue
-                    if len(self.pending) >= self.c.queue_jobs or self.control["bytes"] + size > self.c.queue_bytes:
+                    if len(self.pending) >= self.c.queue_jobs or self.control["bytes"] >= self.c.queue_bytes:
+                        self.stats["queue_limited"] += 1
+                        continue
+                    eligible.append((state["saved"] > 0, state["attempt"], tid, state, obs))
+            # First snapshots first, then least recently attempted. No pixel work for rejected jobs.
+            eligible.sort(key=lambda item: item[:3])
+            admitted = []
+            with self.condition:
+                for _, _, tid, state, obs in eligible:
+                    if self.control["store_blocked"]:
+                        self.stats["store_limited"] += 1
+                        continue
+                    if self.tokens < 1:
+                        self.stats["rate_limited"] += 1
+                        continue
+                    if len(self.pending) >= self.c.queue_jobs:
+                        self.stats["queue_limited"] += 1
+                        continue
+                    try:
+                        rect, flags = crop_rect(obs["detection_rect"], info.width, info.height,
+                                                self.c.padding, self.c.aspect_ratio)
+                    except ValueError:
+                        self.stats["invalid_box"] += 1
+                        continue
+                    size = rect[2] * rect[3] * 3
+                    if self.control["bytes"] + size > self.c.queue_bytes:
                         self.stats["queue_limited"] += 1
                         continue
                     self.tokens -= 1
@@ -539,15 +687,16 @@ class CropCandidates:
             if admitted:
                 submitted = set()
                 try:
-                    with bgr_frame(frame, self.c.max_frame_pixels) as pixels:
+                    if info.width * info.height > self.c.max_frame_pixels:
+                        raise ValueError("frame exceeds max_frame_pixels")
+                    with mapped_planes(frame, info) as planes:
                         for tid, state, obs, rect, flags, size in admitted:
-                            x, y, w, h = rect
-                            copy = pixels[y:y+h, x:x+w].copy()
+                            copy = bgr_crop(planes, info, rect)
                             event = dict(context, **obs, crop_rect=rect, **flags,
                                          frame_width=info.width, frame_height=info.height)
                             with self.condition:
-                                if self.control["stopping"]:
-                                    raise OwnershipLost("crop worker stopped during frame mapping")
+                                if self.control["stopping"] or self.control["worker_failed"]:
+                                    raise RuntimeError("crop worker stopped during frame mapping")
                                 self.jobs[tid] = (state, event, copy, size)
                                 self.condition.notify()
                             submitted.add(tid)
@@ -558,13 +707,15 @@ class CropCandidates:
                                 self.pending.remove(tid)
                                 self.control["bytes"] -= size
                     raise
+        except OwnershipLost:
+            self.control["stopping"] = True
         except Exception as exc:
             self.stats["callback_errors"] += 1
             self.stats["last_error"] = str(exc)[:200]
         finally:
             self.stats["frames"] += 1
             self.stats["callback_us"] += int((time.monotonic() - started) * 1e6)
-            if not self.control["stopping"] and started - self.last_report >= self.c.report_seconds:
+            if not self.control["stopping"] and not self.control["worker_failed"] and started - self.last_report >= self.c.report_seconds:
                 report = {"crop_stats": dict(self.stats), "pending_bytes": self.control["bytes"],
                           "pending_jobs": len(self.pending), "tracks": len(self.tracks),
                           # Store occupancy, so a full-and-rotating store is
@@ -573,13 +724,9 @@ class CropCandidates:
                           "stored_bytes": self.store.bytes,
                           "evicted": self.store.evicted,
                           "session": self.session}
-                print(json.dumps(report), flush=True)
-                try:
-                    self.store.heartbeat(report)
-                except OwnershipLost:
-                    with self.condition:
-                        self.control["stopping"] = True
-                        self.condition.notify_all()
+                with self.condition:
+                    self.control["report"] = (report, time.time())
+                    self.condition.notify()
                 self.last_report = started
         return True  # Crop failure never intentionally drops the video buffer.
 
@@ -594,7 +741,7 @@ class CropCandidates:
                 client.max_inflight_messages_set(1)
                 client.connect_async(self.c.mqtt_host, self.c.mqtt_port)
                 client.loop_start()
-            maintained = time.monotonic()
+            maintained = reconciled = time.monotonic()
             while True:
                 with self.store.owned():
                     pass  # Retire displaced workers even when no frames arrive.
@@ -604,8 +751,17 @@ class CropCandidates:
                     if self.control["stopping"] and not self.jobs:
                         break
                 try:
-                    if time.monotonic() - maintained >= 5:
+                    with self.condition:
+                        report = self.control["report"]
+                        self.control["report"] = None
+                    if report and time.time() - report[1] < self.c.takeover_seconds:
+                        self.store.heartbeat(report[0], observed_at=report[1])
+                        print(json.dumps(report[0]), flush=True)
+                    if time.monotonic() - reconciled >= 60:
                         self.store.maintain()
+                        reconciled = time.monotonic()
+                    if time.monotonic() - maintained >= 5:
+                        self.store.expire()
                         # Only a real inability to write blocks admission now.
                         # Count and byte quotas are rotated through by `save`, so
                         # treating a full store as blocked would freeze the store
@@ -670,6 +826,29 @@ class CropCandidates:
                             self.control["bytes"] -= size
         except OwnershipLost:
             self.stats["ownership_lost"] += 1
+            self.control["stopping"] = True
+        except Exception as exc:
+            self.control["worker_failed"] = True
+            self.stats["worker_errors"] += 1
+            self.stats["last_error"] = str(exc)[:200]
+            print(json.dumps({"crop_worker_error": str(exc)[:200], "session": self.session}), flush=True)
+            with self.condition:
+                for tid, (_, _, _, size) in self.jobs.items():
+                    self.pending.discard(tid)
+                    self.control["bytes"] -= size
+                self.jobs.clear()
+                self.control["report"] = None
+            # Stay available for shutdown/takeover; do not refresh the heartbeat
+            # or attempt more images while observations continue independently.
+            while not self.control["stopping"]:
+                try:
+                    with self.store.owned():
+                        pass
+                except (OwnershipLost, OSError):
+                    self.control["stopping"] = True
+                    break
+                with self.condition:
+                    self.condition.wait(timeout=0.1)
         finally:
             with self.condition:
                 self.control["stopping"] = True

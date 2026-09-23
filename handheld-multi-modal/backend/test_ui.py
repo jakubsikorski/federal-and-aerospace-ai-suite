@@ -57,7 +57,7 @@ class Fixture(BaseHTTPRequestHandler):
                     'brief': {'objective': 'Secure the north entrance.', 'times': 'Not specified'},
                 }
             elif self.path == '/api/history/options':
-                data = {'classes': ['person', 'chair', 'car'], 'availability': [
+                data = {'classes': ['person', 'chair', 'car'], 'priority_classes': ['person'], 'availability': [
                     {'stream_id': 'cam1', 'started_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time()-86400)), 'ended_utc': now},
                     {'stream_id': 'cam2', 'started_utc': None, 'ended_utc': None}]}
             elif '/current' in self.path:
@@ -206,6 +206,44 @@ def main():
                     break
                 time.sleep(.1)
             assert js("return document.querySelectorAll('.track-card').length") == 40
+            regression = r'''(() => {
+              const saved = {recent:{...state.recent}, filter:{...state.filter}, selected:state.selected, priorities:state.priorityClasses};
+              state.selected="cam1"; state.filter={mode:"history",classLabel:"",hasImage:false};
+              state.priorityClasses=["person"];
+              state.recent.cam1={tracks:[
+                {track_id:1,class_label:"person",last_observed_utc:"2026-09-23T07:00:00Z"},
+                {track_id:2,class_label:"chair",last_observed_utc:"2026-09-23T07:01:00Z"}]};
+              const priority = visibleTracks()[0].class_label === "person";
+              state.filter.prioritize=false;
+              const newest = visibleTracks()[0].class_label === "chair";
+              Object.assign(state,{recent:saved.recent,filter:saved.filter,selected:saved.selected,priorityClasses:saved.priorities});
+              state.priorityClasses=[];renderClassFilter(); const noPeople=!$("people-only").offsetWidth;
+              state.priorityClasses=["car"];renderClassFilter();const cars=$("people-only").textContent === "Car only";
+              state.priorityClasses=saved.priorities;renderClassFilter();
+              const original=state.telemetry, resource=state.resource;
+              const now=new Date().toISOString();
+              state.telemetry={metrics:["bcs","ccs","rcs","vcs","vecs"].map((name,i)=>({
+                id:"gpu_engine_"+name+"_percent",label:name,value:i*10,unit:"%",state:"ok",sampled_utc:now}))};
+              renderTelemetry();const gpu=document.querySelector('[data-resource="gpu"]');
+              const maximum=gpu.querySelector("strong").textContent.includes("40% VECS")
+                && gpu.querySelector("small").textContent.includes("5 engines");
+              state.telemetry.metrics[4].state="stale";renderTelemetry();
+              const partial=gpu.querySelector("strong").textContent.includes("30% VCS") && gpu.textContent.includes("Partial");
+              state.telemetry.metrics.forEach(m=>m.value=0);renderTelemetry();
+              const zero=gpu.querySelector("strong").textContent.includes("0%");
+              state.telemetry.metrics.forEach(m=>m.state="stale");renderTelemetry();const stale=gpu.dataset.state==="stale";
+              state.telemetry.metrics.forEach(m=>{m.state="unavailable";m.value=null});renderTelemetry();
+              const missing=gpu.querySelector("strong").textContent==="Unavailable";
+              state.telemetry=original;state.resource=resource;renderTelemetry();
+              state.mission={mode:"ready",sources:[{filename:"a.pdf"}],brief:{stale:true,corpus_version:1}};
+              $("mission-answer").textContent="Keep my answer";renderMission();
+              state.mission.brief={stale:false,corpus_version:1,brief:{objective:"Full answer ".repeat(70)}};renderMission();
+              const mission=$("mission-brief-status").textContent.startsWith("Brief ready")
+                && $("mission-answer").textContent==="Keep my answer" && $("mission-brief").querySelector("details p").textContent.length>500;
+              return {priority,newest,noPeople,cars,maximum,partial,zero,stale,missing,mission};
+            })()'''
+            checks=js('return window.eval(' + json.dumps(regression) + ')')
+            assert all(checks.values()), checks
             click('#mission-toggle')
             for _ in range(100):
                 if js("return document.getElementById('mission-status').textContent.includes('Ready')"):
@@ -221,8 +259,8 @@ def main():
                 brief: null, error: "Mission text generation is unavailable."
               };
               renderMission();
-              return $("mission-answer").textContent.includes("Mission Brief failed")
-                && $("mission-answer").textContent.includes("Retry Brief / Re-ingest")
+              return $("mission-brief-status").textContent.includes("Mission Brief failed")
+                && $("mission-brief-status").textContent.includes("Retry Brief / Re-ingest")
                 && $("mission-reingest").textContent === "Retry Brief / Re-ingest";
             })()'''
             assert js('return window.eval(' + json.dumps(mission_error_check) + ')')
@@ -366,7 +404,7 @@ def main():
             })()''')
             check('''(() => {
               $("track-mode").value = "history";
-              $("track-mode").dispatchEvent(new Event("change"));
+              state.filter.mode="history";
               state.events.close(); state.events = null;
               window.savedCamera = $("cameras").children[1]; window.savedCard = document.querySelector(".track-card");
               savedCard.focus(); $("track-scroll").scrollTop = 100;
@@ -377,7 +415,7 @@ def main():
             })()''')
             check('''(() => {
               $("apply-updates").click();
-              return document.querySelector(".track-card").dataset.trackKey === "cam1:40" && !state.pending;
+              return document.querySelector(".track-card").dataset.trackKey === "cam1:39" && !state.pending;
             })()''')
             # Rapid filter changes must not let the older response overwrite the newer selection.
             result = async_js('''const done = arguments[arguments.length - 1];
@@ -600,13 +638,18 @@ def main():
                       && panel.top >= 0 && panel.bottom <= innerHeight + 1
                     : panel.left >= host.left && panel.right <= host.right + 1;
                   const ok = bounded
-                    && !$("video-panel").inert && !$("telemetry").inert
+                    && $("video-panel").inert === overlay && !$("telemetry").inert
                     && !$("search-mode") && $("ask-text").getBoundingClientRect().height >= 48
                     && paging.bottom <= panel.bottom + 1
                     && $("assistant-results").clientHeight >= 80
                     && ["search-camera","search-class","search-period"].every(id => $(id).getBoundingClientRect().height >= 48)
                     && ["close-assistant","assistant-previous","assistant-next"].every(id => $(id).getBoundingClientRect().height === 32) && $("ask-submit").getBoundingClientRect().height >= 48;
-                  closeAssistant(); return ok || {panel:panel.toJSON(), paging:paging.toJSON(), overlay};
+                  const header=document.querySelector("header").getBoundingClientRect();
+                  const contextVisible=!overlay || (panel.top>=header.bottom && $("close-assistant").textContent==="Back to camera");
+                  $("mission-toggle").click();
+                  const missionVisible=!$("assistant-panel").classList.contains("open") && !$("mission-panel").hidden;
+                  closeMission(false);closeAssistant();
+                  return (ok && contextVisible && missionVisible) || {panel:panel.toJSON(), paging:paging.toJSON(), overlay,contextVisible,missionVisible};
                 })()''')
                 if args.screenshots:
                     check('renderChart(); true')
@@ -715,12 +758,100 @@ def main():
               })()`).then(done).catch(e=>done(String(e)));
             ''')
             assert result is True, result
+            result = async_js(r'''const done = arguments[arguments.length - 1];
+              window.eval(`(async () => {
+                await detachWhep();
+                const realPC = window.RTCPeerConnection, realFetch = window.fetch;
+                const realTimeout = window.setTimeout, realClear = window.clearTimeout;
+                const timers = new Map(), peers = [], deleted = [];
+                let id = -1, mode = "ok", held;
+                const assert = (ok, message) => { if (!ok) throw Error(message); };
+                const settle = () => new Promise(resolve => realTimeout(resolve, 20));
+                const fire = async (key) => {
+                  const timer = timers.get(key); assert(timer, "missing timer " + key);
+                  timers.delete(key); timer.fn(); await settle();
+                };
+                class Peer {
+                  constructor() { this.connectionState = this.iceConnectionState = "new";
+                    this.iceGatheringState = mode === "ice" ? "gathering" : "complete"; peers.push(this); }
+                  addTransceiver() {}
+                  async createOffer() { return {type:"offer", sdp:"fixture"}; }
+                  async setLocalDescription(value) { this.localDescription = value; }
+                  async setRemoteDescription() {
+                    this.connectionState = this.iceConnectionState = "connected";
+                    this.track = {muted:false};
+                    this.ontrack({streams:[new MediaStream()],track:this.track});
+                    this.onconnectionstatechange();
+                  }
+                  close() { this.connectionState = "closed"; this.onconnectionstatechange?.(); }
+                }
+                try {
+                  window.RTCPeerConnection = Peer;
+                  window.setTimeout = (fn, ms, ...args) => {
+                    if (![1000,2000,3000,4000,8000,10000,15000,16000,30000].includes(ms)) return realTimeout(fn,ms,...args);
+                    const key = id--; timers.set(key,{fn,ms}); return key;
+                  };
+                  window.clearTimeout = key => { timers.delete(key); realClear(key); };
+                  window.fetch = async (url, options = {}) => {
+                    if (options.method === "DELETE" && String(url).includes("/session/")) {
+                      deleted.push(String(url)); return new Response(null,{status:204});
+                    }
+                    if (options.method !== "POST" || !String(url).endsWith("/whep")) return realFetch(url,options);
+                    if (mode === "hold") return new Promise(resolve => { held = resolve; });
+                    if (mode === "missing") return new Response("no one is publishing",{status:400});
+                    if (mode === "codec") return new Response("no supported codec",{status:400});
+                    if (mode === "fail") return new Response("unavailable",{status:503});
+                    return new Response("answer",{status:201,headers:{Location:"/session/"+peers.length}});
+                  };
+                  const [one,two] = state.streams;
+                  state.selected = one.stream_id; await attachWhep(one);
+                  const first = state.whep.pc;
+                  first.connectionState = "failed"; first.onconnectionstatechange();
+                  assert($("video-note").textContent.includes("Reconnecting"),"no visible retry");
+                  await fire(state.whep.retryTimer);
+                  assert(state.whep.pc !== first && first.connectionState === "closed" && deleted.length === 1,"failed peer not replaced/cleaned");
+                  const healthy = state.whep.pc;
+                  healthy.connectionState = "disconnected"; healthy.onconnectionstatechange();
+                  healthy.connectionState = "connected"; healthy.onconnectionstatechange();
+                  assert(!state.whep.disconnectTimer && state.whep.pc === healthy,"brief interruption replaced peer");
+                  healthy.track.onmute(); await fire(state.whep.mediaTimer); await fire(state.whep.retryTimer);
+                  assert(state.whep.pc !== healthy,"muted video did not reconnect");
+                  mode = "fail"; await attachWhep(one);
+                  for (const delay of [1000,2000,4000,8000,16000,30000,30000]) {
+                    assert(timers.get(state.whep.retryTimer)?.ms === delay,"incorrect retry backoff");
+                    await fire(state.whep.retryTimer);
+                  }
+                  mode = "ok"; window.dispatchEvent(new Event("online")); await settle();
+                  assert(state.whep.pc.connectionState === "connected","network return did not recover");
+                  mode = "missing"; await attachWhep(one);
+                  assert(state.whep.retryTimer,"missing publisher must retry");
+                  mode = "codec"; await attachWhep(one);
+                  assert(!state.whep.retryTimer && $("video-note").textContent.includes("compatible browser"),"codec failure loops");
+                  mode = "hold"; const pending = attachWhep(one); await settle();
+                  state.selected = two.stream_id; mode = "ok"; await attachWhep(two);
+                  const selectedPeer = state.whep.pc;
+                  held(new Response("late answer",{status:201,headers:{Location:"/session/stale"}})); await pending;
+                  assert(state.whep.pc === selectedPeer && deleted.some(url=>url.endsWith("/session/stale")),"late session leaked or stole camera");
+                  state.selected = one.stream_id; mode = "ice";
+                  const gathering = attachWhep(one); await settle(); await fire(state.whep.timeout); await gathering;
+                  assert(state.whep.retryTimer,"ICE timeout did not retry");
+                  selectCamera("all"); await settle();
+                  assert(!state.whep && timers.size === 0,"All cameras left connection or retry timers");
+                  return true;
+                } finally {
+                  state.selected = "all"; await detachWhep();
+                  window.RTCPeerConnection = realPC; window.fetch = realFetch;
+                  window.setTimeout = realTimeout; window.clearTimeout = realClear;
+                }
+              })()`).then(done).catch(e=>done(String(e)));
+            ''')
+            assert result is True, result
             if args.screenshots:
                 request('POST', base + '/window/rect', {'width': 1280, 'height': 800})
                 (args.screenshots / 'operator-welcome.png').write_bytes(base64.b64decode(request('GET', base + '/screenshot')))
                 js('return window.eval(' + json.dumps('state.assistantContext={text:"What can you do?",payload:{}}; renderAssistant({intent:"application_help",answer_text:"I can search recorded tracks, answer mission questions and explain general topics. I cannot see the live video.",errors:[]}); archiveAssistantTurn(); state.assistantContext={text:"Why is the sky blue?",payload:{}}; $("assistant-mode").value="general"; renderAssistant({intent:"general_chat",answer_text:"Air scatters blue sunlight more strongly than red light, so the daytime sky looks blue.",conversation:{turns:1},errors:[]});') + ')')
                 (args.screenshots / 'conversation.png').write_bytes(base64.b64decode(request('GET', base + '/screenshot')))
-            print('PASS: compact in-panel search without mode tabs, alphabetical types, session/custom ranges, question correction, images-only results, fixed Search/paging controls, typed history overlay/paging, stable evidence/focus/scroll, pending updates, reconnect pause/All, diagnostics, chart axes/gaps, stale readings, drawer, native video fullscreen, model placement/detail/failure states, filter failure recovery, repeated crop retry, 200px minimum video at 1280/1024 widths and 714/682/600/540 heights')
+            print('PASS: WHEP recovery/backoff/cleanup/switch races, compact in-panel search without mode tabs, alphabetical types, session/custom ranges, question correction, images-only results, fixed Search/paging controls, typed history overlay/paging, stable evidence/focus/scroll, pending updates, reconnect pause/All, diagnostics, chart axes/gaps, stale readings, drawer, native video fullscreen, model placement/detail/failure states, filter failure recovery, repeated crop retry, 200px minimum video at 1280/1024 widths and 714/682/600/540 heights')
         finally:
             if session:
                 request('DELETE', f'/session/{session}')

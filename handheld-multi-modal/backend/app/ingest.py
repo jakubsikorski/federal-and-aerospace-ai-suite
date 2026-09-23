@@ -100,7 +100,8 @@ class Ingest:
         self.cfg = cfg
         self.conn = connect(db_path)
         self.lock = threading.Lock()
-        self.known = {s["stream_id"] for s in cfg["streams"]}
+        self.known = {s["stream_id"] for s in cfg["streams"] if s.get("enabled", True)}
+        self.started_at = time.monotonic()
         # Section 6.2/6.4/8.1. Held as attributes rather than module constants so
         # a deployment can retune them without a code change.
         self.gap = float(cfg.get("absence_split_seconds", INTERVAL_GAP_SECONDS))
@@ -558,7 +559,7 @@ class Ingest:
                 for stream_id in self.known:
                     seen = self.last_frame.get(stream_id)
                     if seen is None:
-                        self._set_health(stream_id, False, "no_signal_yet", wall)
+                        self._set_health(stream_id, False, self.initial_feed_reason(now), wall)
                     elif now - seen > SIGNAL_TIMEOUT_SECONDS:
                         self._set_health(stream_id, False, "no_signal", wall)
                 self._flush_intervals()
@@ -716,6 +717,10 @@ class Ingest:
     def stats(self) -> dict[str, int]:
         with self.lock:
             return dict(self.counters)
+
+    def initial_feed_reason(self, now: float) -> str:
+        return ("starting" if now - self.started_at < float(
+            self.cfg.get("pipeline_start_timeout_seconds", 180)) else "no_signal_yet")
 
     def snapshot(self) -> dict[str, dict]:
         return {

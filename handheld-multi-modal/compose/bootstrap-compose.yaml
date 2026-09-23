@@ -339,12 +339,13 @@ services:
       <<: *proxy-env-blocked
     volumes:
       - ../config/backend/backend.yaml:/config/backend.yaml:ro
+      - ../config/dlsps/detector-profile.json:/config/detector-profile.json:ro
       # Display configured model placement without copying model/device values.
       - ../config/chatqna/config.yaml:/config/model-placement/chatqna.yaml:ro
       - ../config/audio-analyzer/config.yaml:/config/model-placement/audio-analyzer.yaml:ro
       - ../config/tts/config.yaml:/config/model-placement/tts.yaml:ro
       - ../config/dlsps/${DLSPS_CONFIG_VARIANT:-npu}/config.json:/config/model-placement/dlsps.json:ro
-      - ../data/dlsps/yolo_export/yolo11s_int8_openvino_model/metadata.yaml:/config/detector/metadata.yaml:ro
+      - ../data/dlsps/yolo_export/yolo11s_int8_openvino_model:/config/detector:ro
       - ../data/backend:/data
       # Read-write, but only one call site writes: the stopped-producer cleanup
       # of design section 9.2, which must hold the producer's own exclusive lock.
