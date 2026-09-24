@@ -34,6 +34,10 @@ HOUSEKEEPING_SECONDS = 30.0
 # Section 4 / D10: the pinned tracker does not say whether a confidence is
 # detector-fresh or predicted, so it is never presented as fresh inference.
 FRESHNESS = "tracker_metadata_unverified"
+# Stock short-term gvatrack writes exactly 1.0 on objects it predicts rather
+# than detects (phase 8 evidence, tracker_confidence_probe.txt). The marker is
+# only applied when the selected pipeline uses such a tracker (pipelines.
+# PREDICTED_CONFIDENCE); zero-term detects every frame and keeps every score.
 
 # Section 8.1. Columns copied straight off the producer's sidecar. Listed once
 # so the INSERT, the reconciliation scan and the tests cannot drift apart.
@@ -107,6 +111,9 @@ class Ingest:
         self.gap = float(cfg.get("absence_split_seconds", INTERVAL_GAP_SECONDS))
         self.track_timeout = float(cfg.get("track_timeout_seconds", 10.0))
         self.pending_ttl = float(cfg.get("pending_association_seconds", 120.0))
+        self.min_observations = max(1, int(cfg.get("min_track_observations", 3)))
+        # Set by main from the selected pipeline's tracker; None keeps every score.
+        self.predicted_confidence: float | None = cfg.get("tracker_predicted_confidence")
         # stream_id -> last accepted crop_context.observed_at. Monotonic guard:
         # Mosquitto runs without persistence but QoS-1 can still redeliver, and a
         # replay from before a clear must not resurrect a retired generation.
@@ -127,6 +134,9 @@ class Ingest:
         # immediately. Reads merge this over the committed result set so a query
         # never has to wait for the next commit to see a track that exists.
         self.active: dict[tuple, dict] = {}
+        # Tracks seen fewer than min_track_observations times. Held in memory
+        # only: they are never written, shown, matched by rules or given crops.
+        self.tentative: dict[tuple, dict] = {}
         # Scoped identity -> monotonic deadline. Section 8.1: a crop can arrive
         # before the observation that creates its track, so the row is parked
         # with track_id NULL and attached later. Bounded by age alone.
@@ -138,6 +148,8 @@ class Ingest:
         # steady-state pass costs one directory listing and no SQLite at all.
         self.scanned: dict[str, set[str]] = {}
         self.counters: Counter = Counter()
+        # Phase 8 rule matcher; evaluated per observation of a logical track.
+        self.alerts = None
         self.frames_since_commit = 0
         self.stopping = threading.Event()
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
@@ -182,6 +194,7 @@ class Ingest:
                 for stream_id in self.known:
                     self._close_tracks(stream_id, "shutdown")
                 self.active.clear()
+                self.tentative.clear()
                 self.conn.commit()
                 self.conn.close()
 
@@ -250,6 +263,8 @@ class Ingest:
                     self.open_intervals.pop(key, None)
                 for key in [k for k in self.active if k[0] == stream_id]:
                     self.active.pop(key, None)
+                for key in [k for k in self.tentative if k[0] == stream_id]:
+                    self.tentative.pop(key, None)
                 for key in [k for k in self.parked if k[0] == stream_id]:
                     self.parked.pop(key, None)
             log.info("camera %s adopted session=%s generation=%s", stream_id, *identity)
@@ -268,37 +283,72 @@ class Ingest:
                 self._bump_untracked(stream_id)
                 continue
             confidence = detection.get("confidence")
+            if (self.predicted_confidence is not None and isinstance(confidence, (int, float))
+                    and confidence >= self.predicted_confidence):
+                confidence = None
             key = (stream_id, identity[0], identity[1], tracker_id)
+            first_stamp, first_at, count = stamp, observed_at, 1
+            first_frame = (context.get("frame_sequence"), context.get("source_frame_id"))
+            replay = [(obj, observed_at, stamp)]
+            if key not in self.active:
+                seed = self.tentative.get(key)
+                if seed is None or observed_at - seed["last_at"] > self.gap:
+                    seed = self.tentative[key] = {"stamp": stamp, "at": observed_at,
+                                                  "count": 0, "peak": None, "frame": first_frame,
+                                                  "attributes": []}
+                seed["count"] += 1
+                # Classifier output seen before admission is replayed, with its own
+                # timestamp, once the track is stored (at most min_observations entries).
+                seed["attributes"].append(({name: value for name, value in obj.items()
+                                            if name != "detection" and isinstance(value, dict)},
+                                           observed_at, stamp))
+                seed["last_at"] = observed_at
+                if confidence is not None:
+                    seed["peak"] = max(seed["peak"] or 0.0, confidence)
+                if seed["count"] < self.min_observations:
+                    continue
+                del self.tentative[key]
+                first_stamp, first_at, count = seed["stamp"], seed["at"], seed["count"]
+                first_frame, confidence = seed["frame"], seed["peak"]
+                replay = seed["attributes"]
             self.conn.execute(
                 """INSERT INTO tracks (stream_id, tracking_session_id, history_generation,
                         tracker_id, class_label, class_id, first_observed_utc,
                         last_observed_utc, observation_count, peak_confidence,
                         confidence_freshness, frame_sequence_first, source_frame_id_first)
-                   VALUES (?,?,?,?,?,?,?,?,1,?,?,?,?)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
                    ON CONFLICT(stream_id, tracking_session_id, history_generation, tracker_id)
                    DO UPDATE SET last_observed_utc = excluded.last_observed_utc,
-                        observation_count = observation_count + 1,
+                        observation_count = observation_count + excluded.observation_count,
                         peak_confidence = max(coalesce(peak_confidence, 0),
                                               coalesce(excluded.peak_confidence, 0))""",
                 (stream_id, identity[0], identity[1], tracker_id, label,
-                 detection.get("label_id"), stamp, stamp, confidence, FRESHNESS,
-                 context.get("frame_sequence"), context.get("source_frame_id")))
+                 detection.get("label_id"), first_stamp, stamp, count, confidence, FRESHNESS,
+                 *first_frame))
             if key in self.parked:
                 self._attach_parked(key)
             entry = self.active.get(key)
             if entry is None:
                 self.active[key] = entry = {
                     "stream_id": stream_id, "tracker_id": tracker_id, "class_label": label,
-                    "first_observed_utc": stamp, "observation_count": 0,
+                    "first_observed_utc": first_stamp, "observation_count": 0,
                     "peak_confidence": confidence, "confidence_freshness": FRESHNESS,
                 }
             entry["last_observed_utc"] = stamp
             entry["last_at"] = observed_at
-            entry["observation_count"] += 1
+            entry["observation_count"] += count
             if confidence is not None:
                 entry["peak_confidence"] = max(entry["peak_confidence"] or 0.0, confidence)
+            if count > 1:
+                self._touch_interval(key, first_at, first_stamp, count - 1)
             self._touch_interval(key, observed_at, stamp)
-            self._store_attributes(obj, key, entry, observed_at, stamp)
+            for attributes, seen_at, seen_stamp in replay:
+                self._store_attributes(attributes, key, entry, seen_at, seen_stamp)
+            if self.alerts is not None and self.alerts.rules:
+                if entry.get("track_id") is None:
+                    entry["track_id"] = self._track_id(key)
+                if entry["track_id"] is not None:
+                    self.alerts.evaluate(self.conn, entry["track_id"], entry)
 
         self.frames_since_commit += 1
         if self.frames_since_commit >= 30:
@@ -437,6 +487,10 @@ class Ingest:
             for key, entry in list(self.active.items()):
                 if key[0] == stream_id and _utc(entry["last_at"]) < cutoff:
                     self.active.pop(key, None)
+            for key, seed in list(self.tentative.items()):
+                if key[0] == stream_id and _utc(seed["last_at"]) < cutoff:
+                    self.tentative.pop(key, None)
+                    self.counters["short_tracks_discarded"] += 1
             if not self._close_tracks(stream_id, "timeout", before_utc=cutoff):
                 continue
             # Drop the buffered interval too, so a tracker id that is reused
@@ -486,17 +540,17 @@ class Ingest:
             self.counters["crop_unattached_reaped"] += removed
             log.info("reaped %d crop(s) that never found a track", removed)
 
-    def _touch_interval(self, key, observed_at, stamp) -> None:
+    def _touch_interval(self, key, observed_at, stamp, count=1) -> None:
         span = self.open_intervals.get(key)
         if span and observed_at - span["last_at"] <= self.gap:
             span["last_at"], span["ended"] = observed_at, stamp
-            span["count"] += 1
+            span["count"] += count
             return
         if span:
             self._write_interval(key, span)
         self.open_intervals[key] = {
             "index": (span["index"] + 1) if span else 0,
-            "started": stamp, "ended": stamp, "last_at": observed_at, "count": 1,
+            "started": stamp, "ended": stamp, "last_at": observed_at, "count": count,
         }
 
     def _write_interval(self, key, span) -> None:
@@ -672,7 +726,7 @@ class Ingest:
         generation, so a message still in flight from before the clear cannot
         re-seed the old identity."""
         with self.lock:
-            for store in (self.active, self.open_intervals, self.parked):
+            for store in (self.active, self.tentative, self.open_intervals, self.parked):
                 for key in [k for k in store if k[0] == stream_id]:
                     store.pop(key, None)
             self.identity.pop(stream_id, None)

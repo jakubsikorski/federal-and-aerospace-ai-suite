@@ -9,6 +9,7 @@ which are the only assertions that actually mean anything for them.
 """
 from contextlib import nullcontext
 import hashlib
+import base64
 import json
 import os
 import sqlite3
@@ -151,16 +152,16 @@ def test_migrate_is_idempotent_and_sync_preserves_run_state():
 
 
 def _observation(stream_id, tracker_id, label="person", observed_at=1000.0, session="s1",
-                 generation="g1"):
+                 generation="g1", confidence=0.9):
     return json.dumps({"metadata": {
         "crop_context": {"stream_id": stream_id, "tracking_session_id": session,
                          "history_generation": generation, "observed_at": observed_at,
                          "frame_sequence": 1},
-        "objects": [{"id": tracker_id, "detection": {"label": label, "confidence": 0.9}}],
+        "objects": [{"id": tracker_id, "detection": {"label": label, "confidence": confidence}}],
     }, "blob": ""}).encode()
 
 
-def _ingest(tmp, cameras=("cam1", "cam2")):
+def _ingest(tmp, cameras=("cam1", "cam2"), min_track_observations=1):
     """Real Ingest, real SQLite, no broker: only _on_message is exercised."""
     from app.ingest import Ingest
 
@@ -171,7 +172,8 @@ def _ingest(tmp, cameras=("cam1", "cam2")):
            "mqtt": {"host": "unused", "port": 0}, "detections_topic": "detections/live",
            "snips_topic": "detections/snips", "crop_dir": str(crops),
            "track_timeout_seconds": 10.0, "freshness_window_seconds": 3.0,
-           "absence_split_seconds": 5.0, "pending_association_seconds": 120.0}
+           "absence_split_seconds": 5.0, "pending_association_seconds": 120.0,
+           "min_track_observations": min_track_observations}
     db = str(Path(tmp) / "ingest.db")
     conn = connect(db)
     migrate(conn)
@@ -926,7 +928,7 @@ def test_model_placement_separates_configuration_runtime_and_availability():
         (root / "tts.yaml").write_text(json.dumps({"models": {"tts": {"name": "microsoft/speecht5_tts", "device": "GPU"}}}))
         (root / "audio-analyzer.yaml").write_text(json.dumps({"models": {"asr": {"name": "whisper-medium", "device": "GPU", "hf_token": "never-expose-this"}}}))
         (root / "dlsps.json").write_text(json.dumps({"config": {"pipelines": [{"name": "handheld_npu_detect",
-            "pipeline": "vah264dec ! gvadetect model=/models/INT8/yolo11s.xml device=NPU ! gvatrack name=tracking ! appsink"}]}}))
+            "pipeline": "vah264dec ! gvadetect model=/models/INT8/yolo26s.xml device=NPU ! gvatrack name=tracking ! appsink"}]}}))
         calls = []
         replies = {"/model": {"llm_model": "Intel/neural-chat-7b-v3-3"},
                    "/v1/model-info": {"model": "microsoft/speecht5_tts", "device": "GPU"},
@@ -1131,6 +1133,10 @@ def test_phase7_general_conversation_context_and_echo_adapter():
     assert decode_route_completion(
         '{"intent":"general_chat","response":"Unsolicited answer."}'
     ) == {"intent": "general_chat"}
+    # Live router output for "What is yolo26s": an answer inside the JSON plus a note.
+    assert decode_route_completion(
+        '{"intent":"general_chat","text":"YOLO is a detector."}\n\nNote: This response is general knowledge.'
+    ) == {"intent": "general_chat"}
     try:
         decode_route_completion(
             '{"intent":"video_history","plan":{}}\nUnsolicited answer.'
@@ -1181,6 +1187,27 @@ def test_phase7_general_conversation_context_and_echo_adapter():
         assert "General question 0?" not in prompts[-1]
         assert "General question 1?" in prompts[-1]
         assert "not mission material, camera" in prompts[-1]
+
+        # Knowledge questions skip routing; video/app/mission wording still routes.
+        routed = []
+        def counting(prompt):
+            if "Classify the operator request" in prompt:
+                routed.append(prompt)
+                return '{"intent":"general_chat"}'
+            return "General reply"
+        fast = Assistant({"db_path": str(root / "phase5.db"), "detector_metadata_path": str(metadata)},
+                         None, generate=counting)
+        for question in ("What is yolo26s", "What is a thermal camera?", "Explain OpenVINO.", "Who was Alan Turing?"):
+            assert fast.ask(question)["intent"] == "general_chat", question
+        assert routed == [], routed
+        for question in ("What is on camera 1?", "What was seen in the last 10 minutes?",
+                         "What are the rules?", "What is the mission objective?", "What is the NPU doing?"):
+            before = len(routed)
+            try:
+                intent = fast.ask(question)["intent"]
+            except Exception:
+                intent = "error"
+            assert len(routed) > before or intent != "general_chat", question
 
         assistant.reset_context()
         assistant.ask("Fresh question?")
@@ -1909,6 +1936,19 @@ def test_mission_phase6_failure_matrix():
                  "db_path": str(db)},
                 None, generate=lambda _: '{"intent":"mission_knowledge"}', mission=mission)
             assert assistant.ask("What is the mission objective?")["intent"] == "mission_knowledge"
+            # Questions naming the mission documents skip the router entirely.
+            prompts = []
+            direct = Assistant(
+                {"assistant_queue_depth": 1, "detector_metadata_path": metadata.name, "db_path": str(db)},
+                None, generate=lambda prompt: prompts.append(prompt) or "routed", mission=mission)
+            for question in ("What is the objective in the mission documents?",
+                             "What restrictions are specified in the mission documents?"):
+                answer = direct.ask(question)
+                assert answer == {"intent": "mission_knowledge", "answer_text": question, "errors": []}, answer
+            assert prompts == [], prompts
+            from app.mission import _mission_prompt
+            assert _mission_prompt("What is the mission objective?").startswith("What is the mission objective?\n")
+            assert direct.ask("Delete the mission documents")["intent"] != "mission_knowledge" or prompts
             assert assistant.ask(
                 "What is the mission assignment for camera 1?", "cam2"
             )["intent"] == "mission_knowledge"
@@ -2563,6 +2603,573 @@ def test_profile_validation_and_required_source_startup():
         cfg = load_config(str(Path(__file__).resolve().parent.parent / "config/backend/backend.yaml"))
         assert [s["stream_id"] for s in cfg["streams"] if s["enabled"]] == ["cam1", "cam2"]
 
+
+
+# -- Phase 8: rules, dispatch and the audio arbiter ---------------------------
+class _SaidArbiter:
+    def __init__(self):
+        self.said = []
+        self.cancelled = []
+
+    def say(self, kind, text, **extra):
+        self.said.append((kind, text, extra))
+        return {"id": str(len(self.said))}
+
+    def cancel(self, **target):
+        self.cancelled.append(target)
+        return 0
+
+
+def _alerts(ing, db, arbiter=None, handler=None, streams=("cam1", "cam2")):
+    from app.alerts import Alerts
+
+    cfg = {"services": {"alert_agent": "http://agent"},
+           "streams": [{"stream_id": s, "display_name": "Camera " + s[-1]} for s in streams]}
+    client = httpx.Client(transport=httpx.MockTransport(
+        handler or (lambda request: httpx.Response(200, json={"actions_taken": ["log_alert"]}))))
+    alerts = Alerts(cfg, db, arbiter, lambda: ("person", "car"), client=client)
+    if ing is not None:
+        ing.alerts = alerts
+    return alerts
+
+
+def _observe(ing, stream_id, tracker_id, count=1, label="person", start=1000.0, **kw):
+    for index in range(count):
+        ing._on_message(None, None, types.SimpleNamespace(
+            topic="detections/live",
+            payload=_observation(stream_id, tracker_id, label, start + index * 0.1, **kw)))
+
+
+def test_phase8_rule_fires_once_per_logical_track_and_restart_does_not_replay():
+    from app.alerts import RuleError
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ing = _ingest(tmp)
+        db = str(Path(tmp) / "ingest.db")
+        said = _SaidArbiter()
+        alerts = _alerts(ing, db, said)
+        rule = alerts.create(ing.conn, {"class_label": "person"})
+        assert rule["stream_id"] is None and rule["name"] == "person on any camera", rule
+        alerts.create(ing.conn, {"class_label": "person", "stream_id": "cam1", "speak": False})
+        alerts.create(ing.conn, {"class_label": "person", "min_confidence": 0.95})
+        for bad in ({"class_label": "tank"}, {"class_label": "person", "stream_id": "cam9"},
+                    {"class_label": "person", "min_confidence": 2},
+                    {"class_label": "person", "cooldown_seconds": True},
+                    {"class_label": "person", "extra": 1}):
+            try:
+                alerts.create(ing.conn, bad)
+            except RuleError:
+                pass
+            else:
+                raise AssertionError(f"invalid rule accepted: {bad}")
+        _observe(ing, "cam1", 1, count=40)
+        _observe(ing, "cam2", 1, count=40, start=1000.05)
+        _observe(ing, "cam2", 2, label="car", start=1005.0)
+        rows = ing.conn.execute(
+            "SELECT rule_id, track_id FROM rule_matches ORDER BY rule_id, track_id").fetchall()
+        # any-camera rule on both tracks, cam1 rule on cam1 only, 0.95 rule never.
+        assert len(rows) == 3, [tuple(r) for r in rows]
+        assert [kind for kind, *_ in said.said] == ["alert", "alert"], said.said
+        assert said.said[1][1] == "person on Camera 2.", said.said
+        ing.conn.close()
+        alerts.close()
+
+        restarted = _ingest(tmp)
+        again = _alerts(restarted, db, _SaidArbiter())
+        restarted.recover()
+        _observe(restarted, "cam1", 1, count=5, start=2000.0)
+        count = restarted.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0]
+        assert count == 3, "a restart replayed an alert for an already-matched track"
+        assert again.arbiter.said == []
+        restarted.conn.close()
+        again.close()
+
+
+def test_classification_seen_before_track_admission_is_kept_at_its_own_time():
+    with tempfile.TemporaryDirectory() as tmp:
+        ing = _ingest(tmp, cameras=("cam1",), min_track_observations=3)
+        start = time.time() - 30
+
+        def frame(offset, attributes):
+            body = json.loads(_observation("cam1", 7, observed_at=start + offset))
+            body["metadata"]["objects"][0].update({name: {"label": value, "confidence": .9}
+                                                   for name, value in attributes.items()})
+            ing._on_message(None, None, types.SimpleNamespace(
+                topic="detections/live", payload=json.dumps(body).encode()))
+        frame(0, {"upper_color": "red"})
+        frame(1, {})
+        assert ing.conn.execute("SELECT count(*) FROM attribute_samples").fetchone()[0] == 0
+        frame(2, {})
+        ing.conn.commit()
+        samples = ing.conn.execute("SELECT * FROM attribute_samples").fetchall()
+        assert len(samples) == 1, [dict(r) for r in samples]
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(start))
+        assert samples[0]["started_utc"] == samples[0]["ended_utc"] == stamp, dict(samples[0])
+        assert samples[0]["observation_count"] == 1 and json.loads(samples[0]["attributes_json"]) == {"upper_color": "red"}
+        ing.conn.close()
+
+
+def test_tracks_shorter_than_three_observations_are_never_stored_shown_or_alerted():
+    from app import history
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ing = _ingest(tmp, cameras=("cam1",), min_track_observations=3)
+        alerts = _alerts(ing, str(Path(tmp) / "ingest.db"), _SaidArbiter())
+        alerts.create(ing.conn, {"class_label": "person"})
+        now = time.time()
+        _observe(ing, "cam1", 1, count=2, start=now, confidence=0.8)
+        assert ing.conn.execute("SELECT count(*) FROM tracks").fetchone()[0] == 0
+        assert history.current(ing.conn, ing, ing.cfg, "cam1")["tracks"] == []
+        assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 0
+        _observe(ing, "cam1", 1, start=now + 0.2, confidence=0.9)
+        row = ing.conn.execute("SELECT first_observed_utc, observation_count, peak_confidence "
+                               "FROM tracks").fetchone()
+        assert row["observation_count"] == 3 and row["peak_confidence"] == 0.9, dict(row)
+        assert row["first_observed_utc"] == time.strftime(
+            "%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)), dict(row)
+        assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 1
+        ing._flush_intervals(force=True)
+        spans = ing.conn.execute("SELECT sum(observation_count) FROM track_intervals").fetchone()[0]
+        assert spans == 3, spans
+        _observe(ing, "cam1", 2, count=2, start=now + 0.3)
+        assert len(ing.tentative) == 1
+        for seed in ing.tentative.values():
+            seed["last_at"] -= 60
+        ing._close_timed_out()
+        assert not ing.tentative and ing.counters["short_tracks_discarded"] == 1, (ing.tentative, ing.counters)
+        ing.conn.close()
+        alerts.close()
+
+
+def test_alert_incidents_group_matches_and_follow_operator_actions():
+    from app import history
+    from app.alerts import RuleError
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ing = _ingest(tmp)
+        db = str(Path(tmp) / "ingest.db")
+        said = _SaidArbiter()
+        alerts = _alerts(ing, db, said)
+        rule = alerts.create(ing.conn, {"class_label": "person", "cooldown_seconds": 30})
+        now = time.time()
+        # Three tracks on one camera: one incident, one spoken alert, one dispatch.
+        for tracker in (1, 2, 3):
+            _observe(ing, "cam2", tracker, start=now + tracker)
+        (incident,) = history.incidents(ing.conn)
+        assert incident["match_count"] == 3 and incident["state"] == "open", incident
+        assert incident["track"]["stream_id"] == "cam2" and incident["rule_name"] == rule["name"]
+        assert len(said.said) == 1, said.said
+        states = sorted(r[0] for r in ing.conn.execute("SELECT dispatch_state FROM rule_matches"))
+        assert states == ["grouped", "grouped", "pending"], states
+        sightings = history.incident_tracks(ing.conn, incident["incident_id"])
+        assert len(sightings) == 3 and {t["stream_id"] for t in sightings} == {"cam2"}, sightings
+        assert history.incident_tracks(ing.conn, "unknown") is None
+        # Another camera is its own incident.
+        _observe(ing, "cam1", 9, start=now + 5)
+        assert len(history.incidents(ing.conn)) == 2 and len(said.said) == 2
+        cam1 = next(i for i in history.incidents(ing.conn) if i["stream_id"] == "cam1")
+
+        # A quiet spell before a new sighting re-announces an unhandled incident.
+        ing.conn.execute("UPDATE alert_incidents SET last_match_utc='2000-01-01T00:00:00Z' "
+                         "WHERE incident_id=?", (incident["incident_id"],))
+        _observe(ing, "cam2", 4, start=now + 6)
+        assert len(said.said) == 3 and said.said[-1][1] == "person on Camera 2.", said.said
+
+        try:
+            alerts.act(incident["incident_id"], "snooze", 7)
+        except RuleError:
+            pass
+        else:
+            raise AssertionError("unsupported snooze length accepted")
+        assert alerts.act(incident["incident_id"], "snooze", 5)
+        snoozed = next(i for i in history.incidents(ing.conn) if i["incident_id"] == incident["incident_id"])
+        assert snoozed["state"] == "snoozed" and snoozed["snoozed_until_utc"], snoozed
+        ing.conn.execute("UPDATE alert_incidents SET last_match_utc='2000-01-01T00:00:00Z' "
+                         "WHERE incident_id=?", (incident["incident_id"],))
+        _observe(ing, "cam2", 5, start=now + 7)
+        assert len(said.said) == 3, "a snoozed incident spoke"
+        assert alerts.close_quiet(now + 10) == 0, "snoozed incident closed before its snooze ended"
+        assert said.cancelled[-1] == {"group": incident["incident_id"]}, "snooze left its speech queued"
+        assert said.said[-1][2]["group"] == incident["incident_id"]
+        # An operator snooze that lands while quiet-close runs must survive it.
+        original = alerts.writer
+
+        def snooze_first(operation):
+            alerts.writer = original
+            alerts.act(incident["incident_id"], "snooze", 60)
+            return original(operation)
+        alerts.writer = snooze_first
+        assert alerts.close_quiet(now + 400) == 0, "quiet close overwrote a fresh snooze"
+        alerts.writer = original
+        assert alerts.close_quiet(now + 3700) == 1
+
+        # Acknowledge stops nothing but the badge; the incident closes once quiet.
+        assert alerts.act(cam1["incident_id"], "acknowledge")
+        assert not alerts.act(cam1["incident_id"], "acknowledge"), "acknowledged twice"
+        assert alerts.close_quiet(now + 5) == 0
+        assert alerts.close_quiet(now + 60) == 1
+        # A later sighting opens a fresh incident, which speaks again.
+        _observe(ing, "cam1", 10, start=now + 8)
+        fresh = next(i for i in history.incidents(ing.conn) if i["state"] == "open")
+        assert fresh["incident_id"] != cam1["incident_id"] and len(said.said) == 4
+        assert alerts.act(fresh["incident_id"], "false_alarm")
+        closed = next(i for i in history.incidents(ing.conn) if i["incident_id"] == fresh["incident_id"])
+        assert closed["state"] == "closed" and closed["closure"] == "false_alarm", closed
+        assert not alerts.act(fresh["incident_id"], "dismiss")
+
+        # Acknowledge means "seen so far": the count restarts and the very next
+        # sighting needs attention again, spoken despite the rule cooldown.
+        _observe(ing, "cam2", 11, start=now + 9)
+        live = next(i for i in history.incidents(ing.conn) if i["state"] == "open")
+        spoken = len(said.said)
+        assert alerts.act(live["incident_id"], "acknowledge")
+        acked = next(i for i in history.incidents(ing.conn) if i["incident_id"] == live["incident_id"])
+        assert acked["match_count"] == 0 and acked["counted_from_utc"] == acked["acknowledged_utc"], acked
+        ing.conn.execute("UPDATE alert_incidents SET counted_from_utc='2000-01-01T00:00:00Z' "
+                         "WHERE incident_id=?", (live["incident_id"],))
+        _observe(ing, "cam2", 12, start=now + 10)
+        seen = next(i for i in history.incidents(ing.conn) if i["incident_id"] == live["incident_id"])
+        assert seen["state"] == "open" and seen["match_count"] == 1 and seen["acknowledged_utc"] is None, seen
+        assert seen["counted_from_utc"] == seen["last_match_utc"] != "2000-01-01T00:00:00Z", \
+            "span did not restart at the first sighting after Acknowledge"
+        assert len(said.said) == spoken + 1 and said.said[-1][2]["cooldown"] == 0.0, said.said[-1]
+        assert [t["track_id"] for t in history.incident_tracks(ing.conn, live["incident_id"])] == \
+            [seen["track"]["track_id"]], "sightings before Acknowledge still listed"
+        # Sightings while open are grouped; the span start stays at the first one.
+        _observe(ing, "cam2", 13, start=now + 11)
+        again = next(i for i in history.incidents(ing.conn) if i["incident_id"] == live["incident_id"])
+        assert again["match_count"] == 2 and again["counted_from_utc"] == seen["counted_from_utc"], again
+        assert len(said.said) == spoken + 1 and len(history.incident_tracks(ing.conn, live["incident_id"])) == 2
+        # A snooze holds sightings back until it ends.
+        assert alerts.act(live["incident_id"], "snooze", 5)
+        _observe(ing, "cam2", 15, start=now + 12)
+        held = next(i for i in history.incidents(ing.conn) if i["incident_id"] == live["incident_id"])
+        assert held["state"] == "snoozed" and held["match_count"] == 1 and len(said.said) == spoken + 1, held
+        ing.conn.execute("UPDATE alert_incidents SET snoozed_until_utc='2000-01-01T00:00:00Z' "
+                         "WHERE incident_id=?", (live["incident_id"],))
+        _observe(ing, "cam2", 16, start=now + 13)
+        woke = next(i for i in history.incidents(ing.conn) if i["incident_id"] == live["incident_id"])
+        assert woke["state"] == "open" and len(said.said) == spoken + 2, woke
+
+        # Operator test speech repeats the announcement without a rule cooldown or match ref.
+        assert alerts.speak_test(ing.conn, live["incident_id"])["id"]
+        assert said.said[-1][:2] == ("alert", "person on Camera 2.") and said.said[-1][2] == {}, said.said[-1]
+        assert alerts.speak_test(ing.conn, "unknown") is None
+        # Remove drops the incident; matches stay and the next sighting opens a new one.
+        matches = ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0]
+        assert alerts.remove(live["incident_id"]) and not alerts.remove(live["incident_id"])
+        assert all(i["incident_id"] != live["incident_id"] for i in history.incidents(ing.conn))
+        assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == matches
+        _observe(ing, "cam2", 14, start=now + 14)
+        assert any(i["state"] == "open" and i["incident_id"] != live["incident_id"]
+                   for i in history.incidents(ing.conn))
+        # Disabling the rule closes anything it left open and withdraws its speech.
+        alerts.update(ing.conn, rule["rule_id"], {"enabled": False})
+        assert said.cancelled[-1] == {"rule_id": rule["rule_id"]}
+        assert all(i["state"] == "closed" for i in history.incidents(ing.conn))
+        ing.conn.close()
+        alerts.close()
+
+
+def test_tracker_predicted_confidence_never_becomes_peak_or_matches_threshold_rules():
+    # Stock short-term gvatrack reports 1.0 on frames where gvadetect skipped inference.
+    from app import pipelines
+
+    with tempfile.TemporaryDirectory() as tmp:
+        config = Path(tmp) / "config.json"
+        saved = pipelines.PIPELINE, pipelines.PREDICTED_CONFIDENCE
+        for tracker, expected in (("short-term-imageless", 1.0), ("zero-term-imageless", None)):
+            config.write_text(json.dumps({"config": {"pipelines": [{"name": "p", "pipeline":
+                f"src ! gvadetect model=m.xml ! gvatrack tracking-type={tracker} config=a=b ! sink"}]}}))
+            assert pipelines.tracker_predicted_confidence(str(config), "p") == expected, tracker
+            pipelines.configure("p", str(config))
+            crop = json.loads(pipelines._request_body({"source_uri": "rtsp://x", "annotated_path": "a",
+                                                       "stream_id": "cam1"})["parameters"]["crop-config"])
+            assert crop.get("predicted_confidence") == expected, crop
+        pipelines.PIPELINE, pipelines.PREDICTED_CONFIDENCE = saved
+        ing = _ingest(tmp)
+        ing.predicted_confidence = 1.0
+        alerts = _alerts(ing, str(Path(tmp) / "ingest.db"), _SaidArbiter())
+        alerts.create(ing.conn, {"class_label": "person", "min_confidence": 0.95})
+        _observe(ing, "cam1", 1, confidence=0.6)
+        _observe(ing, "cam1", 1, count=5, start=1000.1, confidence=1.0)
+        peak = ing.conn.execute("SELECT peak_confidence FROM tracks").fetchone()[0]
+        assert peak == 0.6, peak
+        assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 0
+        # Without a predicting tracker a genuine near-one detector score is kept.
+        ing.predicted_confidence = None
+        _observe(ing, "cam1", 2, start=1001.0, confidence=0.99995)
+        peak = ing.conn.execute("SELECT peak_confidence FROM tracks WHERE tracker_id=2").fetchone()[0]
+        assert peak == 0.99995, peak
+        assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 1
+        ing.conn.close()
+        alerts.close()
+
+
+def test_phase8_dispatch_distinguishes_delivered_suppressed_and_failed_with_backoff():
+    from app import alerts as alerting
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ing = _ingest(tmp, cameras=("cam1", "cam2", "cam3"))
+        db = str(Path(tmp) / "ingest.db")
+        replies, requests = [], []
+
+        def handle(request):
+            requests.append(json.loads(request.content))
+            reply = replies.pop(0)
+            if isinstance(reply, Exception):
+                raise reply
+            return reply
+
+        alerts = _alerts(ing, db, None, handle, streams=("cam1", "cam2", "cam3"))
+        alerts.create(ing.conn, {"class_label": "person", "cooldown_seconds": 45})
+        _observe(ing, "cam1", 1)
+        _observe(ing, "cam2", 1, start=1000.05)
+        # Same-camera repeats are grouped into one incident, so use a third camera.
+        _observe(ing, "cam3", 2, start=1000.1)
+        ing.conn.commit()
+        replies.extend([httpx.Response(200, json={"actions_taken": ["log_alert"]}),
+                        httpx.Response(200, json={"actions_taken": []}),
+                        httpx.ConnectError("agent down")])
+        for row in alerts._due():
+            alerts.dispatch(row)
+        states = [r["dispatch_state"] for r in alerts.conn.execute(
+            "SELECT dispatch_state FROM rule_matches ORDER BY matched_utc, rowid")]
+        assert states == ["delivered", "suppressed", "failed"], states
+        body = requests[0]["data"]
+        assert body["alert_name"].startswith("HANDHELD_R") and body["answer"] == "YES"
+        assert body["dedup"]["fields"] == ["metadata.track_id"]
+        assert body["dedup"]["window_seconds"] == 45
+        assert body["event_id"] == body["metadata"]["match_id"]
+        assert alerts._due() == [], "a failed match was retried before its backoff"
+        failed = alerts.conn.execute(
+            "SELECT match_id FROM rule_matches WHERE dispatch_state='failed'").fetchone()[0]
+        for attempt in range(2, alerting.MAX_ATTEMPTS + 1):
+            alerts.conn.execute("UPDATE rule_matches SET last_attempt_utc='2000-01-01T00:00:00Z'")
+            due = alerts._due()
+            assert [r["match_id"] for r in due] == [failed], attempt
+            replies.append(httpx.Response(500))
+            assert alerts.dispatch(due[0]) == "failed"
+        alerts.conn.execute("UPDATE rule_matches SET last_attempt_utc='2000-01-01T00:00:00Z'")
+        assert alerts._due() == [], "retries continued past the attempt cap"
+        assert not alerts.retry(alerts.conn, "unknown")
+        assert alerts.retry(alerts.conn, failed)
+        replies.append(httpx.Response(200, json={"actions_taken": ["log_alert"]}))
+        assert alerts.dispatch(alerts._due()[0]) == "delivered"
+        # A process that died mid-request is resent; settled rows never are.
+        alerts.conn.execute("UPDATE rule_matches SET dispatch_state='dispatching' WHERE match_id=?",
+                            (failed,))
+        alerts.conn.commit()
+        alerts.stopping.set()  # recovery runs; the worker threads exit at once
+        alerts.start()
+        state = alerts.conn.execute("SELECT dispatch_state FROM rule_matches WHERE match_id=?",
+                                    (failed,)).fetchone()[0]
+        assert state == "pending", state
+        ing.conn.close()
+        alerts.close()
+
+
+def _wav(seconds):
+    import wave
+    buffer = BytesIO()
+    with wave.open(buffer, "wb") as clip:
+        clip.setnchannels(1); clip.setsampwidth(2); clip.setframerate(16000)
+        clip.writeframes(b"\0\0" * int(16000 * seconds))
+    return buffer.getvalue()
+
+
+def _arbiter(durations=None, fail=False):
+    from app import speech
+
+    speech.PLAYBACK_MARGIN_SECONDS = 0.0
+
+    def synthesize(text):
+        if fail:
+            raise httpx.ConnectError("tts down")
+        return _wav((durations or {}).get(text, 0.2))
+
+    arbiter = speech.Arbiter(synthesize, alert_floor=0.1)
+    arbiter.start()
+    return arbiter
+
+
+def _settle(arbiter, timeout=5.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        snap = arbiter.snapshot()
+        if snap["current"] is None and not snap["queued"] and snap["preparing"] is None:
+            return
+        time.sleep(0.02)
+    raise AssertionError("arbiter did not settle")
+
+
+def test_phase8_arbiter_never_overlaps_and_preempts_by_priority():
+    arbiter = _arbiter({"long alert": 1.0})
+    try:
+        arbiter.say("alert", "long alert", ref="a1", rule_id="r1", cooldown=0)
+        deadline = time.monotonic() + 3
+        while (arbiter.snapshot()["current"] or {}).get("ref") != "a1":
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        # The browser plays the stock TTS base64 WAV straight from the speech state.
+        clip = base64.b64decode(arbiter.snapshot()["current"]["audio_base64"])
+        assert clip == _wav(1.0) and not hasattr(arbiter, "clip")
+        arbiter.say("answer", "your answer")
+        _settle(arbiter)
+        assert arbiter.outcome("a1") == "preempted"
+        assert arbiter.snapshot()["current"] is None
+        for index in range(4):
+            arbiter.say("alert", f"alert {index}", ref=f"b{index}", rule_id=f"r{index}")
+        _settle(arbiter)
+        playing = None
+        for event in arbiter.trace:
+            if event["event"] == "playing":
+                assert playing is None, "two utterances were playing at once"
+                playing = event["id"]
+            elif event["id"] == playing and event["event"] in {"unconfirmed", "preempted"}:
+                playing = None
+        spoken = [e["text"] for e in arbiter.trace if e["event"] == "unconfirmed"]
+        assert spoken == ["your answer", "alert 0", "alert 1", "alert 2", "alert 3"], spoken
+        last_alert_end = float("-inf")
+        for event in arbiter.trace:
+            if event["kind"] != "alert":
+                continue
+            if event["event"] == "playing":
+                assert event["mono"] - last_alert_end >= 0.09, "alert speech ignored the global floor"
+            elif event["event"] in {"unconfirmed", "preempted"}:
+                last_alert_end = event["mono"]
+    finally:
+        arbiter.close()
+
+
+def _wait_current(arbiter, ref, timeout=3.0):
+    deadline = time.monotonic() + timeout
+    while (arbiter.snapshot()["current"] or {}).get("ref") != ref:
+        assert time.monotonic() < deadline, f"{ref} never became current"
+        time.sleep(0.01)
+    return arbiter.snapshot()["current"]["id"]
+
+
+def test_phase8_speech_is_spoken_only_on_browser_ack_and_cancels_with_the_operator():
+    from app import speech
+
+    arbiter = _arbiter({"long": 2.0, "late": 1.0})
+    try:
+        # Browser playback ended: spoken, and the slot frees before the WAV deadline.
+        arbiter.say("alert", "long", ref="k1")
+        speech_id = _wait_current(arbiter, "k1")
+        assert not arbiter.ack("other", "started") and arbiter.ack(speech_id, "started")
+        began = time.monotonic()
+        assert arbiter.ack(speech_id, "ended")
+        _settle(arbiter)
+        assert arbiter.outcome("k1") == "spoken" and time.monotonic() - began < 1.0
+        try:
+            arbiter.ack(speech_id, "bogus")
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("unknown playback event accepted")
+        # A late start restarts the window instead of cutting the clip off.
+        arbiter.say("alert", "late", ref="k2")
+        speech_id = _wait_current(arbiter, "k2")
+        time.sleep(0.7)
+        assert arbiter.ack(speech_id, "started")
+        time.sleep(0.5)
+        assert (arbiter.snapshot()["current"] or {}).get("ref") == "k2", "late start was cut off"
+        _settle(arbiter)
+        assert arbiter.outcome("k2") == "unconfirmed"
+        # Playback error is recorded, not reported as spoken.
+        arbiter.say("alert", "late", ref="k3")
+        arbiter.ack(_wait_current(arbiter, "k3"), "error")
+        _settle(arbiter)
+        assert arbiter.outcome("k3") == "playback_failed"
+
+        # Operator silencing: queued, preparing and current items for the incident go.
+        arbiter.set_talk(True)
+        arbiter.say("alert", "late", ref="q1", rule_id="rq", group="iA")
+        arbiter.say("alert", "late", ref="q2", rule_id="rq2", group="iB")
+        assert arbiter.cancel(group="iA") == 1 and arbiter.outcome("q1") == "cancelled"
+        assert arbiter.cancel(rule_id="rq2") == 1 and arbiter.outcome("q2") == "cancelled"
+        assert arbiter.cancel() == 0
+        arbiter.set_talk(False)
+        arbiter.say("alert", "long", ref="c1", group="iC")
+        _wait_current(arbiter, "c1")
+        assert arbiter.cancel(group="iC") == 1
+        _settle(arbiter)
+        assert arbiter.outcome("c1") == "cancelled"
+    finally:
+        arbiter.close()
+
+    gate = threading.Event()
+
+    def slow(text):
+        gate.wait(3)
+        return _wav(0.2)
+
+    preparing = speech.Arbiter(slow, alert_floor=0.1)
+    preparing.start()
+    try:
+        preparing.say("alert", "during synthesis", ref="p1", rule_id="rp")
+        deadline = time.monotonic() + 3
+        while preparing.snapshot()["preparing"] is None:
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        assert preparing.cancel(rule_id="rp") == 1
+        gate.set()
+        _settle(preparing)
+        assert preparing.outcome("p1") == "cancelled"
+        assert not [e for e in preparing.trace if e["event"] == "playing"], "cancelled speech played"
+    finally:
+        preparing.close()
+
+
+def test_phase8_arbiter_suppresses_while_talking_bounds_queue_and_rate_limits():
+    from app.speech import bound_words
+
+    arbiter = _arbiter({"interrupted": 1.0})
+    try:
+        arbiter.say("alert", "interrupted", ref="h1", rule_id="rh")
+        deadline = time.monotonic() + 3
+        while (arbiter.snapshot()["current"] or {}).get("ref") != "h1":
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        arbiter.set_talk(True)
+        time.sleep(0.1)
+        snap = arbiter.snapshot()
+        assert snap["current"] is None and [q["text"] for q in snap["queued"]] == ["interrupted"], snap
+        arbiter.set_talk(False)
+        _settle(arbiter)
+        assert arbiter.outcome("h1") == "unconfirmed"
+        arbiter.trace.clear()
+        arbiter.set_talk(True)
+        for index in range(10):
+            arbiter.say("alert", f"alert {index}", ref=f"q{index}", rule_id=f"r{index}")
+        arbiter.say("notice", "a notice", ref="n1")
+        time.sleep(0.3)
+        assert not [e for e in arbiter.trace if e["event"] == "playing"], "spoke while talk held"
+        assert arbiter.outcome("n1") == "dropped_queue_full"
+        dropped = [e["ref"] for e in arbiter.trace if e["event"] == "dropped_queue_full"]
+        assert dropped == ["q0", "q1", "n1"], dropped
+        arbiter.set_talk(False)
+        _settle(arbiter)
+        assert arbiter.outcome("q9") == "unconfirmed"
+        arbiter.say("alert", "again", ref="c1", rule_id="r9", cooldown=60)
+        assert arbiter.outcome("c1") == "rate_limited"
+        assert bound_words(" ".join(["w"] * 50), 40) == " ".join(["w"] * 40) + "…"
+        long_answer = "One two three four five six. " * 10
+        assert bound_words(long_answer, 30) == " ".join(long_answer.split()[:30])
+        assert bound_words("Short answer.", 30) == "Short answer."
+    finally:
+        arbiter.close()
+    failing = _arbiter(fail=True)
+    try:
+        failing.say("alert", "person on Camera 1.", ref="t1", rule_id="r1")
+        _settle(failing)
+        assert failing.outcome("t1") == "text_only"
+        assert failing.snapshot()["last"]["outcome"] == "text_only"
+        assert failing.snapshot()["tts_ok"] is False
+    finally:
+        failing.close()
 
 
 if __name__ == "__main__":

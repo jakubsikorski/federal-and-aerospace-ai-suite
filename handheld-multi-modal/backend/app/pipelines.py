@@ -57,10 +57,30 @@ def resolve_pipeline_name(path: str = PIPELINE_CONFIG_PATH, override: str | None
     return name
 
 
-def configure(name: str) -> None:
+# Stock short-term gvatrack writes exactly 1.0 on boxes it predicted without
+# inference (phase 8 evidence, tracker_confidence_probe.txt). Only then is 1.0 a
+# marker rather than a score; zero-term tracking never predicts, so nothing is
+# discarded there. Set by configure() from the selected pipeline definition.
+PREDICTED_CONFIDENCE: float | None = None
+
+
+def configure(name: str, path: str | None = None) -> None:
     """Point Backend at the pipeline definition it owns, before any camera starts."""
-    global PIPELINE
+    global PIPELINE, PREDICTED_CONFIDENCE
     PIPELINE = f"user_defined_pipelines/{name}"
+    PREDICTED_CONFIDENCE = tracker_predicted_confidence(path or PIPELINE_CONFIG_PATH, name)
+
+
+def tracker_predicted_confidence(path: str, name: str) -> float | None:
+    """1.0 when the selected pipeline's tracker is a verified short-term (predicting) type."""
+    body = json.loads(Path(path).read_text())
+    definition = next(p for p in body["config"]["pipelines"] if p["name"] == name)
+    for part in definition["pipeline"].split("!"):
+        if "gvatrack " in part:
+            properties = dict(t.split("=", 1) for t in shlex.split(part) if "=" in t)
+            if properties.get("tracking-type", "").startswith("short-term"):
+                return 1.0
+    return None
 
 
 def validate_detector_profile(metadata_path: str, profile_path: str,
@@ -169,6 +189,8 @@ def _request_body(stream: dict) -> dict:
             # value itself and DLSPS validates the schema entry as a string.
             "crop-config": json.dumps(
                 {"config": f"{CROP_CONFIG_DIR}/{stream['stream_id']}.json"}
+                | ({"predicted_confidence": PREDICTED_CONFIDENCE}
+                   if PREDICTED_CONFIDENCE is not None else {})
             ),
             # Unique per start, not per camera and never shared. A shared
             # model-instance-id loads the model on the NPU once, but disposing

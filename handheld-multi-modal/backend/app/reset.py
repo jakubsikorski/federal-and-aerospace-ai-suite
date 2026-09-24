@@ -173,6 +173,7 @@ def _clear_camera(conn, cfg: dict, client, ingest, stream_id: str) -> dict:
             c.execute(
                 "DELETE FROM track_intervals WHERE track_id IN "
                 "(SELECT track_id FROM tracks WHERE stream_id = ?)", (stream_id,))
+            c.execute("DELETE FROM alert_incidents WHERE stream_id = ?", (stream_id,))
             c.execute("DELETE FROM candidates WHERE stream_id = ?", (stream_id,))
             c.execute("DELETE FROM tracks WHERE stream_id = ?", (stream_id,))
             c.execute("DELETE FROM feed_health WHERE stream_id = ?", (stream_id,))

@@ -147,8 +147,7 @@ def normalize(payload: dict, host: str, *, now: float | None = None) -> dict:
         note="package domain; not wall or GPU-only power")
 
     npu_specs = (
-        ("npu_utilization", "npu_utilization_percent", "NPU utilization", "%",
-         "zero is not proof of idle when busy-time support is absent"),
+        ("npu_utilization", "npu_utilization_percent", "NPU utilization", "%", None),
         ("npu_power", "npu_power_w", "NPU power", "W", None),
         ("npu_temperature", "npu_temperature_c", "SoC temperature", "°C",
          "PMT SoC field; not necessarily an isolated NPU sensor"),

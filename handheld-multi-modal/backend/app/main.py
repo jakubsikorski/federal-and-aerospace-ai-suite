@@ -1,11 +1,12 @@
 """Backend application: services, camera history, telemetry and live UI state.
 
-Phases 1-5 of docs/design/APPLICATION_DESIGN.md, Appendix A. Rule evaluation
-and speech remain later phases.
+Phases 1-8 of docs/design/APPLICATION_DESIGN.md, Appendix A. Voice capture
+remains a later phase.
 """
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -22,10 +23,12 @@ from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import history, pipelines, reset
+from . import alerts as alerting, history, pipelines, reset
+from .speech import Arbiter
 from .assistant import (
     Assistant,
     InvalidInput,
+    detector_labels,
     QueueFull,
     QueryBudgetExceeded,
     ServiceUnavailable,
@@ -160,9 +163,33 @@ async def lifespan(app: FastAPI):
         on_corpus_change=app.state.assistant.reset_context,
     )
     app.state.assistant.mission = app.state.mission
+
+    def synthesize(text: str) -> bytes:
+        # Stock JSON mode: the WAV arrives as audio_base64 and is handed to the
+        # browser as-is inside the speech state, so no clip endpoint is needed.
+        body = {"input": text, "response_format": "json"}
+        if cfg.get("tts_voice"):
+            body["voice"] = cfg["tts_voice"]
+        response = app.state.services.client.post(
+            cfg["services"]["tts"].rstrip("/") + "/v1/audio/speech", json=body,
+            timeout=float(cfg.get("tts_timeout_seconds", 30.0)))
+        response.raise_for_status()
+        audio = base64.b64decode(response.json()["audio_base64"], validate=True)
+        if not audio.startswith(b"RIFF"):
+            raise ValueError("TTS response is not WAV audio")
+        return audio
+
+    app.state.arbiter = Arbiter(synthesize, alert_floor=float(cfg.get("alert_speech_floor_seconds", 3.0)),
+                                trace_path=cfg.get("arbiter_trace_path"))
+    app.state.alerts = alerting.Alerts(
+        cfg, cfg["db_path"], app.state.arbiter,
+        lambda: detector_labels(cfg["detector_metadata_path"]))
     # Ingest before pipelines: a subscriber that starts second misses the first
     # observations of every camera it is supposed to be watching.
     app.state.ingest = Ingest(cfg, cfg["db_path"])
+    app.state.ingest.predicted_confidence = pipelines.PREDICTED_CONFIDENCE
+    app.state.ingest.alerts = app.state.alerts
+    app.state.alerts.writer = app.state.ingest.write
     # Section 6.4: a previous process's open tracks are closed before anything
     # can query current state, so a restart cannot present them as live.
     app.state.ingest.recover()
@@ -214,6 +241,8 @@ async def lifespan(app: FastAPI):
     supervisor = threading.Thread(target=supervise, name="pipeline-supervisor", daemon=True)
     supervisor.start()
     app.state.telemetry.start()
+    app.state.arbiter.start()
+    app.state.alerts.start()
     # Stock Chat Q&A keeps the vector store only in memory. Reconciliation is
     # deliberately asynchronous so its degraded state remains visible to the UI.
     app.state.mission.start()
@@ -227,6 +256,8 @@ async def lifespan(app: FastAPI):
             pipelines.stop_owned(
                 conn, cfg, app.state.services.client, writer=app.state.ingest.write)
         finally:
+            app.state.alerts.close()
+            app.state.arbiter.close()
             app.state.ingest.close()
             app.state.telemetry.close()
             app.state.services.close()
@@ -354,7 +385,149 @@ def create_app() -> FastAPI:
     @app.get("/api/alerts")
     def alerts(request: Request, limit: int = 50):
         with read_connection(request) as conn:
-            return envelope({"alerts": history.alerts(conn, limit=limit)})
+            return envelope({"alerts": _alerts(request.app.state, conn, limit),
+                             "incidents": _incidents(request.app.state, conn),
+                             "incident_counts": history.incident_counts(conn),
+                             **request.app.state.alerts.status()})
+
+    @app.post("/api/alerts/{match_id}/retry")
+    def retry_alert(request: Request, match_id: str):
+        with read_connection(request) as conn:
+            if not request.app.state.alerts.retry(conn, match_id):
+                return JSONResponse(status_code=409, content=envelope(error={
+                    "code": "not_retryable", "message": "Only an undelivered alert can be retried.",
+                }))
+        return envelope({"match_id": match_id, "dispatch_state": "pending"})
+
+    @app.get("/api/incidents/{incident_id}/tracks")
+    def incident_tracks(request: Request, incident_id: str):
+        with read_connection(request) as conn:
+            tracks = history.incident_tracks(conn, incident_id)
+        if tracks is None:
+            return JSONResponse(status_code=404, content=envelope(error={
+                "code": "not_found", "message": "Unknown alert."}))
+        return envelope({"incident_id": incident_id, "tracks": tracks})
+
+    @app.post("/api/incidents/{incident_id}/speak")
+    def incident_speak(request: Request, incident_id: str):
+        with read_connection(request) as conn:
+            item = request.app.state.alerts.speak_test(conn, incident_id)
+        if item is None:
+            return JSONResponse(status_code=404, content=envelope(error={
+                "code": "not_found", "message": "Unknown alert or speech is unavailable."}))
+        return envelope({"incident_id": incident_id, "speech_id": item["id"], "text": item["text"]})
+
+    @app.delete("/api/incidents/{incident_id}")
+    def incident_remove(request: Request, incident_id: str):
+        if not request.app.state.alerts.remove(incident_id):
+            return JSONResponse(status_code=404, content=envelope(error={
+                "code": "not_found", "message": "Unknown alert."}))
+        return envelope({"incident_id": incident_id, "removed": True})
+
+    @app.post("/api/incidents/{incident_id}/{action}")
+    async def incident_action(request: Request, incident_id: str, action: str):
+        body = await request.json() if await request.body() else {}
+        minutes = body.get("minutes") if isinstance(body, dict) else None
+        try:
+            changed = request.app.state.alerts.act(incident_id, action, minutes)
+        except alerting.RuleError as exc:
+            return JSONResponse(status_code=422, content=envelope(error={
+                "code": "invalid_action", "message": str(exc)}))
+        if not changed:
+            return JSONResponse(status_code=409, content=envelope(error={
+                "code": "not_active", "message": "This alert was already handled or closed."}))
+        with read_connection(request) as conn:
+            incident = next((i for i in _incidents(request.app.state, conn, 100)
+                             if i["incident_id"] == incident_id), None)
+        return envelope(incident)
+
+    # -- rules (Phase 8) -------------------------------------------------------
+    def _rule_error(exc: Exception) -> JSONResponse:
+        return JSONResponse(status_code=422, content=envelope(error={
+            "code": "invalid_rule", "message": str(exc)}))
+
+    @app.get("/api/rules")
+    def rules(request: Request):
+        state = request.app.state
+        try:
+            classes = list(detector_labels(state.cfg["detector_metadata_path"]))
+        except ServiceUnavailable:
+            classes = []
+        with read_connection(request) as conn:
+            return envelope({"rules": alerting.list_rules(conn), "classes": classes,
+                             "streams": state.alerts.enabled_streams})
+
+    @app.post("/api/rules", status_code=201)
+    async def create_rule(request: Request):
+        try:
+            body = await request.json()
+        except json.JSONDecodeError:
+            body = None
+        with read_connection(request) as conn:
+            try:
+                return envelope(request.app.state.alerts.create(conn, body))
+            except (alerting.RuleError, ServiceUnavailable) as exc:
+                return _rule_error(exc)
+
+    @app.patch("/api/rules/{rule_id}")
+    async def update_rule(request: Request, rule_id: str):
+        try:
+            body = await request.json()
+        except json.JSONDecodeError:
+            body = None
+        with read_connection(request) as conn:
+            try:
+                rule = request.app.state.alerts.update(conn, rule_id, body)
+            except (alerting.RuleError, ServiceUnavailable) as exc:
+                return _rule_error(exc)
+        if rule is None:
+            raise HTTPException(status_code=404, detail="unknown rule")
+        return envelope(rule)
+
+    @app.delete("/api/rules/{rule_id}")
+    def delete_rule(request: Request, rule_id: str, confirm: str = ""):
+        if confirm != rule_id:
+            return _rule_error(ValueError(f"confirm must equal {rule_id!r}; rule was not deleted"))
+        with read_connection(request) as conn:
+            if not request.app.state.alerts.delete(conn, rule_id):
+                raise HTTPException(status_code=404, detail="unknown rule")
+        return envelope({"rule_id": rule_id, "deleted": True})
+
+    # -- speech (Phase 8 audio arbiter) --------------------------------------
+    @app.get("/api/speech")
+    def speech(request: Request, trace: int = 0):
+        arbiter = request.app.state.arbiter
+        data = arbiter.snapshot()
+        if trace:
+            data["trace"] = list(arbiter.trace)[-max(1, min(trace, 500)):]
+        return envelope(data)
+
+    @app.post("/api/speech/{speech_id}/playback")
+    async def speech_playback(request: Request, speech_id: str):
+        try:
+            body = await request.json()
+        except json.JSONDecodeError:
+            body = None
+        event = body.get("event") if isinstance(body, dict) else None
+        try:
+            current = request.app.state.arbiter.ack(speech_id, event)
+        except ValueError as exc:
+            return JSONResponse(status_code=422, content=envelope(error={
+                "code": "invalid_request", "message": str(exc)}))
+        # 200 either way: a report for an utterance that already ended is stale, not an error.
+        return envelope({"speech_id": speech_id, "event": event, "current": current})
+
+    @app.post("/api/speech/talk")
+    async def speech_talk(request: Request):
+        try:
+            body = await request.json()
+        except json.JSONDecodeError:
+            body = None
+        if not isinstance(body, dict) or set(body) != {"held"} or not isinstance(body["held"], bool):
+            return JSONResponse(status_code=422, content=envelope(error={
+                "code": "invalid_request", "message": "provide held as true or false"}))
+        request.app.state.arbiter.set_talk(body["held"])
+        return envelope(request.app.state.arbiter.snapshot())
 
     @app.get("/api/history/options")
     def history_options(request: Request):
@@ -454,7 +627,7 @@ def create_app() -> FastAPI:
             body = await request.json()
         except json.JSONDecodeError:
             body = None
-        if not isinstance(body, dict) or set(body) - {"text", "plan", "selected_stream", "page_token", "timezone", "conversation_id", "mode"}:
+        if not isinstance(body, dict) or set(body) - {"text", "plan", "selected_stream", "page_token", "timezone", "conversation_id", "mode", "speak"}:
             return JSONResponse(status_code=422, content=envelope(error={
                 "code": "invalid_request", "message": "invalid assistant request",
             }))
@@ -470,6 +643,13 @@ def create_app() -> FastAPI:
             }))
         conversation_id = body.get("conversation_id", uuid.uuid4().hex)
         def perform(emit=None):
+            answer = answer_for(emit)
+            text = answer.get("spoken_text") or answer.get("answer_text")
+            if body.get("speak") is True and isinstance(text, str) and text.strip():
+                # A direct reply to the operator: priority 0 in the arbiter.
+                answer["speech_id"] = request.app.state.arbiter.say("answer", text)["id"]
+            return answer
+        def answer_for(emit=None):
             assistant = request.app.state.assistant
             with assistant.conversation(conversation_id):
                 if "page_token" in body:
@@ -551,6 +731,7 @@ def create_app() -> FastAPI:
                 "video": "live_only",
                 "identity": "tracks_not_people",
             })
+            last_speech = None
             with read_connection(request) as conn:
                 while not pipelines.shutdown.is_set() and not await request.is_disconnected():
                     state = request.app.state
@@ -571,13 +752,22 @@ def create_app() -> FastAPI:
                         })
                     yield _event("alert", {
                         "stream_id": None,
-                        "alerts": history.alerts(conn, limit=50),
+                        "alerts": _alerts(state, conn, 50),
+                        "incidents": _incidents(state, conn),
+                        "incident_counts": history.incident_counts(conn),
                     })
                     yield _event("telemetry", {
                         "stream_id": None,
                         **state.telemetry.snapshot(),
                     })
-                    await asyncio.sleep(1.0)
+                    # Speech changes are pushed within ~0.2 s so a preempted or
+                    # suppressed clip stops promptly; the rest refreshes at 1 Hz.
+                    for _ in range(5):
+                        speech = state.arbiter.snapshot()
+                        if speech["version"] != last_speech:
+                            last_speech = speech["version"]
+                            yield _event("speech", {"stream_id": None, **speech})
+                        await asyncio.sleep(0.2)
 
         return StreamingResponse(events(), media_type="text/event-stream", headers={
             "Cache-Control": "no-cache",
@@ -685,6 +875,26 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+
+
+def _alerts(state, conn: sqlite3.Connection, limit: int) -> list[dict]:
+    """SQLite matches plus the process-local speech and agent-observed facts."""
+    rows = history.alerts(conn, limit=limit)
+    for row in rows:
+        row["speech"] = state.arbiter.outcome(row["match_id"])
+        row["agent_observed"] = row["match_id"] in state.alerts.confirmed
+        row["undelivered"] = (row["dispatch_state"] == "failed"
+                              and row["attempts"] >= alerting.MAX_ATTEMPTS)
+    return rows
+
+
+def _incidents(state, conn: sqlite3.Connection, limit: int = 50) -> list[dict]:
+    rows = history.incidents(conn, limit=limit)
+    for row in rows:
+        row["speech"] = state.arbiter.outcome(row["head_match_id"])
+        row["undelivered"] = (row["dispatch_state"] == "failed"
+                              and (row["attempts"] or 0) >= alerting.MAX_ATTEMPTS)
+    return rows
 
 
 def _event(name: str, data: dict) -> str:

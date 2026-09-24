@@ -287,7 +287,7 @@ def candidates(conn: sqlite3.Connection, track_id: int) -> list[dict]:
 
 
 def alerts(conn: sqlite3.Connection, *, limit: int = 50) -> list[dict]:
-    """Recent persisted rule matches. Rule evaluation itself belongs to Phase 8."""
+    """Recent persisted rule matches with their dispatch state (section 16.3)."""
     limit = max(1, min(int(limit), 100))
     rows = conn.execute(
         """SELECT m.match_id, m.rule_id, m.track_id, m.matched_utc,
@@ -311,3 +311,75 @@ def alerts(conn: sqlite3.Connection, *, limit: int = 50) -> list[dict]:
         "last_error": row["last_error"],
         "snip_url": _snip(conn, row["track_id"])[0],
     } for row in rows]
+
+
+def incidents(conn: sqlite3.Connection, *, limit: int = 20) -> list[dict]:
+    """Operator alert incidents: needs-attention first, then handled, then closed."""
+    limit = max(1, min(int(limit), 100))
+    now = _utc(time.time())
+    rows = conn.execute(
+        """SELECT i.*, r.name AS rule_name, r.enabled AS rule_enabled,
+                  m.dispatch_state, m.attempts, m.last_error
+           FROM alert_incidents i
+           LEFT JOIN rules r ON r.rule_id = i.rule_id
+           LEFT JOIN rule_matches m ON m.match_id = i.head_match_id
+           ORDER BY CASE i.state WHEN 'open' THEN 0 WHEN 'acknowledged' THEN 1 ELSE 2 END,
+                    i.last_match_utc DESC LIMIT ?""", (limit,)).fetchall()
+    result = []
+    for row in rows:
+        track = conn.execute(
+            """SELECT track_id, stream_id, class_label, first_observed_utc, last_observed_utc,
+                      observation_count, peak_confidence, confidence_freshness, closure_reason
+               FROM tracks WHERE track_id = ?""", (row["last_track_id"],)).fetchone()
+        snip, snip_state = _snip(conn, row["last_track_id"]) if track else (None, "none")
+        snoozed = row["state"] == "acknowledged" and (row["snoozed_until_utc"] or "") > now
+        result.append({
+            "incident_id": row["incident_id"], "rule_id": row["rule_id"],
+            "rule_name": row["rule_name"] or row["rule_id"],
+            "rule_enabled": bool(row["rule_enabled"]) if row["rule_enabled"] is not None else None,
+            "stream_id": row["stream_id"], "class_label": row["class_label"],
+            "state": "snoozed" if snoozed else row["state"],
+            "opened_utc": row["opened_utc"], "last_match_utc": row["last_match_utc"],
+            "match_count": row["match_count"], "acknowledged_utc": row["acknowledged_utc"],
+            "counted_from_utc": row["counted_from_utc"] or row["opened_utc"],
+            "acknowledged_count": row["counted_after"] > 0,
+            "snoozed_until_utc": row["snoozed_until_utc"] if snoozed else None,
+            "closed_utc": row["closed_utc"], "closure": row["closure"],
+            "head_match_id": row["head_match_id"], "dispatch_state": row["dispatch_state"],
+            "attempts": row["attempts"], "last_error": row["last_error"],
+            "snip_url": snip,
+            "track": _track_payload(track, state_source="history", snip=snip,
+                                    snip_state=snip_state) if track else None,
+        })
+    return result
+
+
+def incident_counts(conn: sqlite3.Connection) -> dict:
+    """Totals independent of the incident page size, so a summary never undercounts."""
+    row = conn.execute(
+        """SELECT count(*) AS total, coalesce(sum(state='open'), 0) AS open,
+                  coalesce(sum(state!='closed'), 0) AS active FROM alert_incidents""").fetchone()
+    return {"open": row["open"], "active": row["active"], "total": row["total"]}
+
+
+def incident_tracks(conn: sqlite3.Connection, incident_id: str, *, limit: int = 200) -> list[dict] | None:
+    """Tracks that matched into one incident, newest match first (bounded)."""
+    if conn.execute("SELECT 1 FROM alert_incidents WHERE incident_id=?", (incident_id,)).fetchone() is None:
+        return None
+    rows = conn.execute(
+        """SELECT t.track_id, t.stream_id, t.class_label, t.first_observed_utc, t.last_observed_utc,
+                  t.observation_count, t.peak_confidence, t.confidence_freshness, t.closure_reason,
+                  m.matched_utc
+           FROM rule_matches m JOIN tracks t ON t.track_id = m.track_id
+           JOIN alert_incidents i ON i.incident_id = m.incident_id
+           WHERE m.incident_id = ? AND m.rowid > i.counted_after
+           ORDER BY m.matched_utc DESC, m.rowid DESC LIMIT ?""",
+        (incident_id, limit)).fetchall()
+    result = []
+    for row in rows:
+        snip, snip_state = _snip(conn, row["track_id"])
+        track = _track_payload(row, state_source="history", snip=snip, snip_state=snip_state)
+        track["matched_utc"] = row["matched_utc"]
+        track["candidate_count"] = _candidate_count(conn, row["track_id"])
+        result.append(track)
+    return result

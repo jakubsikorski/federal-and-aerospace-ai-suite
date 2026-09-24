@@ -103,6 +103,21 @@ CREATE TABLE IF NOT EXISTS rule_matches (
   last_attempt_utc TEXT, last_error TEXT);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_match_logical ON rule_matches (rule_id, track_id);
 
+-- One operator-facing incident per (rule, camera) while it is not closed.
+-- Matches on later tracks join it instead of raising another alert.
+-- state: open (needs attention) | acknowledged (incl. snoozed) | closed.
+-- match_count counts sightings after rule_matches rowid counted_after (0 = all;
+-- acknowledge sets it to the latest match, so later sightings count from zero).
+CREATE TABLE IF NOT EXISTS alert_incidents (
+  incident_id TEXT PRIMARY KEY, rule_id TEXT NOT NULL, stream_id TEXT NOT NULL,
+  class_label TEXT NOT NULL, state TEXT NOT NULL,
+  opened_utc TEXT NOT NULL, last_match_utc TEXT NOT NULL,
+  match_count INTEGER NOT NULL DEFAULT 1, last_track_id INTEGER, head_match_id TEXT,
+  acknowledged_utc TEXT, snoozed_until_utc TEXT, closed_utc TEXT, closure TEXT,
+  counted_from_utc TEXT, counted_after INTEGER NOT NULL DEFAULT 0);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_incident_active
+  ON alert_incidents (rule_id, stream_id) WHERE state != 'closed';
+
 CREATE TABLE IF NOT EXISTS mission_sources (
   filename TEXT PRIMARY KEY,
   sha256 TEXT NOT NULL, uploaded_utc TEXT,

@@ -22,9 +22,46 @@ from urllib.request import Request, urlopen
 HTML = Path(__file__).parent / 'app/static/index.html'
 
 
+RULES = [dict(rule_id='r1', name='person on any camera', class_label='person', stream_id=None,
+              min_confidence=None, enabled=True, cooldown_seconds=60, speak=True)]
+RULE_REQUESTS = []
+ALERTS = {'alerts': [], 'incidents': []}
+
+
 class Fixture(BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass
+
+    def _json(self, data, status=200):
+        payload = json.dumps({'data': data}).encode()
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def _rule_mutation(self):
+        if self.path.startswith('/api/incidents/'):
+            RULE_REQUESTS.append((self.command, self.path, None))
+            if self.command == 'DELETE':
+                return self._json({'incident_id': 'ih', 'removed': True})
+            return self._json({'incident_id': 'ih', 'speech_id': 's1', 'text': 'dog on Camera 2.'})
+        length = int(self.headers.get('content-length', '0'))
+        body = json.loads(self.rfile.read(length) or b'null')
+        RULE_REQUESTS.append((self.command, self.path, body))
+        if self.command == 'POST':
+            rule = dict(rule_id='r2', name=body['class_label'] + ' on Camera 2', enabled=True, **body)
+            RULES.append(rule)
+            return self._json(rule, 201)
+        rule_id = self.path.split('/')[3].split('?')[0]
+        if self.command == 'DELETE':
+            RULES[:] = [r for r in RULES if r['rule_id'] != rule_id]
+            return self._json({'rule_id': rule_id, 'deleted': True})
+        rule = next(r for r in RULES if r['rule_id'] == rule_id)
+        rule.update(body)
+        return self._json(rule)
+
+    do_PATCH = do_DELETE = _rule_mutation
 
     def do_GET(self):
         now = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
@@ -70,13 +107,22 @@ class Fixture(BaseHTTPRequestHandler):
                 chosen = [t for t in tracks if not label or t['class_label'] == label]
                 data = dict(tracks=chosen, matched_count=len(chosen), truncated=False, class_counts={'person': 20, 'chair': 20})
             elif self.path == '/api/alerts':
-                data = {'alerts': []}
+                data = ALERTS
+            elif self.path == '/api/incidents/ih/tracks':
+                now_iso = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+                data = {'incident_id': 'ih', 'tracks': [
+                    {'track_id': n, 'stream_id': 'cam2', 'class_label': 'dog', 'first_observed_utc': now_iso,
+                     'last_observed_utc': now_iso, 'matched_utc': now_iso, 'observation_count': 5,
+                     'peak_confidence': .9, 'snip_url': None, 'snip_state': 'none', 'candidate_count': 0,
+                     'state_source': 'history'} for n in (41, 42, 43)]}
+            elif self.path == '/api/rules':
+                data = {'rules': RULES, 'classes': ['person', 'car'], 'streams': ['cam1', 'cam2', 'cam3']}
             elif self.path == '/api/models':
                 data = {'models': [dict(id=key, label=label, host='Fixture host', service_host=key,
                     configured_model=model, configured_device=device, runtime_model=None, runtime_device=None,
                     checked_utc=now, source='Fixture configuration', note='Configured only.', stages=[], status=status)
                     for key, label, model, device, status in [
-                        ('dlsps', 'Vision', 'yolo11s', 'NPU', 'ready'),
+                        ('dlsps', 'Vision', 'yolo26s', 'NPU', 'ready'),
                         ('chatqna', 'LLM', 'Intel/neural-chat-7b-v3-3', 'GPU', 'unavailable'),
                         ('audio_analyzer', 'Transcription', 'whisper-medium', 'GPU', 'unavailable'),
                         ('tts', 'Speech', 'microsoft/speecht5_tts', 'GPU', 'unknown')]]}
@@ -100,6 +146,12 @@ class Fixture(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def do_POST(self):
+        if self.path == '/api/rules' or self.path.endswith('/speak'):
+            return self._rule_mutation()
+        if self.path.startswith('/api/speech/'):
+            length = int(self.headers.get('content-length', '0'))
+            RULE_REQUESTS.append((self.command, self.path, json.loads(self.rfile.read(length) or b'null')))
+            return self._json({'speech_id': self.path.split('/')[3], 'current': True})
         if self.path.startswith('/api/assistant/reset'):
             payload = json.dumps({'data': {'cleared': True, 'turns': 0, 'characters': 0}}).encode()
             self.send_response(200)
@@ -240,7 +292,13 @@ def main():
               state.mission.brief={stale:false,corpus_version:1,brief:{objective:"Full answer ".repeat(70)}};renderMission();
               const mission=$("mission-brief-status").textContent.startsWith("Brief ready")
                 && $("mission-answer").textContent==="Keep my answer" && $("mission-brief").querySelector("details p").textContent.length>500;
-              return {priority,newest,noPeople,cars,maximum,partial,zero,stale,missing,mission};
+              const turn = document.createElement("article"); turn.className = "chat-turn";
+              turn.innerHTML = '<p class="chat-question">q</p><p>a</p>'; $("assistant-transcript").append(turn);
+              const size = (el) => getComputedStyle(el).fontSize;
+              const fonts = size(turn.lastChild) === size($("assistant-answer")) && size(turn.lastChild) === "15px"
+                && size(turn.firstChild) === size($("assistant-submitted")) && size(turn.firstChild) === "14px";
+              turn.remove();
+              return {priority,newest,noPeople,cars,maximum,partial,zero,stale,missing,mission,fonts};
             })()'''
             checks=js('return window.eval(' + json.dumps(regression) + ')')
             assert all(checks.values()), checks
@@ -265,6 +323,235 @@ def main():
             })()'''
             assert js('return window.eval(' + json.dumps(mission_error_check) + ')')
             click('#close-mission')
+            click('#rules-toggle')
+            for _ in range(100):
+                if js("return document.getElementById('rule-list').textContent.includes('person on any camera')"):
+                    break
+                time.sleep(.05)
+            assert js("return !document.getElementById('rules-panel').hidden && document.getElementById('mission-panel').hidden")
+            assert js("return [...document.getElementById('rule-camera').options].map(o => o.textContent).join('|')") == 'Any camera|Camera 1|Camera 2|Camera 3'
+            js("document.getElementById('rule-camera').value = 'cam2'; document.getElementById('rule-confidence').value = '0.6'")
+            click('#rule-form button[type="submit"]')
+            for _ in range(100):
+                if js("return document.getElementById('rule-list').children.length") == 2:
+                    break
+                time.sleep(.05)
+            assert RULE_REQUESTS[-1] == ('POST', '/api/rules', {'class_label': 'person', 'stream_id': 'cam2',
+                'min_confidence': 0.6, 'cooldown_seconds': 60, 'speak': True}), RULE_REQUESTS
+            click('#rule-list li:first-child button:nth-of-type(2)')
+            for _ in range(100):
+                if RULE_REQUESTS[-1][0] == 'PATCH':
+                    break
+                time.sleep(.05)
+            assert RULE_REQUESTS[-1] == ('PATCH', '/api/rules/r1', {'enabled': False}), RULE_REQUESTS
+            # Edit reuses the form, PATCHes the same rule and regenerates an automatic name.
+            click('#rule-list li:first-child button:nth-of-type(1)')
+            assert js("""return document.getElementById('rule-submit').textContent === 'Save changes'
+              && !document.getElementById('rule-cancel-edit').hidden
+              && document.querySelector('#rule-list li:first-child').hasAttribute('data-editing')
+              && document.getElementById('rule-camera').value === ''"""), 'Edit did not load the rule'
+            js("document.getElementById('rule-camera').value = 'cam3'; document.getElementById('rule-confidence').value = '0.7'")
+            click('#rule-submit')
+            for _ in range(100):
+                if RULE_REQUESTS[-1][1] == '/api/rules/r1' and 'name' in (RULE_REQUESTS[-1][2] or {}):
+                    break
+                time.sleep(.05)
+            assert RULE_REQUESTS[-1] == ('PATCH', '/api/rules/r1', {'class_label': 'person', 'stream_id': 'cam3',
+                'min_confidence': 0.7, 'cooldown_seconds': 60, 'speak': True, 'name': 'person on Camera 3'}), RULE_REQUESTS[-1]
+            for _ in range(100):
+                if js("return document.getElementById('rule-submit').textContent") == 'Add rule':
+                    break
+                time.sleep(.05)
+            assert js("return document.getElementById('rule-cancel-edit').hidden && document.getElementById('rule-list').textContent.includes('person on Camera 3')")
+            click('#rule-list li:first-child button:nth-of-type(1)')
+            click('#rule-cancel-edit')
+            assert js("return document.getElementById('rule-submit').textContent === 'Add rule' && !document.querySelector('#rule-list [data-editing]')")
+            click('#close-rules')
+            # Light dismiss: a click elsewhere closes Rules, Escape closes Mission from anywhere.
+            click('#rules-toggle')
+            assert js("return !document.getElementById('rules-panel').hidden")
+            click('#track-title')
+            assert js("return document.getElementById('rules-panel').hidden"), 'outside click left Rules open'
+            click('#mission-toggle')
+            js("document.activeElement.blur(); document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))")
+            assert js("return document.getElementById('mission-panel').hidden"), 'Escape left Mission open'
+            # A live update must not rebuild (and so close) a More menu the operator has open.
+            menu_hold = js('''return window.eval(`(() => {
+              const now = new Date().toISOString();
+              state.announced = new Set(["h1"]);
+              const incident = {incident_id: "ih", head_match_id: "h1", state: "open", stream_id: "cam2", class_label: "dog",
+                rule_id: "r1", rule_name: "dog", rule_enabled: true, match_count: 1, opened_utc: now, last_match_utc: now,
+                dispatch_state: "pending", snip_url: null, track: {track_id: 1}};
+              state.incidents = [incident]; renderAlerts(); $("alerts").open = true;
+              const menu = $("alert-list").querySelector("select"); menu.focus();
+              state.incidents = [{...incident, track: {track_id: 2}}]; renderAlerts();
+              const ignoresTrack = !$("alert-list").dataset.deferred;
+              state.incidents = [{...incident, match_count: 2}]; renderAlerts();
+              window.heldMenu = menu;
+              return ignoresTrack && menu.isConnected && document.activeElement === menu && $("alert-list").dataset.deferred === "1";
+            })()`)''')
+            assert menu_hold, 'incident update closed the open More menu'
+            js("window.heldMenu.blur()")
+            time.sleep(.2)
+            assert js("return !window.heldMenu.isConnected && document.getElementById('alert-list').textContent.includes('2 sightings')"), 'deferred incident update never applied'
+            # View shows every object in the incident in the Evidence panel itself, not a popup.
+            js("document.getElementById('alert-list').querySelector('button').click()")
+            grid = "document.querySelector('#track-scroll .track-grid')"
+            for _ in range(100):
+                if js(f"return {grid}.querySelectorAll('.track-card').length") == 3:
+                    break
+                time.sleep(.05)
+            assert js(f"""return document.getElementById('tracks-panel').classList.contains('alert-view')
+              && document.getElementById('alert-view-copy').textContent.includes('Dog · Camera 2')
+              && document.getElementById('scope-copy').textContent.includes('3 objects')
+              && getComputedStyle(document.getElementById('track-controls')).display === 'none'
+              && {grid}.querySelector('.track-card').dataset.trackKey.endsWith(':41')"""), 'View did not show the sightings as Evidence'
+            click('#track-scroll .track-card:nth-child(2)')
+            assert js("return document.getElementById('drawer-title').textContent.includes('#42')")
+            js("document.getElementById('close-drawer').focus(); document.getElementById('drawer').dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true, cancelable: true}))")
+            assert js("return !document.getElementById('drawer').classList.contains('open') && document.getElementById('tracks-panel').classList.contains('alert-view')"), 'drawer Back left the alert view'
+            js("document.activeElement.blur(); document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true, cancelable: true}))")
+            assert js("return !document.getElementById('tracks-panel').classList.contains('alert-view')"), 'Escape did not return to live evidence'
+            js("document.getElementById('alert-list').querySelector('button').click()")
+            time.sleep(.3)
+            click('#cameras .camera:nth-child(2)')
+            assert js("return !document.getElementById('tracks-panel').classList.contains('alert-view')"), 'camera tab did not leave the alert view'
+            js("window.eval('state.incidents = []; renderAlerts(); $(\"alert-toast\").hidden = true; selectCamera(\"cam1\")')")
+            time.sleep(.5)
+            alert_check = '''(() => {
+              const saved = state.incidents;
+              const now = new Date().toISOString();
+              const base = {rule_id: "r1", rule_name: "person on any camera", stream_id: "cam2", class_label: "person",
+                opened_utc: now, last_match_utc: now, match_count: 1, rule_enabled: true, attempts: 1, last_error: null,
+                snip_url: null, track: null};
+              state.announced = null;
+              state.incidents = [
+                {...base, incident_id: "i1", head_match_id: "m1", state: "open", match_count: 4,
+                 dispatch_state: "failed", attempts: 4, undelivered: true, speech: "text_only", last_error: "ConnectError"},
+                {...base, incident_id: "i2", head_match_id: "m2", state: "snoozed", stream_id: "cam1",
+                 snoozed_until_utc: now, dispatch_state: "delivered", speech: "spoken"},
+                {...base, incident_id: "i3", head_match_id: "m3", state: "closed", closure: "false_alarm",
+                 dispatch_state: "delivered"}];
+              renderAlerts();
+              const rows = [...$("alert-list").children].map(li => li.textContent);
+              const buttons = [...$("alert-list").children].map(li => [...li.querySelectorAll("button")].map(b => b.textContent));
+              const menus = [...$("alert-list").children].map(li => [...li.querySelectorAll("option")].map(o => o.value));
+              const badge = document.querySelector('.camera[data-stream="cam2"]').dataset.alerts;
+              const noBadge = document.querySelector('.camera[data-stream="cam1"]').dataset.alerts === undefined;
+              const summary = $("alert-summary").textContent;
+              const firstToast = $("alert-toast").hidden;
+              state.incidents = [{...state.incidents[0], head_match_id: "m9", match_count: 5}, ...state.incidents.slice(1)];
+              renderAlerts();
+              const toast = !$("alert-toast").hidden && $("alert-toast").textContent.includes("Person · Camera 2");
+              $("alert-toast").hidden = true;
+              state.speech = {current: null, talk_held: false, queued: [], last: {outcome: "text_only", text: "person on Camera 2."}};
+              renderSpeech();
+              const textOnly = $("speech-line").textContent.startsWith("Text only");
+              state.speech = {current: null, talk_held: true, queued: [{id: "x"}], last: null};
+              renderSpeech();
+              const held = $("speech-line").textContent.includes("held while you talk");
+              state.speech = {current: null, talk_held: false, queued: [], last: null};
+              renderSpeech();
+              // After Acknowledge the span restarts at the first new sighting; unheard speech is plain.
+              state.audioOn = false;
+              state.incidents = [{...base, incident_id: "i4", head_match_id: "m4", state: "open", opened_utc: "2026-09-24T08:00:00Z",
+                counted_from_utc: now, dispatch_state: "delivered", speech: "unconfirmed"}];
+              renderAlerts();
+              const restarted = !$("alert-list").textContent.includes(shortTime("2026-09-24T08:00:00Z"))
+                && $("alert-list").textContent.includes(shortTime(now)) && $("alert-list").textContent.includes("not played (Audio off)")
+                && !$("alert-list").textContent.includes("confirmed");
+              state.incidents = saved; renderAlerts();
+              return {rows, buttons, menus, badge, summary, textOnly, held, restarted,
+                retry: menus[0].includes("retry") && !menus[1].includes("retry") && menus[0].includes("disable"),
+                ok: rows[0].includes("Person · Camera 2") && rows[0].includes("Needs attention") && rows[0].includes("4 sightings")
+                  && rows[0].includes("Undelivered") && rows[0].includes("text only")
+                  && rows[1].includes("Snoozed") && rows[2].includes("false alarm")
+                  && buttons[0].join() === "View,Speak,Acknowledge,Remove" && buttons[1].join() === "View,Speak,Remove" && menus[2].length === 0
+                  && badge === "1" && noBadge && summary.includes("1 needs attention") && firstToast && toast};
+            })()'''
+            alerts = js('return window.eval(' + json.dumps(alert_check) + ')')
+            assert alerts['ok'] and alerts['retry'] and alerts['textOnly'] and alerts['held'] and alerts['restarted'], alerts
+            # Test controls: Speak asks the Backend to speak the alert; Remove deletes it after confirm.
+            before = len(RULE_REQUESTS)
+            js("""window.eval(`(() => {
+              const now = new Date().toISOString();
+              state.incidents = [{incident_id: "ih", head_match_id: "h1", state: "closed", closure: "dismissed", stream_id: "cam2",
+                class_label: "dog", rule_id: "r1", rule_name: "dog", rule_enabled: true, match_count: 1, opened_utc: now,
+                last_match_utc: now, dispatch_state: "delivered", snip_url: null, track: null}];
+              renderAlerts(); window.confirm = () => true;
+              const [speak, remove] = [...$("alert-list").querySelectorAll("button")].filter(b => b.textContent === "Speak" || b.textContent === "Remove");
+              speak.click(); remove.click();
+            })()`)""")
+            time.sleep(.5)
+            assert sorted(RULE_REQUESTS[before:]) == [('DELETE', '/api/incidents/ih', None), ('POST', '/api/incidents/ih/speak', None)], RULE_REQUESTS[before:]
+            js("window.eval('state.incidents = []; renderAlerts()')")
+            # Older alerts stay reachable: the list collapses to 8 with Show all, and says when the server capped it.
+            paging = js('''return window.eval(`(() => {
+              const now = new Date().toISOString();
+              state.incidents = Array.from({length: 12}, (_, n) => ({incident_id: "p" + n, head_match_id: "pm" + n, state: "closed",
+                closure: "dismissed", stream_id: "cam2", class_label: "person", rule_id: "r1", rule_name: "p", rule_enabled: true,
+                match_count: 1, opened_utc: now, last_match_utc: now, dispatch_state: "delivered", snip_url: null, track: null}));
+              state.incidentCounts = {open: 0, active: 0, total: 12}; state.alertsExpanded = false; renderAlerts();
+              const collapsed = $("alert-list").children.length === 8 && !$("alert-page").hidden && $("alert-more").textContent === "Show all 12";
+              $("alert-more").click();
+              const expanded = $("alert-list").children.length === 12 && $("alert-more").textContent === "Show fewer"
+                && $("alert-more").getAttribute("aria-expanded") === "true" && $("alert-page-note").textContent === "";
+              state.incidentCounts = {open: 3, active: 5, total: 60}; renderAlerts();
+              const capped = $("alert-page-note").textContent.includes("Newest 12 of 60") && $("alert-summary").textContent.includes("3 need attention");
+              $("alert-more").click();
+              state.incidents = []; state.incidentCounts = null; renderAlerts();
+              return {collapsed, expanded, capped};
+            })()`)''')
+            assert all(paging.values()), paging
+            # A failed action is shown inline and the list is rebuilt, so its button works again.
+            now_iso = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+            ALERTS['incidents'] = [dict(incident_id='ie', head_match_id='he', state='open', stream_id='cam2', class_label='dog',
+                rule_id='r1', rule_name='dog', rule_enabled=True, match_count=1, opened_utc=now_iso, last_match_utc=now_iso,
+                dispatch_state='delivered', snip_url=None, track=None)]
+            js("window.eval('refreshIncidents()')")
+            for _ in range(100):
+                if js("return [...document.querySelectorAll('#alert-list button')].some(b => b.textContent === 'Acknowledge')"):
+                    break
+                time.sleep(.05)
+            js("[...document.querySelectorAll('#alert-list button')].find(b => b.textContent === 'Acknowledge').click()")
+            for _ in range(100):
+                if not js("return document.getElementById('alert-error').hidden"):
+                    break
+                time.sleep(.05)
+            assert js("""return document.getElementById('alert-error').textContent.startsWith('Acknowledge failed')
+              && [...document.querySelectorAll('#alert-list button')].find(b => b.textContent === 'Acknowledge').disabled === false"""), 'failed action left no error or a dead button'
+            ALERTS['incidents'] = []
+            js("window.eval('refreshIncidents(); showAlertError(\"\")')")
+            # Speech counts as spoken only when this tab plays it; Audio on restarts the current utterance.
+            before = len(RULE_REQUESTS)
+            audio = async_js('''const done = arguments[arguments.length - 1];
+              window.eval(`(async () => {
+                const RealAudio = window.Audio, clips = [];
+                let block = false;
+                window.Audio = class { constructor(src) { this.src = src; clips.push(this); }
+                  play() { if (block) return Promise.reject(Object.assign(new Error("no"), {name: "NotAllowedError"}));
+                    setTimeout(() => this.onplaying?.(), 0); return Promise.resolve(); }
+                  pause() {} };
+                const wait = () => new Promise(r => setTimeout(r, 50));
+                state.audioOn = false; renderAudioToggle();
+                state.speech = {current: {id: "sp1", text: "dog on Camera 2.", audio_base64: "AAAA"}, queued: [], talk_held: false, last: null};
+                renderSpeech();
+                const off = $("speech-line").textContent.startsWith("Audio off") && clips.length === 0;
+                $("audio-toggle").click(); await wait();
+                const speaking = $("speech-line").textContent.startsWith("Speaking:") && clips.length === 2 && state.playingId === "sp1";
+                clips[1].onended(); await wait();
+                stopPlayback(); block = true; state.playback = null;
+                renderSpeech(); await wait();
+                const blocked = !state.audioOn && $("audio-toggle").textContent === "Audio off"
+                  && $("speech-line").textContent.includes("browser blocked audio");
+                state.speech = {current: null, queued: [], talk_held: false, last: null};
+                renderSpeech(); window.Audio = RealAudio;
+                return {off, speaking, blocked, stopped: state.audio === null};
+              })()`).then(done, e => done(String(e)))''')
+            assert isinstance(audio, dict) and all(audio.values()), audio
+            acks = [(p, b) for _, p, b in RULE_REQUESTS[before:]]
+            assert acks == [('/api/speech/sp1/playback', {'event': 'started'}), ('/api/speech/sp1/playback', {'event': 'ended'}),
+                            ('/api/speech/sp1/playback', {'event': 'error'})], acks
             click('#video-fullscreen')
             time.sleep(.5)
             assert js('return document.fullscreenElement?.id') == 'video-wrap'
@@ -388,8 +675,17 @@ def main():
               const toggled = $("model-details").hidden && first.getAttribute("aria-expanded") === "false";
               first.click(); second.click();
               const switched = !$("model-details").hidden && state.selectedModel === "dlsps";
+              const near = (button) => {
+                const panel = $("model-details").getBoundingClientRect(), anchor = button.getBoundingClientRect();
+                return Math.abs(panel.top - anchor.bottom - 6) < 2 && panel.right <= innerWidth
+                  && (Math.abs(panel.left - anchor.left) < 2 || panel.right >= innerWidth - 13);
+              };
+              const anchored = near(second);
+              second.click(); first.click();
+              const followed = near(first) && Math.round($("model-details").getBoundingClientRect().left) !== 12;
+              first.click(); second.click();
               $("model-title").click();
-              const panelClosed = $("model-details").hidden && document.activeElement === second;
+              const panelClosed = $("model-details").hidden && document.activeElement === second && anchored && followed;
               first.click(); $("pause-updates").focus(); $("pause-updates").click();
               const outsideClosed = $("model-details").hidden && state.paused
                 && document.activeElement === $("pause-updates");
@@ -441,7 +737,7 @@ def main():
                 api = original;
                 if (!recovered || recovered === previous || state.events !== recovered) return false;
                 recovered.dispatchEvent(new MessageEvent("feed", {data: JSON.stringify({stream_id: "cam1", feed: {ok: false}})}));
-                recovered.dispatchEvent(new MessageEvent("alert", {data: JSON.stringify({alerts: []})}));
+                recovered.dispatchEvent(new MessageEvent("alert", {data: JSON.stringify({alerts: [], incidents: []})}));
                 const telemetry = structuredClone(state.telemetry); telemetry.status = "recovery-test";
                 recovered.dispatchEvent(new MessageEvent("telemetry", {data: JSON.stringify(telemetry)}));
                 const recent = structuredClone(state.recent.cam1); recent.matched_count = 123;
@@ -528,12 +824,14 @@ def main():
                 time.sleep(1)
             check('''(() => { closeDrawer(); return $("operator-clock").dateTime !== clockBeforeInspection && !$("track-scroll").inert && document.activeElement.classList.contains("track-card"); })()''')
             check('''(() => {
-              state.alerts = [{match_id: "test-alert", matched_utc: new Date().toISOString(), stream_id: "cam2",
-                class_label: "person", track_id: 8, rule_name: "Entry", dispatch_state: "delivered"}];
+              const now = new Date().toISOString();
+              state.incidents = [{incident_id: "test-incident", head_match_id: "test-alert", state: "open", stream_id: "cam2",
+                class_label: "person", rule_id: "r1", rule_name: "Entry", rule_enabled: true, match_count: 1,
+                opened_utc: now, last_match_utc: now, dispatch_state: "delivered", track: null, snip_url: null}];
               renderAlerts(); const open = $("alerts").open;
               state.selected = "cam3"; renderCameras(); renderTracks(true);
               const global = $("alert-summary").textContent.includes("Camera 2");
-              state.alerts = []; renderAlerts(); $("alerts").open = false;
+              state.incidents = []; renderAlerts(); $("alerts").open = false; $("alert-toast").hidden = true;
               state.selected = "cam1"; renderCameras(); $("track-scroll").scrollTop = 0; renderTracks(true);
               return open && global;
             })()''')
@@ -572,14 +870,16 @@ def main():
                         && history.top >= evidenceHead.top && history.bottom <= evidenceHead.bottom
                         && !$("track-count") && $("track-title").textContent === "Evidence"
                         && getComputedStyle($("open-assistant")).backgroundColor !== getComputedStyle($("toggle-diagnostics")).backgroundColor
-                        && [...document.querySelectorAll(".quiet-button:not(#ask-submit):not(#use-viewed-camera)")].every(button => parseFloat(getComputedStyle(button).borderTopWidth) >= 1 && getComputedStyle(button).height === "32px" && getComputedStyle(button).fontSize === "13px")
+                        && [...document.querySelectorAll(".quiet-button:not(#ask-submit):not(#use-viewed-camera):not(#toggle-history-filters):not(.primary-action)")].every(button => parseFloat(getComputedStyle(button).borderTopWidth) >= 1 && getComputedStyle(button).height === "32px" && getComputedStyle(button).fontSize === "13px")
+                        && ["mission-toggle","rules-toggle","audio-toggle","open-assistant"].every(id => $(id).getBoundingClientRect().height === 40 && getComputedStyle($(id)).fontSize === "15px")
                         && parseFloat(getComputedStyle(document.querySelector(".track-seen")).fontSize) >= 15
                         && document.body.scrollWidth === innerWidth && document.body.scrollHeight === innerHeight
                         && $("video-wrap").getBoundingClientRect().height >= 200
                         && $("video-wrap").getBoundingClientRect().bottom <= $("video-panel").getBoundingClientRect().bottom
                         && $("workspace").scrollWidth === $("workspace").clientWidth
-                        && chart.height >= 85 && chart.bottom <= panel.bottom
-                        && $("chart-note").getBoundingClientRect().bottom <= panel.bottom
+                        && chart.height >= ({str(expanded).lower()} ? 85 : 50) && chart.bottom <= panel.bottom
+                        && (!{str(expanded).lower()} || $("chart-note").getBoundingClientRect().bottom <= panel.bottom)
+                        && ({str(expanded).lower()} || innerHeight <= 650 || $("video-panel").getBoundingClientRect().height >= 1.5 * panel.height)
                         && $("track-scroll").clientHeight > 100
                         && controls.every((el) => el.getBoundingClientRect().height >= 44);
                       return ok || {{viewport: [innerWidth, innerHeight], expanded: {str(expanded).lower()},

@@ -34,7 +34,22 @@
   .camera.down small { color: var(--bad); }
   /* Disabled sources are omitted by Backend; only bounded startup is neutral. */
   .camera.idle small { color: var(--muted); }
-  #mission-toggle { white-space: nowrap; }
+  #mission-toggle, #rules-toggle, #audio-toggle { white-space: nowrap; }
+  #audio-toggle[data-state="off"] { color: var(--warn); }
+  #rules-panel { position: fixed; top: 58px; right: 12px; width: min(460px, calc(100vw - 24px)); max-height: calc(100dvh - 72px); z-index: 11; overflow: auto; box-shadow: 0 12px 30px #0008; }
+  #rules-panel .panel-head button { margin-left: auto; }
+  #rules-body { padding: 12px; display: grid; gap: 10px; }
+  #rule-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 8px; }
+  #rule-form label { display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
+  #rule-form select, #rule-form input[type="number"] { min-width: 0; border: 1px solid var(--line); border-radius: 7px; padding: 6px; background: var(--bg); color: var(--text); }
+  #rule-form .rule-speak { display: flex; align-items: center; gap: 6px; }
+  #rule-form button { grid-column: 1 / -1; }
+  #rule-list { margin: 0; padding: 0; list-style: none; }
+  #rule-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 6px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  #rule-list li.off strong { color: var(--muted); }
+  #rule-list li[data-editing] strong { color: var(--accent); }
+  #rule-list small { display: block; color: var(--muted); }
+  #rules-status { margin: 0; color: var(--muted); font-size: 12px; }
   .top-status { margin-left: auto; text-align: right; white-space: nowrap; }
   .clock-status { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
   #operator-clock { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -49,7 +64,7 @@
   .model-button[data-status="ready"] small { color: var(--good); }
   .model-button[data-status="unavailable"] small, .model-button[data-status="mismatch"] small { color: var(--warn); }
   .model-button[aria-expanded="true"] { border-color: var(--accent); background: #35485e; }
-  #model-details { position: fixed; top: 126px; left: 12px; width: min(380px, calc(100vw - 24px)); max-height: calc(100dvh - 140px); z-index: 10; box-shadow: 0 12px 30px #0008; overflow: auto; }
+  #model-details { position: fixed; top: 126px; left: 12px; margin: 0; width: min(380px, calc(100vw - 24px)); max-height: calc(100dvh - 140px); z-index: 10; box-shadow: 0 12px 30px #0008; overflow: auto; }
   #model-details .panel-head { position: sticky; top: 0; background: var(--panel); }
   #model-details .panel-head button { margin-left: auto; }
   #model-detail-body { padding: 12px 16px; }
@@ -76,7 +91,7 @@
   #mission-actions { display: flex; gap: 6px; flex-wrap: wrap; }
   #workspace { min-height: 0; overflow: auto; padding: 12px; display: grid; gap: 12px;
     grid-template-columns: minmax(0, 58fr) minmax(400px, 42fr);
-    grid-template-rows: minmax(min-content, 1fr) minmax(min-content, .8fr); }
+    grid-template-rows: minmax(min-content, 7fr) minmax(min-content, 3fr); }
   #workspace.resources-expanded #telemetry { position: absolute; inset: calc(-1 * var(--telemetry-rise)) 0 0; height: auto; z-index: 1; }
   .panel { min-width: 0; min-height: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
   .panel-head { min-height: 44px; padding: 0 12px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); }
@@ -86,6 +101,9 @@
   .quiet-button:not(:disabled):hover { border-color: var(--accent); }
   .quiet-button[aria-pressed="true"], .quiet-button[aria-expanded="true"] { background: #35485e; border-color: var(--accent); }
   #open-assistant { margin-left: auto; background: #35485e; border-color: var(--accent); }
+  .quiet-button.primary-action { height: 40px; min-height: 40px; font-size: 15px; padding: 6px 16px; border-width: 2px; border-color: #56657a; background: #313946; }
+  #open-assistant.primary-action { min-width: 88px; background: #35485e; border-color: var(--accent); }
+  #audio-toggle.primary-action[data-state="off"] { border-color: var(--warn); background: rgba(239, 197, 128, 0.14); }
   #video-panel { grid-column: 1; grid-row: 1; display: grid; grid-template-rows: 44px minmax(200px, 1fr) auto; }
   #video-wrap { contain: size; position: relative; min-height: 0; background: #171b20; }
   video { width: 100%; height: 100%; display: block; object-fit: contain; }
@@ -95,9 +113,36 @@
   #video-note { position: absolute; left: 10px; bottom: 8px; max-width: calc(100% - 20px); padding: 5px 8px; border-radius: 6px; background: #20252ce8; font-size: 12px; }
   #alerts { border-top: 1px solid var(--line); }
   #alerts summary { min-height: 44px; padding: 11px 12px; cursor: pointer; font-size: 13px; }
-  #alert-list { margin: 0; padding: 0 12px; list-style: none; max-height: 92px; overflow: auto; }
-  #alert-list li { display: grid; grid-template-columns: 64px 1fr; gap: 8px; padding: 5px 0; font-size: 12px; }
+  #alerts[data-attention] summary { color: var(--warn); font-weight: 600; }
+  #alert-list { margin: 0; padding: 0 12px 4px; list-style: none; max-height: 150px; overflow: auto; }
+  #alert-list li { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 0; font-size: 12px; border-top: 1px solid var(--line); }
+  #alert-list li:first-child { border-top: 0; }
+  #alert-list .incident-thumb { width: 56px; height: 40px; border-radius: 4px; object-fit: cover; background: #171b20; display: block; }
+  #alert-list .incident-copy { min-width: 0; }
+  #alert-list .incident-title { display: flex; gap: 6px; align-items: center; font-size: 13px; }
+  #alert-list .incident-state { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 9px; border: 1px solid currentColor; }
+  #alert-list [data-incident="open"] .incident-state { color: var(--warn); }
+  #alert-list [data-incident="acknowledged"] .incident-state, #alert-list [data-incident="snoozed"] .incident-state { color: var(--accent); }
+  #alert-list [data-incident="closed"] { opacity: .65; }
+  #alert-list [data-incident="closed"] .incident-state { color: var(--muted); }
+  #alert-list .incident-meta { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #alert-list .incident-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; align-items: center; }
+  #alert-list .incident-actions select { height: 28px; min-height: 28px; font-size: 12px; padding: 0 4px; }
+  .camera[data-alerts]::after { content: attr(data-alerts); margin-left: 6px; padding: 0 6px; border-radius: 9px; background: var(--warn); color: #171b20; font-size: 11px; font-weight: 700; vertical-align: top; }
+  #alert-toast { position: fixed; right: 16px; bottom: 16px; z-index: 50; max-width: 360px; padding: 10px 14px; border: 1px solid var(--warn); border-radius: 8px; background: #2b2a24; color: var(--text); font-size: 13px; text-align: left; cursor: pointer; box-shadow: 0 4px 16px #0008; }
+  #alert-toast[hidden] { display: none; }
+  #alert-list .dispatch { font-weight: 600; }
+  #alert-list .dispatch[data-state="undelivered"], #alert-list .dispatch[data-state="retrying"] { color: var(--warn); }
+  #alert-list .dispatch[data-state="delivered"] { color: var(--good); }
+  #alert-list button { height: 28px; min-height: 28px; }
+  #speech-line { padding: 0 12px 6px; font-size: 12px; color: var(--muted); min-height: 0; }
+  #speech-line:empty { display: none; }
+  #speech-line[data-mode="audio"] { color: var(--accent); }
+  #speech-line[data-mode="text"] { color: var(--warn); }
   #alert-list li.empty { display: block; }
+  #alert-error { margin: 0 12px 6px; padding: 6px 8px; border: 1px solid var(--bad); border-radius: 6px; color: var(--bad); font-size: 12px; }
+  #alert-error[hidden], #alert-page[hidden] { display: none; }
+  #alert-page { display: flex; gap: 8px; align-items: center; padding: 4px 12px 8px; font-size: 12px; color: var(--muted); }
   .empty { color: var(--muted); padding: 16px; }
   #lower { position: relative; grid-column: 1; grid-row: 2; min-height: 0; }
   #telemetry { height: 100%; position: relative; display: grid; grid-template-rows: 44px auto minmax(0, 1fr); }
@@ -115,11 +160,16 @@
   meter::-webkit-meter-bar { background: var(--line); border: 0; }
   meter::-webkit-meter-optimum-value { background: var(--accent); }
   .resource[data-state="stale"] strong, .resource[data-state="unavailable"] strong { color: var(--warn); }
-  #trend { min-height: 0; padding: 6px 12px 8px; display: grid; grid-template-rows: auto minmax(85px, 1fr) auto; }
+  #trend { min-height: 0; padding: 6px 12px 8px; display: grid; grid-template-rows: auto minmax(50px, 1fr) auto; }
+  /* Collapsed Resources keeps a compact trend so the video gets ~2/3 of the height. */
+  #workspace:not(.resources-expanded) #chart-note { display: none; }
+  #workspace:not(.resources-expanded) #trend { padding: 4px 12px 4px; }
+  #workspace:not(.resources-expanded) #telemetry-grid { padding-top: 6px; }
+  #workspace:not(.resources-expanded) #chart-legend { flex-wrap: nowrap; overflow: hidden; white-space: nowrap; }
   #chart-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; }
   .legend-item { display: inline-flex; align-items: center; gap: 5px; }
   .swatch { width: 16px; border-top: 3px solid; }
-  #chart { contain: size; display: block; width: 100%; height: 100%; min-height: 85px; }
+  #chart { contain: size; display: block; width: 100%; height: 100%; min-height: 50px; }
   #chart text { fill: var(--muted); font-size: 12px; }
   #chart .gridline { stroke: var(--line); stroke-width: 1; }
   #chart-note { color: var(--muted); font-size: 12px; min-height: 17px; }
@@ -127,13 +177,18 @@
   .metric-line { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 8px 0; border-bottom: 1px solid var(--line); }
   .metric-line small { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
   #tracks-panel { contain: size; grid-column: 2; grid-row: 1 / span 2; position: relative; display: grid;
-    grid-template-rows: auto auto auto auto auto minmax(0, 1fr); }
+    grid-template-columns: minmax(0, 1fr); grid-template-rows: repeat(6, auto) minmax(0, 1fr); }
+  #tracks-panel > #track-scroll { grid-row: -2 / -1; }
   #track-controls { display: grid; grid-template-columns: .85fr 1fr 1fr; gap: 8px; padding: 10px 12px; }
   #track-controls label { color: var(--muted); font-size: 12px; }
   #track-controls select { width: 100%; min-height: 44px; margin-top: 4px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); }
   #track-summary { padding: 0 12px 8px; font-size: 13px; color: var(--muted); }
   #presence { display: none; padding: 8px 12px; color: var(--warn); background: #443c2f; }
   #presence.show { display: block; }
+  #alert-view { display: none; min-width: 0; overflow: hidden; min-height: 44px; padding: 4px 6px 4px 12px; align-items: center; gap: 8px; border-block: 1px solid var(--warn); background: #2b2a24; font-size: 13px; }
+  #tracks-panel.alert-view #alert-view { display: flex; }
+  #tracks-panel.alert-view #track-controls, #tracks-panel.alert-view #list-status, #tracks-panel.alert-view #subtotals { display: none; }
+  #alert-view-copy { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #list-status { min-height: 44px; padding: 0 6px 0 12px; display: flex; align-items: center; gap: 4px; border-block: 1px solid var(--line); }
   #people-only[aria-pressed="true"] { border-color: var(--accent); background: #35485e; }
   #list-state { flex: 1; font-size: 12px; color: var(--muted); }
@@ -176,10 +231,13 @@
   #assistant-reset { margin-left: auto; }
   #assistant-context-bar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; flex-shrink: 0; }
   #conversation-note { flex: 1; color: var(--muted); font-size: 12px; }
-  #use-viewed-camera { flex-shrink: 0; font-size: 12px; }
-  /* Camera scope is stated once, where the question is typed. */
-  .scope-field { display: grid; gap: 3px; min-width: 0; align-content: start; }
-  .scope-field #use-viewed-camera { min-height: 32px; width: 100%; }
+  /* Camera scope is stated once, where the question is typed. Every field is a
+     label line over a 48px control so the row stays aligned; the on-screen
+     camera shortcut rides on the label line instead of adding a row. */
+  .scope-field { display: grid; grid-template-rows: 20px auto; gap: 3px; min-width: 0; }
+  .field-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; height: 20px; font-size: 12px; white-space: nowrap; }
+  #use-viewed-camera { flex-shrink: 0; height: 20px; padding: 0 6px; border: 1px solid var(--accent); border-radius: 10px; background: #35485e; color: var(--text); font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; }
+  .field-head label { flex-shrink: 0; }
   #assistant-welcome { padding: 12px; }
   #assistant-welcome h3 { margin: 6px 0 8px; font-size: 21px; font-weight: 600; }
   #assistant-welcome p { color: var(--muted); line-height: 1.5; margin: 0 0 14px; }
@@ -218,7 +276,9 @@
   .chat-turn p { margin: 4px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
   .chat-turn .chat-question { color: var(--accent); background: #304253; padding: 8px 10px; border-radius: 10px 10px 2px 10px; margin-left: 24px; }
   #assistant-submitted { background: #304253; border-radius: 10px 10px 2px 10px; padding: 8px 10px; margin-left: 24px !important; color: var(--text) !important; }
-  .chat-turn p:not(.chat-question), #assistant-answer { line-height: 1.55; }
+  /* One size per role, so an answer does not shrink when it moves into the transcript. */
+  .chat-turn p:not(.chat-question), #assistant-answer { line-height: 1.55; font-size: 15px; }
+  .chat-turn .chat-question, #assistant-submitted { font-size: 14px; }
   .chat-turn small { color: var(--muted); }
   #assistant-panel #ask-form { order: 2; border-top: 1px solid var(--line); border-bottom: 0; }
   #assistant-panel #assistant-output { overflow: auto; }
@@ -226,7 +286,7 @@
   #assistant-panel #assistant-results { flex: none; min-height: 80px; overflow: visible; }
   #assistant-panel:not(.has-results) #assistant-paging, #assistant-panel:not(.has-results) #assistant-results { display: none; }
   #assistant-answer { white-space: pre-wrap; overflow-wrap: anywhere; }
-  #toggle-history-filters { grid-column: auto; }
+  #toggle-history-filters { grid-column: auto; align-self: end; height: 48px; min-height: 48px; }
   #assistant-panel:not(.filters-open) #filter-fields,
   #assistant-panel:not(.filters-open) #search-input-hint,
   #assistant-panel:not(.filters-open) #search-availability { display: none; }
@@ -237,12 +297,15 @@
   #assistant-workspace { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   #ask-form { flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; max-height: calc(100% - 200px); gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
   #search-entry { display: flex; gap: 6px; flex-shrink: 0; }
-  #search-fields { min-height: 0; overflow: auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  #search-fields { min-height: 0; overflow: auto; display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr); gap: 3px 8px; align-items: end; }
   #filter-fields { display: contents; }
-  #ask-form label { display: grid; gap: 3px; min-width: 0; font-size: 12px; }
+  #ask-form label { display: grid; grid-template-rows: 20px auto; align-items: center; gap: 3px; min-width: 0; font-size: 12px; }
+  #ask-form .field-head label { display: block; grid-template-rows: none; }
   #ask-form select, #ask-form input, #ask-form textarea { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 6px; background: var(--bg); color: var(--text); font: inherit; }
   #ask-text { flex: 1; height: 52px; min-height: 48px; resize: none; line-height: 1.4; }
-  #search-custom { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  #search-custom { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px 8px; margin-top: 3px; }
+  #search-fields { container-type: inline-size; }
+  @container (min-width: 640px) { #search-custom { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
   #search-input-hint, #search-availability, #search-timezone { grid-column: 1 / -1; margin: 0; font-size: 12px; color: var(--muted); }
   #search-availability { max-height: 20px; overflow: auto; }
   #search-timezone { display: none; }
@@ -250,9 +313,9 @@
   #ask-submit { min-height: 48px; align-self: stretch; background: #35485e !important; border-color: var(--accent) !important; flex-shrink: 0; }
   #assistant-output { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   #assistant-result-head { padding: 8px 10px 0; max-height: calc(100% - 144px); min-height: 0; overflow: auto; flex-shrink: 1; }
-  #assistant-submitted { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+  #assistant-submitted { margin: 0 0 8px; color: var(--muted); }
   #assistant-submitted:empty, #assistant-editor-error:empty { display: none; }
-  #assistant-answer { font-size: 15px; margin-bottom: 8px; }
+  #assistant-answer { margin-bottom: 8px; }
   #assistant-progress, #assistant-warnings { font-size: 13px; margin-bottom: 8px; }
   #assistant-warnings { color: var(--warn); }
   #assistant-scope { display: flex; flex-wrap: wrap; gap: 4px; color: var(--muted); font-size: 12px; }
@@ -286,7 +349,9 @@
   <header>
     <div class="brand"><strong>Handheld ops</strong><span>Live evidence console</span></div>
     <nav id="cameras" aria-label="Camera selection"></nav>
-    <button id="mission-toggle" class="quiet-button" type="button" aria-controls="mission-panel" aria-expanded="false">Mission</button>
+    <button id="mission-toggle" class="quiet-button primary-action" type="button" aria-controls="mission-panel" aria-expanded="false">Mission</button>
+    <button id="rules-toggle" class="quiet-button primary-action" type="button" aria-controls="rules-panel" aria-expanded="false">Rules</button>
+    <button id="audio-toggle" class="quiet-button primary-action" type="button" aria-pressed="false" data-state="off" title="Browsers play speech only after a tap">Audio off</button>
     <div class="top-status">
       <div class="clock-status"><time id="operator-clock" aria-label="Current local time"></time><div id="connection">connecting</div></div>
       <div id="operator-date"></div>
@@ -332,6 +397,22 @@
       <dl id="mission-brief"></dl>
     </div>
   </aside>
+  <aside id="rules-panel" class="panel" aria-labelledby="rules-title" hidden>
+    <div class="panel-head"><h2 id="rules-title">Alert rules</h2><button id="close-rules" class="quiet-button" type="button">Close</button></div>
+    <div id="rules-body">
+      <form id="rule-form">
+        <label>Object type<select id="rule-class"></select></label>
+        <label>Camera<select id="rule-camera"></select></label>
+        <label>Min confidence<input id="rule-confidence" type="number" min="0" max="1" step="0.05" placeholder="any"></label>
+        <label>Speech cooldown (s)<input id="rule-cooldown" type="number" min="5" max="3600" step="1" value="60"></label>
+        <label class="rule-speak"><input id="rule-speak" type="checkbox" checked> Announce by speech</label>
+        <button id="rule-submit" class="quiet-button" type="submit">Add rule</button>
+        <button id="rule-cancel-edit" class="quiet-button" type="button" hidden>Cancel edit</button>
+      </form>
+      <p id="rules-status" role="status">A rule fires once per tracked object, not once per frame.</p>
+      <ul id="rule-list" aria-label="Alert rules"></ul>
+    </div>
+  </aside>
   <main id="workspace">
     <section id="video-panel" class="panel" aria-labelledby="video-heading">
       <div class="panel-head">
@@ -343,9 +424,13 @@
         <div id="video-note" role="status">Select a camera.</div>
       </div>
       <details id="alerts">
-        <summary id="alert-summary">Global alerts · No alerts</summary>
+        <summary id="alert-summary">Alerts · No active alerts</summary>
+        <div id="speech-line" role="status"></div>
+        <div id="alert-error" role="alert" hidden></div>
         <ul id="alert-list"></ul>
+        <div id="alert-page" hidden><button id="alert-more" class="quiet-button" type="button" aria-controls="alert-list"></button><span id="alert-page-note"></span></div>
       </details>
+      <button id="alert-toast" type="button" hidden></button>
     </section>
 
     <div id="lower">
@@ -369,7 +454,7 @@
     <section id="tracks-panel" class="panel" aria-labelledby="track-title">
       <div class="panel-head">
         <h2 id="track-title">Evidence</h2>
-        <button id="open-assistant" class="quiet-button" type="button">Ask</button>
+        <button id="open-assistant" class="quiet-button primary-action" type="button">Ask</button>
       </div>
       <div id="track-controls">
         <label>View
@@ -387,6 +472,10 @@
             <option value="image">Has image</option>
           </select>
         </label>
+      </div>
+      <div id="alert-view" role="status">
+        <span id="alert-view-copy"></span>
+        <button id="exit-alert-view" class="quiet-button" type="button">Back to live evidence</button>
       </div>
       <div id="track-summary"><span id="scope-copy">Loading tracks…</span><div id="subtotals"></div></div>
       <div id="presence"></div>
@@ -412,7 +501,7 @@
               <button id="ask-submit" class="quiet-button" type="submit">Search</button>
             </div>
             <div id="search-fields">
-              <div class="scope-field"><label>Camera scope<select id="search-camera"></select></label><button id="use-viewed-camera" class="quiet-button" type="button" hidden>Use on-screen camera</button></div>
+              <div class="scope-field"><div class="field-head"><label for="search-camera">Camera scope</label><button id="use-viewed-camera" type="button" hidden>Use on-screen camera</button></div><select id="search-camera"></select></div>
               <label>Answer mode<select id="assistant-mode"><option value="auto">Ask anything</option><option value="general">General chat</option></select></label>
               <button id="toggle-history-filters" class="quiet-button" type="button" aria-expanded="false">History filters</button>
               <div id="filter-fields">
@@ -486,14 +575,14 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const state = {
-  streams: [], selected: null, current: {}, recent: {}, alerts: [],
+  streams: [], selected: null, current: {}, recent: {}, alerts: [], incidents: [], announced: null,
   telemetry: null, history: new Map(), whep: null, events: null,
   whepSerial: 0, whepFailures: 0, whepLeaving: false,
   filter: {mode: "current", classLabel: "", hasImage: false},
   paused: false, held: false, pending: false, drawerTrack: null, selectedTrackKey: null,
   resource: "cpu", trackSignature: "", requestVersion: 0,
   models: [], selectedModel: null, modelsUnavailable: false,
-  mission: null,
+  mission: null, rules: null, speech: null, audioOn: false, audio: null, playingId: null, playback: null, incidentCounts: null, alertsExpanded: false, editingRule: null,
   assistantToken: null, assistantBusy: false, assistantPrevious: null,
   assistantAnswer: null, assistantContext: null, assistantPages: new Map(),
   assistantReturn: false, assistantScroll: 0, assistantOptions: [], assistantAvailability: [], priorityClasses: [],
@@ -621,6 +710,7 @@ $("mission-toggle").onclick = async () => {
   $("mission-toggle").setAttribute("aria-expanded", String(opening));
   if (opening) {
     closeAssistant(false);
+    closeRules(false);
     await refreshMission();
     $("close-mission").focus();
     $("mission-file").focus();
@@ -729,6 +819,7 @@ function renderModels() {
   }
   const model = state.models.find((item) => item.id === state.selectedModel);
   if ($("model-details").hidden) return;
+  placeModelDetails();
   $("model-title").textContent = model?.label || modelLabels.find(([id]) => id === state.selectedModel)?.[1] || "Model details";
   const status = placementStatus(model);
   const reported = model?.runtime_device && status !== "unknown" && status !== "unavailable";
@@ -742,6 +833,20 @@ function renderModels() {
     : reported ? "Device reported by the service." : "Configured device; runtime device is not reported.";
 
 }
+
+// Open the details directly under the model button that was clicked, kept on screen.
+function placeModelDetails() {
+  const panel = $("model-details");
+  const button = [...$("model-buttons").children].find((item) => item.dataset.model === state.selectedModel);
+  if (panel.hidden || !button) return;
+  const anchor = button.getBoundingClientRect();
+  const margin = 12;
+  const left = Math.min(Math.max(margin, anchor.left), window.innerWidth - panel.offsetWidth - margin);
+  panel.style.left = Math.max(margin, left) + "px";
+  panel.style.top = anchor.bottom + 6 + "px";
+  panel.style.maxHeight = Math.max(160, window.innerHeight - anchor.bottom - 6 - margin) + "px";
+}
+window.addEventListener("resize", placeModelDetails);
 
 function closeModelDetails(restoreFocus = true) {
   $("model-details").hidden = true;
@@ -965,6 +1070,7 @@ window.addEventListener("pagehide", () => { state.whepLeaving = true; detachWhep
 window.addEventListener("pageshow", () => { state.whepLeaving = false; resumeWhep(); });
 
 function selectCamera(streamId, firstLoad = false) {
+  if (state.alertView) exitAlertView(false);
   if (!firstLoad && compactAssistant()) closeAssistant(false);
   if (state.drawerTrack) closeDrawer();
   state.selected = streamId;
@@ -1026,6 +1132,7 @@ function filterTrack(track) {
 }
 
 function visibleTracks() {
+  if (state.alertView) return state.alertView.tracks;
   const source = state.filter.mode === "current" ? state.current : state.recent;
   return selectedStreams().flatMap((stream) =>
     ((source[stream.stream_id] || {}).tracks || []).filter(filterTrack).map((track, index) => ({
@@ -1101,6 +1208,7 @@ function renderClassFilter() {
 }
 
 function renderTrackSummary(tracks) {
+  if (state.alertView) return renderAlertView();
   const camera = state.selected === "all" ? "All cameras" : cameraName(state.selected);
   const type = state.filter.classLabel ? titleCase(state.filter.classLabel) + " tracks" : "Object tracks";
   const results = selectedStreams().map((stream) => state.recent[stream.stream_id] || {});
@@ -1237,36 +1345,566 @@ function renderTracks(force = false) {
   updateListState();
 }
 
+const INCIDENT_STATES = {open: "Needs attention", acknowledged: "Acknowledged", snoozed: "Snoozed", closed: "Closed"};
+const CLOSURES = {dismissed: "dismissed", false_alarm: "false alarm", quiet: "quiet", rule_disabled: "rule disabled", rule_deleted: "rule deleted"};
+
+function incidentTitle(incident) {
+  const label = incident.class_label.charAt(0).toUpperCase() + incident.class_label.slice(1);
+  return label + " · " + cameraName(incident.stream_id);
+}
+
+async function viewIncident(incident) {
+  incident = state.incidents.find((item) => item.incident_id === incident.incident_id) || incident;
+  closeMission(false);
+  closeRules(false);
+  closeAssistant(false);
+  selectCamera(incident.stream_id);
+  const view = {incident, tracks: [], loading: true};
+  state.alertView = view;
+  $("tracks-panel").classList.add("alert-view");
+  renderAlertView();
+  renderTracks(true);
+  $("exit-alert-view").focus();
+  await loadAlertView(view);
+}
+
+async function loadAlertView(view) {
+  try {
+    const result = await api("/api/incidents/" + encodeURIComponent(view.incident.incident_id) + "/tracks");
+    if (state.alertView !== view) return;
+    view.tracks = (result.tracks || []).map((track) => ({...track, liveIndex: 0}));
+    view.error = null;
+  } catch (error) {
+    if (state.alertView !== view) return;
+    view.error = error.message;
+  }
+  view.loading = false;
+  renderAlertView();
+  renderTracks(true);
+}
+
+function renderAlertView() {
+  const view = state.alertView;
+  if (!view) return;
+  const incident = view.incident;
+  const since = incident.acknowledged_count ? "since acknowledged " : "since ";
+  $("alert-view-copy").textContent = "Alert · " + incidentTitle(incident) + " · " + incident.rule_name;
+  $("alert-view-copy").title = $("alert-view-copy").textContent;
+  $("scope-copy").textContent = view.loading ? "Loading sightings…" : view.error ? view.error
+    : (incident.match_count > view.tracks.length ? "Newest " + view.tracks.length + " of " + incident.match_count
+      : view.tracks.length) + " object" + (view.tracks.length === 1 ? "" : "s") + " " + since
+      + shortTime(incident.counted_from_utc || incident.opened_utc) + " · newest first · select one for its images";
+}
+
+function exitAlertView(restoreFocus = true) {
+  if (!state.alertView) return;
+  state.alertView = null;
+  $("tracks-panel").classList.remove("alert-view");
+  if (state.drawerTrack) closeDrawer();
+  state.held = false;
+  renderTracks(true);
+  if (restoreFocus) $("alert-summary").focus();
+}
+$("exit-alert-view").onclick = () => exitAlertView();
+
+function showAlertError(message) {
+  const box = $("alert-error");
+  box.textContent = message || "";
+  box.hidden = !message;
+}
+
+// Runs an operator action; any failure is shown inline and the list is rebuilt
+// even when the data did not change, so a disabled control comes back.
+async function alertAction(label, request) {
+  try {
+    await request();
+    showAlertError("");
+  } catch (error) {
+    showAlertError(label + " failed: " + error.message + ". Try again.");
+  } finally {
+    delete $("alert-list").dataset.signature;
+    await refreshIncidents();
+  }
+}
+
+function incidentAction(incident, action, minutes) {
+  const label = {acknowledge: "Acknowledge", snooze: "Snooze", dismiss: "Dismiss", false_alarm: "False alarm"}[action] || action;
+  return alertAction(label, () => postApi("/api/incidents/" + encodeURIComponent(incident.incident_id) + "/" + action,
+    minutes ? {minutes} : {}));
+}
+
+async function refreshIncidents() {
+  try {
+    const data = await api("/api/alerts");
+    state.incidents = data.incidents || [];
+    state.incidentCounts = data.incident_counts || null;
+  } catch (error) {
+    showAlertError("Could not refresh alerts: " + error.message);
+  }
+  renderAlerts();
+}
+
+function announceIncidents() {
+  const open = state.incidents.filter((incident) => incident.state === "open");
+  const heads = new Set(open.map((incident) => incident.head_match_id));
+  const first = state.announced === null;
+  const fresh = first ? [] : open.filter((incident) => !state.announced.has(incident.head_match_id));
+  state.announced = heads;
+  const toast = $("alert-toast");
+  if (!fresh.length) {
+    if (!open.length) toast.hidden = true;
+    return;
+  }
+  const incident = fresh[0];
+  toast.textContent = incidentTitle(incident) + " · " + incident.rule_name + " — select to view";
+  toast.onclick = () => { toast.hidden = true; viewIncident(incident); };
+  toast.hidden = false;
+  clearTimeout(state.toastTimer);
+  state.toastTimer = setTimeout(() => { toast.hidden = true; }, 8000);
+}
+
+const ALERTS_COLLAPSED = 8;
+$("alert-more").onclick = () => {
+  state.alertsExpanded = !state.alertsExpanded;
+  renderAlerts();
+};
+
 function renderAlerts() {
   const list = $("alert-list");
-  const signature = JSON.stringify(state.alerts.slice(0, 5));
+  const incidents = state.incidents;
+  announceIncidents();
+  const open = incidents.filter((incident) => incident.state === "open");
+  const perStream = {};
+  for (const incident of open) perStream[incident.stream_id] = (perStream[incident.stream_id] || 0) + 1;
+  for (const button of $("cameras").children) {
+    const count = perStream[button.dataset.stream] || (button.dataset.stream === "all" ? open.length : 0);
+    if (count) button.dataset.alerts = String(count); else delete button.dataset.alerts;
+  }
+  const viewed = state.alertView && incidents.find((item) => item.incident_id === state.alertView.incident.incident_id);
+  if (viewed) {
+    const before = state.alertView.incident;
+    state.alertView.incident = viewed;
+    if (viewed.match_count !== before.match_count || viewed.last_match_utc !== before.last_match_utc) {
+      if (!state.drawerTrack) loadAlertView(state.alertView);
+    } else renderAlertView();
+  }
+  // The live track payload changes every tick; only operator-visible fields rebuild the list.
+  const shown = state.alertsExpanded ? incidents : incidents.slice(0, ALERTS_COLLAPSED);
+  const signature = JSON.stringify([state.alertsExpanded, state.audioOn, state.incidentCounts, shown.map(({track, ...visible}) => visible)]);
   if (list.dataset.signature === signature) return;
-  const newest = String(state.alerts[0]?.match_id || "");
-  if (newest && list.dataset.newest !== newest) $("alerts").open = true;
-  list.dataset.newest = newest;
+  // Rebuilding would close a More menu the operator is using; catch up once it loses focus.
+  if (document.activeElement?.tagName === "SELECT" && list.contains(document.activeElement)) {
+    list.dataset.deferred = "1";
+    return;
+  }
+  delete list.dataset.deferred;
+  const wasOpen = list.dataset.open || "";
+  const openIds = open.map((incident) => incident.incident_id).join(",");
+  if (openIds && openIds !== wasOpen) $("alerts").open = true;
+  list.dataset.open = openIds;
   list.dataset.signature = signature;
-  $("alert-summary").textContent = "Global alerts · " + (state.alerts.length
-    ? state.alerts.length + " recent · " + cameraName(state.alerts[0].stream_id) + " · " + state.alerts[0].rule_name
-    : "No alerts");
+  const counts = state.incidentCounts || {open: open.length, total: incidents.length,
+    active: incidents.filter((incident) => incident.state !== "closed").length};
+  const summary = $("alert-summary");
+  if (counts.open) {
+    summary.textContent = "Alerts · " + counts.open + " need" + (counts.open === 1 ? "s" : "") + " attention" + (open.length ? " · " + incidentTitle(open[0]) : "");
+    $("alerts").dataset.attention = "";
+  } else {
+    const handled = counts.active - counts.open;
+    summary.textContent = "Alerts · " + (handled ? handled + " handled" : "No active alerts");
+    delete $("alerts").dataset.attention;
+  }
+  const page = $("alert-page");
+  const more = $("alert-more");
+  page.hidden = incidents.length <= ALERTS_COLLAPSED && counts.total <= incidents.length;
+  more.hidden = incidents.length <= ALERTS_COLLAPSED;
+  more.textContent = state.alertsExpanded ? "Show fewer" : "Show all " + incidents.length;
+  more.setAttribute("aria-expanded", String(Boolean(state.alertsExpanded)));
+  $("alert-page-note").textContent = counts.total > incidents.length
+    ? "Newest " + incidents.length + " of " + counts.total + " shown, needs-attention first. Remove handled alerts to see older ones." : "";
   list.replaceChildren();
-  if (!state.alerts.length) {
+  if (!incidents.length) {
     const item = document.createElement("li");
     item.className = "empty";
-    item.textContent = "No alerts.";
+    item.textContent = "No alerts. Rules raise alerts here.";
     list.append(item);
     return;
   }
-  for (const alert of state.alerts.slice(0, 5)) {
+  for (const incident of shown) {
     const item = document.createElement("li");
-    const time = document.createElement("strong");
-    time.textContent = shortTime(alert.matched_utc);
-    const copy = document.createElement("span");
-    copy.textContent = alert.class_label + " track #" + alert.track_id + " / "
-      + cameraName(alert.stream_id) + " / " + alert.rule_name + " / " + alert.dispatch_state;
-    item.append(time, copy);
+    item.dataset.incident = incident.state;
+    let thumb;
+    if (incident.snip_url) {
+      thumb = document.createElement("img");
+      thumb.src = incident.snip_url;
+      thumb.alt = incidentTitle(incident);
+    } else thumb = document.createElement("span");
+    thumb.className = "incident-thumb";
+    const copy = document.createElement("div");
+    copy.className = "incident-copy";
+    const title = document.createElement("div");
+    title.className = "incident-title";
+    const name = document.createElement("strong");
+    name.textContent = incidentTitle(incident);
+    const badge = document.createElement("span");
+    badge.className = "incident-state";
+    badge.textContent = incident.state === "snoozed"
+      ? "Snoozed to " + shortTime(incident.snoozed_until_utc)
+      : incident.state === "closed" && CLOSURES[incident.closure]
+        ? "Closed · " + CLOSURES[incident.closure] : INCIDENT_STATES[incident.state];
+    title.append(name, badge);
+    const meta = document.createElement("div");
+    meta.className = "incident-meta";
+    const [key, label] = dispatchLabel(incident);
+    const speech = incident.speech === "unconfirmed" ? (state.audioOn ? "not played" : "not played (Audio off)")
+      : SPEECH_LABELS[incident.speech];
+    meta.textContent = incident.rule_name + " · " + incident.match_count + " sighting" + (incident.match_count === 1 ? "" : "s")
+      // After Acknowledge the count restarts, so the span starts at the first new sighting.
+      + " · " + shortTime(incident.counted_from_utc || incident.opened_utc) + (incident.match_count > 1 ? "–" + shortTime(incident.last_match_utc) : "")
+      + (key === "undelivered" || key === "retrying" ? " · " + label : "") + (speech ? " · " + speech : "");
+    meta.title = meta.textContent + (incident.last_error ? " · last error: " + incident.last_error : "");
+    copy.append(title, meta);
+    const actions = document.createElement("div");
+    actions.className = "incident-actions";
+    const view = document.createElement("button");
+    view.className = "quiet-button";
+    view.type = "button";
+    view.textContent = "View";
+    view.title = "Show all " + incident.match_count + " matched object" + (incident.match_count === 1 ? "" : "s");
+    view.onclick = () => viewIncident(incident);
+    actions.append(view);
+    const speak = document.createElement("button");
+    speak.className = "quiet-button";
+    speak.type = "button";
+    speak.textContent = "Speak";
+    speak.title = "Test: speak this alert now (turn Audio on to hear it)";
+    speak.onclick = () => {
+      speak.disabled = true;
+      alertAction("Speak", () => postApi("/api/incidents/" + encodeURIComponent(incident.incident_id) + "/speak", {}));
+    };
+    const remove = document.createElement("button");
+    remove.className = "quiet-button";
+    remove.type = "button";
+    remove.textContent = "Remove";
+    remove.title = "Remove this alert from the list";
+    remove.onclick = () => {
+      if (!confirm("Remove alert “" + incidentTitle(incident) + "” from the list?")) return;
+      remove.disabled = true;
+      alertAction("Remove", async () => {
+        const response = await fetch("/api/incidents/" + encodeURIComponent(incident.incident_id),
+          {method: "DELETE", headers: {accept: "application/json"}});
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok || body.error) throw new Error(body.error?.message || response.statusText);
+        if (state.alertView?.incident.incident_id === incident.incident_id) exitAlertView();
+      });
+    };
+    actions.append(speak);
+    if (incident.state === "open") {
+      const ack = document.createElement("button");
+      ack.className = "quiet-button";
+      ack.type = "button";
+      ack.textContent = "Acknowledge";
+      ack.onclick = () => { ack.disabled = true; incidentAction(incident, "acknowledge"); };
+      actions.append(ack);
+    }
+    if (incident.state !== "closed") {
+      const more = document.createElement("select");
+      more.setAttribute("aria-label", "More actions for " + incidentTitle(incident));
+      const options = [["", "More…"], ["snooze:5", "Snooze 5 min"], ["snooze:15", "Snooze 15 min"],
+        ["dismiss", "Dismiss"], ["false_alarm", "False alarm"]];
+      if (incident.undelivered) options.push(["retry", "Retry delivery"]);
+      if (incident.rule_enabled) options.push(["disable", "Disable rule"]);
+      for (const [value, text] of options) more.append(new Option(text, value));
+      more.onchange = async () => {
+        const [action, minutes] = more.value.split(":");
+        more.disabled = true;
+        if (action === "retry") {
+          await alertAction("Retry delivery", () => postApi("/api/alerts/" + encodeURIComponent(incident.head_match_id) + "/retry", {}));
+        } else if (action === "disable") {
+          if (confirm("Disable rule “" + incident.rule_name + "”? It stops raising alerts on every camera.")) {
+            await ruleMutation("/api/rules/" + incident.rule_id, "PATCH", {enabled: false});
+            await refreshIncidents();
+          } else { more.disabled = false; more.value = ""; }
+        } else incidentAction(incident, action, minutes ? Number(minutes) : undefined);
+      };
+      actions.append(more);
+    }
+    actions.append(remove);
+    item.append(thumb, copy, actions);
     list.append(item);
   }
 }
+
+$("alert-list").addEventListener("focusout", () => {
+  setTimeout(() => { if ($("alert-list").dataset.deferred) renderAlerts(); });
+});
+
+const SPEECH_LABELS = {
+  spoken: "spoken", text_only: "text only (speech unavailable)", rate_limited: "not spoken (cooldown)",
+  preempted: "not spoken (interrupted)", dropped_queue_full: "not spoken (queue full)",
+  suppressed_talk_held: "speech held while talking", queued: "speech queued", synthesizing: "preparing speech",
+  playing: "speaking", playback_started: "speaking", playback_ended: "spoken",
+  playback_error: "playback failed", playback_failed: "playback failed",
+  cancelled: "",
+};
+
+function dispatchLabel(alert) {
+  if (alert.undelivered) return ["undelivered", "Undelivered to Alert Agent"];
+  if (alert.dispatch_state === "failed") return ["retrying", "Retrying (" + alert.attempts + " failed)"];
+  if (alert.dispatch_state === "suppressed") return ["suppressed", "Suppressed by agent dedup"];
+  if (alert.dispatch_state === "delivered") return ["delivered", "Delivered"];
+  if (alert.dispatch_state === "grouped") return ["grouped", "Grouped"];
+  return ["sending", "Sending"];
+}
+
+function renderSpeech() {
+  const speech = state.speech || {};
+  const line = $("speech-line");
+  const current = speech.current;
+  // playingId is only the utterance whose audio this tab actually started.
+  if (state.playingId && current?.id !== state.playingId) stopPlayback();
+  if (current && state.audioOn && current.audio_base64 && current.id !== state.playingId) startPlayback(current);
+  const playback = current && state.playback?.id === current.id ? state.playback : null;
+  if (current) {
+    const status = playback?.status;
+    line.dataset.mode = status === "playing" ? "audio" : "text";
+    line.textContent = (status === "playing" ? "Speaking: "
+      : status === "starting" ? "Starting speech: "
+      : status === "failed" ? "Playback failed (" + playback.error + ") · "
+      : state.audioOn ? "Preparing speech: " : "Audio off · ") + current.text;
+  } else if (speech.talk_held) {
+    line.dataset.mode = "text";
+    line.textContent = "Alert speech held while you talk" + (speech.queued?.length ? " · " + speech.queued.length + " queued" : "");
+  } else if (speech.last?.outcome === "text_only") {
+    line.dataset.mode = "text";
+    line.textContent = "Text only (speech unavailable): " + speech.last.text;
+  } else {
+    line.dataset.mode = "";
+    line.textContent = "";
+  }
+}
+
+function reportPlayback(id, event) {
+  postApi("/api/speech/" + encodeURIComponent(id) + "/playback", {event}).catch(() => {});
+}
+
+function startPlayback(current) {
+  const id = current.id;
+  const audio = new Audio("data:audio/wav;base64," + current.audio_base64);
+  state.audio = audio;
+  state.playingId = id;
+  state.playback = {id, status: "starting"};
+  const mine = () => state.audio === audio;
+  const fail = (error) => {
+    if (!mine() || state.playback.status === "failed") return;
+    state.playback = {id, status: "failed", error};
+    reportPlayback(id, "error");
+    renderSpeech();
+  };
+  audio.onplaying = () => {
+    if (!mine() || state.playback.status === "playing") return;
+    state.playback = {id, status: "playing"};
+    reportPlayback(id, "started");
+    renderSpeech();
+  };
+  audio.onended = () => { if (mine()) reportPlayback(id, "ended"); };
+  audio.onerror = () => fail("audio could not be decoded");
+  audio.play().catch((error) => {
+    if (error?.name === "NotAllowedError") {
+      // Autoplay was revoked: the operator has to tap Audio on again.
+      state.audioOn = false;
+      renderAudioToggle();
+      fail("browser blocked audio; tap Audio on");
+    } else fail(error?.name || "playback error");
+  });
+}
+
+function stopPlayback() {
+  if (state.audio) { state.audio.onended = state.audio.onerror = state.audio.onplaying = null; state.audio.pause(); state.audio.src = ""; }
+  state.audio = null;
+  state.playingId = null;
+}
+
+function renderAudioToggle() {
+  const toggle = $("audio-toggle");
+  toggle.textContent = state.audioOn ? "Audio on" : "Audio off";
+  toggle.dataset.state = state.audioOn ? "on" : "off";
+  toggle.setAttribute("aria-pressed", String(state.audioOn));
+}
+
+$("audio-toggle").onclick = () => {
+  state.audioOn = !state.audioOn;
+  // Either way the current utterance restarts from this tab's new setting.
+  stopPlayback();
+  if (state.audioOn) {
+    // A user gesture unlocks playback; a silent clip proves it before speech arrives.
+    const unlock = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=");
+    unlock.play().catch(() => { state.audioOn = false; renderAudioToggle(); });
+  }
+  renderAudioToggle();
+  renderSpeech();
+  renderAlerts();
+};
+
+function renderRules() {
+  const data = state.rules || {rules: [], classes: [], streams: []};
+  const classSelect = $("rule-class");
+  if (classSelect.options.length !== data.classes.length) {
+    classSelect.replaceChildren(...data.classes.map(label => new Option(label, label)));
+    if (data.classes.includes("dog")) classSelect.value = "dog";
+  }
+  const cameraSelect = $("rule-camera");
+  if (cameraSelect.options.length !== data.streams.length + 1) {
+    cameraSelect.replaceChildren(new Option("Any camera", ""), ...data.streams.map(id => new Option(cameraName(id), id)));
+  }
+  const list = $("rule-list");
+  list.replaceChildren();
+  if (!data.rules.length) {
+    const item = document.createElement("li");
+    item.className = "empty";
+    item.textContent = "No rules. Add one to raise alerts.";
+    list.append(item);
+  }
+  for (const rule of data.rules) {
+    const item = document.createElement("li");
+    item.className = rule.enabled ? "" : "off";
+    const copy = document.createElement("span");
+    const name = document.createElement("strong");
+    name.textContent = rule.name;
+    const detail = document.createElement("small");
+    detail.textContent = [rule.stream_id ? cameraName(rule.stream_id) : "Any camera",
+      rule.min_confidence == null ? "any confidence" : "≥ " + rule.min_confidence,
+      rule.speak ? "spoken · " + rule.cooldown_seconds + " s cooldown" : "silent",
+      rule.enabled ? "on" : "off"].join(" · ");
+    copy.append(name, detail);
+    const edit = document.createElement("button");
+    edit.className = "quiet-button";
+    edit.type = "button";
+    edit.textContent = "Edit";
+    edit.onclick = () => editRule(rule);
+    const toggle = document.createElement("button");
+    toggle.className = "quiet-button";
+    toggle.type = "button";
+    toggle.textContent = rule.enabled ? "Turn off" : "Turn on";
+    toggle.onclick = () => ruleMutation("/api/rules/" + rule.rule_id, "PATCH", {enabled: !rule.enabled});
+    const remove = document.createElement("button");
+    remove.className = "quiet-button";
+    remove.type = "button";
+    remove.textContent = "Delete";
+    remove.onclick = () => {
+      if (!window.confirm(`Delete rule "${rule.name}"? Alerts it already raised stay in the feed.`)) return;
+      ruleMutation("/api/rules/" + rule.rule_id + "?confirm=" + encodeURIComponent(rule.rule_id), "DELETE");
+    };
+    if (state.editingRule?.rule_id === rule.rule_id) item.dataset.editing = "";
+    item.append(copy, edit, toggle, remove);
+    list.append(item);
+  }
+}
+
+async function ruleMutation(path, method, payload) {
+  try {
+    const response = await fetch(path, {method, headers: {"content-type": "application/json", accept: "application/json"},
+      body: payload === undefined ? undefined : JSON.stringify(payload)});
+    const body = await response.json();
+    if (!response.ok || body.error) throw new Error(body.error?.message || body.detail || response.statusText);
+    $("rules-status").textContent = method === "DELETE" ? "Rule deleted." : "Saved: " + body.data.name;
+    await refreshRules();
+    return true;
+  } catch (error) {
+    $("rules-status").textContent = error.message;
+    return false;
+  }
+}
+
+async function refreshRules() {
+  try { state.rules = await api("/api/rules"); }
+  catch (error) { $("rules-status").textContent = "Rules unavailable: " + error.message; }
+  renderRules();
+}
+
+function closeRules(restoreFocus = true) {
+  $("rules-panel").hidden = true;
+  $("rules-toggle").setAttribute("aria-expanded", "false");
+  if (restoreFocus) $("rules-toggle").focus();
+}
+
+$("rules-toggle").onclick = async () => {
+  const opening = $("rules-panel").hidden;
+  $("rules-panel").hidden = !opening;
+  $("rules-toggle").setAttribute("aria-expanded", String(opening));
+  if (opening) {
+    closeMission(false);
+    closeAssistant(false);
+    await refreshRules();
+    $("rule-class").focus();
+  }
+};
+$("close-rules").onclick = () => closeRules();
+$("rules-panel").addEventListener("keydown", (event) => { if (event.key === "Escape") closeRules(); });
+
+// Mission and Rules are light-dismiss popovers: Escape or a click elsewhere closes them.
+for (const [panel, toggle, close] of [["mission-panel", "mission-toggle", () => closeMission(false)],
+                                       ["rules-panel", "rules-toggle", () => closeRules(false)]]) {
+  document.addEventListener("pointerdown", (event) => {
+    if ($(panel).hidden || $(panel).contains(event.target) || $(toggle).contains(event.target)) return;
+    close();
+  });
+}
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || event.defaultPrevented) return;
+  if (!$("mission-panel").hidden) closeMission();
+  else if (!$("rules-panel").hidden) closeRules();
+  else if (state.alertView && !state.drawerTrack) exitAlertView();
+});
+function autoRuleName(classLabel, streamId) {
+  return classLabel + " on " + (streamId ? cameraName(streamId) : "any camera");
+}
+
+// Edit reuses the add form and PATCHes the same rule, so its identity (and the
+// tracks it already matched) is preserved.
+function editRule(rule) {
+  state.editingRule = rule;
+  $("rule-class").value = rule.class_label;
+  $("rule-camera").value = rule.stream_id || "";
+  $("rule-confidence").value = rule.min_confidence ?? "";
+  $("rule-cooldown").value = rule.cooldown_seconds;
+  $("rule-speak").checked = rule.speak;
+  $("rule-submit").textContent = "Save changes";
+  $("rule-cancel-edit").hidden = false;
+  $("rules-status").textContent = "Editing " + rule.name + ".";
+  renderRules();
+  $("rule-class").focus();
+}
+
+function stopEditingRule() {
+  state.editingRule = null;
+  $("rule-submit").textContent = "Add rule";
+  $("rule-cancel-edit").hidden = true;
+  renderRules();
+}
+$("rule-cancel-edit").onclick = () => { stopEditingRule(); $("rules-status").textContent = "Edit cancelled."; };
+
+$("rule-form").onsubmit = async (event) => {
+  event.preventDefault();
+  const confidence = $("rule-confidence").value;
+  const fields = {
+    class_label: $("rule-class").value,
+    stream_id: $("rule-camera").value || null,
+    min_confidence: confidence === "" ? null : Number(confidence),
+    cooldown_seconds: Number($("rule-cooldown").value),
+    speak: $("rule-speak").checked,
+  };
+  const editing = state.editingRule;
+  if (!editing) {
+    await ruleMutation("/api/rules", "POST", fields);
+    return;
+  }
+  // A generated name follows the new object type/camera; a custom name is kept.
+  if (editing.name === autoRuleName(editing.class_label, editing.stream_id)) {
+    fields.name = autoRuleName(fields.class_label, fields.stream_id);
+  }
+  if (await ruleMutation("/api/rules/" + editing.rule_id, "PATCH", fields)) stopEditingRule();
+};
 
 function rememberTelemetry(snapshot) {
   if (!snapshot || !Array.isArray(snapshot.metrics)) return;
@@ -1348,7 +1986,7 @@ function renderTelemetry() {
       ? status === "unavailable" ? "Unavailable" : formatted(primary) + " " + engine : formatted(primary);
     button.querySelector("small").textContent = group.id === "gpu"
       ? metrics.length + " engines · " + (status === "live" ? (live.length < metrics.length ? "Partial · View" : "View") : titleCase(status))
-      : status === "live" ? (group.id === "npu" ? "Zero ≠ idle" : "Live") : titleCase(status);
+      : status === "live" ? "Live" : titleCase(status);
     button.title = group.id === "gpu" ? (status === "live" ? "Highest current engine usage" : "No current engine readings")
       + "; " + live.length + " of " + metrics.length + " engines current. Select to view all engines." : "";
     const meter = button.querySelector("meter");
@@ -1387,7 +2025,7 @@ function renderChart() {
   });
   const svg = $("chart");
   svg.replaceChildren();
-  const width = Math.max(320, svg.clientWidth), height = Math.max(85, svg.clientHeight);
+  const width = Math.max(320, svg.clientWidth), height = Math.max(50, svg.clientHeight);
   svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
   svg.setAttribute("aria-label", group.label + " trend, last five minutes. " + legend.textContent);
   const node = (tag, attrs, text) => {
@@ -1405,7 +2043,8 @@ function renderChart() {
   const y = (value) => bottom - Math.max(0, Math.min(1, value / maximum)) * (bottom - top);
   for (const value of [0, maximum / 2, maximum]) {
     node("line", {x1: left, x2: right, y1: y(value), y2: y(value), class: "gridline"});
-    node("text", {x: left - 7, y: y(value) + 4, "text-anchor": "end"}, value + (unit === "%" ? "%" : " " + unit));
+    if (height >= 80 || value !== maximum / 2)
+      node("text", {x: left - 7, y: y(value) + 4, "text-anchor": "end"}, value + (unit === "%" ? "%" : " " + unit));
   }
   for (const [fraction, label, anchor] of [[0, "5 min ago", "start"], [.5, "2½ min", "middle"], [1, "Now", "end"]]) {
     node("text", {x: left + fraction * (right - left), y: height - 4, "text-anchor": anchor}, label);
@@ -1427,8 +2066,7 @@ function renderChart() {
     if (latest) node("circle", {cx: x(latest.at), cy: y(latest.value), r: 3, fill: color});
   });
   const collecting = histories.every((values) => values.length < 2);
-  const caveat = group.id === "npu" ? "NPU zero does not prove idle."
-    : group.id === "power" ? "Package power, not wall power." : "";
+  const caveat = group.id === "power" ? "Package power, not wall power." : "";
   $("chart-note").textContent = !metrics.length ? "Telemetry unavailable."
     : [collecting ? "Collecting history…" : "5-minute history · gaps mean missing samples", caveat].filter(Boolean).join(" · ");
 }
@@ -1589,7 +2227,9 @@ function closeDrawer() {
   if (selected) selected.focus({preventScroll: true});
 }
 $("close-drawer").onclick = closeDrawer;
-$("drawer").addEventListener("keydown", (event) => { if (event.key === "Escape") closeDrawer(); });
+$("drawer").addEventListener("keydown", (event) => {
+  if (event.key === "Escape") { event.preventDefault(); closeDrawer(); }
+});
 
 function searchBackgroundInert(value) {
   for (const sibling of $("tracks-panel").children) {
@@ -1611,6 +2251,7 @@ function sizeAssistant() {
 window.visualViewport?.addEventListener("resize", sizeAssistant);
 async function openAssistant() {
   closeMission(false);
+  closeRules(false);
   $("assistant-panel").classList.add("open");
   sizeAssistant();
   $("open-assistant").setAttribute("aria-expanded", "true");
@@ -1918,6 +2559,7 @@ async function submitAssistant(payload, label = null) {
   $("answer-actions").replaceChildren();
   const requestVersion = ++assistantRequestVersion;
   payload = {...payload, conversation_id: conversationId};
+  if (state.audioOn && payload.text) payload.speak = true;
   if (!payload.page_token) {
     archiveAssistantTurn();
     state.assistantContext = {text: label || payload.text || "Filtered search", payload: structuredClone(payload)};
@@ -2137,6 +2779,8 @@ async function refreshState() {
   ]);
   if (version !== state.requestVersion) return;
   state.alerts = alerts.alerts || [];
+  state.incidents = alerts.incidents || [];
+  state.incidentCounts = alerts.incident_counts || null;
   state.telemetry = telemetry;
   rememberTelemetry(telemetry);
   streams.forEach((stream, index) => {
@@ -2183,8 +2827,16 @@ function connectEvents() {
   });
   events.addEventListener("alert", (event) => {
     if (state.events !== events) return;
-    state.alerts = JSON.parse(event.data).alerts || [];
+    const data = JSON.parse(event.data);
+    state.alerts = data.alerts || [];
+    state.incidents = data.incidents || [];
+    state.incidentCounts = data.incident_counts || null;
     renderAlerts();
+  });
+  events.addEventListener("speech", (event) => {
+    if (state.events !== events) return;
+    state.speech = JSON.parse(event.data);
+    renderSpeech();
   });
   events.addEventListener("telemetry", (event) => {
     if (state.events !== events) return;

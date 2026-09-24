@@ -76,6 +76,11 @@ DEFAULTS: dict[str, Any] = {
     "feed_stale_seconds": 90.0,
     "takeover_seconds": 30.0,  # must match crop config takeover_seconds
     "telemetry_host": "handheld",
+    # Section 16: rule dispatch and speech. Tools are stock Alert Agent tools.
+    "alert_tools": ["log_alert"],
+    "alert_dispatch_timeout_seconds": 15.0,
+    "tts_timeout_seconds": 30.0,
+    "alert_speech_floor_seconds": 3.0,
     "timeout_seconds": 5.0,
     "log_level": "INFO",
 }
@@ -175,6 +180,13 @@ def connect(db_path: str) -> sqlite3.Connection:
 
 def migrate(conn: sqlite3.Connection) -> None:
     conn.executescript((Path(__file__).parent / "schema.sql").read_text())
+    if "incident_id" not in {r[1] for r in conn.execute("PRAGMA table_info(rule_matches)")}:
+        conn.execute("ALTER TABLE rule_matches ADD COLUMN incident_id TEXT")
+    incident_columns = {r[1] for r in conn.execute("PRAGMA table_info(alert_incidents)")}
+    if "counted_from_utc" not in incident_columns:
+        conn.execute("ALTER TABLE alert_incidents ADD COLUMN counted_from_utc TEXT")
+    if "counted_after" not in incident_columns:
+        conn.execute("ALTER TABLE alert_incidents ADD COLUMN counted_after INTEGER NOT NULL DEFAULT 0")
     conn.commit()
 
 

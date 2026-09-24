@@ -171,13 +171,14 @@ or any commentary outside the sentence."""
 
 
 def _mission_prompt(question: str) -> str:
-    return f"""Answer the operator's question using only the mission documents in the
-retrieved context. If the documents do not establish the answer, reply exactly:
-That information is not available in the mission material.
-Do not use general knowledge, do not invent citations or page numbers, and keep
-the answer concise.
-
-Operator question: {question}"""
+    # Stock /chat retrieves with the whole prompt and keeps only two chunks, so
+    # the question leads (as in _brief_prompt). Leading with instructions pulled
+    # the wrong chunks and the model said the packet has no objective.
+    return f"""{question}
+Answer only from the mission documents in the retrieved context, concisely. If
+they do not establish it, reply exactly: That information is not available in
+the mission material. Do not use general knowledge and do not invent citations
+or page numbers."""
 
 
 class MissionService:
