@@ -13,7 +13,7 @@ Two candidates fully investigated:
 1. **Parler-TTS mini-v1** — provenance chain resolved and approved (base
    model, `google/flan-t5-large` text encoder, Descript DAC codec, and
    `mistralai/Mistral-7B-Instruct-v0.2` synthetic-annotation teacher all
-   confirmed non-PRC — see `docs/bootstrap/ai-contracts.md` §3 and
+   confirmed non-PRC — see `docs/application/ai-contracts.md` §3 and
    `MODEL_PROVENANCE.md`). **Blocked by real packaging bug**: this pinned
    image's own `requirements.txt` never lists `parler-tts` pip package
    its own source (`utils/ensure_parler.py`) requires — confirmed via
@@ -24,7 +24,7 @@ Two candidates fully investigated:
    image (out of scope).
 
 2. **SpeechT5** (`microsoft/speecht5_tts`) — stock default model. This
-   bootstrap originally flagged it because original SpeechT5 paper
+   the integration review originally flagged it because original SpeechT5 paper
    states its first two authors did work as interns at **Microsoft
    Research Asia**, w/ Southern University of Science and Technology and
    Tongji University affiliations. Owner reviewed this finding directly
@@ -65,7 +65,7 @@ required, unlike Parler.
   HTTP 200, `content-type: audio/wav`, real 50220-byte valid RIFF/WAVE
   PCM 16-bit mono 16000 Hz file (verified w/ `file` command) — not
   stub or empty response.
-- Full log: `docs/bootstrap/evidence/tts/smoke.log`.
+- Full log: `docs/application/evidence/tts/smoke.log`.
 
 ## Smoke test
 

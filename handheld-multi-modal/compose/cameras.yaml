@@ -18,12 +18,12 @@
 #   cam3+ classroom.ts        PTS-repaired remux of the OEP classroom.avi, 30 fps,
 #                             whose broken timestamps otherwise cost ~132% CPU.
 
-name: handheld-bootstrap
+name: handheld-multi-modal
 
 x-camera: &camera
   image: jrottenberg/ffmpeg:6.1-ubuntu2404
   restart: unless-stopped
-  network_mode: "container:handheld-bootstrap-mediamtx-1"
+  network_mode: "container:handheld-multi-modal-mediamtx-1"
   volumes:
     - ../data/dlsps/demo-video:/video:ro
   entrypoint: ["ffmpeg"]

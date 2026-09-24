@@ -16,13 +16,13 @@ webrtcIPsFromInterfaces: no
 # Loopback defaults. Make generates the deployment copy with the detected LAN IP.
 webrtcAdditionalHosts: [127.0.0.1]
 # Coturn assists MediaMTX WebRTC ICE only (handheld-architecture boundary).
-# Bootstrap/dev-only static long-term credential (config/coturn/turnserver.conf),
+# Dev-only static long-term credential (config/coturn/turnserver.conf),
 # not a production secret.
 webrtcICEServers2:
   - url: stun:127.0.0.1:3478
   - url: turn:127.0.0.1:3478
     username: handheld
-    password: handheldbootstrap
+    password: handheldmultimodal
 # Regex paths (D13): a `~` prefix makes `path` a regular expression, so the
 # config does not grow per camera. camN carries the clean RTSP feed, annotatedN
 # the DLSPS WHIP push. Adding a camera needs no change here.

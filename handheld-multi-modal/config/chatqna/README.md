@@ -44,10 +44,10 @@ the context/documents/mission at all. Verified via
 knowledge, mission corpus left intact) alongside
 `scripts/smoke/08_chatqna_rag.sh` (document-grounded answers unaffected).
 
-Deployment: `compose/bootstrap-compose.yaml` service `chatqna`
-(`intel/chatqna:core_gpu_2026.2.0-rc2`, pinned by digest). `bootstrap-compose.yaml`
+Deployment: `compose/handheld-multi-modal.yaml` service `chatqna`
+(`intel/chatqna:core_gpu_2026.2.0-rc2`, pinned by digest). `handheld-multi-modal.yaml`
 is the single entry point: a build agent (or any fresh environment with no
-existing container) runs `docker compose -f compose/bootstrap-compose.yaml
+existing container) runs `docker compose -f compose/handheld-multi-modal.yaml
 up -d chatqna` and gets a clean, reproducible deployment — no other setup
 step is required. `HF_ACCESS_TOKEN` is read from the caller's environment,
 never hardcoded/committed.
@@ -63,8 +63,8 @@ is lost by removing the manually-started container and letting Compose
 recreate it under the same name:
 
 ```sh
-docker rm -f handheld-bootstrap-chatqna-core-gpu   # manually-started container only
-docker compose -f compose/bootstrap-compose.yaml up -d chatqna
+docker rm -f handheld-multi-modal-chatqna-core-gpu   # manually-started container only
+docker compose -f compose/handheld-multi-modal.yaml up -d chatqna
 ```
 
 Corpus caveat: FAISS document state lives in the running process's memory,
@@ -77,5 +77,5 @@ not read `models.lock.json` to pin/enforce a revision — the lock file records
 the approved revision for audit only, it is not consumed at runtime. No
 patch to backend code or external exporter is added to force enforcement.
 
-Source contracts: `docs/bootstrap/ai-contracts.md`.
+Source contracts: `docs/application/ai-contracts.md`.
 

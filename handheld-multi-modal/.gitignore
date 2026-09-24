@@ -10,8 +10,8 @@ data/
 .venv/
 __pycache__/
 *.pyc
-# Runtime evidence under docs/bootstrap/evidence/ is committed (owner direction).
-!docs/bootstrap/evidence/**/*.jsonl
+# Runtime evidence under docs/application/evidence/ is committed (owner direction).
+!docs/application/evidence/**/*.jsonl
 
 # TLS material is generated on the device and never committed (design 15.4).
 config/tls/

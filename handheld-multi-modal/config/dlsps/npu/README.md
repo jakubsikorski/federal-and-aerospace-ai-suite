@@ -1,6 +1,6 @@
 # NPU default variant: PASS (shipped/default, real ~30fps, NPU confirmed)
 
-**This is the shipped/default variant per bootstrap spec.** Real,
+**This is the shipped/default variant per application spec.** Real,
 smoke-tested pipeline. `config.json` pipeline name: `handheld_npu_detect`.
 Detection device `NPU` (`pre-process-backend=va`), hardware decode
 (`vah264dec`), `gvatrack`, MQTT publish, and raw VA-memory output feeding the
@@ -9,12 +9,12 @@ stock WebRTC frame destination.
 **Snip (per-object crop) generation is wired into this pipeline** via a
 `gvapython` callback (`scripts/dlsps/crop_candidates.py`), validated
 end-to-end at ~30fps producing matched crop+metadata pairs; see
-"Known gotchas" below and `docs/bootstrap/video-contracts.md`.
+"Known gotchas" below and `docs/application/video-contracts.md`.
 
 ## Run
 
 ```sh
-docker compose -f compose/bootstrap-compose.yaml up -d   # mounts this config by default
+docker compose -f compose/handheld-multi-modal.yaml up -d   # mounts this config by default
 bash scripts/smoke/04_dlsps_npu.sh
 bash scripts/smoke/05_mqtt.sh
 ```
@@ -64,7 +64,7 @@ uses the REST `destination.frame` request. Both consume raw VA frames from
 
 Current YOLO26s NPU path ran on 2026-09-24; NPU device requested, no
 NPU compile/plugin error observed in logs (IR hashes pinned in
-`BOOTSTRAP_MANIFEST.yaml`). Confirmed running simultaneously w/ real MQTT
+`MANIFEST.yaml`). Confirmed running simultaneously w/ real MQTT
 publish (`detections/live`, ~30 msg/s), no fps degradation on either leg.
 
 ## Known gotchas
@@ -100,7 +100,7 @@ publish (`detections/live`, ~30 msg/s), no fps degradation on either leg.
   variants apply here too.
 - **No stock per-object crop destination exists in DLSPS.** `destination.frame`
   supports `rtsp`, `webrtc`, `s3_write`, `application` — all whole-frame only.
-  Earlier bootstrap iteration used `s3_write` to self-hosted
+  An earlier iteration used `s3_write` to self-hosted
   SeaweedFS S3 store as whole-frame "frame-saver"; **owner rejected
   this, fully backed out** (no SeaweedFS container, no
   `s3_write` requested anywhere in this repo). Owner-directed correct
@@ -111,5 +111,5 @@ publish (`detections/live`, ~30 msg/s), no fps degradation on either leg.
   runs as a `gvapython` element in this config (see the pipeline string
   above), its config path passed via the `crop-config`→`kwarg` pipeline
   `parameter`, not embedded in the pipeline string — see
-  `docs/bootstrap/video-contracts.md` §"Snip mechanism" and
+  `docs/application/video-contracts.md` §"Snip mechanism" and
   `scripts/smoke/06_snip.sh` (validated PASS against this shipped config).

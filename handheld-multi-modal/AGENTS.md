@@ -1,7 +1,7 @@
-# Bootstrap contract
+# Handheld multi-modal application contract
 
-Repo preps stock Open Edge Platform integrations, not final handheld app.
-Read `BOOTSTRAP_STATUS.md`, `BOOTSTRAP_MANIFEST.yaml`, `COMPONENTS.md`,
+Handheld multi-modal application built on stock Open Edge Platform integrations.
+Read `STATUS.md`, `MANIFEST.yaml`, `COMPONENTS.md`,
 `MODEL_PROVENANCE.md` before deployment.
 
 ## Release and evidence
@@ -17,7 +17,7 @@ Read `BOOTSTRAP_STATUS.md`, `BOOTSTRAP_MANIFEST.yaml`, `COMPONENTS.md`,
 - Scaffold-only phase superseded for authorized integration work. Public
   registries/models may work without creds; never persist tokens or assume
   auth required before trying public access.
-- Save component logs + actual outputs under `docs/bootstrap/evidence/`.
+- Save component logs + actual outputs under `docs/application/evidence/`.
   JSON parsing, port open, device node exists, or env var says `GPU`/`NPU`
   ≠ smoke pass.
 - Official skills copied under `.agents/skills/` w/ `skills-lock.json`.
@@ -45,7 +45,7 @@ Read `BOOTSTRAP_STATUS.md`, `BOOTSTRAP_MANIFEST.yaml`, `COMPONENTS.md`,
 - OEP TTS (required): stock-supported, provenance-approved model, GPU.
 - Detector: YOLO26s OpenVINO IR, INT8 preferred, NPU default, CPU `gvatrack`,
   Intel HW decode/encode (owner-directed 2026-09-24 replacement for YOLO11s).
-  CPU/GPU = fixed bootstrap alternatives, not dynamically edited pipelines.
+  CPU/GPU = fixed alternatives, not dynamically edited pipelines.
   Never substitute nano.
 - Alerts: rule/action dispatch, no ADK/LLM in critical path.
 - Resolve actual model owners/caches; don't force all downloads through
@@ -59,7 +59,7 @@ Read `BOOTSTRAP_STATUS.md`, `BOOTSTRAP_MANIFEST.yaml`, `COMPONENTS.md`,
 MediaMTX -> DLSPS clean RTSP
 DLSPS -> MediaMTX annotated WebRTC (WHIP push; owner-approved amendment,
     supersedes the original RTSP-for-annotated draft — see
-    docs/bootstrap/video-contracts.md)
+    docs/application/video-contracts.md)
 MediaMTX -> UI WebRTC/WHEP
 DLSPS -> MQTT -> Backend observations
 DLSPS -> shared snips -> Backend static evidence images
@@ -70,8 +70,8 @@ Coturn <-> MediaMTX WebRTC only
 
 Backend not in video path, doesn't crop images, doesn't reconfigure DLSPS
 at runtime. UI never touches SQLite or snip filesystem paths directly.
-No DLSPS-to-Coturn path. No final Backend, UI, DB schema, business rules,
-speech arbitration, or telemetry aggregator in this bootstrap.
+No DLSPS-to-Coturn path. Business rules, speech arbitration and telemetry
+aggregation belong to the application Backend, never to stock components.
 
 ## Commands and integration work
 
@@ -81,7 +81,7 @@ success. Run one component: `bash scripts/smoke/01_mediamtx.sh`. Don't
 confuse scaffolding/schema validation with service execution.
 
 Reinstall official copies via pinned command in
-`docs/bootstrap/release-and-host.md`. Don't edit upstream skill copies;
+`docs/application/release-and-host.md`. Don't edit upstream skill copies;
 repo-specific overrides belong in local skills + this contract.
 
 ## Application operations and UX (owner direction, 2026-09-21)

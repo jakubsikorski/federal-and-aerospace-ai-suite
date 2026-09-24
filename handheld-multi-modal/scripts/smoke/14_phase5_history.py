@@ -17,7 +17,7 @@ import test_backend  # noqa: E402
 
 
 EVIDENCE = Path(os.environ.get(
-    "PHASE5_EVIDENCE", ROOT / "docs/bootstrap/evidence/phase5"))
+    "PHASE5_EVIDENCE", ROOT / "docs/application/evidence/phase5"))
 URL = os.environ.get("PHASE5_URL", "https://127.0.0.1:8443/api/ask")
 ATTEMPTS = 1  # first-submission reliability; never retry the smoke into a pass
 SAFE_FAILURE = "I could not turn that into a query I can answer."

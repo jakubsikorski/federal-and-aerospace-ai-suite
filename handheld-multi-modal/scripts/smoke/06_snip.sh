@@ -6,8 +6,8 @@ source "$root/scripts/smoke/_dlsps_lib.sh"
 # This test proves the application-owned gvapython crop callback
 # (scripts/dlsps/crop_candidates.py) actually produces per-tracked-object
 # snip files through the SHIPPED config/dlsps/{cpu,gpu,npu}/config.json +
-# compose/bootstrap-compose.yaml wiring — not a scripts docker-cp'd into a
-# bare container. See docs/bootstrap/video-contracts.md "Snip mechanism".
+# compose/handheld-multi-modal.yaml wiring — not a scripts docker-cp'd into a
+# bare container. See docs/application/video-contracts.md "Snip mechanism".
 #
 # Requires: the mounted config.json declares a `cropcandidates`-named
 # gvapython element and a `crop-config` parameter mapped to its `kwarg`
@@ -22,7 +22,7 @@ source "$root/scripts/smoke/_dlsps_lib.sh"
 dlsps_require_container
 
 if [ ! -d "$CROPS_HOST_DIR" ]; then
-  echo "BLOCKED: $CROPS_HOST_DIR does not exist. Create data/dlsps/crop-config.json and data/dlsps/crops/ (writable) and mount them per compose/bootstrap-compose.yaml before running this test; see scripts/dlsps/README.md." >&2
+  echo "BLOCKED: $CROPS_HOST_DIR does not exist. Create data/dlsps/crop-config.json and data/dlsps/crops/ (writable) and mount them per compose/handheld-multi-modal.yaml before running this test; see scripts/dlsps/README.md." >&2
   exit 2
 fi
 

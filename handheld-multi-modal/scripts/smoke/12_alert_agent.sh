@@ -47,7 +47,7 @@ try:
         raise ValueError(f"expected healthy status, got {health}")
     if health.get("adk_enabled") is not False:
         raise ValueError("expected adk_enabled=false (rule/action-dispatch mode required); "
-                          "ADK/LLM in the alert-critical path is not permitted by this bootstrap")
+                          "ADK/LLM in the alert-critical path is not permitted by this application")
 
     tools = request("GET", "/api/v1/tools")
     names = {t["name"] for t in tools.get("tools", [])}
@@ -77,7 +77,7 @@ print("PASS: Alert Agent rule-based dispatch (ADK/MCP off), one real log_alert a
       "and one real field_hash dedup skip on repeat.")
 print("NOT VERIFIED: backend.speak_alert delivery (no approved backend MCP server exists),",
       "trigger_webhook/capture_snapshot/publish_mqtt (require webhook target/image payload/",
-      "MQTT subscriber not set up by this script -- see docs/bootstrap/evidence/alert-agent/",
+      "MQTT subscriber not set up by this script -- see docs/application/evidence/alert-agent/",
       "smoke.log for a manual run that did exercise all four built-in tools), SSE/WebSocket",
       "fanout (manually verified separately, not by this script), image digest, Panther Lake.")
 PY

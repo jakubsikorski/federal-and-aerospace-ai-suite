@@ -1,6 +1,6 @@
 # Smoke commands
 
-Run from repository root. See `BOOTSTRAP_STATUS.md` for current results. Exit 0 means scope
+Run from repository root. See `STATUS.md` for current results. Exit 0 means scope
 printed by a real test passed; functional failure is nonzero; explicit blocked
 entry points exit 2 and are **not implemented smoke tests**.
 
@@ -17,17 +17,17 @@ entry points exit 2 and are **not implemented smoke tests**.
 | `bash scripts/smoke/09_chat_general.sh` | PASS against deployed stock container; asks stock `/chat` about RTSP with mission corpus intact; checks general-knowledge answer and unchanged document list. One transient empty-completion run was observed and correctly failed nonzero (see `COMPONENTS.md`) |
 | `bash scripts/smoke/10_audio_analyzer.sh` | PASS; needs `AUDIO_ANALYZER_URL` + `AUDIO_ANALYZER_SAMPLE_WAV`; posts real speech WAV to `/v1/audio/transcriptions`, checks `/health` and non-empty text |
 | `bash scripts/smoke/11_tts.sh` | PASS (SpeechT5, owner-approved); needs `TTS_URL`; checks `/health`, `device=GPU` via `/v1/model-info`, and validates real synthesis returns a non-trivial WAV |
-| `bash scripts/smoke/12_alert_agent.sh` | **PASS**, executed against deployed `intel/alert-agent-service:2026.2.0-rc3` (`ALERT_URL=http://127.0.0.1:8010`). Confirms rule-based mode, one real `log_alert` dispatch, one real dedup skip. Webhook/snapshot/MQTT/SSE and `backend.speak_alert` verified/documented manually — see `config/alert-agent/README.md`, `docs/bootstrap/evidence/alert-agent/smoke.log` |
-| `bash scripts/smoke/13_metrics.sh` | **PASS**, executed against deployed `intel/metrics-manager:2026.1.0`. Script scope is CPU/RAM-only by design; real GPU/NPU/temperature data additionally confirmed manually (see `config/metrics/README.md`, `docs/bootstrap/evidence/metrics/smoke.log`) |
-| `make test-phase5` | **PASS.** Runs strict route/plan, interval-overlap, read-only budget, aggregate, completeness and stable-paging tests, then a live typed ten-minute query through stock Chat Q&A. Records independent malformed-plan safe failures rather than repairing model output; evidence under `docs/bootstrap/evidence/phase5/` |
+| `bash scripts/smoke/12_alert_agent.sh` | **PASS**, executed against deployed `intel/alert-agent-service:2026.2.0-rc3` (`ALERT_URL=http://127.0.0.1:8010`). Confirms rule-based mode, one real `log_alert` dispatch, one real dedup skip. Webhook/snapshot/MQTT/SSE and `backend.speak_alert` verified/documented manually — see `config/alert-agent/README.md`, `docs/application/evidence/alert-agent/smoke.log` |
+| `bash scripts/smoke/13_metrics.sh` | **PASS**, executed against deployed `intel/metrics-manager:2026.1.0`. Script scope is CPU/RAM-only by design; real GPU/NPU/temperature data additionally confirmed manually (see `config/metrics/README.md`, `docs/application/evidence/metrics/smoke.log`) |
+| `make test-phase5` | **PASS.** Runs strict route/plan, interval-overlap, read-only budget, aggregate, completeness and stable-paging tests, then a live typed ten-minute query through stock Chat Q&A. Records independent malformed-plan safe failures rather than repairing model output; evidence under `docs/application/evidence/phase5/` |
 
 ## DLSPS / MediaMTX / MQTT (video pipeline)
 
-Requires `dlsps` service from `compose/bootstrap-compose.yaml` running,
+Requires `dlsps` service from `compose/handheld-multi-modal.yaml` running,
 plus MediaMTX and MQTT:
 
 ```sh
-docker compose -f compose/bootstrap-compose.yaml up -d
+docker compose -f compose/handheld-multi-modal.yaml up -d
 ```
 
 `scripts/smoke/_dlsps_lib.sh` holds shared helpers (container/REST names,
@@ -40,23 +40,23 @@ names differ from compose defaults.
 `config/dlsps/{cpu,gpu,npu}/config.json` is file currently mounted at
 `/home/pipeline-server/config.json` in DLSPS container (pipeline name
 requested via REST must match `name` field inside that file). The mount
-source is parameterized in `compose/bootstrap-compose.yaml` via
+source is parameterized in `compose/handheld-multi-modal.yaml` via
 `DLSPS_CONFIG_VARIANT` (default `npu`); copying a file into an unmounted
 `/tmp` path and restarting does **not** change it — a restart re-reads the
 same bind-mounted source, it doesn't swap it. Recreate the container with
 the desired variant instead:
 
 ```sh
-DLSPS_CONFIG_VARIANT=gpu docker compose -f compose/bootstrap-compose.yaml up -d --force-recreate dlsps
+DLSPS_CONFIG_VARIANT=gpu docker compose -f compose/handheld-multi-modal.yaml up -d --force-recreate dlsps
 bash scripts/smoke/03_dlsps_gpu.sh
 # restore shipped default afterward:
-docker compose -f compose/bootstrap-compose.yaml up -d --force-recreate dlsps
+docker compose -f compose/handheld-multi-modal.yaml up -d --force-recreate dlsps
 ```
 
 Script 05 assumes NPU (shipped default) config is mounted. Script 06 is
 intentional `BLOCKED` entry point (exit 2) — doesn't start a pipeline.
 
-**Known codec gotcha for WHEP (01_mediamtx.sh):** this bootstrap's webrtc
+**Known codec gotcha for WHEP (01_mediamtx.sh):** this application's webrtc
 destination is fed from JPEG-encoded appsink branch. DLSPS's WebRTC manager
 (`src/server/webrtc/gstreamer_webrtc_manager.py`) always picks software
 `vp9enc` encoder when source frame is JPEG/system-memory, regardless of
@@ -75,7 +75,7 @@ Scaffold Compose file starts only MediaMTX and Mosquitto. Doesn't start
 DLSPS, publish test video, download models, or run any final application:
 
 ```sh
-docker compose -f compose/bootstrap-compose.yaml up -d mediamtx mqtt
+docker compose -f compose/handheld-multi-modal.yaml up -d mediamtx mqtt
 ```
 
 Run the complete Phase 4 demo with one target:
@@ -92,7 +92,7 @@ If ignored assets live outside the checkout, pass their repository root
 explicitly, for example `make demo-up CAMERAS=2 ASSET_ROOT=/path/to/assets`.
 Use `make demo-status` to inspect it, `make demo-stop` to stop Backend/DLSPS,
 `make demo-restart` to restart, or `make demo-down` to remove containers.
-See [device setup](../../docs/bootstrap/application-operations.md) for a new host.
+See [device setup](../../docs/application/application-operations.md) for a new host.
 
 The publisher definitions remain in `compose/cameras.yaml`. Prefer this target
 over a hand-run `ffmpeg`: a manual publisher dies with its shell and silently
@@ -135,7 +135,7 @@ deletes session. OPTIONS response or SDP exchange alone isn't a pass.
 Stop only this project's infrastructure when finished:
 
 ```sh
-docker compose -f compose/bootstrap-compose.yaml down
+docker compose -f compose/handheld-multi-modal.yaml down
 ```
 
 Don't automatically rewrite `verified` fields from script exit codes. Review
@@ -147,12 +147,12 @@ Start the backend from checked-in Compose (now declared as service `chatqna`,
 previously a live-but-undeclared container):
 
 ```sh
-docker compose -f compose/bootstrap-compose.yaml up -d chatqna
+docker compose -f compose/handheld-multi-modal.yaml up -d chatqna
 ```
 
 Run 07, then 08, then 09 against configured headless service.
 `CHATQNA_URL` defaults to `http://127.0.0.1:8888`;
-`CHATQNA_EVIDENCE` defaults to `docs/bootstrap/evidence/chatqna/smoke`.
+`CHATQNA_EVIDENCE` defaults to `docs/application/evidence/chatqna/smoke`.
 Tests never delete documents; uploads use unique fixture names.
 General conversation is owner-approved retrieval-enabled `/chat` path,
 not retrieval bypass. Successful API test alone doesn't identify actual

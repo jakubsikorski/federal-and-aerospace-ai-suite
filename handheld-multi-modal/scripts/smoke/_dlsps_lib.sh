@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Shared helpers for DLSPS smoke scripts. Not a standalone entry point.
 _dlsps_lib_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-: "${COMPOSE_FILE:=$_dlsps_lib_root/compose/bootstrap-compose.yaml}"
+: "${COMPOSE_FILE:=$_dlsps_lib_root/compose/handheld-multi-modal.yaml}"
 : "${DLSPS_REST:=http://127.0.0.1:8080}"
 : "${DLSPS_PIPELINE_NAME:=handheld_smoke}"
 : "${DLSPS_DEMO_URI:=file:///home/pipeline-server/resources/videos/classroom.avi}"
@@ -9,9 +9,9 @@ _dlsps_lib_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # dlsps_resolve_container <service> — resolve the real container name via
 # Compose service identity (docker compose ps -a), not a guessed
-# container_name (dlsps/mediamtx/mqtt have none in compose/bootstrap-compose.yaml,
+# container_name (dlsps/mediamtx/mqtt have none in compose/handheld-multi-modal.yaml,
 # so their actual names depend on the Compose project name, e.g.
-# handheld-bootstrap-dlsps-1, not the previously hardcoded handheld-bootstrap-dlsps).
+# handheld-multi-modal-dlsps-1, not the previously hardcoded handheld-multi-modal-dlsps).
 # An explicit <SERVICE>_CONTAINER override (e.g. DLSPS_CONTAINER=foo) still wins,
 # for non-Compose setups.
 dlsps_resolve_container() {

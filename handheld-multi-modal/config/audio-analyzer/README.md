@@ -17,7 +17,7 @@ values pinned away from stock defaults:
 
 `models.asr.provider: openvino` and `models.asr.diarization: False`,
 `sentiment.enabled: false` already stock defaults, unchanged —
-matches bootstrap requirement (sentiment/diarization both disabled).
+matches application requirement (sentiment/diarization both disabled).
 
 ## Deploy notes
 
@@ -32,7 +32,7 @@ matches bootstrap requirement (sentiment/diarization both disabled).
 - **Real proxy required.** First container start runs
   `optimum-cli export openvino --model openai/whisper-medium` to
   download+convert model. Needs outbound access to
-  `huggingface.co`. Unlike other bootstrap services (which only talk to
+  `huggingface.co`. Unlike other application services (which only talk to
   local peers and can safely blank `http_proxy`/`https_proxy`), this
   container must receive host's actual corporate proxy
   (`http://proxy.example.com:911` / `:912` on this host) or export
@@ -55,7 +55,7 @@ matches bootstrap requirement (sentiment/diarization both disabled).
   (`tests/philosophy_10_russell_128kb.mp3`) returned recognizable
   transcription of spoken content, proving real GPU whisper-medium
   inference (not a stub).
-- Full log: `docs/bootstrap/evidence/audio-analyzer/smoke.log`.
+- Full log: `docs/application/evidence/audio-analyzer/smoke.log`.
 
 ## Smoke test
 
@@ -72,7 +72,7 @@ supply a real one.
 ## Limitations
 
 - Optional HTTP `prompt` field accepted by API but not forwarded to
-  ASR (source behavior, not bootstrap gap).
+  ASR (source behavior, not an application gap).
 - Model revision not pinned by stock export path (no explicit HF
   commit hash pin); only repo id `openai/whisper-medium` fixed.
 - No microphone/`/dev/snd` mapping — Backend captures audio, uploads it;

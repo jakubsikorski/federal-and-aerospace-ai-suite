@@ -60,7 +60,7 @@ DEFAULTS: dict[str, Any] = {
     # Section 6.5 condition 3: how recently a track must have been seen to count
     # as current. The design's initial 3s is shorter than the measured delivery
     # latency below, which would make every camera permanently "absent"; this is
-    # set from measurement, not preference. See docs/bootstrap/evidence/phase3.
+    # set from measurement, not preference. See docs/application/evidence/phase3.
     "freshness_window_seconds": 8.0,
     # Section 8.1: a crop that arrives before its observation waits this long for
     # a track to attach to. Bounded by age alone.

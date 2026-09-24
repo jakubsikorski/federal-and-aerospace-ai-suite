@@ -1,4 +1,4 @@
-name: handheld-bootstrap
+name: handheld-multi-modal
 
 # Shared fragments (native YAML anchors, not a compose feature) to avoid
 # repeating identical blocks across services. `x-*` keys are ignored by
@@ -28,8 +28,8 @@ x-gpu-healthcheck: &gpu-healthcheck
   start_period: 240s
   retries: 5
 
-# DLSPS is a real, smoke-tested service (see BOOTSTRAP_STATUS.md and
-# docs/bootstrap/video-contracts.md). This is still NOT the complete
+# DLSPS is a real, smoke-tested service (see STATUS.md and
+# docs/application/video-contracts.md). This is still NOT the complete
 # application stack; other AI services remain separate.
 # The DLSPS static config is selected by mounting one of
 # ../config/dlsps/{cpu,gpu,npu}/config.json (default: npu, per spec).
@@ -39,7 +39,7 @@ x-gpu-healthcheck: &gpu-healthcheck
 # pipeline. scripts/dlsps/crop_candidates.py is present in the shipped
 # `pipeline` string of all three variants (cpu/gpu/npu) and runs on every
 # launch; the mounts below are what it needs, not an optional extra.
-# See docs/bootstrap/video-contracts.md and docs/design/APPLICATION_DESIGN.md.
+# See docs/application/video-contracts.md and docs/design/APPLICATION_DESIGN.md.
 services:
   model-downloader:
     image: intel/model-download:2026.2.0-rc2@sha256:8894c3d624e949e79d54557b834a11a90bc3673a98de820a0297f3328b91cc95
@@ -54,7 +54,7 @@ services:
       - "127.0.0.1:8200:8000"
     volumes:
       - ${ASSET_ROOT:-..}/data/model-download:/opt/models
-    networks: [bootstrap]
+    networks: [handheld]
   mediamtx:
     image: bluenviron/mediamtx:1.11.3
     restart: "no"
@@ -72,7 +72,7 @@ services:
       - "127.0.0.1:9997:9997/tcp"
     volumes:
       - ../config/mediamtx/mediamtx.yml:/mediamtx.yml:ro
-    networks: [bootstrap]
+    networks: [handheld]
   coturn:
     image: coturn/coturn:4.18.0@sha256:bbefd3e1fdfdc0d58770fe01b581fd8b00d9f3a5580d00acb77cf719a6bc78e3
     restart: "no"
@@ -100,7 +100,7 @@ services:
       - "127.0.0.1:1883:1883/tcp"
     volumes:
       - ../config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-    networks: [bootstrap]
+    networks: [handheld]
   dlsps:
     image: intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24-rc3
     restart: "no"
@@ -132,14 +132,14 @@ services:
       # Variant selection at deployment time, NPU default per spec. Copying a
       # file into an unmounted /tmp path and restarting does NOT change this
       # bind mount's source — set DLSPS_CONFIG_VARIANT and recreate instead:
-      #   DLSPS_CONFIG_VARIANT=cpu docker compose -f compose/bootstrap-compose.yaml up -d --force-recreate dlsps
+      #   DLSPS_CONFIG_VARIANT=cpu docker compose -f compose/handheld-multi-modal.yaml up -d --force-recreate dlsps
       - ../config/dlsps/${DLSPS_CONFIG_VARIANT:-npu}/config.json:/home/pipeline-server/config.json:ro
       - ../data/dlsps/yolo_export/yolo26s_int8_openvino_model:/home/pipeline-server/yolo_models/yolo26s/INT8:ro
       # Demo source copied from the pinned edge-ai-libraries commit's own
       # microservices/dlstreamer-pipeline-server/resources/videos/classroom.avi
       # (sha256 ca6d1b53d54a40ffda9d4ca1d0ab0cc43f744583324aaf97146c820e2b62a2fa,
       # confirmed identical); reproduction runbook for both this file and the
-      # detector IR above: docs/bootstrap/video-contracts.md "Detector IR and
+      # detector IR above: docs/application/video-contracts.md "Detector IR and
       # demo video" section.
       - ../data/dlsps/demo-video:/home/pipeline-server/resources/videos:ro
       # Crop mechanism, active on every launch (corrected 2026-09-14, S2):
@@ -151,16 +151,16 @@ services:
       # lock per store. See config/dlsps/crops/README.md.
       - ../config/dlsps/crops:/opt/handheld-crops-config:ro
       - ../data/dlsps/crops:/opt/handheld-crops-output
-    networks: [bootstrap]
+    networks: [handheld]
   metrics:
     image: intel/metrics-manager:2026.1.0
-    container_name: handheld-bootstrap-metrics
+    container_name: handheld-multi-modal-metrics
     restart: "no"
     # Stock upstream compose.yaml defaults (microservices/metrics-manager,
-    # edge-ai-libraries@3b44c78, see docs/bootstrap/service-contracts.md):
+    # edge-ai-libraries@3b44c78, see docs/application/service-contracts.md):
     # privileged + pid:host + apparmor:unconfined are the source's own
     # required settings for host CPU/GPU/NPU sysfs telemetry, not an invented
-    # bootstrap addition. GPU_RENDER_GID 992 observed on this host.
+    # application addition. GPU_RENDER_GID 992 observed on this host.
     privileged: true
     pid: host
     security_opt:
@@ -194,10 +194,10 @@ services:
       - /sys:/sys:ro
       - /run:/run:ro
       - ../config/metrics/telegraf.conf:/etc/telegraf/telegraf.conf:ro
-    networks: [bootstrap]
+    networks: [handheld]
   alert-agent:
     image: intel/alert-agent-service:2026.2.0-rc3
-    container_name: handheld-bootstrap-alert-agent
+    container_name: handheld-multi-modal-alert-agent
     restart: "no"
     depends_on: [mqtt]
     ports:
@@ -222,10 +222,10 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ../config/alert-agent/resources:/app/resources:ro
-    networks: [bootstrap]
+    networks: [handheld]
   audio-analyzer:
     image: intel/audio-analyzer:2026.2.0-rc3
-    container_name: handheld-bootstrap-audio-analyzer
+    container_name: handheld-multi-modal-audio-analyzer
     restart: "no"
     # Hardcoded to match the image's baked-in app user and the ownership of
     # the named volumes (stock docker-compose.yml requirement).
@@ -251,11 +251,11 @@ services:
       <<: *gpu-healthcheck
       test: ["CMD", "python3", "-c",
              "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/health', timeout=5).read()"]
-    networks: [bootstrap]
+    networks: [handheld]
   # NOTE: owner-approved switch to the stock default SpeechT5 model
   # (2026-09-10): Parler-TTS is provenance-approved but blocked by a real
   # packaging gap in this pinned image (missing parler-tts pip package, see
-  # docs/bootstrap/ai-contracts.md §3 and config/tts/README.md for the full
+  # docs/application/ai-contracts.md §3 and config/tts/README.md for the full
   # writeup and the earlier attempt). SpeechT5 was previously rejected for
   # Microsoft Research Asia institutional authorship on the original paper;
   # the owner explicitly reviewed that finding and confirmed SpeechT5 is a
@@ -263,7 +263,7 @@ services:
   # config/tts/README.md for the full record of both decisions.
   tts:
     image: intel/text-to-speech:2026.2.0-rc3
-    container_name: handheld-bootstrap-tts
+    container_name: handheld-multi-modal-tts
     restart: "no"
     # Hardcoded to match the image's baked-in app user and the ownership of
     # the named volumes (stock docker-compose.yml requirement).
@@ -288,17 +288,17 @@ services:
       <<: *gpu-healthcheck
       test: ["CMD", "python3", "-c",
              "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8011/health', timeout=5).read()"]
-    networks: [bootstrap]
+    networks: [handheld]
   # Stock Chat Q&A Core backend only (OpenVINO GPU variant, Intel/neural-chat-7b-v3-3
   # per AGENTS.md/MODEL_PROVENANCE.md) — no stock UI is deployed, per manifest.
   # Upstream reference: edge-ai-libraries sample-applications/chat-question-
   # and-answer-core/docker/compose.yaml, service chatqna-core-ov-gpu (its
   # MODEL_CACHE_PATH/MODEL_CONFIG_PATH/HF_ACCESS_TOKEN env-var contract is
   # reused as-is; profile/build/UI/nginx machinery is dropped since this
-  # bootstrap only needs the running backend, not upstream's dev workflow).
+  # the application only needs the running backend, not upstream's dev workflow).
   chatqna:
     image: intel/chatqna:core_gpu_2026.2.0-rc2@sha256:1c893ef30f6e278957812c02d605903382fdc9f8b337c9ef77e82acd21a000d3
-    container_name: handheld-bootstrap-chatqna-core-gpu
+    container_name: handheld-multi-modal-chatqna-core-gpu
     restart: "no"
     group_add:
       - "${RENDER_GID:-992}" # resolved from renderD128 by Make
@@ -320,14 +320,14 @@ services:
       <<: *gpu-healthcheck
       test: ["CMD", "python3", "-c",
              "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8888/health', timeout=5).read()"]
-    networks: [bootstrap]
+    networks: [handheld]
   # --- application services (Phase 1, docs/design/APPLICATION_DESIGN.md) ---
   backend:
     build: ../backend
     image: handheld/backend:dev
     # Allow bounded HTTP calls and verified pipeline cleanup before SIGKILL.
     stop_grace_period: 120s
-    container_name: handheld-bootstrap-backend
+    container_name: handheld-multi-modal-backend
     restart: "no"
     security_opt:
       - no-new-privileges:true
@@ -353,11 +353,11 @@ services:
       - ../data/dlsps/crops:/crops
       - ../scripts/dlsps/crop_candidates.py:/opt/handheld-crops/crop_candidates.py:ro
     depends_on: [mediamtx, mqtt, dlsps, chatqna, audio-analyzer, tts, alert-agent, metrics]
-    networks: [bootstrap]
+    networks: [handheld]
 
   proxy:
     image: nginx:1.27-alpine
-    container_name: handheld-bootstrap-proxy
+    container_name: handheld-multi-modal-proxy
     restart: "no"
     security_opt:
       - no-new-privileges:true
@@ -370,10 +370,10 @@ services:
       - ../config/proxy/nginx.conf:/etc/nginx/nginx.conf:ro
       - ../config/tls:/etc/tls:ro
     depends_on: [backend, mediamtx]
-    networks: [bootstrap]
+    networks: [handheld]
 
 networks:
-  bootstrap:
+  handheld:
     driver: bridge
 
 volumes:

@@ -8,21 +8,21 @@ description: Use when configuring the handheld clean RTSP input path, annotated 
 Image `bluenviron/mediamtx:1.11.3`, selected from the pinned OEP DLSPS Compose
 example. Schema verified against upstream v1.11.3 `mediamtx.yml`.
 Local configuration `config/mediamtx/mediamtx.yml`, mounted at `/mediamtx.yml:ro`.
-Compose `compose/bootstrap-compose.yaml`. No hardware devices or media
+Compose `compose/handheld-multi-modal.yaml`. No hardware devices or media
 persistence volume needed for relaying.
 
 Prepared paths `/cam1` (clean RTSP input, `source: publisher`) and
 `/annotated` (native DLSPS WHIP push, not RTSP — see
-`docs/bootstrap/video-contracts.md` for the owner-approved amendment).
+`docs/application/video-contracts.md` for the owner-approved amendment).
 Host RTSP TCP 8554; WHEP HTTP 8889; ICE UDP 8189; API TCP 9997.
 Containers use `mediamtx:8554`; host uses loopback.
 
 **Runtime-verified** (`bash scripts/smoke/01_mediamtx.sh`, hardened
 2026-09-10, live PASS with 79 real decoded `video/x-raw` WHEP frames — see
-`docs/bootstrap/IMPROVEMENT_PLAN.md`):
+`docs/application/IMPROVEMENT_PLAN.md`):
 
 ```sh
-docker compose -f compose/bootstrap-compose.yaml up -d mediamtx
+docker compose -f compose/handheld-multi-modal.yaml up -d mediamtx
 curl --fail --max-time 10 http://127.0.0.1:9997/v3/paths/list
 bash scripts/smoke/01_mediamtx.sh
 ```
@@ -38,8 +38,8 @@ Server-side path-ready state (`GET /v3/paths/list`) is supplementary
 confirmation only — the load-bearing check is a real client-side decode
 (`decodebin` producing `video/x-raw` buffers), not just a log line.
 
-Loopback-only unauthenticated bootstrap configuration is not a tablet/LAN
+Loopback-only unauthenticated dev configuration is not a tablet/LAN
 deployment. Do not publish these ports on external interfaces without
 authentication/reachability work. No Backend in video path. Coturn, if needed,
 assists MediaMTX WebRTC only. Do not relay DLSPS JPEG RTP and call it H.264.
-See `docs/bootstrap/video-contracts.md` for source links and limitations.
+See `docs/application/video-contracts.md` for source links and limitations.

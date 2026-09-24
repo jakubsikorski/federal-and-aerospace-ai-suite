@@ -57,7 +57,7 @@ Then pass the value in the `POST /pipelines/.../{name}` launch payload, where it
 }
 ```
 
-This is wired into all three shipped `config/dlsps/{cpu,gpu,npu}/config.json` variants and `compose/bootstrap-compose.yaml` (crop script dir, crop config, and a writable crop-output volume are mounted into the `dlsps` service). Validated end-to-end on the NPU variant: pipeline reached `RUNNING` at ~30 FPS and produced matched `.jpg`+`.json` crop pairs in the mounted output volume for a 3-minute manual-validation run.
+This is wired into all three shipped `config/dlsps/{cpu,gpu,npu}/config.json` variants and `compose/handheld-multi-modal.yaml` (crop script dir, crop config, and a writable crop-output volume are mounted into the `dlsps` service). Validated end-to-end on the NPU variant: pipeline reached `RUNNING` at ~30 FPS and produced matched `.jpg`+`.json` crop pairs in the mounted output volume for a 3-minute manual-validation run.
 
 If the `dlsps` process previously failed to construct `CropCandidates` for any reason (e.g. bad config path) while holding the crop-output directory's advisory lock file (`.lock`), the lock is never released until the container restarts — a stuck `Resource temporarily unavailable` on `Store.__init__` means restart the `dlsps` container (and remove any stale `.lock`) before relaunching.
 
@@ -146,7 +146,7 @@ Clear history is deliberately coordinated with producer shutdown, not by deletin
 python3 scripts/dlsps/crop_candidates.py --clear-store /path/to/crops --confirm-clear
 ```
 
-Stop the owning pipeline first; the lock rejects a live owner. Clear Backend history and run this command, then restart. It removes only producer-named images/sidecars and rotates generation. Consumers must adopt the new generation and reject late old-generation messages. This supplies the producer part of reset; there is no Backend reset implementation in this bootstrap. `close()` drains queued work on an explicit owner call or callback destruction; after five seconds a still-blocked daemon worker retains the lock until it actually finishes. Hard process termination may lose uncommitted jobs, while completed outbox files remain recoverable.
+Stop the owning pipeline first; the lock rejects a live owner. Clear Backend history and run this command, then restart. It removes only producer-named images/sidecars and rotates generation. Consumers must adopt the new generation and reject late old-generation messages. This supplies the producer part of reset; the crop producer has no reset of its own. `close()` drains queued work on an explicit owner call or callback destruction; after five seconds a still-blocked daemon worker retains the lock until it actually finishes. Hard process termination may lose uncommitted jobs, while completed outbox files remain recoverable.
 
 ## Checks in the current running container
 
@@ -168,21 +168,21 @@ remains. Image quality, sampling budgets and first-snapshot priority are unchang
 
 `test_crops.py` covers repeated retained-callback takeovers with and without
 MQTT, and takeover during frame mapping and JPEG encoding. Run the mounted
-script with `docker exec handheld-bootstrap-dlsps-1 python3 /opt/handheld-crops/test_crops.py`.
+script with `docker exec handheld-multi-modal-dlsps-1 python3 /opt/handheld-crops/test_crops.py`.
 Apply script updates to existing pipelines with `make demo-restart`, using the
 deployment's existing `ASSET_ROOT`.
 
 From the repo root (temporary container copy, no service config changes):
 
 ```bash
-docker cp scripts/dlsps handheld-bootstrap-dlsps-1:/tmp/handheld-crop-scripts
-docker exec handheld-bootstrap-dlsps-1 python3 /tmp/handheld-crop-scripts/test_crops.py
-docker exec handheld-bootstrap-dlsps-1 python3 /tmp/handheld-crop-scripts/test_crops.py --live
+docker cp scripts/dlsps handheld-multi-modal-dlsps-1:/tmp/handheld-crop-scripts
+docker exec handheld-multi-modal-dlsps-1 python3 /tmp/handheld-crop-scripts/test_crops.py
+docker exec handheld-multi-modal-dlsps-1 python3 /tmp/handheld-crop-scripts/test_crops.py --live
 ```
 
 Use an absent destination for the first docker cp; for subsequent updates copy individual files to avoid nested directories. `--live` uses the already mounted classroom video, pinned YOLO26s model and existing MQTT broker. It runs isolated finite pipelines inside the container, requires NPU and VA access, and does not stop any DLSPS REST instance. It publishes real crop events on detections/snips with stream_id `crop_validation`; run it when that test traffic is acceptable to consumers.
 
-Copy the printed evidence directory and logs to `docs/bootstrap/evidence/dlsps-crops/`. Inspect representative crops visually as well as decoding them. Hardware identity in evidence is the actual Lunar Lake / Intel Core Ultra 9 288V host; do not relabel it Panther Lake.
+Copy the printed evidence directory and logs to `docs/application/evidence/dlsps-crops/`. Inspect representative crops visually as well as decoding them. Hardware identity in evidence is the actual Lunar Lake / Intel Core Ultra 9 288V host; do not relabel it Panther Lake.
 
 Corrected 2026-09-14 (S3): these scripts **are** enabled in Compose and in the fixed production configs — `crop_candidates.py` is in the shipped `pipeline` string of all three variants and runs on every launch — and `06_snip.sh` is implemented and PASSes (see `scripts/smoke/README.md`). The earlier claim here that they were not enabled and that `06_snip.sh` stayed blocked contradicted the rest of this same file. The live check proves actual crop/metadata/MQTT behavior; it is not a whole-app or sustained WHEP/telemetry benchmark. CPU/GPU variants and difficult-angle/occlusion footage require separate measurements.
 
@@ -191,7 +191,7 @@ Corrected 2026-09-14 (S3): these scripts **are** enabled in Compose and in the f
 On the accepted Lunar Lake host, the pinned image passed the deterministic checks.
 A real NPU/VA run saved three probe images and independently received 13 crop MQTT
 messages correlated against 161 observation frames. Images decoded with the
-expected dimensions. Evidence: `docs/bootstrap/evidence/dlsps-crops/npu-va/` and
+expected dimensions. Evidence: `docs/application/evidence/dlsps-crops/npu-va/` and
 `live-check.log` (local, gitignored). The existing exporter/runtime version warning
 was present; no model was changed. This is a short compatibility check, not a
 sustained-load or camera-angle acceptance claim.
@@ -205,7 +205,7 @@ track IDs. The probe now rotates across least-attempted tracked ROIs, with the
 same image/attempt limits. Regression checks require IDs 1,2,3,1,2,3 for a stable
 three-track fixture; the live classroom check requires three distinct probe IDs
 and at least three producer IDs. New evidence is saved separately under
-`docs/bootstrap/evidence/dlsps-crops/diversity/`; the original run is preserved.
+`docs/application/evidence/dlsps-crops/diversity/`; the original run is preserved.
 
 The corrected real NPU/VA run passed with probe IDs **1, 2, 3**, producer IDs
 **1 through 12**, 12 correlated MQTT events and 160 observation frames.
@@ -224,7 +224,7 @@ and JPEG settings are unchanged. GPU buffer mapping/synchronization still occurs
 validated plane offsets/strides directly and avoids gstgva full-frame repacking. The measurement probe retains its original
 full-frame conversion. Correctness tests compare regional output against that
 conversion, including odd coordinates and frame edges. Live throughput is recorded in
-`docs/bootstrap/evidence/crop-optimizations-2026-09-23/`; no controlled
+`docs/application/evidence/crop-optimizations-2026-09-23/`; no controlled
 before/after benchmark was run.
 
 ### Stride and failure handling (2026-09-23)

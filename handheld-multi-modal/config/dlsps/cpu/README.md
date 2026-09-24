@@ -1,4 +1,4 @@
-# CPU variant: historical PASS (bootstrap alternative; current YOLO26s config not rerun)
+# CPU variant: historical PASS (fixed alternative; current YOLO26s config not rerun)
 
 Historical YOLO11s pipeline was smoke-tested. The current `config.json` uses YOLO26s and parses, but has not been rerun end-to-end. `config.json` pipeline name:
 `handheld_cpu_detect`. Detection device `CPU`, no VA/hardware decode
@@ -8,16 +8,16 @@ Historical YOLO11s pipeline was smoke-tested. The current `config.json` uses YOL
 ## Run
 
 ```sh
-DLSPS_CONFIG_VARIANT=cpu docker compose -f compose/bootstrap-compose.yaml up -d --force-recreate dlsps
+DLSPS_CONFIG_VARIANT=cpu docker compose -f compose/handheld-multi-modal.yaml up -d --force-recreate dlsps
 bash scripts/smoke/02_dlsps_cpu.sh
 # restore shipped default afterward:
-docker compose -f compose/bootstrap-compose.yaml up -d --force-recreate dlsps
+docker compose -f compose/handheld-multi-modal.yaml up -d --force-recreate dlsps
 ```
 
 Copying a file into an unmounted `/tmp` path then `docker restart` does
 **not** work: the container's `config.json` is a direct bind mount from
 `config/dlsps/<variant>/config.json` on the host (see
-`compose/bootstrap-compose.yaml`), and a plain restart re-reads the same
+`compose/handheld-multi-modal.yaml`), and a plain restart re-reads the same
 mount, not a new one. Changing the mounted source requires recreating the
 container (`--force-recreate`, or removing and re-`up`-ing it), not restarting it.
 
@@ -41,7 +41,7 @@ Historical YOLO11s result: ~23fps sustained via `gvafpscounter` in container log
 - MQTT: use documented `appsink name=destination` + top-level
   `mqtt_publisher` config block. Raw `gvametapublish` element + REST
   `destination.metadata.host` field is broken in this rc3 image (see
-  `docs/bootstrap/video-contracts.md`).
+  `docs/application/video-contracts.md`).
 - Historical YOLO11s only: `Model quantization runtime (2025.0.0)
   != current runtime (2026.2.0)` was cosmetic. No equivalent YOLO26s warning is currently recorded.
 - WebRTC (`destination.frame`) requested dynamically via REST at

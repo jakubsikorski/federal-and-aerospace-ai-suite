@@ -5,12 +5,12 @@ description: Validate the pinned OEP Metrics Manager deployment and stock CPU GP
 
 # OEP Metrics Manager — repository override
 
-Read `AGENTS.md` and `docs/bootstrap/service-contracts.md` first.
+Read `AGENTS.md` and `docs/application/service-contracts.md` first.
 Locally authored; source baseline is `release-2026.2.0`, commit
 `c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9`,
 `microservices/metrics-manager/`. This is not an upstream official skill.
 **Deployed and runtime-verified** on this Lunar Lake host — see
-`BOOTSTRAP_STATUS.md` and `docs/bootstrap/evidence/metrics/smoke.log`.
+`STATUS.md` and `docs/application/evidence/metrics/smoke.log`.
 
 ## Required workflow
 
@@ -18,11 +18,11 @@ Locally authored; source baseline is `release-2026.2.0`, commit
    by `VERSION` in the release checkout.
 2. Stock mounts include `/sys:ro`, `/run:ro`, Telegraf configs and
    custom-input storage; GPU uses `/dev/dri`, host PID namespace and render-
-   group access (`compose/bootstrap-compose.yaml`, service `metrics`).
+   group access (`compose/handheld-multi-modal.yaml`, service `metrics`).
    Privileged/AppArmor settings are the source's own required host
-   permissions for sysfs telemetry, not an invented bootstrap addition.
+   permissions for sysfs telemetry, not an invented application addition.
 3. Keep **Metrics Manager → Backend → UI**. Do not build an aggregator or wire
-   the browser directly to privileged host telemetry as part of bootstrap.
+   the browser directly to privileged host telemetry as part of the application.
 4. `:9090/health` confirmed healthy (liveness only). Real data confirmed via
    `:9273/metrics`, `:9090/api/v1/metrics/latest`, and SSE
    `:9090/metrics/stream`.
@@ -66,7 +66,7 @@ Lake. Owner accepts this Lunar Lake host as the execution target (2026-09-09);
 passing tests here satisfy acceptance — actual hardware identity stays
 recorded, not relabeled, and no separate Panther Lake measurement is claimed.
 
-On any further run, save actual payloads and logs under bootstrap evidence.
+On any further run, save actual payloads and logs under application evidence.
 Report absent fields and source unit discrepancies rather than synthesizing
 telemetry or claiming a smoke pass beyond what was actually run.
 

@@ -1,6 +1,6 @@
 ---
 name: handheld-dlsps-contract
-description: Use when integrating fixed CPU/GPU/NPU Pipeline Server variants, annotated WebRTC (WHIP/WHEP), observation MQTT, or tracked-object snips for the handheld bootstrap.
+description: Use when integrating fixed CPU/GPU/NPU Pipeline Server variants, annotated WebRTC (WHIP/WHEP), observation MQTT, or tracked-object snips for the handheld multi-modal application.
 ---
 
 # Fixed DLSPS integration
@@ -8,14 +8,14 @@ description: Use when integrating fixed CPU/GPU/NPU Pipeline Server variants, an
 Pinned image from release source:
 `intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24-rc3`.
 Use official `dlsps-user` and `dlstreamer-coding-agent` skills for stock APIs.
-Repository-specific source findings + live evidence: `docs/bootstrap/video-contracts.md`.
+Repository-specific source findings + live evidence: `docs/application/video-contracts.md`.
 **Runtime-verified**: all three variants (CPU/GPU/NPU) deployed and smoke-tested
-against real running containers, not source-only anymore (see `BOOTSTRAP_STATUS.md`
+against real running containers, not source-only anymore (see `STATUS.md`
 and `scripts/smoke/{02,03,04,05}_*.sh`, hardened 2026-09-10 — see
-`docs/bootstrap/IMPROVEMENT_PLAN.md`).
+`docs/application/IMPROVEMENT_PLAN.md`).
 
 Config locations: `config/dlsps/{cpu,gpu,npu}/config.json`, selected at
-deployment time via `DLSPS_CONFIG_VARIANT` in `compose/bootstrap-compose.yaml`
+deployment time via `DLSPS_CONFIG_VARIANT` in `compose/handheld-multi-modal.yaml`
 (default `npu`). Changing the mounted variant requires recreating the
 container (`docker compose up -d --force-recreate dlsps`), not a plain
 restart — a restart re-reads the same bind-mounted file, it does not swap it.
@@ -33,7 +33,7 @@ Required default: YOLO26s IR, INT8 preferred, NPU inference, CPU `gvatrack`
 (owner-directed 2026-09-24 replacement for YOLO11s; never substitute nano),
 Intel hardware decode (`vah264dec`). NPU/GPU variants use VA-memory hardware
 decode and DLSPS WebRTC hardware H.264 encode; CPU variant uses software
-`decodebin`/VP9. See `docs/bootstrap/video-contracts.md`; do not runtime-edit
+`decodebin`/VP9. See `docs/application/video-contracts.md`; do not runtime-edit
 pipelines or fall back to nano.
 Input for the shipped default demo is a local file URI
 (`file:///home/pipeline-server/resources/videos/classroom.avi`); the source
@@ -42,9 +42,9 @@ is set per-pipeline in the REST start request body
 `rtsp://mediamtx:8554/cam1` instead needs no config.json change, only a
 different `source.uri` in that same request — this combined RTSP-in path is exercised as the shipped demo path.
 Output MediaMTX `/annotated` via native WebRTC (WHIP push, not RTSP — see
-`docs/bootstrap/video-contracts.md` for the owner-approved amendment).
+`docs/application/video-contracts.md` for the owner-approved amendment).
 Topics: `detections/live` (confirmed real payload shape in
-`docs/bootstrap/video-contracts.md`); `detections/snips` is implemented by the application crop producer.
+`docs/application/video-contracts.md`); `detections/snips` is implemented by the application crop producer.
 
 Do not invent a `snip` configuration key beyond the shipped `crop-config`
 pipeline parameter. No stock DLSPS destination performs a per-object crop;
@@ -57,7 +57,7 @@ extension point is a stock `gvapython` element (no
 `GstVideoRegionOfInterestMeta` per tracked object and cropping before any
 encode step: `scripts/dlsps/crop_candidates.py`, wired into all three
 shipped `config/dlsps/{cpu,gpu,npu}/config.json` variants and
-`compose/bootstrap-compose.yaml` — see
+`compose/handheld-multi-modal.yaml` — see
 `scripts/smoke/06_snip.sh` (validated PASS).
 
 Do not mistake stock RTSP destination's JPEG RTP output for a browser-compatible

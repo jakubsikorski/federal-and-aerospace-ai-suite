@@ -8,7 +8,7 @@ description: Use when resolving provenance-compliant stock OEP GPU TTS configura
 Pinned source/image: `edge-ai-libraries` commit
 `c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9`,
 `intel/text-to-speech:2026.2.0-rc3`.
-See `docs/bootstrap/ai-contracts.md` for source evidence and model lineages.
+See `docs/application/ai-contracts.md` for source evidence and model lineages.
 
 **Deployed and runtime-verified** on this Lunar Lake host as SpeechT5, not
 blocked. Parler-TTS provenance was fully resolved (non-PRC chain confirmed,
@@ -20,7 +20,7 @@ owner reviewed SpeechT5's institutional-authorship provenance flag directly
 Microsoft product instead.
 
 `config/tts/config.yaml` mounts as a **direct read-only replacement** of the
-stock `/app/text-to-speech/config.yaml` (`compose/bootstrap-compose.yaml`),
+stock `/app/text-to-speech/config.yaml` (`compose/handheld-multi-modal.yaml`),
 not an overlay via `TEXT_TO_SPEECH_CONFIG_OVERRIDE_PATHS` — that env var is
 not set in this repo's Compose.
 Model configuration lives under `models.tts`; runtime `openvino|pytorch`,
@@ -41,7 +41,7 @@ Compose) — use the host port from outside the container. `GET /health`;
 
 Confirmed working this session: `/v1/model-info` reports `device:GPU`; a real
 synthesis via `POST http://127.0.0.1:8012/v1/audio/speech` returned a valid
-50220-byte WAV file (see `docs/bootstrap/evidence/tts/smoke.log`). A
+50220-byte WAV file (see `docs/application/evidence/tts/smoke.log`). A
 successful WAV request returns `audio/wav` and `X-Session-ID`; JSON mode
 returns `audio_base64`, sampling rate, duration and model/voice metadata.
 Request `model` is metadata, not a dynamic model-selection field.

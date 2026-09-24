@@ -2,13 +2,13 @@
 
 Pinned image `intel/metrics-manager:2026.1.0`
 (digest `sha256:ca11ac8d33d79ad8f2912883f980bdf075df4e44867011d60a3c024b650357ee`,
-built 2026-06-16). Deployed via `compose/bootstrap-compose.yaml` (`metrics`
+built 2026-06-16). Deployed via `compose/handheld-multi-modal.yaml` (`metrics`
 service), using upstream source's own `compose.yaml` defaults
 (`microservices/metrics-manager`, edge-ai-libraries commit `3b44c78`, dated
 2026-09-01): `privileged: true`, `pid: host`, `apparmor:unconfined`,
 `/dev/dri` device, `group_add: 992` (this host's real `render` GID), `/sys`
 and `/run` read-only bind mounts. These are source's own required
-settings for host CPU/GPU/NPU telemetry, not an invented bootstrap addition.
+settings for host CPU/GPU/NPU telemetry, not an invented application addition.
 
 `config/metrics/telegraf.conf` is unmodified copy of upstream
 `telegraf.conf` from same commit (no local edits).
@@ -16,14 +16,14 @@ settings for host CPU/GPU/NPU telemetry, not an invented bootstrap addition.
 ## Run
 
 ```sh
-docker compose -f compose/bootstrap-compose.yaml up -d metrics
+docker compose -f compose/handheld-multi-modal.yaml up -d metrics
 METRICS_URL=http://127.0.0.1:9090 METRICS_TELEGRAF_URL=http://127.0.0.1:9273 \
   bash scripts/smoke/13_metrics.sh
 ```
 
 ## Evidence
 
-Full session captured in `docs/bootstrap/evidence/metrics/smoke.log`. Confirmed
+Full session captured in `docs/application/evidence/metrics/smoke.log`. Confirmed
 on this Lunar Lake host:
 
 - `GET :9090/health` → `{"status":"healthy","version":"2026.1.0",...}`.
@@ -62,7 +62,7 @@ on this Lunar Lake host:
   `DELETE /api/v1/metrics`, both present in newer
   `edge-ai-libraries` checkout (commit `ce292e3`, 2026-09-09) used for
   reference during contract research. Don't assume those two routes exist
-  against pinned image; routes this bootstrap actually exercises
+  against pinned image; routes this application actually exercises
   (`/health`, `/api/v1/metrics/latest`, `/metrics`, `/metrics/stream`) all
   work as documented.
 - `npu_memory_mb` is `-1` on this host by design (Lunar Lake, not PTL+); not

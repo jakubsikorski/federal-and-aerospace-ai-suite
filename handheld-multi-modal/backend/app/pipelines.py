@@ -1,7 +1,7 @@
 """DLSPS pipeline lifecycle: one fixed instance per enabled camera.
 
 Backend owns start and stop; the DLSPS config ships `auto_start: false`. The
-pipeline itself is never edited at runtime (bootstrap contract). The source URI
+pipeline itself is never edited at runtime (application contract). The source URI
 and crop store are request parameters; the stock WebRTC frame destination uses
 the camera's MediaMTX peer ID.
 """
@@ -198,7 +198,7 @@ def _request_body(stream: dict) -> dict:
             # camera using it; reusing a camera's own id is just as bad, because
             # the leaked pipeline it is replacing still holds that instance and
             # the replacement hangs in preroll waiting for it. Measured
-            # 2026-09-14, docs/bootstrap/evidence/phase2/model_instance_isolation.txt.
+            # 2026-09-14, docs/application/evidence/phase2/model_instance_isolation.txt.
             "model_instance": f"inst_{stream['stream_id']}_{uuid.uuid4().hex[:8]}",
         },
     }
@@ -212,7 +212,7 @@ def evict_stale_media(client: httpx.Client, mediamtx: str, stream: dict) -> None
     publisher per path, so the zombie holds `annotatedN` and the replacement
     never leaves QUEUED; the orphaned readers also keep decoding. Both were
     observed 2026-09-14 (five stale readers on cam1) - see
-    docs/bootstrap/evidence/phase2/model_instance_isolation.txt.
+    docs/application/evidence/phase2/model_instance_isolation.txt.
 
     Only this camera's own sessions are touched: its annotated publisher, and
     readers of its source. The source publisher itself is the camera and is

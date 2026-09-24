@@ -113,7 +113,7 @@ def main():
             check=True, capture_output=True, text=True).stdout
         assert not dry_root.exists()
         assert '--profile assets stop' in dry_run
-        assert ':/bootstrap/config/dlsps/detector-profile.json:ro' in dry_run
+        assert ':/handheld/config/dlsps/detector-profile.json:ro' in dry_run
         # Exercise the actual Make recipe with different device groups, without Docker.
         group_root = root / 'groups'
         (group_root / 'config').mkdir(parents=True)

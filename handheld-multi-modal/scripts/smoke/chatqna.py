@@ -97,7 +97,7 @@ def ingest(base, output):
              "equipment": f"KIT-{uuid.uuid4().hex[:8]}"}
     texts = {
         "mission-plan.pdf": (
-            f"Synthetic bootstrap mission {run_id}\n"
+            f"Synthetic handheld mission {run_id}\n"
             "Objective: inspect the laboratory camera mount.\n"
             f"Inspection location: {state['location']}.\n"
             "Deadline: 14:35. Unit: Cedar team.\n"
@@ -107,7 +107,7 @@ def ingest(base, output):
             "No individual people are named in this plan."
         ),
         "equipment.docx": (
-            f"Equipment supplement for synthetic bootstrap mission {run_id}\n"
+            f"Equipment supplement for synthetic handheld mission {run_id}\n"
             f"Required equipment identifier: {state['equipment']}.\n"
             "Resource: one amber inspection case."
         ),
@@ -116,7 +116,7 @@ def ingest(base, output):
     for filename, text in texts.items():
         content = pdf(text) if filename.endswith(".pdf") else docx(text)
         (output / filename).write_bytes(content)
-        upload_name = f"bootstrap-{run_id}-{filename}"
+        upload_name = f"handheld-{run_id}-{filename}"
         boundary = uuid.uuid4().hex
         body = (
             f'--{boundary}\r\nContent-Disposition: form-data; name="files"; filename="{upload_name}"'
@@ -140,14 +140,14 @@ def rag(base, output):
     answers = {}
     for field, label in (("location", "inspection location"), ("equipment", "equipment identifier")):
         answers[field] = chat(
-            base, f"For synthetic bootstrap mission {state['run_id']}, "
+            base, f"For synthetic handheld mission {state['run_id']}, "
             f"what is the exact {label}? Return the identifier from the documents."
         )
         if state[field].lower() not in answers[field].lower():
             (output / "rag.json").write_text(json.dumps(answers, indent=2))
             raise RuntimeError(f"Document-only {field} was not recovered")
     answers["brief"] = chat(
-        base, f"Extract a concise brief for synthetic bootstrap mission {state['run_id']}. "
+        base, f"Extract a concise brief for synthetic handheld mission {state['run_id']}. "
         "Include objective, deadline, location, unit, restrictions, equipment, dependencies "
         "and known risks only when explicitly stated. Do not invent names or missing facts."
     )
@@ -185,7 +185,7 @@ def main():
     parser.add_argument("mode", choices=("ingest", "rag", "general"))
     args = parser.parse_args()
     base = os.environ.get("CHATQNA_URL", "http://127.0.0.1:8888").rstrip("/")
-    output = Path(os.environ.get("CHATQNA_EVIDENCE", "docs/bootstrap/evidence/chatqna/smoke"))
+    output = Path(os.environ.get("CHATQNA_EVIDENCE", "docs/application/evidence/chatqna/smoke"))
     output.mkdir(parents=True, exist_ok=True)
     model = api(base, "/model")
     if model.get("llm_model") != "Intel/neural-chat-7b-v3-3":

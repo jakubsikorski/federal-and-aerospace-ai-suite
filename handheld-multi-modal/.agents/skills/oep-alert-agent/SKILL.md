@@ -5,14 +5,14 @@ description: Integrate the pinned stock OEP Alert Agent in non-LLM rule-dispatch
 
 # OEP Alert Agent — repository override
 
-Read `AGENTS.md` and `docs/bootstrap/service-contracts.md` first.
+Read `AGENTS.md` and `docs/application/service-contracts.md` first.
 This is a locally authored integration skill, not an upstream official copy.
 Source baseline `release-2026.2.0`, commit
 `c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9`,
 `microservices/alert-agent-service/`.
 **Deployed and runtime-verified** on this Lunar Lake host
 (`intel/alert-agent-service:2026.2.0-rc3`, host `127.0.0.1:8010`) — see
-`BOOTSTRAP_STATUS.md` and `docs/bootstrap/evidence/alert-agent/smoke.log`,
+`STATUS.md` and `docs/application/evidence/alert-agent/smoke.log`,
 not source-only.
 
 ## Required workflow
@@ -46,7 +46,7 @@ not source-only.
    SSE `init`+`alert_action` fanout. Unknown tools are skipped; execution is
    concurrent; MCP `isError` is not checked by the wrapper. `actions_taken`
    alone does not prove playback. Do not implement final business rules,
-   speech arbitration, or a custom server in bootstrap.
+   speech arbitration, or a custom server in the application.
 
 ## Dedup and streaming constraints
 
@@ -63,12 +63,12 @@ not source-only.
   Dedup hits and negative answers do not emit action events.
 - Do not copy floating `eclipse-mosquitto:2` from stock Compose into the pinned
   scaffold. Broker ownership belongs to the project's broker contract
-  (`eclipse-mosquitto:2.0.22`, pinned in `compose/bootstrap-compose.yaml`).
+  (`eclipse-mosquitto:2.0.22`, pinned in `compose/handheld-multi-modal.yaml`).
 
 ## Evidence discipline
 
-Retain requests, responses, logs and actual side effects under bootstrap
-evidence (`docs/bootstrap/evidence/alert-agent/`) for any further work.
+Retain requests, responses, logs and actual side effects under the application
+evidence (`docs/application/evidence/alert-agent/`) for any further work.
 Report failures and missing interfaces; never relabel source validation as a
 runtime pass. Keep the final Backend/UI contracts separate.
 

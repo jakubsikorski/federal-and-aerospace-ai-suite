@@ -8,13 +8,13 @@ description: Use when configuring the required stock Whisper-medium OpenVINO GPU
 Pinned source/image: `edge-ai-libraries` commit
 `c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9`,
 `intel/audio-analyzer:2026.2.0-rc3`. **Deployed and runtime-verified** on
-this Lunar Lake host (see `BOOTSTRAP_STATUS.md`,
-`docs/bootstrap/evidence/audio-analyzer/smoke.log`), not source-only.
-Full API, model ownership and source references: `docs/bootstrap/ai-contracts.md`.
+this Lunar Lake host (see `STATUS.md`,
+`docs/application/evidence/audio-analyzer/smoke.log`), not source-only.
+Full API, model ownership and source references: `docs/application/ai-contracts.md`.
 
 Repository config: `config/audio-analyzer/config.yaml` is mounted as a
 **direct read-only replacement** of the stock
-`/app/audio_analyzer/config.yaml` (`compose/bootstrap-compose.yaml`), not an
+`/app/audio_analyzer/config.yaml` (`compose/handheld-multi-modal.yaml`), not an
 overlay via `AUDIO_ANALYZER_CONFIG_OVERRIDE_PATHS` — that env var is not set
 in this repo's Compose.
 
@@ -32,7 +32,7 @@ Service owns export of `openai/whisper-medium` to
 `models/openvino/whisper-medium` (confirmed via a real first-run
 `optimum-cli export openvino` this session; required a real corporate
 `http(s)_proxy` for the outbound HF download). Immutable model revision is
-not yet pinned (see `docs/bootstrap/IMPROVEMENT_PLAN.md`).
+not yet pinned (see `docs/application/IMPROVEMENT_PLAN.md`).
 
 **Container port 8010; host-mapped port is 8011** (`127.0.0.1:8011:8010` in
 Compose) — use the host port from outside the container:

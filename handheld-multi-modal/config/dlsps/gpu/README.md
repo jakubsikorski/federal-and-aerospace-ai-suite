@@ -1,4 +1,4 @@
-# GPU variant: historical PASS (bootstrap alternative; current YOLO26s config not rerun)
+# GPU variant: historical PASS (fixed alternative; current YOLO26s config not rerun)
 
 Historical YOLO11s pipeline was smoke-tested. The current `config.json` uses YOLO26s and parses, but has not been rerun end-to-end. `config.json` pipeline name:
 `handheld_gpu_detect`. Detection device `GPU`
@@ -9,10 +9,10 @@ Historical YOLO11s pipeline was smoke-tested. The current `config.json` uses YOL
 ## Run
 
 ```sh
-DLSPS_CONFIG_VARIANT=gpu docker compose -f compose/bootstrap-compose.yaml up -d --force-recreate dlsps
+DLSPS_CONFIG_VARIANT=gpu docker compose -f compose/handheld-multi-modal.yaml up -d --force-recreate dlsps
 bash scripts/smoke/03_dlsps_gpu.sh
 # restore shipped default afterward:
-docker compose -f compose/bootstrap-compose.yaml up -d --force-recreate dlsps
+docker compose -f compose/handheld-multi-modal.yaml up -d --force-recreate dlsps
 ```
 
 Copying a file into an unmounted `/tmp` path then `docker restart` does
@@ -43,7 +43,7 @@ Historical YOLO11s result: ~29fps sustained via `gvafpscounter`, confirmed concu
   plain `videoconvert`.** `vapostproc ! video/x-raw ! jpegenc` is the
   documented, working pattern (see
   `configs/sample_gpu_decode_and_inference/config.json` upstream and
-  `docs/bootstrap/video-contracts.md`). Plain `videoconvert` fails linking
+  `docs/application/video-contracts.md`). Plain `videoconvert` fails linking
   against `video/x-raw(memory:VAMemory)` even w/ explicit caps.
 - See also shared MQTT-mechanism and quantization-warning gotchas in
   `config/dlsps/cpu/README.md`.
