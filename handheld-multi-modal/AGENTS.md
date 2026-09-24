@@ -43,9 +43,10 @@ Read `BOOTSTRAP_STATUS.md`, `BOOTSTRAP_MANIFEST.yaml`, `COMPONENTS.md`,
 - Audio Analyzer (required): OpenVINO, `whisper-medium`, GPU; sentiment +
   diarization disabled. Backend captures mic audio; service transcribes.
 - OEP TTS (required): stock-supported, provenance-approved model, GPU.
-- Detector: YOLO11s OpenVINO IR, INT8 preferred, NPU default, CPU `gvatrack`,
-  Intel HW decode/encode. CPU/GPU = fixed bootstrap alternatives, not
-  dynamically edited pipelines. Never substitute nano.
+- Detector: YOLO26s OpenVINO IR, INT8 preferred, NPU default, CPU `gvatrack`,
+  Intel HW decode/encode (owner-directed 2026-09-24 replacement for YOLO11s).
+  CPU/GPU = fixed bootstrap alternatives, not dynamically edited pipelines.
+  Never substitute nano.
 - Alerts: rule/action dispatch, no ADK/LLM in critical path.
 - Resolve actual model owners/caches; don't force all downloads through
   Model Download. Never persist access tokens in configs/logs/Git.

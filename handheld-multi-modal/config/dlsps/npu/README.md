@@ -62,7 +62,7 @@ uses the REST `destination.frame` request. Both consume raw VA frames from
 
 ## Evidence
 
-Real ~30fps sustained via `gvafpscounter`; NPU device requested, no
+Current YOLO26s NPU path ran on 2026-09-24; NPU device requested, no
 NPU compile/plugin error observed in logs (IR hashes pinned in
 `BOOTSTRAP_MANIFEST.yaml`). Confirmed running simultaneously w/ real MQTT
 publish (`detections/live`, ~30 msg/s), no fps degradation on either leg.

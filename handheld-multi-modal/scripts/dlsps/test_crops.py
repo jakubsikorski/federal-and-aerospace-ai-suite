@@ -79,11 +79,11 @@ class Frame:
         pixels[:] = 0  # Async encoder must own a copy.
 
 
-def make(root, **overrides):
+def make(root, predicted_confidence=None, **overrides):
     config = root / (uuid.uuid4().hex + ".json")
     config.write_text(json.dumps(dict(output_dir=str(root / uuid.uuid4().hex),
         confirm_seconds=0, min_observations=1, report_seconds=1000, **overrides)))
-    return CropCandidates(str(config))
+    return CropCandidates(str(config), predicted_confidence=predicted_confidence)
 
 
 def takeover_checks():
@@ -393,7 +393,30 @@ def failure_safety_checks():
     print("PASS: oversized admission preserves evidence; failed writer preserves observations and retires on takeover")
 
 
+def tracker_prediction_checks():
+    # A short-term tracker's 1.0 marks a predicted box; only then is it skipped.
+    # Without that tracker (zero-term) a genuine near-one score is cropped.
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        for sentinel, confidence, expected in ((1.0, 1.0, 0), (1.0, 0.9, 1), (1.0, 0.99995, 1),
+                                               (None, 1.0, 1), (None, 0.99995, 1)):
+            producer = make(root, predicted_confidence=sentinel)
+            frame = Frame([5])
+            frame.text = [text.replace('"confidence": 0.9}', f'"confidence": {confidence}}}')
+                          for text in frame.text]
+            producer.process_frame(frame)
+            producer.close()
+            assert producer.stats["saved"] == expected, (sentinel, confidence, producer.stats)
+        for bad in (0, 1.5, True, "1"):
+            try:
+                make(root, predicted_confidence=bad)
+            except ValueError:
+                continue
+            raise AssertionError(f"invalid predicted_confidence accepted: {bad!r}")
+
+
 def run():
+    tracker_prediction_checks()
     failure_safety_checks()
     limited_conversion_checks()
     optimization_checks()
@@ -529,8 +552,8 @@ def live(output):
     scripts = Path(__file__).resolve().parent
     common = ("filesrc location=/home/pipeline-server/resources/videos/classroom.avi ! parsebin ! "
               "vah264dec ! video/x-raw(memory:VAMemory) ! "
-              "gvadetect model=/home/pipeline-server/yolo_models/yolo11s/INT8/yolo11s.xml "
-              "device=NPU pre-process-backend=va ! gvatrack tracking-type=short-term-imageless ! "
+              "gvadetect model=/home/pipeline-server/yolo_models/yolo26s/INT8/yolo26s.xml "
+              "device=NPU pre-process-backend=va ! gvatrack tracking-type=zero-term-imageless config=tracking_per_class=false ! "
               "gvametaconvert add-empty-results=true ! ")
     def execute(callback, seconds):
         pipeline = Gst.parse_launch(common + callback + " ! appsink name=check emit-signals=true sync=true")

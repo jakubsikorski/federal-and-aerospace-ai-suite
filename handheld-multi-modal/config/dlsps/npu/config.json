@@ -5,7 +5,7 @@
                 "name": "handheld_npu_detect",
                 "source": "gstreamer",
                 "queue_maxsize": 1,
-                "pipeline": "{auto_source} ! parsebin ! vah264dec ! video/x-raw(memory:VAMemory) ! queue ! gvadetect name=detection reshape=true reshape-width=640 reshape-height=640 batch-size=1 model=/home/pipeline-server/yolo_models/yolo11s/INT8/yolo11s.xml model-instance-id={parameters[model_instance]} device=NPU pre-process-backend=va ! gvatrack name=tracking tracking-type=short-term-imageless ! gvametaconvert add-empty-results=true name=metaconvert ! gvapython name=cropcandidates module=/opt/handheld-crops/crop_candidates.py class=CropCandidates ! queue max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! gvafpscounter ! appsink name=destination sync=false max-buffers=1 drop=true",
+                "pipeline": "{auto_source} ! parsebin ! vah264dec ! video/x-raw(memory:VAMemory) ! queue ! gvadetect name=detection reshape=true reshape-width=640 reshape-height=640 batch-size=1 threshold=0.75 model=/home/pipeline-server/yolo_models/yolo26s/INT8/yolo26s.xml model-instance-id={parameters[model_instance]} device=NPU pre-process-backend=va ! gvatrack name=tracking tracking-type=zero-term-imageless config=tracking_per_class=false ! gvametaconvert add-empty-results=true name=metaconvert ! gvapython name=cropcandidates module=/opt/handheld-crops/crop_candidates.py class=CropCandidates ! queue max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! gvafpscounter ! appsink name=destination sync=false max-buffers=1 drop=true",
                 "parameters": {
                     "type": "object",
                     "properties": {

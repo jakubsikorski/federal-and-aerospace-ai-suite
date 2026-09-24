@@ -1,6 +1,6 @@
-# GPU variant: PASS (bootstrap alternative, real ~29fps)
+# GPU variant: historical PASS (bootstrap alternative; current YOLO26s config not rerun)
 
-Real, smoke-tested pipeline. `config.json` pipeline name:
+Historical YOLO11s pipeline was smoke-tested. The current `config.json` uses YOLO26s and parses, but has not been rerun end-to-end. `config.json` pipeline name:
 `handheld_gpu_detect`. Detection device `GPU`
 (`pre-process-backend=va-surface-sharing`), hardware decode (`vah264dec`),
 `gvatrack`, MQTT publish, JPEG-capable output.
@@ -27,14 +27,13 @@ curl -X POST http://127.0.0.1:8080/pipelines/user_defined_pipelines/handheld_gpu
   -H 'Content-Type: application/json' -d '{
     "source": {"uri": "file:///home/pipeline-server/resources/videos/classroom.avi", "type": "uri"},
     "destination": {"frame": {"type": "webrtc", "peer-id": "annotated", "overlay": true}},
-    "parameters": {"detection-properties": {"model": "/home/pipeline-server/yolo_models/yolo11s/INT8/yolo11s.xml", "device": "GPU"}}
+    "parameters": {"detection-properties": {"model": "/home/pipeline-server/yolo_models/yolo26s/INT8/yolo26s.xml", "device": "GPU"}}
   }'
 ```
 
 ## Evidence
 
-Real ~29fps sustained via `gvafpscounter`, confirmed concurrently w/
-growing MQTT message counts.
+Historical YOLO11s result: ~29fps sustained via `gvafpscounter`, confirmed concurrently w/ growing MQTT message counts. Current YOLO26s GPU config needs a fresh run before claiming runtime acceptance.
 
 ## Known gotchas
 

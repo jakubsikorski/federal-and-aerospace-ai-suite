@@ -15,29 +15,34 @@ downloads are not inference passes.
 | Field | Finding |
 |---|---|
 | Role | Object detection |
-| Requested identity | Ultralytics YOLO11s (`yolo11s.pt`), exported OpenVINO IR |
+| Requested identity | Ultralytics YOLO26s (`yolo26s`), exported OpenVINO IR INT8 |
 | Publisher/developer | Ultralytics |
-| Organization/country evidence | Ultralytics, Inc., Delaware, United States, in publisher legal terms |
-| License | AGPL-3.0 model card; commercial enterprise licensing offered separately |
-| Sources | [Publisher model card](https://huggingface.co/Ultralytics/YOLO11), [legal terms](https://www.ultralytics.com/legal/terms-of-service), [OEP YOLO11s integration](https://github.com/open-edge-platform/edge-ai-libraries/blob/c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9/microservices/dlstreamer-pipeline-server/docs/user-guide/how-to-guides/download-and-run-yolo-models.md) |
-| Provenance assessment | Evidence identifies the original Ultralytics family and US publisher; no prohibited parent model is identified in the inspected card. The owner requires this original YOLO11s family and explicitly requested stock Model Download preparation (2026-09-21). The stock Ultralytics plugin does not expose an immutable checkpoint revision selector; image/export-script pins and generated artifact checksums are recorded separately. |
-| Consumer/device | DLSPS, NPU default (deployed); CPU/GPU alternative variants (deployed) |
-| Pin/compatibility status | Resolved. INT8 OpenVINO IR exported via `ultralytics`+`openvino==2025.0.0`+`nncf` PTQ (prior session). Frozen artifact hashes: `yolo11s.xml` sha256 `61e8501fa5a11fa012921d5f7c65f0ff05fa78f2d2bf0a37fc1fe7fdf8630d45`, `yolo11s.bin` sha256 `8bb1f5d1b46de8c09fe26d0379072cfddf847e4d627696ccd59374b4a623d51d`. Loaded and executed on NPU/GPU/CPU in `intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24-rc3`; NPU run confirmed real ~30fps detection+tracking via `gvafpscounter`. A cosmetic runtime-version-mismatch warning appears (exporter openvino 2025.0.0 vs. pipeline-server runtime 2026.2.0) with no observed functional effect. |
+| Organization/country evidence | Ultralytics, Inc., Delaware, United States, in publisher legal terms (same publisher as the prior YOLO11s record) |
+| Training data | COCO-80 classes; current export metadata describes training on Ultralytics `coco.yaml` and INT8 calibration request `coco8.yaml`. |
+| License | AGPL-3.0 in generated Ultralytics metadata; commercial enterprise licensing offered separately |
+| Sources | Installed export metadata (`data/dlsps/yolo_export/yolo26s_int8_openvino_model/metadata.yaml`), pinned request (`config/model-download/yolo26s.json`), [legal terms](https://www.ultralytics.com/legal/terms-of-service), stock Model Download/DL Streamer export script commit `4d22f42ffe1df79800dc2ef1749f7e37f3d47bf1` |
+| Provenance assessment | Owner-directed selection on 2026-09-24 replacing YOLO11s. Evidence identifies the original Ultralytics family/authorship and COCO-80 class set; no prohibited parent model is identified in the inspected local metadata. This carries the same acceptance rationale previously applied to YOLO11s, with uncertainty bounded by the stock Ultralytics plugin not exposing an immutable checkpoint revision selector. Image/export-script pins, request path and generated artifact checksums are recorded separately. |
+| Consumer/device | DLSPS, NPU default (current); CPU/GPU alternative configs exist but current YOLO26s CPU/GPU runtime passes are not claimed. |
+| Pin/compatibility status | Current. INT8 OpenVINO IR exported through stock `intel/model-download:2026.2.0-rc2` Ultralytics plugin using Ultralytics 8.4.57/OpenVINO 2026.2.0/NNCF 2.19.0. Frozen artifact hashes from `config/dlsps/detector-profile.json`: `yolo26s.xml` sha256 `a1631d3d8467717acd7eda84c05932e867c5dec866f154593542b7315fb74f28`, `yolo26s.bin` sha256 `f29147d95ef439b1efdd9aa0952dfd24088980dd2e4dd558e8efb9dbf6eadbd1`. Installed receipt: `data/dlsps/yolo_export/yolo26s_int8_openvino_model/download.json`. NPU runtime/tracking evidence is recorded in `docs/bootstrap/evidence/phase8/tracker_confidence_probe.txt`; older YOLO11s NPU/GPU/CPU runs are historical only and are not transferred to YOLO26s. |
 
-The automated 2026-09-21 path uses the digest-pinned stock downloader and its
+The automated 2026-09-24 path uses the digest-pinned stock downloader and its
 pinned DL Streamer export script, Ultralytics 8.4.57/OpenVINO 2026.2.0/NNCF
-2.19.0, with the same YOLO11s/coco8/INT8 selection. It preserves generated
-metadata and artifact hashes. Only the legacy or reviewed fresh-demo IR hash
-pair is accepted; a self-generated receipt never authorizes a changed model.
-New export and fixed 640×640 NPU execution were verified; CPU/GPU shape changes
-were configuration-checked, not independently rerun. See
-`docs/bootstrap/evidence/phase4/fresh-demo/`.
+2.19.0, with the YOLO26s/coco8/INT8 selection. It preserves generated metadata
+and artifact hashes. Only the reviewed YOLO26s hash pair above is accepted; a
+self-generated receipt never authorizes a changed model. Repeat exports are not
+claimed bit-identical unless their hashes match the pinned pair.
+
+Historical record: YOLO11s was the prior owner-approved detector and was
+smoke-tested before 2026-09-24. Its old hashes (`61e8501f…`/`8bb1f5d1…`, and
+the 2026-09-21 fresh-demo pair `fe835c8f…`/`5ece73c…`) and execution evidence
+remain historical YOLO11s evidence only. They do not establish current YOLO26s
+execution or provenance.
 
 Publisher nationality alone doesn't certify every derivative's lineage. Owner
-provenance policy requires resolving uncertainty before use. YOLO11s fixed —
-no alternate detector selected without owner approval. Don't confuse generic
-YOLO branding with evidence about a particular checkpoint, fine-tune, or
-derivative.
+provenance policy requires resolving uncertainty before use. YOLO26s is the
+fixed owner-directed detector; no alternate detector selected without owner
+approval, and never substitute nano. Don't confuse generic YOLO branding with
+evidence about a particular checkpoint, fine-tune, or derivative.
 
 ## Other model roles
 
@@ -116,7 +121,7 @@ a guarantee that a later cold stock export resolves the same upstream revision.
 
 | Role | Model | Download owner | Cache/volume | Consumer |
 |---|---|---|---|---|
-| Detection | Required YOLO11s INT8/coco8 | Stock Model Download Ultralytics plugin, invoked by `make demo-assets` | `ASSET_ROOT/data/model-download`; validated output installed under `data/dlsps/yolo_export/yolo11s_int8_openvino_model`, with `download.json` provenance/checksums | DLSPS |
+| Detection | Required YOLO26s INT8/coco8 (owner-directed 2026-09-24 replacement for YOLO11s) | Stock Model Download Ultralytics plugin, invoked by `make demo-assets` | `ASSET_ROOT/data/model-download`; validated output installed under `data/dlsps/yolo_export/yolo26s_int8_openvino_model`, with `download.json` provenance/checksums | DLSPS |
 | LLM | Required `Intel/neural-chat-7b-v3-3` (owner-directed replacement for `microsoft/Phi-3.5-mini-instruct`) | Chat Q&A backend HF/Optimum export (`app/openvino_backend.py`) | Stock `/tmp/model_cache/Intel/neural-chat-7b-v3-3` and compile cache; host volume `data/chatqna/model_cache` | Chat Q&A OpenVINO GPU |
 | Embedding | Selected `ibm-granite/granite-embedding-125m-english` | Chat Q&A backend HF/Optimum export | Stock `/tmp/model_cache/ibm-granite/granite-embedding-125m-english`; host volume `data/chatqna/model_cache` | Chat Q&A OpenVINO CPU |
 | Reranker | Selected `cross-encoder/ms-marco-electra-base` | Chat Q&A backend HF/Optimum export | Stock `/tmp/model_cache/cross-encoder/ms-marco-electra-base`; host volume `data/chatqna/model_cache` | Chat Q&A OpenVINO CPU |

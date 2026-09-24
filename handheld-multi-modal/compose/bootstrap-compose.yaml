@@ -134,7 +134,7 @@ services:
       # bind mount's source — set DLSPS_CONFIG_VARIANT and recreate instead:
       #   DLSPS_CONFIG_VARIANT=cpu docker compose -f compose/bootstrap-compose.yaml up -d --force-recreate dlsps
       - ../config/dlsps/${DLSPS_CONFIG_VARIANT:-npu}/config.json:/home/pipeline-server/config.json:ro
-      - ../data/dlsps/yolo_export/yolo11s_int8_openvino_model:/home/pipeline-server/yolo_models/yolo11s/INT8:ro
+      - ../data/dlsps/yolo_export/yolo26s_int8_openvino_model:/home/pipeline-server/yolo_models/yolo26s/INT8:ro
       # Demo source copied from the pinned edge-ai-libraries commit's own
       # microservices/dlstreamer-pipeline-server/resources/videos/classroom.avi
       # (sha256 ca6d1b53d54a40ffda9d4ca1d0ab0cc43f744583324aaf97146c820e2b62a2fa,
@@ -345,7 +345,7 @@ services:
       - ../config/audio-analyzer/config.yaml:/config/model-placement/audio-analyzer.yaml:ro
       - ../config/tts/config.yaml:/config/model-placement/tts.yaml:ro
       - ../config/dlsps/${DLSPS_CONFIG_VARIANT:-npu}/config.json:/config/model-placement/dlsps.json:ro
-      - ../data/dlsps/yolo_export/yolo11s_int8_openvino_model:/config/detector:ro
+      - ../data/dlsps/yolo_export/yolo26s_int8_openvino_model:/config/detector:ro
       - ../data/backend:/data
       # Read-write, but only one call site writes: the stopped-producer cleanup
       # of design section 9.2, which must hold the producer's own exclusive lock.

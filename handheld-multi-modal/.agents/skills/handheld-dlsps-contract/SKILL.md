@@ -29,25 +29,22 @@ JSON string instance id), poll `GET /pipelines/{id}/status` for
 started, including stopped ones, never auto-pruned). Confirmed working
 end-to-end this session.
 
-Required default: YOLO11s IR, INT8 preferred, NPU inference, CPU `gvatrack`,
+Required default: YOLO26s IR, INT8 preferred, NPU inference, CPU `gvatrack`
+(owner-directed 2026-09-24 replacement for YOLO11s; never substitute nano),
 Intel hardware decode (`vah264dec`). NPU/GPU variants use VA-memory hardware
-decode; CPU variant uses software `decodebin`. **Encode is not yet
-hardware-accelerated** for the annotated leg: the shipped pipeline uses
-`vapostproc+jpegenc` (software JPEG) feeding the WebRTC sink, which then
-picks VP9 — this is a known, still-unresolved gap (see
-`docs/bootstrap/video-contracts.md`), not a runtime edit or nano fallback.
+decode and DLSPS WebRTC hardware H.264 encode; CPU variant uses software
+`decodebin`/VP9. See `docs/bootstrap/video-contracts.md`; do not runtime-edit
+pipelines or fall back to nano.
 Input for the shipped default demo is a local file URI
 (`file:///home/pipeline-server/resources/videos/classroom.avi`); the source
 is set per-pipeline in the REST start request body
 (`DLSPS_DEMO_URI` in `scripts/smoke/_dlsps_lib.sh`), so pointing at
 `rtsp://mediamtx:8554/cam1` instead needs no config.json change, only a
-different `source.uri` in that same request — this combined RTSP-in path is
-not yet exercised as one linked example (tracked in the improvement plan).
+different `source.uri` in that same request — this combined RTSP-in path is exercised as the shipped demo path.
 Output MediaMTX `/annotated` via native WebRTC (WHIP push, not RTSP — see
 `docs/bootstrap/video-contracts.md` for the owner-approved amendment).
 Topics: `detections/live` (confirmed real payload shape in
-`docs/bootstrap/video-contracts.md`); `detections/snips` is aspirational,
-not implemented (see below).
+`docs/bootstrap/video-contracts.md`); `detections/snips` is implemented by the application crop producer.
 
 Do not invent a `snip` configuration key beyond the shipped `crop-config`
 pipeline parameter. No stock DLSPS destination performs a per-object crop;

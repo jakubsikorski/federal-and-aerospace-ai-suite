@@ -5,7 +5,7 @@ _dlsps_lib_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 : "${DLSPS_REST:=http://127.0.0.1:8080}"
 : "${DLSPS_PIPELINE_NAME:=handheld_smoke}"
 : "${DLSPS_DEMO_URI:=file:///home/pipeline-server/resources/videos/classroom.avi}"
-: "${DLSPS_MODEL:=/home/pipeline-server/yolo_models/yolo11s/INT8/yolo11s.xml}"
+: "${DLSPS_MODEL:=/home/pipeline-server/yolo_models/yolo26s/INT8/yolo26s.xml}"
 
 # dlsps_resolve_container <service> — resolve the real container name via
 # Compose service identity (docker compose ps -a), not a guessed

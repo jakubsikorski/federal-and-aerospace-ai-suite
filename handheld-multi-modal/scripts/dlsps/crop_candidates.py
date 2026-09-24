@@ -19,6 +19,7 @@ import weakref
 from types import SimpleNamespace
 
 
+
 @dataclass
 class Settings:
     stream_id: str = "cam1"
@@ -548,9 +549,16 @@ class Store:
 
 
 class CropCandidates:
-    def __init__(self, config=None):
+    def __init__(self, config=None, predicted_confidence=None):
         import cv2  # Missing runtime dependency must fail visibly at startup.
         self.c = Settings.load(config)
+        # Backend passes 1.0 only for a short-term (predicting) tracker, whose
+        # predicted boxes carry exactly that value; otherwise every score counts.
+        if predicted_confidence is not None and (
+                isinstance(predicted_confidence, bool) or not isinstance(predicted_confidence, (int, float))
+                or not 0 < predicted_confidence <= 1):
+            raise ValueError("predicted_confidence must be in (0, 1] or absent")
+        self.predicted_confidence = predicted_confidence
         if self.c.mqtt_host:
             import paho.mqtt.client
         self.store = Store(self.c)
@@ -643,6 +651,10 @@ class CropCandidates:
                             or state["seen"] < self.c.min_observations
                             or started - state["attempt"] < self.c.interval_seconds
                             or obs["confidence"] < self.c.min_confidence
+                            # A short-term tracker's 1.0 marks a predicted box on a
+                            # frame without inference; crop only detector-measured boxes.
+                            or (self.predicted_confidence is not None
+                                and obs["confidence"] >= self.predicted_confidence)
                             or min(obs["detection_rect"][2:]) < self.c.min_object_pixels):
                         continue
                     if self.control["store_blocked"]:

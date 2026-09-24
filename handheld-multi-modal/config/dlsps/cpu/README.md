@@ -1,6 +1,6 @@
-# CPU variant: PASS (bootstrap alternative, real ~23-30fps)
+# CPU variant: historical PASS (bootstrap alternative; current YOLO26s config not rerun)
 
-Real, smoke-tested pipeline. `config.json` pipeline name:
+Historical YOLO11s pipeline was smoke-tested. The current `config.json` uses YOLO26s and parses, but has not been rerun end-to-end. `config.json` pipeline name:
 `handheld_cpu_detect`. Detection device `CPU`, no VA/hardware decode
 (`decodebin`/`videoconvert`), `gvatrack`, MQTT publish, JPEG-capable output.
 
@@ -28,14 +28,13 @@ curl -X POST http://127.0.0.1:8080/pipelines/user_defined_pipelines/handheld_cpu
   -H 'Content-Type: application/json' -d '{
     "source": {"uri": "file:///home/pipeline-server/resources/videos/classroom.avi", "type": "uri"},
     "destination": {"frame": {"type": "webrtc", "peer-id": "annotated", "overlay": true}},
-    "parameters": {"detection-properties": {"model": "/home/pipeline-server/yolo_models/yolo11s/INT8/yolo11s.xml", "device": "CPU"}}
+    "parameters": {"detection-properties": {"model": "/home/pipeline-server/yolo_models/yolo26s/INT8/yolo26s.xml", "device": "CPU"}}
   }'
 ```
 
 ## Evidence
 
-Real ~23fps sustained via `gvafpscounter` in container logs during 15s+ run.
-Slower than GPU/NPU as expected for software-only decode+inference.
+Historical YOLO11s result: ~23fps sustained via `gvafpscounter` in container logs during 15s+ run. Current YOLO26s CPU config needs a fresh run before claiming runtime acceptance.
 
 ## Known gotchas (shared across all three variants)
 
@@ -43,7 +42,7 @@ Slower than GPU/NPU as expected for software-only decode+inference.
   `mqtt_publisher` config block. Raw `gvametapublish` element + REST
   `destination.metadata.host` field is broken in this rc3 image (see
   `docs/bootstrap/video-contracts.md`).
-- Cosmetic-only warning every run: `Model quantization runtime (2025.0.0)
-  != current runtime (2026.2.0)`. No observed functional effect.
+- Historical YOLO11s only: `Model quantization runtime (2025.0.0)
+  != current runtime (2026.2.0)` was cosmetic. No equivalent YOLO26s warning is currently recorded.
 - WebRTC (`destination.frame`) requested dynamically via REST at
   pipeline start, not baked into `config.json`.

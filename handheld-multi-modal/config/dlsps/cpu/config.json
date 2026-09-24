@@ -5,7 +5,7 @@
                 "name": "handheld_cpu_detect",
                 "source": "gstreamer",
                 "queue_maxsize": 50,
-                "pipeline": "{auto_source} ! decodebin ! videoconvert ! queue ! gvadetect name=detection reshape=true reshape-width=640 reshape-height=640 batch-size=1 model=/home/pipeline-server/yolo_models/yolo11s/INT8/yolo11s.xml model-instance-id={parameters[model_instance]} device=CPU ! gvatrack name=tracking tracking-type=short-term-imageless ! gvametaconvert add-empty-results=true name=metaconvert ! gvapython name=cropcandidates module=/opt/handheld-crops/crop_candidates.py class=CropCandidates ! queue ! gvafpscounter ! appsink name=destination",
+                "pipeline": "{auto_source} ! decodebin ! videoconvert ! queue ! gvadetect name=detection reshape=true reshape-width=640 reshape-height=640 batch-size=1 threshold=0.75 model=/home/pipeline-server/yolo_models/yolo26s/INT8/yolo26s.xml model-instance-id={parameters[model_instance]} device=CPU ! gvatrack name=tracking tracking-type=zero-term-imageless config=tracking_per_class=false ! gvametaconvert add-empty-results=true name=metaconvert ! gvapython name=cropcandidates module=/opt/handheld-crops/crop_candidates.py class=CropCandidates ! queue ! gvafpscounter ! appsink name=destination",
                 "parameters": {
                     "type": "object",
                     "properties": {

@@ -1,13 +1,9 @@
 {
-  "pipeline_model": "/home/pipeline-server/yolo_models/yolo11s/INT8/yolo11s.xml",
+  "pipeline_model": "/home/pipeline-server/yolo_models/yolo26s/INT8/yolo26s.xml",
   "artifact_sets": [
     {
-      "yolo11s.xml": "61e8501fa5a11fa012921d5f7c65f0ff05fa78f2d2bf0a37fc1fe7fdf8630d45",
-      "yolo11s.bin": "8bb1f5d1b46de8c09fe26d0379072cfddf847e4d627696ccd59374b4a623d51d"
-    },
-    {
-      "yolo11s.xml": "fe835c8f856f48d43a2f7fe36ec5abbedded776a1d64e234a01e3e9e32d82d79",
-      "yolo11s.bin": "5ece73c778c60c6164bc71cc8ca6b6ac1a413c91587d78d9202cf09cbde3613f"
+      "yolo26s.xml": "a1631d3d8467717acd7eda84c05932e867c5dec866f154593542b7315fb74f28",
+      "yolo26s.bin": "f29147d95ef439b1efdd9aa0952dfd24088980dd2e4dd558e8efb9dbf6eadbd1"
     }
   ],
   "classes": [

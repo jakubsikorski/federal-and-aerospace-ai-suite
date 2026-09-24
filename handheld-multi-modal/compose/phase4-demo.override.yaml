@@ -4,7 +4,7 @@ services:
       - ${ASSET_ROOT:?set ASSET_ROOT}/config/mediamtx.yml:/mediamtx.yml:ro
   dlsps:
     volumes:
-      - ${ASSET_ROOT:?set ASSET_ROOT}/data/dlsps/yolo_export/yolo11s_int8_openvino_model:/home/pipeline-server/yolo_models/yolo11s/INT8:ro
+      - ${ASSET_ROOT:?set ASSET_ROOT}/data/dlsps/yolo_export/yolo26s_int8_openvino_model:/home/pipeline-server/yolo_models/yolo26s/INT8:ro
       - ${ASSET_ROOT:?set ASSET_ROOT}/data/dlsps/demo-video:/home/pipeline-server/resources/videos:ro
       - ../scripts/dlsps:/opt/handheld-crops:ro
       - ../config/dlsps/crops:/opt/handheld-crops-config:ro
@@ -14,10 +14,10 @@ services:
       - ${ASSET_ROOT:?set ASSET_ROOT}/data/chatqna/model_cache:/tmp/model_cache
   backend:
     environment:
-      BACKEND_DEMO_CAMERAS: ${CAMERAS:-3}
+      BACKEND_DEMO_CAMERAS: ${CAMERAS:-2}
     volumes:
       - ../config/backend/backend.yaml:/config/backend.yaml:ro
-      - ${ASSET_ROOT:?set ASSET_ROOT}/data/dlsps/yolo_export/yolo11s_int8_openvino_model:/config/detector:ro
+      - ${ASSET_ROOT:?set ASSET_ROOT}/data/dlsps/yolo_export/yolo26s_int8_openvino_model:/config/detector:ro
       - ${ASSET_ROOT:?set ASSET_ROOT}/data/backend:/data
       - ${ASSET_ROOT:?set ASSET_ROOT}/data/dlsps/crops:/crops
       - ../scripts/dlsps/crop_candidates.py:/opt/handheld-crops/crop_candidates.py:ro

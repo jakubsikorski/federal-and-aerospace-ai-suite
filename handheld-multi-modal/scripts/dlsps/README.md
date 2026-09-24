@@ -4,20 +4,20 @@ Requested: “Make the first script for measurements and write the full version.
 
 - `crop_probe.py`: measurement callback. Saves at most 20 contextual JPEGs per invocation and reports frame mapping/conversion, crop copy, JPEG, write, and callback timings. Use `max_samples=0` for the metadata-only baseline.
 - `crop_candidates.py`: bounded producer. Prioritizes first snapshots, then meaningful improvements; writes contextual images plus durable JSON events and optionally publishes `detections/snips` over MQTT QoS 1.
-- `test_crops.py`: runnable geometry, overload, persistence and lifecycle checks; `--live` exercises actual YOLO11s/NPU/VA frames and independently receives/correlates MQTT crop events.
+- `test_crops.py`: runnable geometry, overload, persistence and lifecycle checks; `--live` exercises actual YOLO26s/NPU/VA frames and independently receives/correlates MQTT crop events.
 
 These are application-owned callbacks for the stock `gvapython` element. They do not implement a new GStreamer plugin and do not need `ADDITIONAL_GST_PLUGIN_PATH`. They introduce no model downloads or new service. Both scripts must be present together because the probe reuses the producer's geometry and mapping functions.
 
 ## Placement and dependencies
 
-Use the pinned `intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24-rc3` image and existing YOLO11s IR. Python, gstgva, NumPy, OpenCV and Paho are present in that image. No pip installation is required.
+Use the pinned `intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24-rc3` image and existing YOLO26s IR. Python, gstgva, NumPy, OpenCV and Paho are present in that image. No pip installation is required.
 
 Mount this directory read-only at `/opt/handheld-crops`, and give the producer a dedicated writable output directory. Add the script directory to Python's existing search path; **preserve the image's existing PYTHONPATH**, including its GStreamer overrides. Replacing it can break gstgva/GstAnalytics imports.
 
 Callback pipeline fragment (choose one callback per run):
 
 ```text
-... ! gvatrack tracking-type=short-term-imageless
+... ! gvatrack tracking-type=zero-term-imageless config=tracking_per_class=false
     ! gvametaconvert add-empty-results=true
     ! gvapython module=/opt/handheld-crops/crop_probe.py class=CropProbe
     ! ... existing output chain ...
@@ -26,7 +26,7 @@ Callback pipeline fragment (choose one callback per run):
 Full producer fragment:
 
 ```text
-... ! gvatrack tracking-type=short-term-imageless
+... ! gvatrack tracking-type=zero-term-imageless config=tracking_per_class=false
     ! gvametaconvert add-empty-results=true
     ! gvapython name=cropcandidates module=/opt/handheld-crops/crop_candidates.py class=CropCandidates
     ! ... existing output chain ...
@@ -52,7 +52,7 @@ Then pass the value in the `POST /pipelines/.../{name}` launch payload, where it
 
 ```json
 "parameters": {
-    "detection-properties": { "model": "/home/pipeline-server/yolo_models/yolo11s/INT8/yolo11s.xml", "device": "NPU" },
+    "detection-properties": { "model": "/home/pipeline-server/yolo_models/yolo26s/INT8/yolo26s.xml", "device": "NPU" },
     "crop-config": "{\"config\": \"/opt/handheld-crops-config.json\"}"
 }
 ```
@@ -180,7 +180,7 @@ docker exec handheld-bootstrap-dlsps-1 python3 /tmp/handheld-crop-scripts/test_c
 docker exec handheld-bootstrap-dlsps-1 python3 /tmp/handheld-crop-scripts/test_crops.py --live
 ```
 
-Use an absent destination for the first docker cp; for subsequent updates copy individual files to avoid nested directories. `--live` uses the already mounted classroom video, pinned YOLO11s model and existing MQTT broker. It runs isolated finite pipelines inside the container, requires NPU and VA access, and does not stop any DLSPS REST instance. It publishes real crop events on detections/snips with stream_id `crop_validation`; run it when that test traffic is acceptable to consumers.
+Use an absent destination for the first docker cp; for subsequent updates copy individual files to avoid nested directories. `--live` uses the already mounted classroom video, pinned YOLO26s model and existing MQTT broker. It runs isolated finite pipelines inside the container, requires NPU and VA access, and does not stop any DLSPS REST instance. It publishes real crop events on detections/snips with stream_id `crop_validation`; run it when that test traffic is acceptable to consumers.
 
 Copy the printed evidence directory and logs to `docs/bootstrap/evidence/dlsps-crops/`. Inspect representative crops visually as well as decoding them. Hardware identity in evidence is the actual Lunar Lake / Intel Core Ultra 9 288V host; do not relabel it Panther Lake.
 
