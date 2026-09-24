@@ -15,17 +15,30 @@ import uuid
 import xml.etree.ElementTree as ET
 
 REPO = Path(__file__).resolve().parents[1]
-REQUEST = json.loads((REPO / "config/model-download/yolo11s.json").read_text())
+REQUEST = json.loads((REPO / "config/model-download/yolo26s.json").read_text())
+MODEL = REQUEST["models"][0]["name"]
 IMAGE = "intel/model-download:2026.2.0-rc2@sha256:8894c3d624e949e79d54557b834a11a90bc3673a98de820a0297f3328b91cc95"
 SOURCE = "c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9"
 EXPORT_SCRIPT = "4d22f42ffe1df79800dc2ef1749f7e37f3d47bf1"
 VIDEO_URL = f"https://raw.githubusercontent.com/open-edge-platform/edge-ai-libraries/{SOURCE}/microservices/dlstreamer-pipeline-server/resources/videos/classroom.avi"
 VIDEO_SHA = "ca6d1b53d54a40ffda9d4ca1d0ab0cc43f744583324aaf97146c820e2b62a2fa"
+# (file name, source URL, sha256). Make remuxes each to <stem>.ts for the camera
+# publishers. Pexels items are used under the Pexels License.
+VIDEOS = (
+    ("classroom.avi", VIDEO_URL, VIDEO_SHA),
+    # cam1: intel-iot-devkit/sample-videos (CC BY 4.0), H.264 768x432 12 fps, 53.9 s.
+    ("person-bicycle-car-detection.mp4",
+     "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/"
+     "57978890822836f2b4743852f04f62fc511757e4/person-bicycle-car-detection.mp4",
+     "452b11b7e0efbd019f1d9570d0c790e90416ad4ad29eec6003872d08443140ef"),
+    # cam2: Pexels video 34622113, H.264 1920x1080 59.94 fps, 20.0 s.
+    ("pexels-34622113.mp4", "https://www.pexels.com/download/video/34622113/?w=1920&h=1080",
+     "ef856e96a33f035b9ab8d6ecbd0c6006c8e9dd98c177af1e7ea0bd0702d7172f"),
+)
 APPROVED_HASHES = tuple(json.loads(
     (REPO / "config/dlsps/detector-profile.json").read_text())["artifact_sets"])
-LEGACY_HASHES = APPROVED_HASHES[0]
-FILES = (*LEGACY_HASHES, "metadata.yaml")
-MODEL_DIR = Path("data/dlsps/yolo_export/yolo11s_int8_openvino_model")
+FILES = (f"{MODEL}.xml", f"{MODEL}.bin", "metadata.yaml")
+MODEL_DIR = Path(f"data/dlsps/yolo_export/{MODEL}_int8_openvino_model")
 API = "http://127.0.0.1:8200/api/v1"
 
 
@@ -43,7 +56,7 @@ def verify_model(path):
     hashes = {name: sha(path / name) for name in FILES}
     if not any(all(hashes[name] == value for name, value in approved.items())
                for approved in APPROVED_HASHES):
-        raise ValueError(f"Unapproved YOLO11s IR hashes in {path}; review artifacts before changing pins")
+        raise ValueError(f"Unapproved {MODEL} IR hashes in {path}; review artifacts before changing pins")
     return True
 
 
@@ -59,19 +72,19 @@ def api(path, body=None):
 def download_model(root, timeout):
     target = root / MODEL_DIR
     if verify_model(target):
-        print(f"Verified cached YOLO11s INT8: {target}")
+        print(f"Verified cached {MODEL} INT8: {target}")
         return
-    subdir = "yolo11s-" + uuid.uuid4().hex
+    subdir = f"{MODEL}-" + uuid.uuid4().hex
     response = api("/models/download?download_path=" + subdir, REQUEST)
     job_id = str(uuid.UUID(response["job_ids"][0]))
-    print(f"Model Download job {job_id}: YOLO11s INT8 / coco8", flush=True)
+    print(f"Model Download job {job_id}: {MODEL} INT8 / coco8", flush=True)
     deadline = time.monotonic() + timeout
     previous = None
     while True:
         job = api("/jobs/" + job_id)
         status = job.get("status")
         if status != previous:
-            print(f"YOLO11s: {status}", flush=True)
+            print(f"{MODEL}: {status}", flush=True)
             previous = status
         if status == "completed":
             break
@@ -81,20 +94,20 @@ def download_model(root, timeout):
             api(f"/jobs/{job_id}/cancel", {})
             raise TimeoutError(f"Model Download job {job_id} exceeded {timeout}s and was canceled")
         time.sleep(2)
-    if (job.get("model_name") != "yolo11s" or job.get("hub") != "ultralytics"
+    if (job.get("model_name") != MODEL or job.get("hub") != "ultralytics"
             or job.get("result", {}).get("success") is not True
             or job.get("result", {}).get("int8_requested") is not True):
         raise ValueError(f"Unexpected completed job: {job}")
-    source = root / "data/model-download" / subdir / "ultralytics/public/yolo11s/INT8"
-    tree = ET.parse(source / "yolo11s.xml")
+    source = root / "data/model-download" / subdir / f"ultralytics/public/{MODEL}/INT8"
+    tree = ET.parse(source / f"{MODEL}.xml")
     if tree.find(".//rt_info/nncf/quantization") is None:
         raise ValueError("Downloader output has no INT8 quantization metadata")
     metadata = (source / "metadata.yaml").read_text()
-    if "Ultralytics YOLO11s" not in metadata or "coco8.yaml" not in metadata:
-        raise ValueError("Downloader output is not YOLO11s calibrated on coco8")
+    if f"ultralytics {MODEL}" not in metadata.lower() or "coco8.yaml" not in metadata:
+        raise ValueError(f"Downloader output is not {MODEL} calibrated on coco8")
     target.parent.mkdir(parents=True, exist_ok=True)
     # Publish only complete artifacts, never partially downloaded files.
-    with tempfile.TemporaryDirectory(prefix=".yolo11s-", dir=target.parent) as temporary:
+    with tempfile.TemporaryDirectory(prefix=f".{MODEL}-", dir=target.parent) as temporary:
         staged = Path(temporary) / "model"
         staged.mkdir()
         for name in FILES:
@@ -104,25 +117,28 @@ def download_model(root, timeout):
         (staged / "download.json").write_text(json.dumps(receipt, indent=2) + "\n")
         verify_model(staged)
         staged.rename(target)
-    print(f"Installed verified YOLO11s INT8: {target}")
+    print(f"Installed verified {MODEL} INT8: {target}")
 
 
 def download_video(root):
-    target = root / "data/dlsps/demo-video/classroom.avi"
-    if target.exists():
-        if sha(target) != VIDEO_SHA:
-            raise ValueError(f"Demo video checksum mismatch: {target}; refusing to overwrite")
-        print(f"Verified cached demo video: {target}")
-        return
-    target.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix=".video-", dir=target.parent) as temporary:
-        staged = Path(temporary) / target.name
-        with urllib.request.urlopen(VIDEO_URL, timeout=60) as response, staged.open("wb") as output:
-            shutil.copyfileobj(response, output)
-        if sha(staged) != VIDEO_SHA:
-            raise ValueError("Downloaded demo video checksum mismatch")
-        staged.rename(target)
-    print(f"Downloaded pinned demo video: {target}")
+    for name, url, digest in VIDEOS:
+        target = root / "data/dlsps/demo-video" / name
+        if target.exists():
+            if sha(target) != digest:
+                raise ValueError(f"Demo video checksum mismatch: {target}; refusing to overwrite")
+            print(f"Verified cached demo video: {target}")
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix=".video-", dir=target.parent) as temporary:
+            staged = Path(temporary) / target.name
+            # Pexels rejects urllib's default User-Agent with 403.
+            request = urllib.request.Request(url, headers={"User-Agent": "handheld-demo-assets/1.0"})
+            with urllib.request.urlopen(request, timeout=60) as response, staged.open("wb") as output:
+                shutil.copyfileobj(response, output)
+            if sha(staged) != digest:
+                raise ValueError(f"Downloaded demo video checksum mismatch: {name}")
+            staged.rename(target)
+        print(f"Downloaded pinned demo video: {target}")
 
 
 MISSION_DEMO_LINES = [
@@ -130,43 +146,31 @@ MISSION_DEMO_LINES = [
     "Synthetic content. Not a real operation, location, unit or order.",
     "",
     "OBJECTIVE",
-    "The handheld operator demonstrates camera evidence review, mission document",
-    "questions and general assistant conversation within one 20 minute window.",
-    "Exercise AMBER FIELD is a daylight familiarisation walk-through.",
+    "Exercise AMBER FIELD is a daylight site-security watch of two camera sectors.",
+    "The operator reports unattended bags and any vehicle stopping in the car park.",
     "",
     "TIMES",
-    "Exercise start time is 09:00 local. Exercise end time is 09:20 local.",
-    "Phase one runs 09:00 to 09:05. Phase two runs 09:05 to 09:15.",
-    "Phase three runs 09:15 to 09:20.",
+    "The watch runs from 09:00 to 09:30 local; the report is due at 09:35.",
     "",
     "LOCATIONS",
-    "The exercise is held in a single instrumented classroom, Building 2, Room 14.",
-    "The assembly point is the north corridor door.",
-    "The area of operations does not extend beyond that room and corridor.",
+    "Sector 1 (camera 1): the car park, viewed from above.",
+    "Sector 2 (camera 2): the tree-lined park avenue with benches.",
     "",
     "PEOPLE AND UNITS",
-    "One handheld operator conducts the walk-through.",
-    "Two role players act as visitors and one acts as staff.",
-    "The safety officer for this exercise is the range warden on duty.",
+    "One handheld operator. The range warden on duty is the safety officer.",
     "",
     "RESTRICTIONS",
-    "No hazardous material and no live equipment are permitted at any point.",
-    "Role players must not leave the instrumented classroom during the exercise.",
-    "Recorded evidence images must not leave the handheld device.",
+    "Observe and report only; do not approach or stop anyone.",
+    "Do not record identities of members of the public in reports.",
     "",
     "RESOURCES",
-    "One handheld device running the assistant and camera evidence application.",
-    "Three provisioned classroom cameras and this mission packet.",
+    "One handheld device and two fixed cameras, one per sector.",
     "",
     "DEPENDENCIES",
-    "Phase two depends on phase one confirming that each provisioned camera",
-    "reports a live feed. Phase three depends on this packet being loaded.",
-    "Primary reporting is by handheld assistant; there is no radio net.",
+    "The watch starts only when both cameras report a live feed.",
     "",
     "RISKS",
-    "A camera that reports no signal delays phase two.",
-    "Role player movement outside camera coverage produces incomplete tracks.",
-    "Report any equipment fault to the safety officer directly.",
+    "Crowds on the park avenue can hide people; moving vehicles in the car park.",
 ]
 
 
@@ -202,8 +206,11 @@ def _pdf_bytes(lines):
     return bytes(out)
 
 
-def write_mission(root):
-    target = root / "data/backend/demo/demo-mission-packet.pdf"
+MISSION_EXAMPLE = REPO / "examples/demo-mission-packet.pdf"
+
+
+def write_mission(target=MISSION_EXAMPLE):
+    """Regenerate the committed example packet after editing MISSION_DEMO_LINES."""
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(_pdf_bytes(MISSION_DEMO_LINES))
     print(f"Wrote synthetic demo mission packet: {target}")
@@ -235,7 +242,7 @@ def main():
         if args.action == "model":
             download_model(args.root, args.timeout)
         elif args.action == "mission":
-            write_mission(args.root)
+            write_mission()
         else:
             download_video(args.root)
     return 0

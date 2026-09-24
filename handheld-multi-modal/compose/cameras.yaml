@@ -1,19 +1,22 @@
 # Demo camera publishers - REMOVABLE DEMO ASSETS (design section 22).
 #
-# Real deployments point cameras at rtsp://<host>:8554/camN themselves; nothing
-# in the application depends on this file. It exists so the demo has N
+# Real deployments (`make up`) publish their own feeds to
+# rtsp://127.0.0.1:8554/camN on the device (RTSP is loopback-only); nothing in
+# the application depends on this file. It exists so the demo has N
 # reproducible feeds instead of a hand-started ffmpeg that dies with the shell.
 #
-#   make cameras CAMERAS=2     start cam1 and cam2
-#   make cameras-down          stop them
+#   make demo-up CAMERAS=2     start the application with cam1 and cam2
+#   make clean-demo            remove these publishers and their videos
 #
-# -c copy: the source is already H.264 1920x1080 30fps, so this remuxes rather
-# than re-encodes. Publishing costs ~1% CPU per camera and leaves the measured
+# -c copy: every .ts is already H.264, so this remuxes rather than re-encodes. Publishing costs ~1% CPU per camera and leaves the measured
 # per-camera pipeline cost (design 3.4) attributable to DLSPS, not to the
 # simulator. -re paces at real time; -stream_loop -1 loops forever.
 #
-# classroom.ts is the PTS-repaired remux of classroom.avi, whose broken
-# timestamps otherwise cost ~132% CPU in the reader.
+# Sources (pinned in scripts/demo_assets.py, remuxed to .ts by make demo-prereq):
+#   cam1  person-bicycle-car-detection.max30.ts  intel-iot-devkit sample, 768x432 12 fps
+#   cam2  pexels-34622113.max30.ts  Pexels 34622113, 59.94 fps source capped to 30 fps
+#   cam3+ classroom.ts        PTS-repaired remux of the OEP classroom.avi, 30 fps,
+#                             whose broken timestamps otherwise cost ~132% CPU.
 
 name: handheld-bootstrap
 
@@ -30,14 +33,14 @@ services:
     <<: *camera
     container_name: handheld-demo-cam1
     command: ["-nostdin", "-hide_banner", "-loglevel", "warning",
-              "-re", "-stream_loop", "-1", "-i", "/video/classroom.ts",
+              "-re", "-stream_loop", "-1", "-i", "/video/person-bicycle-car-detection.max30.ts",
               "-map", "0:v:0", "-c", "copy",
               "-f", "rtsp", "-rtsp_transport", "tcp", "rtsp://127.0.0.1:8554/cam1"]
   cam2:
     <<: *camera
     container_name: handheld-demo-cam2
     command: ["-nostdin", "-hide_banner", "-loglevel", "warning",
-              "-re", "-stream_loop", "-1", "-i", "/video/classroom.ts",
+              "-re", "-stream_loop", "-1", "-i", "/video/pexels-34622113.max30.ts",
               "-map", "0:v:0", "-c", "copy",
               "-f", "rtsp", "-rtsp_transport", "tcp", "rtsp://127.0.0.1:8554/cam2"]
   cam3:

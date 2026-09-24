@@ -121,7 +121,7 @@ a guarantee that a later cold stock export resolves the same upstream revision.
 
 | Role | Model | Download owner | Cache/volume | Consumer |
 |---|---|---|---|---|
-| Detection | Required YOLO26s INT8/coco8 (owner-directed 2026-09-24 replacement for YOLO11s) | Stock Model Download Ultralytics plugin, invoked by `make demo-assets` | `ASSET_ROOT/data/model-download`; validated output installed under `data/dlsps/yolo_export/yolo26s_int8_openvino_model`, with `download.json` provenance/checksums | DLSPS |
+| Detection | Required YOLO26s INT8/coco8 (owner-directed 2026-09-24 replacement for YOLO11s) | Stock Model Download Ultralytics plugin, invoked by `make demo-prereq` | `ASSET_ROOT/data/model-download`; validated output installed under `data/dlsps/yolo_export/yolo26s_int8_openvino_model`, with `download.json` provenance/checksums | DLSPS |
 | LLM | Required `Intel/neural-chat-7b-v3-3` (owner-directed replacement for `microsoft/Phi-3.5-mini-instruct`) | Chat Q&A backend HF/Optimum export (`app/openvino_backend.py`) | Stock `/tmp/model_cache/Intel/neural-chat-7b-v3-3` and compile cache; host volume `data/chatqna/model_cache` | Chat Q&A OpenVINO GPU |
 | Embedding | Selected `ibm-granite/granite-embedding-125m-english` | Chat Q&A backend HF/Optimum export | Stock `/tmp/model_cache/ibm-granite/granite-embedding-125m-english`; host volume `data/chatqna/model_cache` | Chat Q&A OpenVINO CPU |
 | Reranker | Selected `cross-encoder/ms-marco-electra-base` | Chat Q&A backend HF/Optimum export | Stock `/tmp/model_cache/cross-encoder/ms-marco-electra-base`; host volume `data/chatqna/model_cache` | Chat Q&A OpenVINO CPU |
