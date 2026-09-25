@@ -41,7 +41,7 @@ Read `STATUS.md`, `MANIFEST.yaml`, `COMPONENTS.md`,
   Q&A backend's own model download/conversion/loading path — no separate Phi
   exporter, no config rewrite, no one-off inference script replacing backend.
 - Audio Analyzer (required): OpenVINO, `whisper-medium`, GPU; sentiment +
-  diarization disabled. Backend captures mic audio; service transcribes.
+  diarization disabled. Browser captures mic audio; Backend validates/forwards bounded audio; service transcribes (owner-confirmed 2026-09-25).
 - OEP TTS (required): stock-supported, provenance-approved model, GPU.
 - Detector: YOLO26s OpenVINO IR, INT8 preferred, NPU default, CPU `gvatrack`,
   Intel HW decode/encode (owner-directed 2026-09-24 replacement for YOLO11s).
