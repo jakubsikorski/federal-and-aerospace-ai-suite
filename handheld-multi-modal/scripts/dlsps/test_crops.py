@@ -12,13 +12,22 @@ import time
 from types import SimpleNamespace
 import uuid
 import weakref
+import atexit
 
 from unittest.mock import patch
 
 import cv2
 import numpy as np
-from crop_candidates import CropCandidates, OwnershipLost, Settings, Store, crop_rect, json_observations, observations, bgr_crop, frame_planes, mapped_planes
+from crop_candidates import (CropCandidates, OwnershipLost, Settings, Store, bgr_crop,
+    bgr_from_payload, crop_payload, crop_payload_size, crop_quality, crop_rect,
+    frame_planes, json_observations, mapped_planes, observations)
 from crop_probe import CropProbe
+
+SCRATCH = Path(os.environ.get("CROP_TEST_TMPDIR", Path.cwd() / ".crop-test-tmp"))
+SCRATCH.mkdir(parents=True, exist_ok=True)
+tempfile.tempdir = str(SCRATCH)
+if "CROP_TEST_TMPDIR" not in os.environ:
+    atexit.register(lambda: SCRATCH.rmdir() if SCRATCH.exists() and not any(SCRATCH.iterdir()) else None)
 
 
 class ROI:
@@ -84,6 +93,15 @@ def make(root, predicted_confidence=None, **overrides):
     config.write_text(json.dumps(dict(output_dir=str(root / uuid.uuid4().hex),
         confirm_seconds=0, min_observations=1, report_seconds=1000, **overrides)))
     return CropCandidates(str(config), predicted_confidence=predicted_confidence)
+
+
+def wait_for(predicate, timeout=3):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.01)
+    raise AssertionError("timed out waiting for crop worker")
 
 
 def takeover_checks():
@@ -214,6 +232,12 @@ def limited_conversion_checks():
         planes = frame_planes(data,info,layout)
         for rect in rectangles:
             x,y,w,h = rect
+            with patch("cv2.cvtColor", side_effect=AssertionError("callback converted colour")):
+                payload = crop_payload(planes, info, rect)
+            assert payload["data"].flags.owndata and payload["bytes"] == payload["data"].nbytes
+            assert payload["bytes"] == crop_payload_size(info, rect)
+            assert not np.shares_memory(payload["data"], data)
+            assert np.array_equal(bgr_from_payload(payload), reference[y:y+h,x:x+w]), (fmt, rect)
             crop = bgr_crop(planes,info,rect)
             assert np.array_equal(crop,reference[y:y+h,x:x+w]), (fmt,rect)
             assert crop.flags.owndata and crop.nbytes == w*h*3
@@ -267,6 +291,57 @@ def limited_conversion_checks():
         data[:] = 0
         assert crop.any(), "crop retained mapped frame memory"
     print("PASS: region-only conversion matches full-frame BGR/BGRA/BGRx/NV12/I420, odd edges, owned exact-size pixels")
+
+
+def backoff_and_quality_checks():
+    sharp = np.zeros((80, 80, 3), dtype=np.uint8)
+    sharp[::2, :] = 255
+    blurred = cv2.GaussianBlur(sharp, (21, 21), 0)
+    large = np.tile(sharp, (4, 4, 1))
+    small = sharp[:30, :30]
+    edge_score, _ = crop_quality(sharp, 0.9, True, 256)
+    sharp_score, sharpness = crop_quality(sharp, 0.9, False, 256)
+    blur_score, blur = crop_quality(blurred, 0.9, False, 256)
+    large_score, _ = crop_quality(large, 0.9, False, 64)
+    small_score, _ = crop_quality(small, 0.9, False, 64)
+    assert sharpness > blur and sharp_score > blur_score * 1.15
+    assert large_score > small_score
+    assert sharp_score > edge_score
+
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        producer = make(root, rate=100, burst=10, interval_seconds=0.02,
+                        max_interval_seconds=0.08, backoff_multiplier=2,
+                        improvement=10, candidates_per_track=4)
+        try:
+            producer.process_frame(Frame([1]))
+            wait_for(lambda: producer.stats["saved"] == 1)
+            time.sleep(0.03)
+            producer.process_frame(Frame([1]))
+            wait_for(lambda: producer.stats["not_improved"] == 1)
+            assert 0.039 <= producer.tracks[1]["interval"] <= 0.041
+            time.sleep(0.045)
+            producer.process_frame(Frame([1]))
+            wait_for(lambda: producer.stats["not_improved"] == 2)
+            assert 0.079 <= producer.tracks[1]["interval"] <= 0.081
+
+            before = producer.stats["saved"]
+            producer.process_frame(Frame([1, 2]))
+            wait_for(lambda: producer.stats["saved"] == before + 1)
+            assert producer.tracks[2]["saved"] == 1
+            assert producer.tracks[1]["saved"] == 1, "backed-off old track should not jump ahead"
+
+            moved = Frame([1])
+            moved.text = [json.dumps({"objects": [{"id": 1, "region_id": 77,
+                "x": 60, "y": 30, "w": 30, "h": 40, "roi_type": "person",
+                "detection": {"label": "person", "confidence": 0.9}}]})]
+            time.sleep(0.03)
+            producer.process_frame(moved)
+            assert producer.tracks[1]["interval"] == producer.c.interval_seconds
+            wait_for(lambda: producer.stats["saved"] >= before + 2 or producer.stats["not_improved"] >= 3)
+        finally:
+            producer.close()
+    print("PASS: bounded sharpness ranking, crop backoff growth/reset, and new-track fairness")
 
 
 def optimization_checks():
@@ -419,6 +494,7 @@ def run():
     tracker_prediction_checks()
     failure_safety_checks()
     limited_conversion_checks()
+    backoff_and_quality_checks()
     optimization_checks()
     takeover_checks()
     rng = random.Random(8)
@@ -626,7 +702,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--live", action="store_true")
-    parser.add_argument("--output", default="/tmp/dlsps-crop-evidence")
+    parser.add_argument("--output", default="scripts/dlsps/.crop-live-evidence")
     args = parser.parse_args()
     if args.live:
         live(args.output)

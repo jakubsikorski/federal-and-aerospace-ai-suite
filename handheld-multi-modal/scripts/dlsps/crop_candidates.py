@@ -33,7 +33,12 @@ class Settings:
     rate: float = 2.0
     burst: int = 3
     interval_seconds: float = 2.0
+    max_interval_seconds: float = 16.0
+    backoff_multiplier: float = 2.0
+    geometry_reset_position_pixels: float = 12.0
+    geometry_reset_size_ratio: float = 0.20
     improvement: float = 0.15
+    sharpness_max_dimension: int = 256
     candidates_per_track: int = 3
     track_ttl_seconds: float = 10.0
     max_tracks: int = 2048
@@ -83,6 +88,8 @@ class Settings:
             raise ValueError("stream_id must be 1..64 safe identifier characters")
         if settings.min_confidence > 1 or not 1 <= settings.jpeg_quality <= 100:
             raise ValueError("invalid confidence or JPEG quality")
+        if settings.max_interval_seconds < settings.interval_seconds or settings.backoff_multiplier < 1:
+            raise ValueError("invalid crop backoff settings")
         if settings.mqtt_port > 65535 or any(c in settings.mqtt_topic for c in "+#\0"):
             raise ValueError("invalid MQTT port/topic")
         if not settings.mqtt_topic or not settings.output_dir:
@@ -181,9 +188,22 @@ def mapped_planes(frame, info):
         yield frame_planes(data, info, layout)
 
 
-def bgr_crop(planes, info, rect):
-    """Own an exact BGR crop; convert only a chroma-aligned region for YUV420."""
-    import cv2
+def crop_payload_size(info, rect):
+    x, y, w, h = rect
+    fmt = info.finfo.name
+    if fmt == "BGR":
+        return w * h * 3
+    if fmt in ("BGRA", "BGRx"):
+        return w * h * 4
+    if fmt in ("NV12", "I420"):
+        left, top = x & ~1, y & ~1
+        right, bottom = (x + w + 1) & ~1, (y + h + 1) & ~1
+        return (right - left) * (bottom - top) * 3 // 2
+    raise ValueError(f"unsupported crop format: {fmt}")
+
+
+def crop_payload(planes, info, rect):
+    """Own callback-thread crop bytes only; colour conversion happens later."""
     import numpy as np
     x, y, w, h = rect
     width, height, fmt = info.width, info.height, info.finfo.name
@@ -192,7 +212,8 @@ def bgr_crop(planes, info, rect):
     if fmt in ("BGR", "BGRA", "BGRx"):
         channels = 3 if fmt == "BGR" else 4
         crop = planes[0][y:y+h, x*channels:(x+w)*channels].reshape(h, w, channels)
-        return crop.copy() if channels == 3 else cv2.cvtColor(crop, cv2.COLOR_BGRA2BGR)
+        data = crop.copy()
+        return {"format": fmt, "data": data, "trim": (0, 0, w, h), "bytes": data.nbytes}
     if fmt not in ("NV12", "I420") or width % 2 or height % 2:
         raise ValueError(f"unsupported crop format or dimensions: {fmt}")
     # Include complete 2x2 chroma blocks, then trim back to the original rect.
@@ -203,15 +224,61 @@ def bgr_crop(planes, info, rect):
     packed[:ch] = planes[0][top:bottom, left:right]
     if fmt == "NV12":
         packed[ch:] = planes[1][top//2:bottom//2, left:right]
-        code = cv2.COLOR_YUV2BGR_NV12
     else:
         chroma = packed.reshape(-1)[cw*ch:].reshape(2, ch//2, cw//2)
         for index, plane in enumerate(planes[1:]):
             chroma[index] = plane[top//2:bottom//2, left//2:right//2]
-        code = cv2.COLOR_YUV2BGR_I420
-    converted = cv2.cvtColor(packed, code)
-    # Exact allocation: queued bytes exclude alignment padding and borrowed views.
-    return converted[y-top:y-top+h, x-left:x-left+w].copy()
+    return {"format": fmt, "data": packed, "trim": (x-left, y-top, w, h), "bytes": packed.nbytes}
+
+
+def bgr_from_payload(payload):
+    import cv2
+    fmt = payload["format"]
+    data = payload["data"]
+    tx, ty, tw, th = payload["trim"]
+    if fmt == "BGR":
+        return data
+    if fmt in ("BGRA", "BGRx"):
+        return cv2.cvtColor(data, cv2.COLOR_BGRA2BGR)
+    code = cv2.COLOR_YUV2BGR_NV12 if fmt == "NV12" else cv2.COLOR_YUV2BGR_I420
+    converted = cv2.cvtColor(data, code)
+    return converted[ty:ty+th, tx:tx+tw].copy()
+
+
+def bgr_crop(planes, info, rect):
+    """Own an exact BGR crop; compatibility helper for tests/probe code."""
+    return bgr_from_payload(crop_payload(planes, info, rect))
+
+
+def geometry_changed(previous, current, position_pixels, size_ratio):
+    if previous is None:
+        return False
+    px, py, pw, ph = previous
+    x, y, w, h = current
+    moved = math.hypot((x + w / 2) - (px + pw / 2), (y + h / 2) - (py + ph / 2))
+    old_area, new_area = max(1, pw * ph), max(1, w * h)
+    return moved >= position_pixels or abs(new_area - old_area) / old_area >= size_ratio
+
+
+def sharpness_sample(gray, max_dimension):
+    import cv2
+    longest = max(gray.shape[:2])
+    if longest > max_dimension:
+        scale = max_dimension / longest
+        gray = cv2.resize(gray, (max(1, round(gray.shape[1] * scale)),
+                                max(1, round(gray.shape[0] * scale))), interpolation=cv2.INTER_AREA)
+    return gray
+
+
+def crop_quality(roi, confidence, object_touches_frame, sharpness_max_dimension):
+    import cv2
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    sharpness = float(cv2.Laplacian(sharpness_sample(gray, sharpness_max_dimension), cv2.CV_64F).var())
+    # ponytail: heuristic quality, calibrate weights on deployment footage.
+    score = math.sqrt(roi.shape[0] * roi.shape[1]) * confidence * (1 + math.log1p(sharpness))
+    if object_touches_frame:
+        score *= 0.75
+    return score, sharpness
 
 
 def observations(frame):
@@ -640,16 +707,22 @@ class CropCandidates:
                             self.stats["track_capacity"] += 1
                             continue
                         state = {"first": started, "last": started, "seen": 0,
-                                 "saved": 0, "score": 0.0, "attempt": -math.inf}
+                                 "saved": 0, "score": 0.0, "attempt": -math.inf,
+                                 "interval": self.c.interval_seconds, "geometry": None}
                         self.tracks[tid] = state
                         self.stats["new_tracks"] += 1
                     state["last"] = started
                     state["seen"] += 1
+                    if geometry_changed(state["geometry"], obs["detection_rect"],
+                                        self.c.geometry_reset_position_pixels,
+                                        self.c.geometry_reset_size_ratio):
+                        state["interval"] = self.c.interval_seconds
+                        self.stats["backoff_reset_geometry"] += 1
                     self.tracks.move_to_end(tid)
                     if (tid in self.pending or state["saved"] >= self.c.candidates_per_track
                             or started - state["first"] < self.c.confirm_seconds
                             or state["seen"] < self.c.min_observations
-                            or started - state["attempt"] < self.c.interval_seconds
+                            or started - state["attempt"] < state["interval"]
                             or obs["confidence"] < self.c.min_confidence
                             # A short-term tracker's 1.0 marks a predicted box on a
                             # frame without inference; crop only detector-measured boxes.
@@ -687,7 +760,11 @@ class CropCandidates:
                     except ValueError:
                         self.stats["invalid_box"] += 1
                         continue
-                    size = rect[2] * rect[3] * 3
+                    try:
+                        size = crop_payload_size(info, rect)
+                    except ValueError:
+                        self.stats["invalid_format"] += 1
+                        continue
                     if self.control["bytes"] + size > self.c.queue_bytes:
                         self.stats["queue_limited"] += 1
                         continue
@@ -695,6 +772,7 @@ class CropCandidates:
                     self.control["bytes"] += size
                     self.pending.add(tid)
                     state["attempt"] = started
+                    state["geometry"] = obs["detection_rect"]
                     admitted.append((tid, state, obs, rect, flags, size))
             if admitted:
                 submitted = set()
@@ -703,7 +781,7 @@ class CropCandidates:
                         raise ValueError("frame exceeds max_frame_pixels")
                     with mapped_planes(frame, info) as planes:
                         for tid, state, obs, rect, flags, size in admitted:
-                            copy = bgr_crop(planes, info, rect)
+                            copy = crop_payload(planes, info, rect)
                             event = dict(context, **obs, crop_rect=rect, **flags,
                                          frame_width=info.width, frame_height=info.height)
                             with self.condition:
@@ -791,19 +869,22 @@ class CropCandidates:
                 with self.condition:
                     item = self.jobs.popitem(last=False) if self.jobs else None
                 if item:
-                    tid, (state, event, pixels, size) = item
+                    tid, (state, event, payload, size) = item
                     try:
+                        pixels = bgr_from_payload(payload)
                         dx, dy, dw, dh = map(int, event["detection_rect"])
                         cx, cy, _, _ = event["crop_rect"]
                         roi = pixels[max(0, dy-cy):min(pixels.shape[0], dy+dh-cy),
                                      max(0, dx-cx):min(pixels.shape[1], dx+dw-cx)]
-                        sharpness = float(cv2.Laplacian(cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY), cv2.CV_64F).var())
-                        # ponytail: heuristic quality, calibrate weights on deployment footage.
-                        score = math.sqrt(roi.shape[0] * roi.shape[1]) * event["confidence"] * (1 + math.log1p(sharpness))
-                        if event["object_touches_frame"]:
-                            score *= 0.75
+                        score, sharpness = crop_quality(
+                            roi, event["confidence"], event["object_touches_frame"],
+                            self.c.sharpness_max_dimension)
                         if state["saved"] and score <= state["score"] * (1 + self.c.improvement):
                             self.stats["not_improved"] += 1
+                            with self.condition:
+                                state["interval"] = min(self.c.max_interval_seconds,
+                                                        max(self.c.interval_seconds,
+                                                            state["interval"] * self.c.backoff_multiplier))
                             continue
                         scale = min(1, self.c.max_dimension / max(pixels.shape[:2]))
                         if scale < 1:
@@ -826,6 +907,7 @@ class CropCandidates:
                         with self.condition:
                             state["saved"] += 1
                             state["score"] = score
+                            state["interval"] = self.c.interval_seconds
                         self.stats["saved"] += 1
                     except OwnershipLost:
                         raise
@@ -897,6 +979,9 @@ if __name__ == "__main__":
     if args.self_check:
         import os
         import tempfile
+        scratch = Path.cwd() / ".crop-self-check"
+        scratch.mkdir(exist_ok=True)
+        tempfile.tempdir = str(scratch)
         with tempfile.TemporaryDirectory() as tmp:
             base = Settings(output_dir=tmp, takeover_seconds=30.0)
             live = Store(base)
@@ -975,6 +1060,10 @@ if __name__ == "__main__":
                 assert (reopened.root / (cid + ".jpg")).exists(), "newest must survive"
             finally:
                 reopened.close()
+        try:
+            scratch.rmdir()
+        except OSError:
+            pass
         print("all checks passed")
     elif args.print_defaults:
         print(json.dumps(asdict(Settings()), indent=2))

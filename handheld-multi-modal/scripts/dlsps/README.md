@@ -103,8 +103,11 @@ Important defaults (starting values to calibrate, not measured optimal settings)
 | min_confidence / min_object_pixels | 0.4 / 16 | Cheap metadata admission checks |
 | rate / burst | 2 per second / 3 | Global token bucket across all tracker IDs |
 | interval_seconds | 2 | Minimum interval between attempts for a track |
+| max_interval_seconds / backoff_multiplier | 16 / 2 | Repeated `not_improved` attempts for a track back off up to this interval |
+| geometry_reset_position_pixels / geometry_reset_size_ratio | 12 / 0.20 | Meaningful object movement or size change resets that track to `interval_seconds` |
 | candidates_per_track | 3 | First accepted image plus up to two improvements while state is retained |
 | improvement | 0.15 | Later score must exceed best score by 15% |
+| sharpness_max_dimension | 256 | Longest grayscale side used for Laplacian sharpness; size scoring keeps original object dimensions |
 | max_tracks / track_ttl_seconds | 2048 / 10 | Bound and expire selector state; reject new entries at capacity |
 | queue_jobs / queue_bytes | 8 / 32 MiB | Include reservations and worker's in-flight original crop |
 | max_frame_pixels | 8294400 | Bound source mapping size, independently of queue bytes |
@@ -115,9 +118,9 @@ Important defaults (starting values to calibrate, not measured optimal settings)
 
 Every ROI remains in the observation JSON. Untracked, unstable, low-confidence, tiny, duplicate-ID or over-budget candidates do not force image work. First snapshots take precedence over improvements; least recently attempted candidates go first within each group. One pending job per track; an already queued job is kept rather than replaced, avoiding repeated copies during slow writes. No heuristic identity merging, re-identification or location-based suppression occurs.
 
-The quality heuristic uses the original object's area, detector metadata confidence, and sharpness measured inside the object, with an edge penalty. The contextual background area is not rewarded. Labels are recorded per candidate and are never stabilized by rewriting history. The pinned tracker's confidence freshness is not proven; events explicitly label it `tracker_metadata_unverified`.
+The quality heuristic uses the original object's area, detector metadata confidence, and sharpness measured inside the object on a bounded grayscale sample, with an edge penalty. The contextual background area is not rewarded. Labels are recorded per candidate and are never stabilized by rewriting history. The pinned tracker's confidence freshness is not proven; events explicitly label it `tracker_metadata_unverified`.
 
-The global bucket bounds pixel-copy attempts even during ID churn. The queue owns copied pixels and never retains borrowed views after unmapping. Source mapping, temporary region-conversion buffers and encoder scratch allocations are additional to queue_bytes; this is not a total process RSS limit. Object size/frame limits bound those allocations. The producer reuses parsed gvametaconvert objects (pixel x/y/w/h, tracker id, region_id, confidence and roi_type). It preserves the full observation JSON, including classifier fields, and does not enumerate native ROIs. The measurement probe retains native ROI inspection.
+The global bucket bounds pixel-copy attempts even during ID churn. The queue owns copied pixels and never retains borrowed views after unmapping. For NV12/I420 the callback copies only the admitted chroma-aligned YUV region and the worker converts/trims it to the exact crop; BGR/BGRA/BGRx callbacks copy only the admitted region and defer any colour conversion to the worker. Queue bytes account for those owned bytes, including YUV alignment padding. Source mapping, worker conversion buffers and encoder scratch allocations are additional to queue_bytes; this is not a total process RSS limit. Object size/frame limits bound those allocations. The producer reuses parsed gvametaconvert objects (pixel x/y/w/h, tracker id, region_id, confidence and roi_type). It preserves the full observation JSON, including classifier fields, and does not enumerate native ROIs. The measurement probe retains native ROI inspection.
 
 At most three candidates are retained per active selector entry. If an ID reappears after the selector TTL, it can become eligible again; the global rate and disk caps still apply. Restart the callback with the tracker so its new session namespaces reset/reused IDs. Silent tracker resets within one callback lifetime are not automatically detectable; do not reuse this callback across such resets.
 
@@ -213,19 +216,19 @@ The three probe JPEGs were also inspected visually and show different subjects
 in different parts of the source frame. These IDs still represent tracks, not
 re-identified individuals. See `diversity/result.json` and `diversity-live.log`.
 
-### Region-only conversion (2026-09-23)
+### Region-only worker conversion (2026-09-25)
 
-The producer maps each admitted frame once and converts only selected crop
-regions. NV12/I420 regions expand to complete 2×2 chroma blocks before conversion,
-then trim back to the exact crop rectangle. BGRA/BGRx conversion also operates
-on the selected region; BGR crops are copied directly. Queued pixels own their
-exact-size allocations after unmapping. Sampling, geometry, sharpness scoring
-and JPEG settings are unchanged. GPU buffer mapping/synchronization still occurs, but the producer now reads
-validated plane offsets/strides directly and avoids gstgva full-frame repacking. The measurement probe retains its original
-full-frame conversion. Correctness tests compare regional output against that
-conversion, including odd coordinates and frame edges. Live throughput is recorded in
-`docs/application/evidence/crop-optimizations-2026-09-23/`; no controlled
-before/after benchmark was run.
+The producer maps each admitted frame once and copies only selected crop
+regions. NV12/I420 regions expand to complete 2×2 chroma blocks on the callback
+thread, then the worker converts and trims back to the exact crop rectangle.
+BGRA/BGRx conversion also happens in the worker; BGR crops are copied directly.
+Queued pixels own their allocations after unmapping and queue bytes include YUV
+alignment padding. Sampling, geometry, metadata and JPEG settings are preserved.
+GPU buffer mapping/synchronization still occurs, but the producer reads
+validated plane offsets/strides directly and avoids gstgva full-frame repacking.
+The measurement probe retains its original full-frame conversion. Correctness
+tests compare regional output against that conversion, including odd coordinates
+and frame edges. No FPS gain is claimed without controlled measurement.
 
 ### Stride and failure handling (2026-09-23)
 
@@ -240,5 +243,4 @@ A candidate larger than the store byte quota is rejected before eviction. An
 unexpected writer failure disables crops, logs an error, and leaves observation
 identity/context flowing. The failed worker only watches for shutdown/takeover;
 it does not refresh the heartbeat. Takeover or explicit shutdown retires it and
-closes its resources. Conversion remains in the video callback; moving it into
-the worker was not part of this change.
+closes its resources.
