@@ -63,8 +63,7 @@ current health, resource readings or what a camera is observing.
 DL Streamer detects/tracks objects and creates crops; MediaMTX carries video directly
 to the browser. Backend stores observations and serves evidence and queries; it does
 not analyze video with the language model. Stock Chat Q&A provides language inference
-and mission retrieval. Speech services may be deployed, but operator speech actions
-and alert-rule editing are not implemented in this UI. Chat cannot restart services,
+and mission retrieval. Speech services support spoken interaction and alert announcements. Chat cannot restart services,
 clear records, change rules or execute operator actions. Unknown camera coverage,
 locations, model versions and hardware details must not be invented.
 
@@ -111,3 +110,31 @@ the excluded conditions or a visual-similarity ranking.
 The GPU tile shows the highest current engine usage and its engine name, plus the
 number of engines. Select it to see every engine. Partial means some readings are
 not current; Stale readings are historical, and Unavailable is not zero usage.
+
+
+## Manage alerts
+Open Manage alerts. Choose Appears or Stays too long, check the camera and Watch for.
+Anything detected matches any object type detected by the configured pipeline.
+Stays too long offers 10 seconds, 30 seconds, 1 minute or a custom duration.
+Each tracked object has its own dwell timer; times from different objects never add up.
+Area defaults to the whole view. Draw an area restricts matching to a polygon on one
+camera; Remove area restores the whole view after saving. More options contains
+confidence, active hours and speech settings. Read the preview and Create alert.
+Existing rules can be edited, turned off/on or deleted. Save changes completes edits.
+Switch to Appears to remove dwell. Missing qualifying observations can reset dwell;
+tracking does not establish a person's identity across cameras. Chat explains these
+controls but cannot change alert rules for the operator.
+
+
+## Talk to the assistant
+Tap Talk in the persistent top bar to open Assistant and start recording.
+Allow microphone access on first use. Tap Send question to finish; no hold is required. Capture happens only in the browser over trusted HTTPS. Listening
+indicates an active microphone; Send question, 15 seconds or a pause after speech ends
+capture and closes the microphone. Cancel or Escape discards capture/transcription.
+The recognized question uses the same camera scope, answer mode, conversation
+and routing as typing. Transcribing and answering have visible progress. If the
+microphone or transcription is unavailable, type the question instead.
+Audio on enables spoken replies. Answers play in short sequential sentences or
+clauses, with the full text visible. Stop speaking cancels the current speech and
+its remaining chunks; Talk immediately interrupts playback. Speech already
+being synthesized may finish on the service, but cancelled audio is not played.

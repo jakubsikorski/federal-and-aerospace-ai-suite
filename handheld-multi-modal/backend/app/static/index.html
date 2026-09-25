@@ -7,9 +7,10 @@
 <style>
   :root {
     color-scheme: dark;
-    --bg: #20252c; --panel: #292f38; --panel2: #343d49; --line: #566171;
-    --text: #f3f1eb; --muted: #bbc3ce; --accent: #99c5f5;
-    --good: #91c9a5; --warn: #efc580; --bad: #f2a5a5;
+    --bg: #0b1320; --panel: #142133; --panel2: #1e3047; --line: #394e68;
+    --surface: #101c2b; --selected: #173e4a; --control: #526983;
+    --text: #edf4ff; --muted: #b2c2d7; --accent: #72e4df;
+    --good: #8be0b5; --warn: #f4c779; --bad: #ffacb4;
   }
   * { box-sizing: border-box; }
   html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
@@ -18,43 +19,62 @@
   button, select, summary { touch-action: manipulation; }
   button { cursor: pointer; }
   button:not(:disabled):active { filter: brightness(1.15); }
-  button:focus-visible, select:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
+  button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
   button:disabled { opacity: .55; cursor: default; }
   [hidden] { display: none !important; }
-  #app { height: 100dvh; display: grid; grid-template-rows: auto auto minmax(0, 1fr); }
-  header { display: flex; align-items: center; gap: 16px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
-  .brand strong { font-size: 16px; }
-  .brand span { display: block; }
+  #app { width: 100vw; max-width: 100vw; overflow: hidden; height: 100dvh; display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); }
+  header { min-width: 0; display: flex; align-items: center; gap: 16px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
+  .brand strong { font-size: 16px; letter-spacing: -.3px; }
+  .brand span { display: block; color: var(--muted); font-size: 11px; letter-spacing: .35px; }
   .micro { color: var(--muted); font-size: 12px; }
-  #cameras { display: flex; gap: 8px; min-width: 0; flex: 1; }
-  .camera { min-height: 44px; padding: 4px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
-  .camera small { display: block; font-size: 11px; color: var(--muted); }
-  .camera[aria-pressed="true"] { border: 2px solid var(--accent); background: #35485e; }
+  #cameras { display: flex; gap: 8px; min-width: 0; flex: 1 1 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+  #cameras[data-overflow] { mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); }
+  #cameras::-webkit-scrollbar { display: none; }
+  .camera { position: relative; flex: 0 0 auto; min-width: 104px; max-width: 180px; overflow: hidden; min-height: 44px; padding: 4px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+  .camera span, .camera small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .camera small { font-size: 11px; color: var(--muted); }
+  .camera[aria-pressed="true"] { border: 2px solid var(--accent); background: var(--selected); }
   .camera.up small, #connection.live { color: var(--good); }
   .camera.down small { color: var(--bad); }
   /* Disabled sources are omitted by Backend; only bounded startup is neutral. */
   .camera.idle small { color: var(--muted); }
-  #mission-toggle, #rules-toggle, #audio-toggle { white-space: nowrap; }
+  #mission-toggle, #rules-toggle, #audio-toggle { flex: 0 0 auto; white-space: nowrap; }
   #audio-toggle[data-state="off"] { color: var(--warn); }
   #rules-panel { position: fixed; top: 58px; right: 12px; width: min(460px, calc(100vw - 24px)); max-height: calc(100dvh - 72px); z-index: 11; overflow: auto; box-shadow: 0 12px 30px #0008; }
   #rules-panel .panel-head button { margin-left: auto; }
   #rules-body { padding: 12px; display: grid; gap: 10px; }
   #rule-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 8px; }
   #rule-form label { display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
-  #rule-form select, #rule-form input[type="number"] { min-width: 0; border: 1px solid var(--line); border-radius: 7px; padding: 6px; background: var(--bg); color: var(--text); }
+  #rule-form select, #rule-form input { min-width: 0; border: 1px solid var(--line); border-radius: 7px; padding: 6px; background: var(--bg); color: var(--text); }
+  #zone-summary { grid-column: 1 / -1; color: var(--muted); font-size: 12px; margin: 0; }
   #rule-form .rule-speak { display: flex; align-items: center; gap: 6px; }
-  #rule-form button { grid-column: 1 / -1; }
+  #rule-form > button { grid-column: 1 / -1; }
+  #rule-form select, #rule-form input:not([type="radio"]):not([type="checkbox"]) { min-height: 44px; }
+  #rule-trigger { grid-column: 1 / -1; border: 0; margin: 0; padding: 0; display: flex; gap: 8px; }
+  #rule-trigger legend { margin-bottom: 6px; font-weight: 600; }
+  #rule-trigger label { flex: 1; display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
+  #rule-trigger label:has(:checked) { border-color: var(--accent); background: var(--selected); color: var(--text); }
+  #rule-area, #rule-advanced, #rule-preview { grid-column: 1 / -1; }
+  #rule-area button { min-height: 44px; margin-top: 6px; }
+  #rule-advanced summary { min-height: 44px; padding: 10px 0; cursor: pointer; }
+  #rule-advanced > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  #rule-preview { margin: 0; color: var(--muted); font-size: 13px; }
+  #rule-submit { min-height: 44px; }
   #rule-list { margin: 0; padding: 0; list-style: none; }
   #rule-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 6px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
   #rule-list li.off strong { color: var(--muted); }
   #rule-list li[data-editing] strong { color: var(--accent); }
   #rule-list small { display: block; color: var(--muted); }
   #rules-status { margin: 0; color: var(--muted); font-size: 12px; }
-  .top-status { margin-left: auto; text-align: right; white-space: nowrap; }
+  .top-status { flex: 0 0 auto; margin-left: auto; text-align: right; white-space: nowrap; }
   .clock-status { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
   #operator-clock { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
   #operator-date { color: var(--muted); font-size: 11px; }
   #connection { color: var(--warn); font-size: 13px; }
+  #connection.lost { color: var(--bad); font-weight: 700; }
+  #away-summary { display: none; margin: 8px 16px 0; padding: 8px 10px; border: 1px solid var(--warn); border-radius: 9px; background: #30291e; font-size: 13px; }
+  #away-summary.show { display: flex; gap: 8px; align-items: center; }
+  #away-summary button { margin-left: auto; }
   #model-strip { display: flex; align-items: center; gap: 12px; padding: 4px 16px; border-bottom: 1px solid var(--line); }
   #model-strip > strong { font-size: 13px; white-space: nowrap; }
   #model-buttons { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; flex: 1; min-width: 0; }
@@ -63,7 +83,7 @@
   .model-button small { display: block; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .model-button[data-status="ready"] small { color: var(--good); }
   .model-button[data-status="unavailable"] small, .model-button[data-status="mismatch"] small { color: var(--warn); }
-  .model-button[aria-expanded="true"] { border-color: var(--accent); background: #35485e; }
+  .model-button[aria-expanded="true"] { border-color: var(--accent); background: var(--selected); }
   #model-details { position: fixed; top: 126px; left: 12px; margin: 0; width: min(380px, calc(100vw - 24px)); max-height: calc(100dvh - 140px); z-index: 10; box-shadow: 0 12px 30px #0008; overflow: auto; }
   #model-details .panel-head { position: sticky; top: 0; background: var(--panel); }
   #model-details .panel-head button { margin-left: auto; }
@@ -89,7 +109,7 @@
   #mission-brief dt { color: var(--muted); }
   #mission-brief dd { margin: 0; overflow-wrap: anywhere; }
   #mission-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-  #workspace { min-height: 0; overflow: auto; padding: 12px; display: grid; gap: 12px;
+  #workspace { grid-row: 4; min-height: 0; overflow: auto; padding: 12px; display: grid; gap: 12px;
     grid-template-columns: minmax(0, 58fr) minmax(400px, 42fr);
     grid-template-rows: minmax(min-content, 7fr) minmax(min-content, 3fr); }
   #workspace.resources-expanded #telemetry { position: absolute; inset: calc(-1 * var(--telemetry-rise)) 0 0; height: auto; z-index: 1; }
@@ -97,48 +117,94 @@
   .panel-head { min-height: 44px; padding: 0 12px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); }
   .panel-head h2 { margin: 0; font-size: 15px; font-weight: 600; }
   .panel-head small { margin-left: auto; color: var(--muted); font-size: 12px; }
-  .quiet-button { height: 32px; min-height: 32px; align-self: center; font-size: 13px; font-weight: 600; white-space: nowrap; border: 1px solid var(--line); border-radius: 6px; padding: 4px 9px; background: #292f38; color: var(--text); }
+  .quiet-button { height: 32px; min-height: 32px; align-self: center; font-size: 13px; font-weight: 600; white-space: nowrap; border: 1px solid var(--line); border-radius: 8px; padding: 4px 9px; background: var(--panel); color: var(--text); }
   .quiet-button:not(:disabled):hover { border-color: var(--accent); }
-  .quiet-button[aria-pressed="true"], .quiet-button[aria-expanded="true"] { background: #35485e; border-color: var(--accent); }
-  #open-assistant { margin-left: auto; background: #35485e; border-color: var(--accent); }
-  .quiet-button.primary-action { height: 40px; min-height: 40px; font-size: 15px; padding: 6px 16px; border-width: 2px; border-color: #56657a; background: #313946; }
-  #open-assistant.primary-action { min-width: 88px; background: #35485e; border-color: var(--accent); }
+  .quiet-button[aria-pressed="true"], .quiet-button[aria-expanded="true"] { background: var(--selected); border-color: var(--accent); }
+  #open-assistant { margin-left: auto; background: var(--selected); border-color: var(--accent); }
+  .quiet-button.primary-action { height: 40px; min-height: 40px; font-size: 15px; padding: 6px 16px; border-width: 2px; border-color: var(--control); background: var(--panel2); }
+  #open-assistant.primary-action { min-width: 88px; background: var(--selected); border-color: var(--accent); }
   #audio-toggle.primary-action[data-state="off"] { border-color: var(--warn); background: rgba(239, 197, 128, 0.14); }
   #video-panel { grid-column: 1; grid-row: 1; display: grid; grid-template-rows: 44px minmax(200px, 1fr) auto; }
-  #video-wrap { contain: size; position: relative; min-height: 0; background: #171b20; }
+  #video-wrap { contain: size; position: relative; min-height: 0; background: #080f19; }
+  #video-wrap.all video#video { display: none; }
+  #video-wrap.all #camera-grid { display: grid; }
+  #video-wrap.all #video-note, #video-wrap.all #video-fullscreen { display: none; }
+  #video-panel:has(#video-wrap.all) { grid-template-rows: 44px minmax(200px, 1fr) auto auto; }
+  #camera-grid { position: absolute; inset: 0; display: none; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); gap: 8px; padding: 8px; }
+  .camera-tile { min-width: 0; position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 9px; background: #080f19; padding: 0; text-align: left; }
+  .camera-tile[data-alert="true"] { border-color: var(--warn); box-shadow: 0 0 0 2px #efc58088, 0 0 18px #efc58066; }
+  .camera-tile video { width: 100%; height: 100%; }
+  .camera-tile span { position: absolute; left: 8px; top: 8px; padding: 3px 7px; border-radius: 6px; background: #20252ce8; font-weight: 700; }
+  .camera-tile small { position: absolute; left: 8px; bottom: 8px; padding: 3px 7px; border-radius: 6px; background: #20252ce8; color: var(--muted); }
+  #grid-pager { display: none; justify-content: center; align-items: center; gap: 10px; padding: 6px 8px; border-top: 1px solid var(--line); background: var(--bg); }
+  #video-panel:has(#video-wrap.all) #grid-pager { display: flex; }
+  #grid-pager button { min-width: 48px; min-height: 44px; border-radius: 8px; }
+  #grid-page-label { min-width: 108px; text-align: center; padding: 8px 12px; border-radius: 8px; background: #20252ce8; font-weight: 700; }
+  #grid-page-label[data-alert="true"] { color: var(--warn); }
+  #latency-badge { position: absolute; left: 10px; top: 8px; display: none; padding: 4px 7px; border-radius: 6px; background: #20252ce8; font-size: 12px; }
+  #latency-badge.show { display: block; }
+  #zone-overlay { position: absolute; inset: 0; pointer-events: none; }
+  #zone-editor { position: fixed; inset: 0; z-index: 30; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 10px; padding: 12px; background: #0b0e12; }
+  #zone-editor[hidden] { display: none; }
+  #zone-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 2px 4px; }
+  #zone-head h2 { margin: 0 0 2px; font-size: 18px; }
+  #zone-step { font-size: 15px; }
+  #zone-step[data-tone="warn"] { color: var(--warn); font-weight: 700; }
+  #zone-count { flex: 0 0 auto; padding: 6px 14px; border: 2px solid var(--line); border-radius: 999px; font-size: 16px; font-weight: 700; }
+  #zone-count[data-full] { border-color: var(--warn); color: var(--warn); }
+  #zone-count.bump { animation: zone-bump .35s; }
+  @keyframes zone-bump { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+  #zone-stage { position: relative; place-self: center; max-width: 100%; max-height: 100%; aspect-ratio: var(--zone-aspect, 16 / 9); width: min(100%, calc((100dvh - 190px) * var(--zone-aspect, 1.7778))); touch-action: none; }
+  #zone-canvas, #zone-svg, #zone-handles { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 6px; }
+  #zone-canvas { background: #000; }
+  .zone-handle { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; display: grid; place-items: center; border: 3px solid #17202a; border-radius: 50%; background: #efc580; color: #17202a; font-weight: 800; font-size: 16px; box-shadow: 0 0 0 2px #efc580, 0 2px 8px #000a; cursor: grab; user-select: none; touch-action: none; }
+  #zone-toolbar { display: flex; gap: 10px; align-items: center; padding: 10px; border-radius: 10px; background: var(--bg); }
+  #zone-toolbar .spacer { flex: 1; }
+  #zone-toolbar button { min-height: 52px; min-width: 128px; padding: 0 18px; font-size: 16px; }
+  #zone-toolbar button:disabled { opacity: .4; }
+  #zone-done:not(:disabled) { border-color: var(--accent); background: var(--selected); }
   video { width: 100%; height: 100%; display: block; object-fit: contain; }
-  #video-wrap.inactive video { opacity: .25; }
+  #video-wrap.inactive > #video { opacity: .25; }
   #video-fullscreen { position: absolute; top: 8px; right: 8px; background: #20252ce8; color: var(--text); border: 1px solid var(--line); }
-  #video-wrap:fullscreen { width: 100vw; height: 100vh; background: #171b20; }
+  #video-wrap:fullscreen { width: 100vw; height: 100vh; background: #080f19; }
   #video-note { position: absolute; left: 10px; bottom: 8px; max-width: calc(100% - 20px); padding: 5px 8px; border-radius: 6px; background: #20252ce8; font-size: 12px; }
   #alerts { border-top: 1px solid var(--line); }
   #alerts summary { min-height: 44px; padding: 11px 12px; cursor: pointer; font-size: 13px; }
   #alerts[data-attention] summary { color: var(--warn); font-weight: 600; }
   #alert-list { margin: 0; padding: 0 12px 4px; list-style: none; max-height: 150px; overflow: auto; }
-  #alert-list li { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 0; font-size: 12px; border-top: 1px solid var(--line); }
+  #alert-list li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 4px 0; font-size: 12px; border-top: 1px solid var(--line); }
+  #alert-list .incident-main { flex: 1 1 220px; min-width: 220px; min-height: 48px; display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; align-items: center; padding: 4px; border: 1px solid transparent; border-radius: 8px; background: transparent; text-align: left; }
+  #alert-list .incident-main:hover { border-color: var(--accent); }
   #alert-list li:first-child { border-top: 0; }
-  #alert-list .incident-thumb { width: 56px; height: 40px; border-radius: 4px; object-fit: cover; background: #171b20; display: block; }
+  #alert-list .incident-thumb { width: 56px; height: 40px; border-radius: 4px; object-fit: cover; background: #080f19; display: block; }
   #alert-list .incident-copy { min-width: 0; }
-  #alert-list .incident-title { display: flex; gap: 6px; align-items: center; font-size: 13px; }
+  #alert-list .incident-title { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; }
   #alert-list .incident-state { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 9px; border: 1px solid currentColor; }
   #alert-list [data-incident="open"] .incident-state { color: var(--warn); }
   #alert-list [data-incident="acknowledged"] .incident-state, #alert-list [data-incident="snoozed"] .incident-state { color: var(--accent); }
   #alert-list [data-incident="closed"] { opacity: .65; }
   #alert-list [data-incident="closed"] .incident-state { color: var(--muted); }
-  #alert-list .incident-meta { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #alert-list .incident-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; align-items: center; }
-  #alert-list .incident-actions select { height: 28px; min-height: 28px; font-size: 12px; padding: 0 4px; }
-  .camera[data-alerts]::after { content: attr(data-alerts); margin-left: 6px; padding: 0 6px; border-radius: 9px; background: var(--warn); color: #171b20; font-size: 11px; font-weight: 700; vertical-align: top; }
-  #alert-toast { position: fixed; right: 16px; bottom: 16px; z-index: 50; max-width: 360px; padding: 10px 14px; border: 1px solid var(--warn); border-radius: 8px; background: #2b2a24; color: var(--text); font-size: 13px; text-align: left; cursor: pointer; box-shadow: 0 4px 16px #0008; }
+  #alert-list .incident-meta { color: var(--muted); white-space: normal; overflow-wrap: anywhere; }
+  #alert-list .incident-actions { flex: 0 1 auto; display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 6px; align-items: center; align-self: center; }
+  #alert-list .incident-actions select { height: 32px; min-height: 32px; width: auto; font-size: 12px; padding: 0 4px; }
+  .camera[data-alerts]::after { content: attr(data-alerts); position: absolute; top: 3px; right: 3px; min-width: 16px; padding: 0 4px; border-radius: 9px; background: var(--warn); color: #080f19; font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; }
+  .camera[data-alerts] { padding-right: 30px; }
+  #alert-toast { position: fixed; right: 16px; bottom: 16px; z-index: 50; max-width: 360px; padding: 10px 14px; border: 1px solid var(--warn); border-radius: 8px; background: #30291e; color: var(--text); font-size: 13px; text-align: left; cursor: pointer; box-shadow: 0 4px 16px #0008; }
   #alert-toast[hidden] { display: none; }
   #alert-list .dispatch { font-weight: 600; }
   #alert-list .dispatch[data-state="undelivered"], #alert-list .dispatch[data-state="retrying"] { color: var(--warn); }
   #alert-list .dispatch[data-state="delivered"] { color: var(--good); }
-  #alert-list button { height: 28px; min-height: 28px; }
-  #speech-line { padding: 0 12px 6px; font-size: 12px; color: var(--muted); min-height: 0; }
-  #speech-line:empty { display: none; }
-  #speech-line[data-mode="audio"] { color: var(--accent); }
-  #speech-line[data-mode="text"] { color: var(--warn); }
+  #alert-list button { height: 32px; min-height: 32px; }
+  #alert-list .ack-button { border-color: var(--warn); color: var(--text); background: rgba(239, 197, 128, 0.14); }
+  #alert-list .incident-actions .quiet-button:not(.ack-button), #alert-list .incident-actions select { background: var(--surface); color: var(--muted); }
+  #voice-controls { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  #voice-talk { flex:0 0 auto; min-height:44px; min-width:112px; white-space:nowrap; background:var(--accent); color:#10202a; border:2px solid var(--accent); font-weight:700; }
+  #voice-talk[aria-pressed="true"] { background:#943d36; color:white; }
+  #voice-status { font-size:12px; color:var(--muted); }
+  #speech-line, #assistant-speech-line { padding: 0 12px 6px; font-size: 12px; color: var(--muted); min-height: 0; }
+  #speech-line:empty, #assistant-speech-line:empty { display: none; }
+  #speech-line[data-mode="audio"], #assistant-speech-line[data-mode="audio"] { color: var(--accent); }
+  #speech-line[data-mode="text"], #assistant-speech-line[data-mode="text"] { color: var(--warn); }
   #alert-list li.empty { display: block; }
   #alert-error { margin: 0 12px 6px; padding: 6px 8px; border: 1px solid var(--bad); border-radius: 6px; color: var(--bad); font-size: 12px; }
   #alert-error[hidden], #alert-page[hidden] { display: none; }
@@ -149,7 +215,7 @@
   #telemetry-status { white-space: nowrap; }
   #telemetry-grid { padding: 8px 10px 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
   .resource { min-width: 0; text-align: left; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
-  .resource[aria-pressed="true"] { border-color: var(--accent); background: #35485e; }
+  .resource[aria-pressed="true"] { border-color: var(--accent); background: var(--selected); }
   .resource span, .resource strong, .resource small { display: block; }
   .resource span { color: var(--muted); font-size: 12px; }
   .resource strong { font-size: 21px; font-variant-numeric: tabular-nums; line-height: 1.3; }
@@ -185,16 +251,24 @@
   #track-summary { padding: 0 12px 8px; font-size: 13px; color: var(--muted); }
   #presence { display: none; padding: 8px 12px; color: var(--warn); background: #443c2f; }
   #presence.show { display: block; }
-  #alert-view { display: none; min-width: 0; overflow: hidden; min-height: 44px; padding: 4px 6px 4px 12px; align-items: center; gap: 8px; border-block: 1px solid var(--warn); background: #2b2a24; font-size: 13px; }
+  #alert-view { display: none; min-width: 0; overflow: hidden; min-height: 44px; padding: 4px 6px 4px 12px; align-items: center; gap: 8px; border-block: 1px solid var(--warn); background: #30291e; font-size: 13px; }
   #tracks-panel.alert-view #alert-view { display: flex; }
   #tracks-panel.alert-view #track-controls, #tracks-panel.alert-view #list-status, #tracks-panel.alert-view #subtotals { display: none; }
   #alert-view-copy { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #list-status { min-height: 44px; padding: 0 6px 0 12px; display: flex; align-items: center; gap: 4px; border-block: 1px solid var(--line); }
-  #people-only[aria-pressed="true"] { border-color: var(--accent); background: #35485e; }
+  #tracks-panel.stale::after, #telemetry.stale::after { content: "Stale · reconnecting"; position: absolute; top: 52px; right: 10px; z-index: 4; padding: 4px 8px; border: 1px solid var(--bad); border-radius: 7px; background: #3a2628; color: var(--bad); font-size: 12px; }
+  #view-toggle[aria-pressed="true"] { border-color: var(--accent); background: var(--selected); }
+  #tracks-panel.compact .track-grid { grid-template-columns: 1fr; gap: 4px; }
+  #tracks-panel.compact .track-card { display: grid; grid-template-columns: 64px minmax(0, 1fr); min-height: 66px; }
+  #tracks-panel.compact .crop { height: 64px; }
+  #tracks-panel.compact .track-copy { padding: 6px 8px; display: grid; grid-template-columns: 1fr auto; gap: 0 8px; }
+  #tracks-panel.compact .track-copy .track-id { color: var(--muted); font-size: 12px; }
+  #tracks-panel.compact .track-copy .track-seen, #tracks-panel.compact .track-copy .track-images, #tracks-panel.compact .camera-name { font-size: 12px; margin: 0; }
+  #people-only[aria-pressed="true"] { border-color: var(--accent); background: var(--selected); }
   #list-state { flex: 1; font-size: 12px; color: var(--muted); }
   #list-state[data-state="live"] { color: var(--good); }
   #list-state[data-state="paused"], #list-state[data-state="held"] { color: var(--warn); }
-  #apply-updates:not(:disabled) { background: #35485e; border-color: var(--accent); }
+  #apply-updates:not(:disabled) { background: var(--selected); border-color: var(--accent); }
   #subtotals { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
   .subtotal { font-size: 12px; }
   #track-scroll { min-height: 0; overflow: auto; padding: 10px; scrollbar-color: var(--line) transparent; overflow-anchor: none; }
@@ -216,6 +290,8 @@
   #drawer-head { display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-bottom: 1px solid var(--line); }
   #drawer-body { min-height: 0; overflow: auto; padding: 12px; }
   #large-crop { height: 46%; min-height: 190px; border-radius: 8px; }
+  #drawer-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+  #drawer-actions .quiet-button { min-height: 44px; }
   #candidate-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
   .candidate { min-height: 76px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 4px; overflow: hidden; }
   .candidate img { width: 100%; height: 58px; object-fit: contain; display: block; }
@@ -236,7 +312,7 @@
      camera shortcut rides on the label line instead of adding a row. */
   .scope-field { display: grid; grid-template-rows: 20px auto; gap: 3px; min-width: 0; }
   .field-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; height: 20px; font-size: 12px; white-space: nowrap; }
-  #use-viewed-camera { flex-shrink: 0; height: 20px; padding: 0 6px; border: 1px solid var(--accent); border-radius: 10px; background: #35485e; color: var(--text); font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; }
+  #use-viewed-camera { flex-shrink: 0; height: 20px; padding: 0 6px; border: 1px solid var(--accent); border-radius: 10px; background: var(--selected); color: var(--text); font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; }
   .field-head label { flex-shrink: 0; }
   #assistant-welcome { padding: 12px; }
   #assistant-welcome h3 { margin: 6px 0 8px; font-size: 21px; font-weight: 600; }
@@ -244,8 +320,8 @@
   .welcome-eyebrow { display: none; }
   .starter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   #start-explain { grid-column: 1 / -1; }
-  .starter-grid button { text-align: left; display: grid; gap: 4px; padding: 12px; min-height: 64px; border: 1px solid var(--line); border-radius: 10px; background: #293745; color: var(--text); cursor: pointer; }
-  .starter-grid button:hover { border-color: var(--accent); background: #324657; }
+  .starter-grid button { text-align: left; display: grid; gap: 4px; padding: 12px; min-height: 64px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel2); color: var(--text); cursor: pointer; }
+  .starter-grid button:hover { border-color: var(--accent); background: #25435b; }
   .starter-grid button strong { font-size: 15px; }
   .starter-grid button span { font-size: 12px; color: var(--muted); }
   #assistant-welcome .welcome-footnote { margin-top: 14px; font-size: 12px; }
@@ -267,9 +343,9 @@
   #assistant-panel.welcome #assistant-result-head { display: none; }
   #answer-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
   #answer-actions:empty { display: none; }
-  #answer-actions button { min-height: 44px; padding: 6px 10px; background: #293745; color: var(--text); border: 1px solid var(--line); border-radius: 20px; cursor: pointer; }
+  #answer-actions button { min-height: 44px; padding: 6px 10px; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 20px; cursor: pointer; }
   #answer-actions button:hover { border-color: var(--accent); }
-  #jump-latest { position: absolute; right: 20px; bottom: 166px; z-index: 2; background: #35485e; border-color: var(--accent); box-shadow: 0 3px 12px #0008; }
+  #jump-latest { position: absolute; right: 20px; bottom: 166px; z-index: 2; background: var(--selected); border-color: var(--accent); box-shadow: 0 3px 12px #0008; }
 
   #assistant-transcript { flex-shrink: 0; }
   .chat-turn { padding: 10px; border-bottom: 1px solid var(--line); }
@@ -310,7 +386,7 @@
   #search-availability { max-height: 20px; overflow: auto; }
   #search-timezone { display: none; }
   #assistant-editor-error { color: var(--warn); margin: 0; max-height: 40px; overflow: auto; font-size: 12px; }
-  #ask-submit { min-height: 48px; align-self: stretch; background: #35485e !important; border-color: var(--accent) !important; flex-shrink: 0; }
+  #ask-submit { min-height: 48px; align-self: stretch; background: var(--selected) !important; border-color: var(--accent) !important; flex-shrink: 0; }
   #assistant-output { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   #assistant-result-head { padding: 8px 10px 0; max-height: calc(100% - 144px); min-height: 0; overflow: auto; flex-shrink: 1; }
   #assistant-submitted { margin: 0 0 8px; color: var(--muted); }
@@ -342,15 +418,104 @@
     #telemetry .panel-head h2 { font-size: 13px; }
     #telemetry-status { font-size: 11px; }
   }
+
+  /* Operator visual system: strong actions, quiet chrome, unchanged workspace geometry. */
+  body { background: radial-gradient(ellipse at 5% 0%, #163247 0, var(--bg) 55%); }
+  header { background: #101c2bee; border-bottom-color: #2a4058; }
+  .panel { box-shadow: 0 6px 20px #02071230; }
+  .panel-head, #assistant-head { background: linear-gradient(110deg, #1b2c42, #142133); }
+  .panel-head h2 { letter-spacing: .15px; font-weight: 650; }
+  .panel-head small { color: var(--muted); }
+  .camera { background: var(--surface); text-align: left; border-color: var(--control); }
+  .camera[aria-pressed="true"] { box-shadow: inset 0 -2px 0 var(--accent); }
+  .camera.up small::before { content: ""; display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: currentColor; margin-right: 5px; vertical-align: middle; }
+  #model-strip { background: #0e1928; border-bottom-color: #293d55; }
+  #model-strip > strong { color: var(--muted); font-weight: 550; }
+  .model-button { background: #132135; border-color: #354b66; border-radius: 9px; }
+  .model-button strong { font-weight: 600; }
+  .model-button[data-status="ready"] { box-shadow: inset 3px 0 0 #639f8c; }
+  .model-button[data-status="unavailable"], .model-button[data-status="mismatch"] { box-shadow: inset 3px 0 0 var(--warn); }
+  #mission-toggle, #rules-toggle { background: var(--surface); border-color: var(--control); font-weight: 550; }
+  #audio-toggle.primary-action[data-state="off"] { background: #29291f; border-color: #a28b5f; color: #f4d49e; }
+  #audio-toggle[data-state="on"] { background: #18382f; border-color: #5d9e85; color: #b6eed3; }
+  #voice-talk { background: linear-gradient(135deg, #92efdc, #64cedf); box-shadow: 0 2px 12px #56d5dc24; border-color: #9ae9e6; }
+  #voice-talk[aria-pressed="true"] { background: #933d4d; border-color: #ffb2bc; box-shadow: 0 0 0 2px #ffacb425; }
+  #open-assistant.primary-action, #rule-submit.primary-action { background: var(--selected); border-color: #6cbabb; color: #dcfffc; }
+  #voice-talk, #open-assistant { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+  #video-wrap { background: #080f19; }
+  #video-note, #video-fullscreen, .camera-tile span, .camera-tile small { background: #101c2bee; border-color: #456079; }
+  #alerts { background: #111d2c; }
+  #alerts[data-attention] summary { background: linear-gradient(90deg, #393022, #1b2634); }
+  #alert-list [data-incident="open"] .incident-main { box-shadow: inset 2px 0 var(--warn); }
+  #alert-list .ack-button { background: #4b3c23; border-color: #b99a60; color: #fff0d2; }
+  #alert-list .incident-actions .quiet-button:not(.ack-button), #alert-list .incident-actions select { color: var(--text); }
+  #track-controls, #list-status { background: var(--surface); }
+  #track-controls select, #ask-form select, #ask-form input, #ask-form textarea, #rule-form select, #rule-form input, #mission-body input { border-color: var(--control); }
+  #track-summary { background: var(--surface); }
+  .track-card { background: #192a3d; border-color: #405670; border-radius: 10px; }
+  .track-card:hover, .candidate:hover { border-color: var(--accent); }
+  .track-card[aria-current="true"] { box-shadow: inset 0 0 0 1px var(--accent); border-color: var(--accent); }
+  .track-copy strong { font-weight: 650; letter-spacing: .1px; }
+  .crop { background: #0c1725; }
+  .resource { background: #102030; border-color: #3b526b; }
+  .resource[aria-pressed="true"] { background: #193d4b; box-shadow: inset 0 2px 0 var(--accent); }
+  .resource strong { letter-spacing: -.4px; }
+  .resource meter { background: #344d65; }
+  #chart .gridline { stroke: #30455d; }
+  #assistant-panel { background: #101c2c; }
+  #assistant-head strong { font-size: 16px; letter-spacing: -.2px; }
+  #assistant-context-bar { background: #142638; border-bottom: 1px solid #2b4057; }
+  #assistant-welcome { background: radial-gradient(ellipse at top left, #1a3b4a, transparent 80%); }
+  #assistant-welcome h3 { letter-spacing: -.5px; font-weight: 650; }
+  .starter-grid button { background: #192d42; border-color: #48627b; box-shadow: inset 0 1px #ffffff08; }
+  .starter-grid button:hover { background: #204456; }
+  .starter-grid button strong { color: #e2ffff; }
+  #assistant-panel #ask-form { background: #17293c; border-top-color: #466179; box-shadow: 0 -4px 14px #030b171c; }
+  #ask-text { background: #0e1d2e !important; border-color: #6c91a9 !important; }
+  #ask-text::placeholder { color: #b2c9d9; }
+  #ask-submit { background: var(--selected) !important; color: #defffc; border-radius: 9px; font-weight: 650; }
+  #assistant-answer, .chat-answer { font-size: 15px; line-height: 1.6; }
+  #assistant-submitted, .chat-question { color: #b6edec; font-weight: 550; }
+  .chat-turn { background: #132337; border-bottom-color: #30465e; }
+  .chat-turn:nth-child(even) { background: #172a3f; }
+  #assistant-speech-line:not(:empty) { border-left: 2px solid var(--accent); background: #1a3445; padding: 6px 8px; margin-bottom: 8px; border-radius: 0 6px 6px 0; }
+  #assistant-speech-line[data-mode="text"] { border-left-color: var(--warn); background: #30291e; }
+  #rules-panel, #mission-panel, #model-details, #drawer { box-shadow: 0 14px 45px #02071299; border-color: #53728b; }
+  #rule-trigger label { background: var(--surface); border-color: var(--control); }
+  #rule-trigger label:has(:checked) { background: var(--selected); box-shadow: inset 0 0 0 1px var(--accent); }
+  #rule-area { padding: 8px 10px; border: 1px solid #3e5770; border-radius: 9px; background: #102234; }
+  #rule-preview { padding: 8px 10px; background: #173d45; border-left: 3px solid var(--accent); border-radius: 0 7px 7px 0; color: #d9f5f2; }
+  #rule-list li { padding: 10px 0; }
+  #rule-list strong { font-weight: 600; }
+  #rule-list small { margin-top: 3px; }
+  #rule-advanced summary { color: #cadbea; }
+  #mission-brief dt { color: #a7dcda; }
+  #mission-brief dd { line-height: 1.5; }
+  * { scrollbar-width: thin; scrollbar-color: #536d86 #111e2d; }
+  @media (prefers-reduced-motion: no-preference) {
+    button, select, textarea { transition: background-color .12s ease, border-color .12s ease, box-shadow .12s ease; }
+  }
+  #voice-talk::before { content: ""; display: inline-block; width: 17px; height: 17px; flex-shrink: 0; vertical-align: -3px; background: currentColor; mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%229%22%20y%3D%222%22%20width%3D%226%22%20height%3D%2212%22%20rx%3D%223%22/%3E%3Cpath%20d%3D%22M5%2010v2a7%207%200%200%200%2014%200v-2M12%2019v3m-4%200h8%22/%3E%3C/svg%3E") center / contain no-repeat; }
+  #open-assistant::before, #assistant-head strong::before { content: ""; display: inline-block; width: 17px; height: 17px; flex-shrink: 0; vertical-align: -3px; background: currentColor; mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M21%2011a9%209%200%200%201-9%209H4l-3%203V11a10%2010%200%200%201%2020%200Z%22/%3E%3Cpath%20d%3D%22M6%209h10M6%2013h7%22/%3E%3C/svg%3E") center / contain no-repeat; }
+  #video-heading::before { content: ""; display: inline-block; width: 17px; height: 17px; flex-shrink: 0; vertical-align: -3px; background: currentColor; mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%222%22%20y%3D%225%22%20width%3D%2214%22%20height%3D%2214%22%20rx%3D%223%22/%3E%3Cpath%20d%3D%22m16%2010%206-4v12l-6-4%22/%3E%3C/svg%3E") center / contain no-repeat; }
+  #track-title::before { content: ""; display: inline-block; width: 17px; height: 17px; flex-shrink: 0; vertical-align: -3px; background: currentColor; mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%223%22%20y%3D%223%22%20width%3D%2218%22%20height%3D%2218%22%20rx%3D%223%22/%3E%3Ccircle%20cx%3D%229%22%20cy%3D%229%22%20r%3D%222%22/%3E%3Cpath%20d%3D%22m3%2017%205-4%204%203%204-6%205%207%22/%3E%3C/svg%3E") center / contain no-repeat; }
+  #telemetry-heading::before { content: ""; display: inline-block; width: 17px; height: 17px; flex-shrink: 0; vertical-align: -3px; background: currentColor; mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M2%2012h4l3-8%206%2016%203-8h4%22/%3E%3C/svg%3E") center / contain no-repeat; }
+  #video-heading::before, #track-title::before, #telemetry-heading::before, #assistant-head strong::before { color: var(--accent); margin-right: 8px; }
+  #voice-talk[aria-pressed="true"]::before { mask: none; width: 12px; height: 12px; border-radius: 2px; }
+  #start-people strong::before { content: ""; display: inline-block; width: 16px; height: 16px; margin-right: 7px; vertical-align: -2px; background: var(--accent); mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2210%22%20cy%3D%2210%22%20r%3D%226%22/%3E%3Cpath%20d%3D%22m15%2015%206%206%22/%3E%3C/svg%3E") center / contain no-repeat; }
+  #start-mission strong::before { content: ""; display: inline-block; width: 16px; height: 16px; margin-right: 7px; vertical-align: -2px; background: var(--accent); mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M5%2022V3m0%200c5-5%209%205%2015%200v11c-6%205-10-5-15%200%22/%3E%3C/svg%3E") center / contain no-repeat; }
+  #start-explain strong::before { content: ""; display: inline-block; width: 16px; height: 16px; margin-right: 7px; vertical-align: -2px; background: var(--accent); mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%229%22/%3E%3Cpath%20d%3D%22m16%208-3%205-5%203%203-5%205-3Z%22/%3E%3C/svg%3E") center / contain no-repeat; }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
-    <div class="brand"><strong>Handheld ops</strong><span>Live evidence console</span></div>
+    <div class="brand"><strong>Field console</strong><span>LIVE OPERATIONS</span></div>
     <nav id="cameras" aria-label="Camera selection"></nav>
+    <button id="voice-talk" type="button" class="quiet-button primary-action" aria-pressed="false" aria-controls="assistant-panel" title="Tap to start a voice question; tap again to send">Talk</button>
     <button id="mission-toggle" class="quiet-button primary-action" type="button" aria-controls="mission-panel" aria-expanded="false">Mission</button>
-    <button id="rules-toggle" class="quiet-button primary-action" type="button" aria-controls="rules-panel" aria-expanded="false">Rules</button>
+    <button id="rules-toggle" class="quiet-button primary-action" type="button" aria-controls="rules-panel" aria-expanded="false">Manage alerts</button>
+    <button id="stop-speaking" class="quiet-button" type="button" hidden>Stop speaking</button>
     <button id="audio-toggle" class="quiet-button primary-action" type="button" aria-pressed="false" data-state="off" title="Browsers play speech only after a tap">Audio off</button>
     <div class="top-status">
       <div class="clock-status"><time id="operator-clock" aria-label="Current local time"></time><div id="connection">connecting</div></div>
@@ -362,6 +527,7 @@
     <strong>Models &amp; devices</strong>
     <div id="model-buttons"></div>
   </section>
+  <div id="away-summary" role="status"></div>
   <aside id="model-details" class="panel" aria-labelledby="model-title" hidden>
     <div class="panel-head"><h2 id="model-title">Model details</h2><button id="close-model-details" class="quiet-button" type="button">Close</button></div>
     <div id="model-detail-body">
@@ -398,15 +564,33 @@
     </div>
   </aside>
   <aside id="rules-panel" class="panel" aria-labelledby="rules-title" hidden>
-    <div class="panel-head"><h2 id="rules-title">Alert rules</h2><button id="close-rules" class="quiet-button" type="button">Close</button></div>
+    <div class="panel-head"><h2 id="rules-title">Manage alerts</h2><button id="close-rules" class="quiet-button" type="button">Close</button></div>
     <div id="rules-body">
       <form id="rule-form">
-        <label>Object type<select id="rule-class"></select></label>
+        <fieldset id="rule-trigger"><legend>When should I be alerted?</legend>
+          <label><input type="radio" name="rule-kind" value="appears" checked> Appears</label>
+          <label><input type="radio" name="rule-kind" value="dwell"> Stays too long</label>
+        </fieldset>
         <label>Camera<select id="rule-camera"></select></label>
-        <label>Min confidence<input id="rule-confidence" type="number" min="0" max="1" step="0.05" placeholder="any"></label>
-        <label>Speech cooldown (s)<input id="rule-cooldown" type="number" min="5" max="3600" step="1" value="60"></label>
-        <label class="rule-speak"><input id="rule-speak" type="checkbox" checked> Announce by speech</label>
-        <button id="rule-submit" class="quiet-button" type="submit">Add rule</button>
+        <label>Watch for<select id="rule-class"></select></label>
+        <label id="rule-duration" hidden>Stays for<select id="rule-duration-choice">
+          <option value="10">10 seconds</option><option value="30" selected>30 seconds</option>
+          <option value="60">1 minute</option><option value="custom">Custom</option>
+        </select></label>
+        <label id="rule-custom-duration" hidden>Seconds<input id="rule-dwell" type="number" min="1" max="3600" step="1" value="30"></label>
+        <div id="rule-area"><strong>Area</strong><p id="zone-summary">Whole camera view</p>
+          <button id="rule-draw-zone" class="quiet-button" type="button">Draw an area</button>
+          <button id="rule-remove-zone" class="quiet-button" type="button" hidden>Remove area</button>
+        </div>
+        <details id="rule-advanced"><summary>More options</summary><div>
+          <label>Minimum confidence<input id="rule-confidence" type="number" min="0" max="1" step="0.05" placeholder="Any confidence"></label>
+          <label>Speech cooldown (seconds)<input id="rule-cooldown" type="number" min="5" max="3600" step="1" value="60"></label>
+          <label>Active from<input id="rule-active-start" type="time"></label>
+          <label>Active to<input id="rule-active-end" type="time"></label>
+          <label class="rule-speak"><input id="rule-speak" type="checkbox" checked> Announce by speech</label>
+        </div></details>
+        <p id="rule-preview" aria-live="polite"></p>
+        <button id="rule-submit" class="quiet-button primary-action" type="submit">Create alert</button>
         <button id="rule-cancel-edit" class="quiet-button" type="button" hidden>Cancel edit</button>
       </form>
       <p id="rules-status" role="status">A rule fires once per tracked object, not once per frame.</p>
@@ -420,9 +604,13 @@
       </div>
       <div id="video-wrap" class="inactive">
         <video id="video" autoplay muted playsinline></video>
+        <div id="camera-grid" aria-label="All cameras video grid"></div>
+        <div id="latency-badge"></div>
+        <svg id="zone-overlay" aria-hidden="true"></svg>
         <button id="video-fullscreen" class="quiet-button" type="button" aria-label="Enter video fullscreen" aria-pressed="false">Fullscreen</button>
         <div id="video-note" role="status">Select a camera.</div>
       </div>
+      <div id="grid-pager"><button id="grid-prev" class="quiet-button" type="button" aria-label="Previous camera page">‹</button><span id="grid-page-label"></span><button id="grid-next" class="quiet-button" type="button" aria-label="Next camera page">›</button></div>
       <details id="alerts">
         <summary id="alert-summary">Alerts · No active alerts</summary>
         <div id="speech-line" role="status"></div>
@@ -483,6 +671,7 @@
         <span id="list-state" role="status">Live list</span>
         <button id="people-only" hidden class="quiet-button" type="button" aria-pressed="false">Priority only</button>
         <button id="apply-updates" class="quiet-button" disabled>Updates available</button>
+        <button id="view-toggle" class="quiet-button" type="button" aria-pressed="false">Compact</button>
         <button id="pause-updates" class="quiet-button" type="button" aria-pressed="false">Pause</button>
       </div>
       <div id="track-scroll"><div class="track-grid"></div></div>
@@ -497,9 +686,11 @@
           <div id="assistant-context-bar"><span id="conversation-note" role="status">Ready when you are</span></div>
           <form id="ask-form">
             <div id="search-entry">
-              <textarea id="ask-text" rows="2" maxlength="500" aria-label="Your question" placeholder="Ask a question…"></textarea>
+              <textarea id="ask-text" rows="2" maxlength="500" aria-label="Your question" placeholder="Ask about your cameras or mission…"></textarea>
               <button id="ask-submit" class="quiet-button" type="submit">Search</button>
             </div>
+            <div id="voice-controls">
+              <button id="voice-cancel" class="quiet-button" type="button" hidden>Cancel</button><span id="voice-status" role="status"></span></div>
             <div id="search-fields">
               <div class="scope-field"><div class="field-head"><label for="search-camera">Camera scope</label><button id="use-viewed-camera" type="button" hidden>Use on-screen camera</button></div><select id="search-camera"></select></div>
               <label>Answer mode<select id="assistant-mode"><option value="auto">Ask anything</option><option value="general">General chat</option></select></label>
@@ -527,7 +718,7 @@
             <div id="assistant-welcome">
               <span class="welcome-eyebrow">YOUR FIELD ASSISTANT</span>
               <h3>What do you need to know?</h3>
-              <p>Choose a starting point, or type your question below.</p>
+              <p>Ask about camera records, your mission, or how to use this console.</p>
               <div class="starter-grid">
                 <button id="start-people" hidden type="button"><strong>Find priority objects</strong><span>Recorded tracks · last 10 minutes</span></button>
                 <button id="start-mission" type="button"><strong>Mission objective</strong><span>Use the loaded mission documents</span></button>
@@ -540,6 +731,7 @@
               <p id="assistant-submitted"></p>
               <div id="assistant-answer" role="status">Ask about this application, your mission, or recorded objects. Try “What can you do?”</div>
               <div id="assistant-progress" role="status"></div>
+              <div id="assistant-speech-line" role="status"></div>
               <div id="answer-actions" aria-label="Follow-up actions"></div>
               <div id="assistant-scope"></div>
               <div id="assistant-warnings" role="status"></div>
@@ -564,6 +756,7 @@
         <div id="drawer-body">
           <div id="large-crop" class="crop missing">No stored image</div>
           <dl id="drawer-detail"></dl>
+          <div id="drawer-actions"><button id="drawer-ask" class="quiet-button" type="button">Ask about this object</button><button id="drawer-play" class="quiet-button" type="button" hidden>Play</button></div>
           <div id="candidate-list"></div>
         </div>
       </aside>
@@ -572,6 +765,11 @@
 </div>
 <div id="orientation">Rotate to landscape. This console is designed as one fixed operator screen.</div>
 
+<div id="zone-editor" hidden role="dialog" aria-labelledby="zone-title">
+  <div id="zone-head"><div><h2 id="zone-title">Draw zone</h2><div id="zone-step" role="status"></div></div><span id="zone-count"></span></div>
+  <div id="zone-stage"><canvas id="zone-canvas"></canvas><svg id="zone-svg"></svg><div id="zone-handles"></div></div>
+  <div id="zone-toolbar"><button id="zone-cancel" class="quiet-button" type="button">✕ Cancel</button><span class="spacer"></span><button id="zone-undo" class="quiet-button" type="button">↶ Undo point</button><button id="zone-clear" class="quiet-button" type="button">Clear all</button><button id="zone-done" class="quiet-button" type="button">✓ Use this area</button></div>
+</div>
 <script>
 const $ = (id) => document.getElementById(id);
 const state = {
@@ -583,10 +781,20 @@ const state = {
   resource: "cpu", trackSignature: "", requestVersion: 0,
   models: [], selectedModel: null, modelsUnavailable: false,
   mission: null, rules: null, speech: null, audioOn: false, audio: null, playingId: null, playback: null, incidentCounts: null, alertsExpanded: false, editingRule: null,
+  gridPage: 0, gridWheps: new Map(), evidenceView: storeGet("operator.evidenceView") || "cards",
+  drawerCandidates: [], drawerCandidateIndex: 0, replayTimer: null, connectionLost: false, latencyTimer: null,
+  awayChecked: false, zoneDraft: null,
   assistantToken: null, assistantBusy: false, assistantPrevious: null,
   assistantAnswer: null, assistantContext: null, assistantPages: new Map(),
   assistantReturn: false, assistantScroll: 0, assistantOptions: [], assistantAvailability: [], priorityClasses: [],
 };
+
+function storeSet(key, value) { try { localStorage.setItem(key, value); } catch (_) {} }
+function storeGet(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
+
+function markActive() { storeSet("operator.lastActive", String(Date.now())); }
+for (const event of ["pointerdown", "keydown", "touchstart"]) document.addEventListener(event, markActive, {passive: true});
+document.addEventListener("visibilitychange", () => { if (document.hidden) markActive(); else showAwaySummary(); });
 
 async function api(path) {
   const response = await fetch(path, {headers: {accept: "application/json"}});
@@ -597,11 +805,12 @@ async function api(path) {
   return body.data;
 }
 
-async function postApi(path, payload) {
+async function postApi(path, payload, options = {}) {
   const response = await fetch(path, {
     method: "POST",
     headers: {"content-type": "application/json", accept: "application/json"},
     body: JSON.stringify(payload),
+    ...options,
   });
   const body = await response.json();
   if (!response.ok || body.error) {
@@ -923,11 +1132,111 @@ function renderCameras() {
       ? "Required source has not delivered frames. Check its publisher and connection; Backend retries automatically."
       : "";
   }
+  markGridPages();
   [...nav.children].filter((node) => !choices.some((s) => s.stream_id === node.dataset.stream))
     .forEach((node) => node.remove());
+  markTabOverflow();
 }
 
+function markTabOverflow() {
+  const nav = $("cameras");
+  nav.toggleAttribute("data-overflow", nav.scrollLeft + nav.clientWidth < nav.scrollWidth - 2);
+}
+$("cameras").addEventListener("scroll", markTabOverflow, {passive: true});
+window.addEventListener("resize", markTabOverflow);
+
+function openIncidentStreams() {
+  return new Set(state.incidents.filter(i => i.state === "open").map(i => i.stream_id));
+}
+function markGridPages() {
+  const open = openIncidentStreams();
+  for (const tile of $("camera-grid").children) tile.dataset.alert = String(open.has(tile.dataset.stream));
+  const label = $("grid-page-label");
+  if (label) label.dataset.alert = String(state.streams.slice(state.gridPage * 4, state.gridPage * 4 + 4).some(s => open.has(s.stream_id)));
+}
+function gridPageCount() { return Math.max(1, Math.ceil(state.streams.length / 4)); }
+function renderCameraGrid() {
+  const grid = $("camera-grid");
+  const open = openIncidentStreams();
+  const total = state.streams.length;
+  state.gridPage = Math.min(state.gridPage, gridPageCount() - 1);
+  const start = state.gridPage * 4, page = state.streams.slice(start, start + 4);
+  const wanted = new Set(page.map(s => s.stream_id));
+  for (const [id, current] of state.gridWheps) if (!wanted.has(id)) { clearTimeout(current.retryTimer); releaseWhep(current); state.gridWheps.delete(id); }
+  for (const tile of [...grid.children]) if (!wanted.has(tile.dataset.stream)) tile.remove();
+  for (const [index, stream] of page.entries()) {
+    const existing = [...grid.children].find(tile => tile.dataset.stream === stream.stream_id);
+    if (existing) {
+      existing.querySelector("span").textContent = stream.display_name;
+      existing.setAttribute("aria-label", "Open " + stream.display_name);
+      if (grid.children[index] !== existing) grid.insertBefore(existing, grid.children[index] || null);
+      continue;
+    }
+    const tile = document.createElement("button"); tile.type = "button"; tile.className = "camera-tile"; tile.dataset.stream = stream.stream_id;
+    tile.dataset.alert = String(open.has(stream.stream_id)); tile.setAttribute("aria-label", "Open " + stream.display_name);
+    const video = document.createElement("video"); video.autoplay = true; video.muted = true; video.playsInline = true;
+    const name = document.createElement("span"); name.textContent = stream.display_name;
+    const note = document.createElement("small"); note.textContent = "Connecting…";
+    tile.append(video, name, note); tile.onclick = () => selectCamera(stream.stream_id); grid.insertBefore(tile, grid.children[index] || null);
+    attachGridWhep(stream, video, note);
+  }
+  $("grid-pager").hidden = gridPageCount() <= 1;
+  $("grid-prev").disabled = state.gridPage <= 0; $("grid-next").disabled = state.gridPage >= gridPageCount() - 1;
+  $("grid-page-label").textContent = total ? `${start + 1}–${Math.min(start + 4, total)} of ${total}` : "No cameras";
+  markGridPages();
+}
+async function attachGridWhep(stream, video, note, retry = false) {
+  const previous = state.gridWheps.get(stream.stream_id);
+  if (state.whepLeaving || (previous && !retry)) return;
+  if (previous) clearTimeout(previous.retryTimer);
+  const current = {stream, resource: null, abort: new AbortController(), pc: null, video, note};
+  state.gridWheps.set(stream.stream_id, current);
+  try {
+    const pc = current.pc = new RTCPeerConnection({bundlePolicy: "max-bundle"});
+    pc.addTransceiver("video", {direction: "recvonly"});
+    pc.ontrack = event => {
+      if (state.gridWheps.get(stream.stream_id) !== current || current.retrying) return;
+      video.srcObject = event.streams[0];
+      event.track.onended = () => retryGridWhep(current);
+      event.track.onmute = () => { current.mediaTimer ||= setTimeout(() => retryGridWhep(current), 10000); };
+      event.track.onunmute = () => { clearTimeout(current.mediaTimer); current.mediaTimer = null; };
+      if (event.track.muted) event.track.onmute();
+    };
+    pc.onconnectionstatechange = () => {
+      if (state.gridWheps.get(stream.stream_id) !== current) return;
+      if (pc.connectionState === "connected") { clearTimeout(current.timeout); note.textContent = "Connected"; }
+      if (["failed", "closed", "disconnected"].includes(pc.connectionState)) retryGridWhep(current);
+    };
+    current.timeout = setTimeout(() => retryGridWhep(current), 15000);
+    await pc.setLocalDescription(await pc.createOffer());
+    const endpoint = new URL(stream.whep_path, location.origin);
+    const response = await fetch(endpoint, {method:"POST", headers:{"content-type":"application/sdp"}, body:pc.localDescription.sdp, signal:current.abort.signal});
+    const resource = response.headers.get("location"); if (resource) current.resource = new URL(resource, endpoint).href;
+    if (state.gridWheps.get(stream.stream_id) !== current || current.retrying) {
+      current.cleanup = null;
+      await releaseWhep(current); return;
+    }
+    if (!response.ok) throw new Error("Video unavailable");
+    const answer = await response.text();
+    if (state.gridWheps.get(stream.stream_id) !== current || current.retrying) return;
+    await pc.setRemoteDescription({type:"answer", sdp:answer});
+  } catch (_) { if (state.gridWheps.get(stream.stream_id) === current) retryGridWhep(current); }
+}
+function retryGridWhep(current) {
+  if (state.whepLeaving || current.retrying || state.gridWheps.get(current.stream.stream_id) !== current) return;
+  current.retrying = true;
+  current.note.textContent = "Reconnecting…"; releaseWhep(current);
+  current.retryTimer = setTimeout(() => attachGridWhep(current.stream, current.video, current.note, true), 2000);
+}
+async function detachGridWheps() {
+  for (const current of state.gridWheps.values()) { clearTimeout(current.retryTimer); releaseWhep(current); }
+  state.gridWheps.clear(); $("camera-grid").replaceChildren();
+}
+$("grid-prev").onclick = () => { if (state.gridPage > 0) { state.gridPage--; renderCameraGrid(); } };
+$("grid-next").onclick = () => { if (state.gridPage < gridPageCount() - 1) { state.gridPage++; renderCameraGrid(); } };
+
 function releaseWhep(current) {
+  current.retrying = true; // Closing/aborting must not start another reconnect.
   clearTimeout(current.timeout);
   clearTimeout(current.disconnectTimer);
   clearTimeout(current.mediaTimer);
@@ -937,19 +1246,38 @@ function releaseWhep(current) {
     if (current.resource) {
       try { await fetch(current.resource, {method: "DELETE", signal: AbortSignal.timeout(2000), keepalive: true}); } catch (_) {}
     }
-    current.pc.close();
+    current.pc?.close();
   })();
   return current.cleanup;
 }
 
 async function detachWhep() {
   ++state.whepSerial;
+  stopLatency();
   const previous = state.whep;
   state.whep = null;
   $("video").srcObject = null;
   if (!previous) return;
   clearTimeout(previous.retryTimer);
   await releaseWhep(previous);
+}
+function stopLatency() { clearInterval(state.latencyTimer); state.latencyTimer = null; $("latency-badge").classList.remove("show"); }
+function startLatency(current) {
+  stopLatency();
+  const badge = $("latency-badge");
+  state.latencyTimer = setInterval(async () => {
+    if (state.whep !== current || !current.pc?.getStats) return stopLatency();
+    try {
+      const stats = await current.pc.getStats(); let jitter = null, rtt = 0;
+      stats.forEach(report => {
+        if (report.type === "inbound-rtp" && report.kind === "video" && report.jitterBufferEmittedCount) jitter = report.jitterBufferDelay / report.jitterBufferEmittedCount;
+        if (report.type === "candidate-pair" && (report.nominated || report.state === "succeeded") && report.currentRoundTripTime) rtt = Math.max(rtt, report.currentRoundTripTime / 2);
+      });
+      if (jitter == null && !rtt) return badge.classList.remove("show");
+      badge.textContent = "≈ " + Math.round((Number(jitter || 0) + rtt) * 1000) + " ms delay (receiver est.)";
+      badge.classList.add("show");
+    } catch { badge.classList.remove("show"); }
+  }, 1000);
 }
 
 function retryWhep(current, reason) {
@@ -1008,6 +1336,7 @@ async function attachWhep(stream, retry = false) {
         clearTimeout(current.disconnectTimer); current.disconnectTimer = null;
         state.whepFailures = 0;
         note.textContent = stream.display_name + ": Connected";
+        startLatency(current);
       }
     };
     await pc.setLocalDescription(await pc.createOffer());
@@ -1059,6 +1388,13 @@ async function attachWhep(stream, retry = false) {
 
 function resumeWhep() {
   if (state.whepLeaving || document.hidden) return;
+  if (state.selected === "all") {
+    renderCameraGrid();
+    for (const current of state.gridWheps.values()) {
+      if (current.retrying) attachGridWhep(current.stream, current.video, current.note, true);
+    }
+    return;
+  }
   const stream = state.streams.find(item => item.stream_id === state.selected);
   if (stream && (!state.whep || state.whep.retryTimer || state.whep.pc.connectionState !== "connected")) {
     attachWhep(stream);
@@ -1066,7 +1402,7 @@ function resumeWhep() {
 }
 window.addEventListener("online", resumeWhep);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) resumeWhep(); });
-window.addEventListener("pagehide", () => { state.whepLeaving = true; detachWhep(); });
+window.addEventListener("pagehide", () => { state.whepLeaving = true; detachWhep(); detachGridWheps(); });
 window.addEventListener("pageshow", () => { state.whepLeaving = false; resumeWhep(); });
 
 function selectCamera(streamId, firstLoad = false) {
@@ -1074,17 +1410,23 @@ function selectCamera(streamId, firstLoad = false) {
   if (!firstLoad && compactAssistant()) closeAssistant(false);
   if (state.drawerTrack) closeDrawer();
   state.selected = streamId;
+  if (!firstLoad) storeSet("operator.selectedCamera", streamId);
   updateAssistantCameraCue();
   state.held = false;
   $("track-scroll").scrollTop = 0;
   renderCameras();
   renderTracks(true);
+  renderZoneOverlay();
   if (streamId === "all") {
     detachWhep();
-    $("video-wrap").classList.add("inactive");
-    $("video-note").textContent = "All cameras selected. Choose one camera for its live stream.";
+    $("video-wrap").classList.remove("inactive");
+    $("video-wrap").classList.add("all");
+    $("video-note").textContent = "All cameras selected. Live grid shows enabled cameras.";
+    renderCameraGrid();
     return;
   }
+  detachGridWheps();
+  $("video-wrap").classList.remove("all");
   const stream = state.streams.find((item) => item.stream_id === streamId);
   if (!stream) return;
   if (!firstLoad || !state.whep) {
@@ -1146,6 +1488,33 @@ function visibleTracks() {
   });
 }
 
+function showAwaySummary() {
+  if (state.awayChecked) return;
+  const last = Number(storeGet("operator.lastActive") || 0);
+  if (!last || Date.now() - last < 5 * 60 * 1000) return;
+  state.awayChecked = true;
+  const box = $("away-summary");
+  const incidents = state.incidents.filter(i => Date.parse(i.opened_utc || i.last_match_utc) > last);
+  const counts = new Map();
+  for (const result of Object.values(state.recent)) for (const track of result?.tracks || []) {
+    if (Date.parse(track.last_observed_utc) > last) counts.set(track.class_label, (counts.get(track.class_label) || 0) + 1);
+  }
+  const trackText = [...counts].map(([label, count]) => `at least ${count} ${titleCase(label)}`).join(", ") || "no new tracks in loaded history";
+  box.replaceChildren();
+  const text = document.createElement("span");
+  text.textContent = `While you were away: ${incidents.length} new alert${incidents.length === 1 ? "" : "s"}; ${trackText}.`;
+  const alerts = document.createElement("button"); alerts.className = "quiet-button"; alerts.type = "button"; alerts.textContent = "View";
+  alerts.onclick = () => { if (incidents[0]) viewIncident(incidents[0]); else { selectCamera("all"); $("track-scroll").scrollIntoView({block:"nearest"}); } };
+  const close = document.createElement("button"); close.className = "quiet-button"; close.type = "button"; close.textContent = "Dismiss";
+  close.onclick = () => { box.classList.remove("show"); markActive(); };
+  box.append(text, alerts, close); box.classList.add("show");
+}
+
+function renderConnectionState(lost) {
+  state.connectionLost = lost;
+  $("tracks-panel").classList.toggle("stale", lost);
+  $("telemetry").classList.toggle("stale", lost);
+}
 function renderPresence() {
   const banner = $("presence");
   const disconnected = state.events && state.events.readyState !== EventSource.OPEN;
@@ -1244,12 +1613,14 @@ function trackCard(track) {
   crop.className = "crop";
   if (track.snip_url) {
     const image = document.createElement("img");
+    image.decoding = "async";
+    image.loading = "lazy";
     image.src = track.snip_url;
     image.alt = "Stored image for " + track.class_label + " track";
     image.onerror = () => {
       if (crop.isConnected) {
-        delete crop.parentElement.dataset.imageKey;
-        state.trackSignature = "";
+        // Retry a transient failure after a short back-off, not every live tick.
+        crop.parentElement.dataset.imageRetryAt = String(Date.now() + 30000);
       }
       missingCrop(crop, "Image missing or expired");
     };
@@ -1267,16 +1638,17 @@ function trackCard(track) {
   const copy = document.createElement("div");
   copy.className = "track-copy";
   const title = document.createElement("strong");
-  title.textContent = titleCase(track.class_label) + " track " + (track.track_id ? "#" + track.track_id : "(live)");
+  title.textContent = titleCase(track.class_label) + " track";
   const meta = document.createElement("span");
   meta.className = "track-seen";
   meta.textContent = "Last seen " + evidenceTime(track.last_observed_utc);
+  const id = document.createElement("span"); id.className = "track-id"; id.textContent = track.track_id ? "#" + track.track_id : "live";
   const images = document.createElement("span"); images.className = "track-images";
   images.textContent = (track.candidate_count || 0) + (track.candidate_count === 1 ? " image" : " images");
   const camera = document.createElement("span");
   camera.className = "camera-name";
   camera.textContent = cameraName(track.stream_id);
-  copy.append(title, meta, images);
+  copy.append(title, id, meta, images);
   if (state.selected === "all") copy.append(camera);
   card.append(crop, copy);
   return card;
@@ -1302,13 +1674,17 @@ function renderTracks(force = false) {
   const tracks = visibleTracks();
   const signature = JSON.stringify([state.selected, state.filter, tracks,
     selectedStreams().map((stream) => state.recent[stream.stream_id]?.matched_count)]);
-  if (!force && signature === state.trackSignature) return;
+  if (!force && signature === state.trackSignature &&
+      ![...$("track-scroll").querySelectorAll("[data-image-retry-at]")].some(card => Date.now() >= Number(card.dataset.imageRetryAt))) return;
   if (!force && (state.paused || state.held || state.drawerTrack)) {
     state.pending = true;
     updateListState();
     return;
   }
   state.trackSignature = signature;
+  $("tracks-panel").classList.toggle("compact", state.evidenceView === "compact");
+  $("view-toggle").setAttribute("aria-pressed", String(state.evidenceView === "compact"));
+  $("view-toggle").textContent = state.evidenceView === "compact" ? "Cards" : "Compact";
   state.pending = false;
   renderSubtotals();
   renderTrackSummary(tracks);
@@ -1322,9 +1698,13 @@ function renderTracks(force = false) {
     else {
       card.onclick = () => openDrawer(track);
       card.querySelector(".track-seen").textContent = "Last seen " + evidenceTime(track.last_observed_utc);
+      card.querySelector(".track-id").textContent = track.track_id ? "#" + track.track_id : "live";
       card.querySelector(".track-images").textContent = (track.candidate_count || 0) + (track.candidate_count === 1 ? " image" : " images");
       const imageKey = JSON.stringify([track.snip_url, track.snip_state]);
-      if (card.dataset.imageKey !== imageKey) card.firstChild.replaceWith(trackCard(track).firstChild);
+      if (card.dataset.imageKey !== imageKey || (card.dataset.imageRetryAt && Date.now() >= Number(card.dataset.imageRetryAt))) {
+        delete card.dataset.imageRetryAt;
+        card.firstChild.replaceWith(trackCard(track).firstChild);
+      }
     }
     card.dataset.imageKey = JSON.stringify([track.snip_url, track.snip_state]);
     card.setAttribute("aria-current", String(key === state.selectedTrackKey));
@@ -1415,11 +1795,14 @@ function showAlertError(message) {
 
 // Runs an operator action; any failure is shown inline and the list is rebuilt
 // even when the data did not change, so a disabled control comes back.
-async function alertAction(label, request) {
+async function alertAction(label, request, optimistic = null) {
+  const before = optimistic ? structuredClone(state.incidents) : null;
   try {
+    if (optimistic) { optimistic(); delete $("alert-list").dataset.signature; renderAlerts(); }
     await request();
     showAlertError("");
   } catch (error) {
+    if (before) { state.incidents = before; delete $("alert-list").dataset.signature; renderAlerts(); }
     showAlertError(label + " failed: " + error.message + ". Try again.");
   } finally {
     delete $("alert-list").dataset.signature;
@@ -1429,8 +1812,12 @@ async function alertAction(label, request) {
 
 function incidentAction(incident, action, minutes) {
   const label = {acknowledge: "Acknowledge", snooze: "Snooze", dismiss: "Dismiss", false_alarm: "False alarm"}[action] || action;
+  const optimistic = action === "acknowledge" ? () => {
+    const item = state.incidents.find(i => i.incident_id === incident.incident_id);
+    if (item) { item.state = "acknowledged"; item.acknowledged_count = item.match_count; }
+  } : null;
   return alertAction(label, () => postApi("/api/incidents/" + encodeURIComponent(incident.incident_id) + "/" + action,
-    minutes ? {minutes} : {}));
+    minutes ? {minutes} : {}), optimistic);
 }
 
 async function refreshIncidents() {
@@ -1480,6 +1867,7 @@ function renderAlerts() {
     const count = perStream[button.dataset.stream] || (button.dataset.stream === "all" ? open.length : 0);
     if (count) button.dataset.alerts = String(count); else delete button.dataset.alerts;
   }
+  markGridPages();
   const viewed = state.alertView && incidents.find((item) => item.incident_id === state.alertView.incident.incident_id);
   if (viewed) {
     const before = state.alertView.incident;
@@ -1498,10 +1886,8 @@ function renderAlerts() {
     return;
   }
   delete list.dataset.deferred;
-  const wasOpen = list.dataset.open || "";
-  const openIds = open.map((incident) => incident.incident_id).join(",");
-  if (openIds && openIds !== wasOpen) $("alerts").open = true;
-  list.dataset.open = openIds;
+  // Alert arrival must not resize live video. Badge/toast/highlights announce
+  // it; only the operator opens or closes the tray.
   list.dataset.signature = signature;
   const counts = state.incidentCounts || {open: open.length, total: incidents.length,
     active: incidents.filter((incident) => incident.state !== "closed").length};
@@ -1522,7 +1908,9 @@ function renderAlerts() {
   more.setAttribute("aria-expanded", String(Boolean(state.alertsExpanded)));
   $("alert-page-note").textContent = counts.total > incidents.length
     ? "Newest " + incidents.length + " of " + counts.total + " shown, needs-attention first. Remove handled alerts to see older ones." : "";
-  list.replaceChildren();
+  const existing = new Map([...list.children].map(row => [row.dataset.incidentId, row]));
+  const wanted = new Set(shown.map(incident => incident.incident_id));
+  for (const row of [...list.children]) if (!wanted.has(row.dataset.incidentId)) row.remove();
   if (!incidents.length) {
     const item = document.createElement("li");
     item.className = "empty";
@@ -1530,16 +1918,31 @@ function renderAlerts() {
     list.append(item);
     return;
   }
-  for (const incident of shown) {
+  for (const [index, incident] of shown.entries()) {
+    const rowSignature = JSON.stringify([state.audioOn, {...incident, track: undefined}]);
+    const old = existing.get(incident.incident_id);
+    if (old?.dataset.signature === rowSignature) {
+      if (list.children[index] !== old) list.insertBefore(old, list.children[index] || null);
+      continue;
+    }
     const item = document.createElement("li");
     item.dataset.incident = incident.state;
+    item.dataset.incidentId = incident.incident_id;
+    item.dataset.signature = rowSignature;
     let thumb;
     if (incident.snip_url) {
       thumb = document.createElement("img");
+      thumb.decoding = "async";
+      thumb.loading = "lazy";
       thumb.src = incident.snip_url;
       thumb.alt = incidentTitle(incident);
     } else thumb = document.createElement("span");
     thumb.className = "incident-thumb";
+    const main = document.createElement("button");
+    main.type = "button";
+    main.className = "incident-main";
+    main.setAttribute("aria-label", "View alert: " + incidentTitle(incident));
+    main.onclick = () => viewIncident(incident);
     const copy = document.createElement("div");
     copy.className = "incident-copy";
     const title = document.createElement("div");
@@ -1566,6 +1969,14 @@ function renderAlerts() {
     copy.append(title, meta);
     const actions = document.createElement("div");
     actions.className = "incident-actions";
+    if (incident.state === "open") {
+      const ack = document.createElement("button");
+      ack.className = "quiet-button ack-button";
+      ack.type = "button";
+      ack.textContent = "Acknowledge";
+      ack.onclick = () => { ack.disabled = true; incidentAction(incident, "acknowledge"); };
+      actions.append(ack);
+    }
     const view = document.createElement("button");
     view.className = "quiet-button";
     view.type = "button";
@@ -1582,43 +1993,36 @@ function renderAlerts() {
       speak.disabled = true;
       alertAction("Speak", () => postApi("/api/incidents/" + encodeURIComponent(incident.incident_id) + "/speak", {}));
     };
-    const remove = document.createElement("button");
-    remove.className = "quiet-button";
-    remove.type = "button";
-    remove.textContent = "Remove";
-    remove.title = "Remove this alert from the list";
-    remove.onclick = () => {
-      if (!confirm("Remove alert “" + incidentTitle(incident) + "” from the list?")) return;
-      remove.disabled = true;
+    // Remove lives in More… so a mis-tap on a handheld cannot delete an alert.
+    const removeIncident = () => {
+      if (!confirm("Remove alert “" + incidentTitle(incident) + "” from the list?")) return false;
       alertAction("Remove", async () => {
         const response = await fetch("/api/incidents/" + encodeURIComponent(incident.incident_id),
           {method: "DELETE", headers: {accept: "application/json"}});
         const body = await response.json().catch(() => ({}));
         if (!response.ok || body.error) throw new Error(body.error?.message || response.statusText);
         if (state.alertView?.incident.incident_id === incident.incident_id) exitAlertView();
-      });
+      }, () => { state.incidents = state.incidents.filter(i => i.incident_id !== incident.incident_id); });
+      return true;
     };
     actions.append(speak);
-    if (incident.state === "open") {
-      const ack = document.createElement("button");
-      ack.className = "quiet-button";
-      ack.type = "button";
-      ack.textContent = "Acknowledge";
-      ack.onclick = () => { ack.disabled = true; incidentAction(incident, "acknowledge"); };
-      actions.append(ack);
-    }
-    if (incident.state !== "closed") {
+    {
       const more = document.createElement("select");
       more.setAttribute("aria-label", "More actions for " + incidentTitle(incident));
-      const options = [["", "More…"], ["snooze:5", "Snooze 5 min"], ["snooze:15", "Snooze 15 min"],
-        ["dismiss", "Dismiss"], ["false_alarm", "False alarm"]];
-      if (incident.undelivered) options.push(["retry", "Retry delivery"]);
-      if (incident.rule_enabled) options.push(["disable", "Disable rule"]);
+      const options = [["", "More…"]];
+      if (incident.state !== "closed") {
+        options.push(["snooze:5", "Snooze 5 min"], ["snooze:15", "Snooze 15 min"], ["dismiss", "Dismiss"], ["false_alarm", "False alarm"]);
+        if (incident.undelivered) options.push(["retry", "Retry delivery"]);
+        if (incident.rule_enabled) options.push(["disable", "Disable rule"]);
+      }
+      options.push(["remove", "Remove from list"]);
       for (const [value, text] of options) more.append(new Option(text, value));
       more.onchange = async () => {
         const [action, minutes] = more.value.split(":");
         more.disabled = true;
-        if (action === "retry") {
+        if (action === "remove") {
+          if (!removeIncident()) { more.disabled = false; more.value = ""; }
+        } else if (action === "retry") {
           await alertAction("Retry delivery", () => postApi("/api/alerts/" + encodeURIComponent(incident.head_match_id) + "/retry", {}));
         } else if (action === "disable") {
           if (confirm("Disable rule “" + incident.rule_name + "”? It stops raising alerts on every camera.")) {
@@ -1629,9 +2033,10 @@ function renderAlerts() {
       };
       actions.append(more);
     }
-    actions.append(remove);
-    item.append(thumb, copy, actions);
-    list.append(item);
+    main.append(thumb, copy);
+    item.append(main, actions);
+    if (old) old.replaceWith(item);
+    if (list.children[index] !== item) list.insertBefore(item, list.children[index] || null);
   }
 }
 
@@ -1657,13 +2062,167 @@ function dispatchLabel(alert) {
   return ["sending", "Sending"];
 }
 
+// Browser microphone only. A released/cancelled permission request cannot start
+// recording later, and every exit closes both MediaStream and AudioContext.
+const voice = {turn: null, version: 0, blocked: false};
+function voiceStatus(text) { $('voice-status').textContent = text; $('voice-cancel').hidden = !voice.turn; }
+async function stopSpeaking() {
+  voice.blocked = true;
+  stopPlayback();
+  try {
+    state.speech = await postApi('/api/speech/stop', {}, {signal:AbortSignal.timeout(5000)});
+  } catch (_) { voiceStatus('Could not stop server speech. Audio is off.'); state.audioOn = false; renderAudioToggle(); }
+  finally { voice.blocked = false; renderSpeech(); }
+}
+$('stop-speaking').onclick = stopSpeaking;
+function pcmWav(parts, rate) {
+  const count = parts.reduce((n, a) => n + a.length, 0), samples = new Float32Array(count);
+  let offset = 0;
+  for (const part of parts) { samples.set(part, offset); offset += part.length; }
+  const frames = Math.floor(count * 16000 / rate), buffer = new ArrayBuffer(44 + frames * 2), view = new DataView(buffer);
+  const str = (at, text) => { for (let i=0; i<text.length; i++) view.setUint8(at+i, text.charCodeAt(i)); };
+  str(0,'RIFF'); view.setUint32(4,36+frames*2,true); str(8,'WAVE'); str(12,'fmt ');
+  view.setUint32(16,16,true); view.setUint16(20,1,true); view.setUint16(22,1,true);
+  view.setUint32(24,16000,true); view.setUint32(28,32000,true); view.setUint16(32,2,true); view.setUint16(34,16,true);
+  str(36,'data'); view.setUint32(40,frames*2,true);
+  for(let i=0;i<frames;i++) {
+    // Average the source interval instead of dropping samples during downsampling.
+    const start=Math.floor(i*rate/16000), end=Math.min(count,Math.max(start+1,Math.floor((i+1)*rate/16000)));
+    let sample=0; for(let j=start;j<end;j++) sample+=samples[j];
+    sample=Math.max(-1,Math.min(1,sample/(end-start)));
+    view.setInt16(44+i*2,sample<0?sample*32768:sample*32767,true);
+  }
+  return new Blob([buffer], {type:'audio/wav'});
+}
+function cleanCapture(turn) {
+  clearTimeout(turn.limit); clearInterval(turn.heartbeat);
+  if(turn.processor) { turn.processor.onaudioprocess=null; turn.processor.disconnect(); }
+  turn.source?.disconnect(); turn.gain?.disconnect();
+  turn.stream?.getTracks().forEach(track => { track.onended=null; track.onmute=null; track.stop(); });
+  turn.context?.close().catch(()=>{});
+  $('voice-talk').setAttribute('aria-pressed','false');
+  $('voice-talk').textContent='Talk';
+}
+async function endVoice(send=true) {
+  const turn=voice.turn;
+  if(!turn || turn.ending) return;
+  turn.ending=true;
+  cleanCapture(turn);
+  if(!send) { turn.abort.abort(); voice.version++; }
+  try {
+    await turn.hold?.catch(()=>{});
+    await postApi('/api/speech/talk',{held:false},{signal:AbortSignal.timeout(5000)});
+    if(!send || !turn.parts.length || !turn.heard) {
+      voiceStatus(send ? 'No speech captured. Tap Talk again, or type your question.' : 'Recording cancelled.');
+      return;
+    }
+    voiceStatus('Transcribing…');
+    const response=await fetch('/api/voice/transcribe',{method:'POST',headers:{'content-type':'audio/wav'},
+      body:pcmWav(turn.parts,turn.rate),signal:AbortSignal.any([turn.abort.signal,AbortSignal.timeout(70000)])});
+    const body=await response.json();
+    if(turn.version!==voice.version) return;
+    if(!response.ok || body.error) throw new Error(body.error?.message || body.detail || 'Transcription failed.');
+    if(!body.data.text.trim()) { voiceStatus('No words recognized. Try again or type your question.'); return; }
+    $('ask-text').value=body.data.text;
+    updateQuestionFilters();
+    voiceStatus('Recognized. Getting your answer…');
+    voice.turn=null; $('voice-cancel').hidden=true;
+    await submitAssistant({text:body.data.text,selected_stream:turn.camera,mode:turn.mode,
+      timezone:Intl.DateTimeFormat().resolvedOptions().timeZone});
+    if(turn.version===voice.version) voiceStatus('Ready to talk again.');
+  } catch(error) {
+    if(turn.version===voice.version && error.name!=='AbortError') voiceStatus(error.message+' You can still type your question.');
+  } finally {
+    if(voice.turn===turn) voice.turn=null;
+    if(!voice.turn) { $('voice-cancel').hidden=true; $('ask-submit').disabled=state.assistantBusy; $('ask-text').disabled=state.assistantBusy; $('search-fields').inert=state.assistantBusy; }
+  }
+}
+function cancelVoice() {
+  if(voice.turn?.ending) {
+    voice.turn.abort.abort(); voice.version++; voice.turn=null;
+    $('ask-submit').disabled=state.assistantBusy; $('ask-text').disabled=state.assistantBusy; $('search-fields').inert=state.assistantBusy;
+    voiceStatus('Voice request cancelled.');
+  } else endVoice(false);
+}
+async function beginVoice() {
+  if(voice.turn) return;
+  if(state.assistantBusy) { ++assistantRequestVersion; state.assistantBusy=false; $("assistant-progress").textContent=""; }
+  if(!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) { voiceStatus('Microphone requires a trusted HTTPS connection. You can type your question.'); return; }
+  const turn={version:++voice.version,parts:[],abort:new AbortController(),camera:$('search-camera').value || null,
+    mode:$('assistant-mode').value,heard:false};
+  voice.turn=turn;
+  if(turn.camera==='all') turn.camera=null;
+  stopPlayback();
+  $('ask-submit').disabled=true; $('ask-text').disabled=true; $('search-fields').inert=true;
+  voiceStatus('Allow microphone access to start your question.');
+  try {
+    // Resume in the gesture, before waiting for permission/network.
+    const AudioCtx=window.AudioContext || window.webkitAudioContext;
+    turn.context=new AudioCtx(); await turn.context.resume();
+    if(turn.ending) return;
+    turn.hold=postApi('/api/speech/talk',{held:true},{signal:AbortSignal.timeout(5000)});
+    await turn.hold;
+    if(turn.ending) return;
+    const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true},video:false});
+    if(turn.ending || voice.turn!==turn) { stream.getTracks().forEach(t=>t.stop()); return; }
+    turn.stream=stream; turn.rate=turn.context.sampleRate;
+    // Permission prompts can outlast the safety lease. Renew only while this
+    // capture owns the microphone; endVoice waits for this request before release.
+    turn.hold=postApi('/api/speech/talk',{held:true},{signal:AbortSignal.timeout(5000)});
+    await turn.hold;
+    if(turn.ending) return;
+    const track=stream.getAudioTracks()[0];
+    if(!track || track.readyState!=='live' || track.muted) throw new Error('Microphone is not available.');
+    track.onended=()=>endVoice(false);
+    track.onmute=()=>{ voiceStatus('Microphone interrupted. Recording cancelled.'); endVoice(false); };
+    turn.source=turn.context.createMediaStreamSource(stream);
+    turn.processor=turn.context.createScriptProcessor(4096,1,1);
+    turn.gain=turn.context.createGain(); turn.gain.gain.value=0;
+    turn.source.connect(turn.processor); turn.processor.connect(turn.gain); turn.gain.connect(turn.context.destination);
+    let seconds=0,quiet=0;
+    turn.processor.onaudioprocess=event=>{
+      if(turn.ending) return;
+      const data=event.inputBuffer.getChannelData(0), dt=data.length/turn.rate;
+      turn.parts.push(new Float32Array(data)); seconds+=dt;
+      const loud=Math.sqrt(data.reduce((sum,v)=>sum+v*v,0)/data.length)>0.01;
+      if(loud) { turn.heard=true; quiet=0; } else quiet+=dt;
+      voiceStatus('Listening… '+Math.floor(seconds)+' / 15 s · tap Send question when finished');
+      if(seconds>=15 || (turn.heard && quiet>=1.5)) endVoice();
+    };
+    $('voice-talk').setAttribute('aria-pressed','true'); $('voice-talk').textContent='Send question';
+    voiceStatus('Listening… tap Send question when finished');
+    turn.limit=setTimeout(()=>endVoice(),15000);
+  } catch(error) {
+    if(turn.ending) return;
+    await endVoice(false);
+    voiceStatus(error.name==='NotAllowedError' ? 'Microphone permission denied. Allow it in browser settings or type your question.' : 'Microphone unavailable. Type your question or try again.');
+  }
+}
+$('voice-talk').onclick=()=>{
+  if(voice.turn) { if(!voice.turn.ending) endVoice(); return; }
+  openAssistant();
+  $('voice-talk').focus();
+  beginVoice();
+};
+$('voice-cancel').onclick=cancelVoice;
+window.addEventListener('blur',cancelVoice);
+document.addEventListener('keydown',event=>{if(event.key==='Escape' && voice.turn) cancelVoice();});
+document.addEventListener('visibilitychange',()=>{ if(document.hidden) cancelVoice(); });
+window.addEventListener('pagehide',()=>{
+  if(!voice.turn || voice.turn.ending) return;
+  cleanCapture(voice.turn);
+  fetch('/api/speech/talk',{method:'POST',headers:{'content-type':'application/json'},body:'{"held":false}',keepalive:true}).catch(()=>{});
+});
+
 function renderSpeech() {
   const speech = state.speech || {};
-  const line = $("speech-line");
-  const current = speech.current;
+  const current = speech.current?.cancelled ? null : speech.current;
+  const kind = current?.kind || (speech.preparing && !speech.preparing_cancelled ? speech.preparing_kind : speech.last?.kind);
+  for (const id of ["speech-line", "assistant-speech-line"]) { $(id).textContent=""; $(id).dataset.mode=""; }
+  const line = $(kind === "answer" && !speech.talk_held ? "assistant-speech-line" : "speech-line");
   // playingId is only the utterance whose audio this tab actually started.
   if (state.playingId && current?.id !== state.playingId) stopPlayback();
-  if (current && state.audioOn && current.audio_base64 && current.id !== state.playingId) startPlayback(current);
+  if (current && state.audioOn && !voice.turn && !voice.blocked && current.audio_base64 && current.id !== state.playingId) startPlayback(current);
   const playback = current && state.playback?.id === current.id ? state.playback : null;
   if (current) {
     const status = playback?.status;
@@ -1675,6 +2234,9 @@ function renderSpeech() {
   } else if (speech.talk_held) {
     line.dataset.mode = "text";
     line.textContent = "Alert speech held while you talk" + (speech.queued?.length ? " · " + speech.queued.length + " queued" : "");
+  } else if (speech.preparing && !speech.preparing_cancelled && state.audioOn) {
+    line.dataset.mode = "audio";
+    line.textContent = "Preparing speech: " + speech.preparing;
   } else if (speech.last?.outcome === "text_only") {
     line.dataset.mode = "text";
     line.textContent = "Text only (speech unavailable): " + speech.last.text;
@@ -1688,6 +2250,18 @@ function reportPlayback(id, event) {
   postApi("/api/speech/" + encodeURIComponent(id) + "/playback", {event}).catch(() => {});
 }
 
+function playChime() {
+  if (!state.audioOn) return;
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx(), gain = ctx.createGain(), osc = ctx.createOscillator();
+    gain.gain.value = 0.025; osc.frequency.value = 740; osc.type = "sine";
+    osc.connect(gain); gain.connect(ctx.destination); osc.onended = () => ctx.close?.(); osc.start();
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
+    osc.stop(ctx.currentTime + 0.2);
+  } catch (_) {}
+}
 function startPlayback(current) {
   const id = current.id;
   const audio = new Audio("data:audio/wav;base64," + current.audio_base64);
@@ -1709,6 +2283,7 @@ function startPlayback(current) {
   };
   audio.onended = () => { if (mine()) reportPlayback(id, "ended"); };
   audio.onerror = () => fail("audio could not be decoded");
+  if (current.kind !== "answer") playChime();
   audio.play().catch((error) => {
     if (error?.name === "NotAllowedError") {
       // Autoplay was revoked: the operator has to tap Audio on again.
@@ -1727,6 +2302,7 @@ function stopPlayback() {
 
 function renderAudioToggle() {
   const toggle = $("audio-toggle");
+  $("stop-speaking").hidden = !state.audioOn;
   toggle.textContent = state.audioOn ? "Audio on" : "Audio off";
   toggle.dataset.state = state.audioOn ? "on" : "off";
   toggle.setAttribute("aria-pressed", String(state.audioOn));
@@ -1736,10 +2312,15 @@ $("audio-toggle").onclick = () => {
   state.audioOn = !state.audioOn;
   // Either way the current utterance restarts from this tab's new setting.
   stopPlayback();
+  if (!state.audioOn) stopSpeaking();
   if (state.audioOn) {
     // A user gesture unlocks playback; a silent clip proves it before speech arrives.
-    const unlock = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=");
-    unlock.play().catch(() => { state.audioOn = false; renderAudioToggle(); });
+    const url = URL.createObjectURL(pcmWav([new Float32Array(320)], 16000));
+    const unlock = new Audio(url);
+    unlock.play().catch(() => {
+      state.audioOn = false; renderAudioToggle();
+      voiceStatus("Browser could not enable audio. Check sound permissions and tap Audio on again.");
+    }).finally(() => URL.revokeObjectURL(url));
   }
   renderAudioToggle();
   renderSpeech();
@@ -1748,10 +2329,12 @@ $("audio-toggle").onclick = () => {
 
 function renderRules() {
   const data = state.rules || {rules: [], classes: [], streams: []};
+  updateZoneSummary();
   const classSelect = $("rule-class");
-  if (classSelect.options.length !== data.classes.length) {
-    classSelect.replaceChildren(...data.classes.map(label => new Option(label, label)));
-    if (data.classes.includes("dog")) classSelect.value = "dog";
+  if (JSON.stringify([...classSelect.options].map(o => o.value)) !== JSON.stringify(["", ...data.classes])) {
+    const selected = classSelect.value;
+    classSelect.replaceChildren(new Option("Anything detected", ""), ...data.classes.map(label => new Option(titleCase(label), label)));
+    classSelect.value = data.classes.includes(selected) ? selected : "";
   }
   const cameraSelect = $("rule-camera");
   if (cameraSelect.options.length !== data.streams.length + 1) {
@@ -1770,12 +2353,11 @@ function renderRules() {
     item.className = rule.enabled ? "" : "off";
     const copy = document.createElement("span");
     const name = document.createElement("strong");
-    name.textContent = rule.name;
+    name.textContent = ruleSummary(rule);
+    name.title = rule.name;
     const detail = document.createElement("small");
-    detail.textContent = [rule.stream_id ? cameraName(rule.stream_id) : "Any camera",
-      rule.min_confidence == null ? "any confidence" : "≥ " + rule.min_confidence,
-      rule.speak ? "spoken · " + rule.cooldown_seconds + " s cooldown" : "silent",
-      rule.enabled ? "on" : "off"].join(" · ");
+    const hours = rule.active_hours ? `active ${rule.active_hours.start}–${rule.active_hours.end} ${rule.active_hours.timezone || ""}` : null;
+    detail.textContent = [rule.enabled ? "On" : "Off", rule.speak ? "Spoken alerts" : "Silent alerts", hours].filter(Boolean).join(" · ");
     copy.append(name, detail);
     const edit = document.createElement("button");
     edit.className = "quiet-button";
@@ -1799,6 +2381,8 @@ function renderRules() {
     item.append(copy, edit, toggle, remove);
     list.append(item);
   }
+  updateZoneSummary();
+  renderZoneOverlay();
 }
 
 async function ruleMutation(path, method, payload) {
@@ -1823,6 +2407,7 @@ async function refreshRules() {
 }
 
 function closeRules(restoreFocus = true) {
+  closeZoneEditor(false);
   $("rules-panel").hidden = true;
   $("rules-toggle").setAttribute("aria-expanded", "false");
   if (restoreFocus) $("rules-toggle").focus();
@@ -1836,7 +2421,13 @@ $("rules-toggle").onclick = async () => {
     closeMission(false);
     closeAssistant(false);
     await refreshRules();
-    $("rule-class").focus();
+    if (!state.editingRule) {
+      const camera = state.selected === "all" ? "" : state.selected;
+      if ($("rule-camera").value !== camera) state.zoneDraft = null;
+      $("rule-camera").value = camera;
+      updateZoneSummary();
+    }
+    $("rule-camera").focus();
   }
 };
 $("close-rules").onclick = () => closeRules();
@@ -1846,7 +2437,9 @@ $("rules-panel").addEventListener("keydown", (event) => { if (event.key === "Esc
 for (const [panel, toggle, close] of [["mission-panel", "mission-toggle", () => closeMission(false)],
                                        ["rules-panel", "rules-toggle", () => closeRules(false)]]) {
   document.addEventListener("pointerdown", (event) => {
-    if ($(panel).hidden || $(panel).contains(event.target) || $(toggle).contains(event.target)) return;
+    // The zone editor belongs to Rules; drawing on it must not dismiss the panel.
+    if ($(panel).hidden || $(panel).contains(event.target) || $(toggle).contains(event.target)
+        || (panel === "rules-panel" && $("zone-editor").contains(event.target))) return;
     close();
   });
 }
@@ -1856,19 +2449,58 @@ document.addEventListener("keydown", (event) => {
   else if (!$("rules-panel").hidden) closeRules();
   else if (state.alertView && !state.drawerTrack) exitAlertView();
 });
-function autoRuleName(classLabel, streamId) {
-  return classLabel + " on " + (streamId ? cameraName(streamId) : "any camera");
+function ruleDwell() {
+  if (document.querySelector('input[name="rule-kind"]:checked').value !== "dwell") return null;
+  return Number($("rule-duration-choice").value === "custom" ? $("rule-dwell").value : $("rule-duration-choice").value);
+}
+function ruleSummary(rule) {
+  const subject = rule.class_label ? titleCase(rule.class_label) : "Anything detected";
+  const camera = rule.stream_id ? cameraName(rule.stream_id) : "any camera";
+  return `${subject} ${rule.dwell_seconds ? "stays" : "appears"} in ${camera}${rule.zone?.points?.length ? "’s selected area" : ""}${rule.dwell_seconds ? " for " + rule.dwell_seconds + " seconds" : ""}`;
+}
+function updateRulePreview() {
+  if (document.querySelector('input[name="rule-kind"]:checked').value === "dwell" && !(ruleDwell() >= 1 && ruleDwell() <= 3600)) {
+    $("rule-preview").textContent = "Choose a duration from 1 to 3600 seconds.";
+    return;
+  }
+  $("rule-preview").textContent = "Alert when " + ruleSummary({class_label:$("rule-class").value || null,
+    stream_id:$("rule-camera").value || null, dwell_seconds:ruleDwell(), zone:state.zoneDraft}) + ".";
+}
+function updateRuleForm() {
+  const dwell = document.querySelector('input[name="rule-kind"]:checked').value === "dwell";
+  $("rule-duration").hidden = !dwell;
+  const custom = dwell && $("rule-duration-choice").value === "custom";
+  $("rule-custom-duration").hidden = !custom;
+  $("rule-dwell").disabled = !custom;
+  $("rule-dwell").required = custom;
+  updateRulePreview();
+}
+$("rule-form").addEventListener("change", updateRuleForm);
+$("rule-form").addEventListener("input", updateRulePreview);
+$("rule-remove-zone").onclick = () => { state.zoneDraft = null; updateZoneSummary(); };
+function autoRuleName(classLabel, streamId, dwell = null) {
+  const subject = classLabel || "Anything detected", camera = streamId ? cameraName(streamId) : "any camera";
+  return (dwell ? `${subject} stays in ${camera} for ${dwell} seconds` : subject + " on " + camera).slice(0, 60);
 }
 
 // Edit reuses the add form and PATCHes the same rule, so its identity (and the
 // tracks it already matched) is preserved.
 function editRule(rule) {
   state.editingRule = rule;
-  $("rule-class").value = rule.class_label;
+  $("rule-class").value = rule.class_label || "";
   $("rule-camera").value = rule.stream_id || "";
   $("rule-confidence").value = rule.min_confidence ?? "";
   $("rule-cooldown").value = rule.cooldown_seconds;
   $("rule-speak").checked = rule.speak;
+  $("rule-dwell").value = rule.dwell_seconds ?? 30;
+  document.querySelector(`input[name="rule-kind"][value="${rule.dwell_seconds ? 'dwell' : 'appears'}"]`).checked = true;
+  $("rule-duration-choice").value = [10,30,60].includes(rule.dwell_seconds) ? String(rule.dwell_seconds) : rule.dwell_seconds ? "custom" : "30";
+  $("rule-advanced").open = false;
+  updateRuleForm();
+  $("rule-active-start").value = rule.active_hours?.start || "";
+  $("rule-active-end").value = rule.active_hours?.end || "";
+  state.zoneDraft = rule.zone ? structuredClone(rule.zone) : null;
+  updateZoneSummary();
   $("rule-submit").textContent = "Save changes";
   $("rule-cancel-edit").hidden = false;
   $("rules-status").textContent = "Editing " + rule.name + ".";
@@ -1878,20 +2510,150 @@ function editRule(rule) {
 
 function stopEditingRule() {
   state.editingRule = null;
-  $("rule-submit").textContent = "Add rule";
+  state.zoneDraft = null; updateZoneSummary();
+  $("rule-active-start").value = $("rule-active-end").value = "";
+  $("rule-class").value = "";
+  $("rule-confidence").value = "";
+  $("rule-cooldown").value = 60;
+  $("rule-speak").checked = true;
+  $("rule-dwell").value = 30;
+  $("rule-duration-choice").value = "30";
+  document.querySelector('input[name="rule-kind"][value="appears"]').checked = true;
+  $("rule-advanced").open = false;
+  updateRuleForm();
+  $("rule-submit").textContent = "Create alert";
   $("rule-cancel-edit").hidden = true;
   renderRules();
 }
 $("rule-cancel-edit").onclick = () => { stopEditingRule(); $("rules-status").textContent = "Edit cancelled."; };
+function updateZoneSummary() {
+  const points = state.zoneDraft?.points || [];
+  $("zone-summary").textContent = points.length ? "Selected area" : "Whole camera view";
+  $("rule-draw-zone").textContent = points.length ? "Edit area" : "Draw an area";
+  $("rule-remove-zone").hidden = !points.length;
+  if (!$("rule-camera").value && !points.length) $("zone-summary").textContent = "Whole view of each camera · choose one camera to draw an area";
+  updateRulePreview();
+  $("rule-draw-zone").disabled = !$("rule-camera").value;
+}
+$("rule-camera").addEventListener("change", () => { state.zoneDraft = null; updateZoneSummary(); });
+
+function videoContentRect() {
+  const video = $("video"), box = $("video-wrap").getBoundingClientRect();
+  const vw = video.videoWidth || 16, vh = video.videoHeight || 9, scale = Math.min(box.width / vw, box.height / vh);
+  const width = vw * scale, height = vh * scale;
+  return {left:(box.width - width) / 2, top:(box.height - height) / 2, width, height};
+}
+function renderZoneOverlay() {
+  const svg = $("zone-overlay"); if (!svg) return;
+  svg.replaceChildren();
+  if (state.selected === "all") return;
+  const rect = videoContentRect();
+  Object.assign(svg.style, {left:rect.left + "px", top:rect.top + "px", width:rect.width + "px", height:rect.height + "px"});
+  svg.setAttribute("viewBox", "0 0 1 1"); svg.setAttribute("preserveAspectRatio", "none");
+  for (const rule of state.rules?.rules || []) {
+    if (rule.stream_id !== state.selected || !rule.zone?.points?.length) continue;
+    const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+    poly.setAttribute("points", rule.zone.points.map(p => p.join(",")).join(" "));
+    poly.setAttribute("fill", "rgba(153,197,245,.14)"); poly.setAttribute("stroke", "#99c5f5"); poly.setAttribute("stroke-width", ".01");
+    svg.append(poly);
+  }
+}
+const ZONE_MAX = 5;
+function renderZoneStatus(warn = false) {
+  const n = state.zoneDraft?.points?.length || 0, step = $("zone-step"), count = $("zone-count");
+  step.dataset.tone = warn ? "warn" : "";
+  step.textContent = warn ? "Maximum " + ZONE_MAX + " corners. Drag a corner to move it, or tap Undo point."
+    : n === 0 ? "Tap the ground at the first corner of the area."
+    : n < 3 ? "Tap the next corner — " + (3 - n) + " more needed."
+    : n < ZONE_MAX ? "Zone ready. Save it, or tap to add up to " + (ZONE_MAX - n) + " more corner" + (ZONE_MAX - n === 1 ? "." : "s.")
+    : "All " + ZONE_MAX + " corners placed. Drag a corner to adjust, then Use this area.";
+  count.textContent = n + " / " + ZONE_MAX + " corners";
+  count.toggleAttribute("data-full", n >= ZONE_MAX);
+  $("zone-undo").disabled = $("zone-clear").disabled = n === 0;
+  $("zone-done").disabled = n > 0 && n < 3;
+  $("zone-done").textContent = n === 0 ? "Remove area" : "Use this area";
+}
+function drawZoneDraft() {
+  const svg = $("zone-svg"), points = state.zoneDraft?.points || [];
+  svg.replaceChildren(); svg.setAttribute("viewBox", "0 0 1 1"); svg.setAttribute("preserveAspectRatio", "none");
+  if (points.length > 1) {
+    const line = document.createElementNS("http://www.w3.org/2000/svg", points.length > 2 ? "polygon" : "polyline");
+    line.setAttribute("points", points.map(p => p.join(",")).join(" ")); line.setAttribute("fill", points.length > 2 ? "rgba(153,197,245,.22)" : "none");
+    line.setAttribute("stroke", "#99c5f5"); line.setAttribute("stroke-width", "3"); line.setAttribute("vector-effect", "non-scaling-stroke"); svg.append(line);
+  }
+  $("zone-handles").replaceChildren(...points.map((p, index) => {
+    const handle = document.createElement("div");
+    handle.className = "zone-handle"; handle.dataset.index = index; handle.textContent = index + 1;
+    handle.style.left = p[0] * 100 + "%"; handle.style.top = p[1] * 100 + "%";
+    return handle;
+  }));
+  renderZoneStatus();
+}
+function zonePoint(event) {
+  const rect = $("zone-svg").getBoundingClientRect();
+  return [Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)), Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height))];
+}
+async function openZoneEditor() {
+  const streamId = $("rule-camera").value;
+  if (!streamId) { $("rules-status").textContent = "Choose one camera before drawing a zone."; return; }
+  if (state.selected !== streamId) selectCamera(streamId);
+  const video = $("video"), canvas = $("zone-canvas");
+  // Switching camera reconnects WHEP; wait briefly for its first frame.
+  if (!video.videoWidth) {
+    $("rules-status").textContent = "Waiting for a frame from this camera…";
+    for (let waited = 0; !video.videoWidth && waited < 8000 && !$("rules-panel").hidden; waited += 200)
+      await new Promise(r => setTimeout(r, 200));
+    if (state.selected !== streamId || $("rules-panel").hidden) return;
+  }
+  if (!video.videoWidth || !video.videoHeight) { $("rules-status").textContent = "No live frame available yet for this camera."; return; }
+  $("rules-status").textContent = "";
+  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+  $("zone-stage").style.setProperty("--zone-aspect", String(video.videoWidth / video.videoHeight));
+  try { canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height); } catch (error) { $("rules-status").textContent = "No live frame available yet for this camera."; return; }
+  state.zoneBackup = state.zoneDraft ? {points: state.zoneDraft.points.map(p => [...p])} : null;
+  state.zoneDraft = {points: (state.zoneDraft?.points || []).slice(0, ZONE_MAX).map(p => [...p])};
+  $("zone-title").textContent = "Draw zone · " + (state.streams.find(s => s.stream_id === streamId)?.display_name || streamId);
+  $("zone-editor").hidden = false; drawZoneDraft();
+}
+$("rule-draw-zone").onclick = openZoneEditor;
+$("zone-stage").addEventListener("pointerdown", event => {
+  const handle = event.target.closest?.(".zone-handle");
+  if (handle) { state.dragZone = Number(handle.dataset.index); try { $("zone-stage").setPointerCapture(event.pointerId); } catch {} return; }
+  const draft = state.zoneDraft ||= {points: []};
+  if (draft.points.length >= ZONE_MAX) {
+    renderZoneStatus(true);
+    const count = $("zone-count"); count.classList.remove("bump"); void count.offsetWidth; count.classList.add("bump");
+    navigator.vibrate?.(80);
+    return;
+  }
+  draft.points.push(zonePoint(event)); drawZoneDraft();
+});
+$("zone-stage").addEventListener("pointermove", event => { if (state.dragZone == null) return; state.zoneDraft.points[state.dragZone] = zonePoint(event); drawZoneDraft(); });
+for (const type of ["pointerup", "pointercancel"]) $("zone-stage").addEventListener(type, () => { state.dragZone = null; });
+function closeZoneEditor(save) {
+  if ($("zone-editor").hidden) return;
+  if (!save) state.zoneDraft = state.zoneBackup ?? null;
+  state.dragZone = null; $("zone-editor").hidden = true; updateZoneSummary();
+}
+$("zone-undo").onclick = () => { state.zoneDraft?.points?.pop(); drawZoneDraft(); };
+$("zone-clear").onclick = () => { state.zoneDraft = {points: []}; drawZoneDraft(); };
+$("zone-cancel").onclick = () => closeZoneEditor(false);
+$("zone-done").onclick = () => { if (!(state.zoneDraft?.points || []).length || state.zoneDraft.points.length >= 3) closeZoneEditor(true); };
 
 $("rule-form").onsubmit = async (event) => {
   event.preventDefault();
   const confidence = $("rule-confidence").value;
+  const dwell = ruleDwell();
+  const activeStart = $("rule-active-start").value, activeEnd = $("rule-active-end").value;
+  if ((activeStart && !activeEnd) || (!activeStart && activeEnd)) { $("rules-status").textContent = "Choose both active-hours times, or clear both."; return; }
   const fields = {
-    class_label: $("rule-class").value,
+    class_label: $("rule-class").value || null,
     stream_id: $("rule-camera").value || null,
     min_confidence: confidence === "" ? null : Number(confidence),
     cooldown_seconds: Number($("rule-cooldown").value),
+    dwell_seconds: dwell,
+    active_hours: activeStart ? {start: activeStart, end: activeEnd, timezone: state.editingRule?.active_hours?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone} : null,
+    zone: state.zoneDraft?.points?.length ? state.zoneDraft : null,
     speak: $("rule-speak").checked,
   };
   const editing = state.editingRule;
@@ -1900,8 +2662,8 @@ $("rule-form").onsubmit = async (event) => {
     return;
   }
   // A generated name follows the new object type/camera; a custom name is kept.
-  if (editing.name === autoRuleName(editing.class_label, editing.stream_id)) {
-    fields.name = autoRuleName(fields.class_label, fields.stream_id);
+  if (editing.name === autoRuleName(editing.class_label, editing.stream_id, editing.dwell_seconds)) {
+    fields.name = autoRuleName(fields.class_label, fields.stream_id, fields.dwell_seconds);
   }
   if (await ruleMutation("/api/rules/" + editing.rule_id, "PATCH", fields)) stopEditingRule();
 };
@@ -2149,8 +2911,38 @@ function showLargeCandidate(candidate) {
   box.append(image);
 }
 
+function selectCandidate(index) {
+  const candidate = state.drawerCandidates[index];
+  state.drawerCandidateIndex = index;
+  $("candidate-list").querySelectorAll("button").forEach((item, n) => item.setAttribute("aria-pressed", String(n === index)));
+  showLargeCandidate(candidate);
+}
+function stopReplay() {
+  clearInterval(state.replayTimer); state.replayTimer = null; $("drawer-play").textContent = "Play";
+}
+function toggleReplay() {
+  if (state.replayTimer) return stopReplay();
+  if (state.drawerCandidates.length < 2) return;
+  $("drawer-play").textContent = "Pause";
+  state.replayTimer = setInterval(() => selectCandidate((state.drawerCandidateIndex + 1) % state.drawerCandidates.length), 420);
+}
+function askAboutDrawerObject() {
+  const track = state.drawerTrack;
+  if (!track) return;
+  openAssistant().then(() => {
+    const when = evidenceTime(track.last_observed_utc);
+    $("search-camera").value = track.stream_id || "all";
+    $("assistant-mode").value = "auto";
+    $("ask-text").value = `What can you tell me about ${track.class_label} track #${track.track_id || "live"} on ${cameraName(track.stream_id)} around ${when}? Use only this camera/object context.`;
+    updateSearchAvailability(); updateAssistantCameraCue(); updateQuestionFilters();
+  });
+}
+$("drawer-play").onclick = toggleReplay;
+$("drawer-ask").onclick = askAboutDrawerObject;
+
 async function openDrawer(track) {
   holdList();
+  stopReplay();
   state.drawerTrack = track;
   state.selectedTrackKey = trackKey(track);
   document.querySelectorAll(".track-card").forEach((card) => {
@@ -2171,7 +2963,9 @@ async function openDrawer(track) {
   try {
     const result = await api("/api/tracks/" + track.track_id + "/candidates");
     if (state.drawerTrack !== track) return;
-    const candidates = result.candidates || [];
+    const candidates = (result.candidates || []).slice().sort((a, b) => String(a.observed_at_utc).localeCompare(String(b.observed_at_utc)) || (a.candidate_number || 0) - (b.candidate_number || 0));
+    state.drawerCandidates = candidates; state.drawerCandidateIndex = 0;
+    $("drawer-play").hidden = candidates.length < 2;
     showLargeCandidate(candidates[0]);
     if (!candidates.length) {
       missingCrop($("large-crop"), "No stored image");
@@ -2194,10 +2988,8 @@ async function openDrawer(track) {
         button.textContent = candidate.image_state;
       }
       button.setAttribute("aria-pressed", String(candidate === candidates[0]));
-      button.onclick = () => {
-        $("candidate-list").querySelectorAll("button").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
-        showLargeCandidate(candidate);
-      };
+      const index = candidates.indexOf(candidate);
+      button.onclick = () => { stopReplay(); selectCandidate(index); };
       $("candidate-list").append(button);
     }
   } catch (error) {
@@ -2208,7 +3000,8 @@ async function openDrawer(track) {
 
 function closeDrawer() {
   $("drawer").classList.remove("open");
-  state.drawerTrack = null;
+  stopReplay();
+  state.drawerTrack = null; state.drawerCandidates = [];
   for (const child of $("tracks-panel").children) child.inert = false;
   updateListState();
   if (state.assistantReturn) {
@@ -2420,6 +3213,7 @@ function updateQuestionFilters() {
 }
 
 function closeAssistant(restoreFocus = true) {
+  cancelVoice();
   $("assistant-panel").classList.remove("open");
   $("open-assistant").setAttribute("aria-expanded", "false");
   searchBackgroundInert(false);
@@ -2553,7 +3347,7 @@ async function applyAssistantFilters(event) {
 }
 
 async function submitAssistant(payload, label = null) {
-  if (state.assistantBusy) return;
+  if (state.assistantBusy || voice.turn) return;
   followLatest = true;
   $("assistant-panel").classList.remove("welcome");
   $("answer-actions").replaceChildren();
@@ -2654,6 +3448,8 @@ $("open-assistant").onclick = openAssistant;
 $("open-assistant").setAttribute("aria-expanded", "false");
 $("close-assistant").onclick = closeAssistant;
 $("assistant-reset").onclick = async () => {
+  cancelVoice();
+  stopSpeaking();
   const previousId = conversationId;
   conversationId = crypto.randomUUID();
   ++assistantRequestVersion;
@@ -2766,9 +3562,11 @@ async function refreshState() {
   const streams = await api("/api/streams");
   if (version !== state.requestVersion) return;
   state.streams = streams;
-  if (!state.selected || (state.selected !== "all" && !streams.some((stream) => stream.stream_id === state.selected))) {
-    state.selected = streams[0] ? streams[0].stream_id : "all";
+  if (!state.selected) {
+    const remembered = storeGet("operator.selectedCamera");
+    state.selected = remembered === "all" || streams.some((stream) => stream.stream_id === remembered) ? remembered : (streams[0] ? streams[0].stream_id : "all");
   }
+  if (state.selected !== "all" && !streams.some((stream) => stream.stream_id === state.selected)) state.selected = streams[0] ? streams[0].stream_id : "all";
   const [alerts, telemetry, ...trackData] = await Promise.all([
     api("/api/alerts"),
     api("/api/metrics"),
@@ -2792,6 +3590,7 @@ async function refreshState() {
   renderTracks();
   renderAlerts();
   renderTelemetry();
+  showAwaySummary();
 }
 
 function connectEvents() {
@@ -2803,13 +3602,15 @@ function connectEvents() {
     if (state.events !== events) return;
     $("connection").textContent = "live updates";
     $("connection").className = "live";
+    renderConnectionState(false);
     refreshState().catch(() => {});
   };
   events.onerror = () => {
     if (state.events !== events) return;
     renderPresence();
-    $("connection").textContent = "reconnecting";
-    $("connection").className = "";
+    $("connection").textContent = "Connection lost · retrying";
+    $("connection").className = "lost";
+    renderConnectionState(true);
   };
   events.addEventListener("feed", (event) => {
     if (state.events !== events) return;
@@ -2835,7 +3636,8 @@ function connectEvents() {
   });
   events.addEventListener("speech", (event) => {
     if (state.events !== events) return;
-    state.speech = JSON.parse(event.data);
+    const speech = JSON.parse(event.data);
+    state.speech = speech;
     renderSpeech();
   });
   events.addEventListener("telemetry", (event) => {
@@ -2868,8 +3670,9 @@ async function changeFilters() {
   } catch (error) {
     if (version !== state.requestVersion) return;
     $("scope-copy").textContent = "Filter update failed. Showing previous results; select a filter to retry.";
-    $("connection").textContent = "reconnecting";
-    $("connection").className = "";
+    $("connection").textContent = "Connection lost · retrying";
+    $("connection").className = "lost";
+    renderConnectionState(true);
   } finally {
     if (version === state.requestVersion) connectEvents();
   }
@@ -2889,6 +3692,11 @@ $("people-only").onclick = () => {
   changeFilters();
 };
 $("image-filter").onchange = changeFilters;
+$("view-toggle").onclick = () => {
+  state.evidenceView = state.evidenceView === "compact" ? "cards" : "compact";
+  storeSet("operator.evidenceView", state.evidenceView);
+  renderTracks(true);
+};
 $("pause-updates").onclick = () => {
   state.paused = !state.paused;
   if (!state.paused) { state.held = false; renderTracks(true); }
@@ -2946,6 +3754,7 @@ window.addEventListener("resize", () => {
   sizeAssistant();
   if ($("workspace").classList.contains("resources-expanded")) sizeExpandedTelemetry();
   renderChart();
+  renderZoneOverlay();
 });
 // Re-evaluate freshness even when the event stream stops delivering samples.
 setInterval(() => { renderTelemetry(); renderPresence(); }, 1000);

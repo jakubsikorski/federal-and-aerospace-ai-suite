@@ -2,7 +2,7 @@
 """Offline UX regression check. Requires Firefox + geckodriver, Python stdlib only.
 
 Run from the repo root: python3 backend/test_ui.py
-Optional screenshots: python3 backend/test_ui.py --screenshots /tmp/phase4-ux
+Optional screenshots: python3 backend/test_ui.py --screenshots ui-shots
 Fixtures prove interaction/layout, not live inference or video transport.
 """
 import argparse
@@ -23,7 +23,8 @@ HTML = Path(__file__).parent / 'app/static/index.html'
 
 
 RULES = [dict(rule_id='r1', name='person on any camera', class_label='person', stream_id=None,
-              min_confidence=None, enabled=True, cooldown_seconds=60, speak=True)]
+              min_confidence=None, enabled=True, cooldown_seconds=60, dwell_seconds=None,
+              active_hours=None, zone=None, speak=True)]
 RULE_REQUESTS = []
 ALERTS = {'alerts': [], 'incidents': []}
 
@@ -50,7 +51,7 @@ class Fixture(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(length) or b'null')
         RULE_REQUESTS.append((self.command, self.path, body))
         if self.command == 'POST':
-            rule = dict(rule_id='r2', name=body['class_label'] + ' on Camera 2', enabled=True, **body)
+            rule = dict(rule_id='r2', name=(body['class_label'] or 'Anything detected') + ' on Camera 2', enabled=True, **body)
             RULES.append(rule)
             return self._json(rule, 201)
         rule_id = self.path.split('/')[3].split('?')[0]
@@ -80,7 +81,7 @@ class Fixture(BaseHTTPRequestHandler):
             return
         else:
             if self.path == '/api/streams':
-                data = [dict(stream_id=f'cam{i}', display_name=f'Camera {i}', feed={'ok': i != 3}, whep_path='/whep') for i in range(1, 4)]
+                data = [dict(stream_id=f'cam{i}', display_name=f'Camera {i}', feed={'ok': i != 3}, whep_path='/whep') for i in range(1, 8)]
             elif self.path == '/api/mission/documents':
                 data = {
                     'mode': 'ready', 'detail': 'Mission corpus is reconciled.', 'corpus_version': 3,
@@ -100,7 +101,7 @@ class Fixture(BaseHTTPRequestHandler):
             elif '/current' in self.path:
                 data = dict(tracks=tracks, current_presence='present', feed_ok=True)
             elif '/candidates' in self.path:
-                data = {'candidates': [dict(candidate_number=1, image_url='/fixture.svg', image_state='available', observed_at_utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time()-60)))]}
+                data = {'candidates': [dict(candidate_number=n, image_url='/fixture.svg', image_state='available', observed_at_utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time()-60+n))) for n in range(1, 4)]}
             elif '/tracks?' in self.path:
                 from urllib.parse import parse_qs, urlsplit
                 label = parse_qs(urlsplit(self.path).query).get('classes', [''])[0]
@@ -116,7 +117,7 @@ class Fixture(BaseHTTPRequestHandler):
                      'peak_confidence': .9, 'snip_url': None, 'snip_state': 'none', 'candidate_count': 0,
                      'state_source': 'history'} for n in (41, 42, 43)]}
             elif self.path == '/api/rules':
-                data = {'rules': RULES, 'classes': ['person', 'car'], 'streams': ['cam1', 'cam2', 'cam3']}
+                data = {'rules': RULES, 'classes': ['person', 'car'], 'streams': [f'cam{i}' for i in range(1, 8)]}
             elif self.path == '/api/models':
                 data = {'models': [dict(id=key, label=label, host='Fixture host', service_host=key,
                     configured_model=model, configured_device=device, runtime_model=None, runtime_device=None,
@@ -325,19 +326,28 @@ def main():
             click('#close-mission')
             click('#rules-toggle')
             for _ in range(100):
-                if js("return document.getElementById('rule-list').textContent.includes('person on any camera')"):
+                if js("return document.getElementById('rule-list').textContent.includes('Person appears in any camera')"):
                     break
                 time.sleep(.05)
             assert js("return !document.getElementById('rules-panel').hidden && document.getElementById('mission-panel').hidden")
-            assert js("return [...document.getElementById('rule-camera').options].map(o => o.textContent).join('|')") == 'Any camera|Camera 1|Camera 2|Camera 3'
-            js("document.getElementById('rule-camera').value = 'cam2'; document.getElementById('rule-confidence').value = '0.6'")
+            assert js("return [...document.getElementById('rule-camera').options].map(o => o.textContent).join('|')") == 'Any camera|Camera 1|Camera 2|Camera 3|Camera 4|Camera 5|Camera 6|Camera 7'
+            assert js("""return window.eval(`(() => {
+              if ($('rule-class').value !== '' || $('rule-advanced').open || !$('rule-duration').hidden) return false;
+              document.querySelector('input[name=rule-kind][value=dwell]').click();
+              if ($('rule-duration').hidden || ruleDwell() !== 30 || !$('rule-custom-duration').hidden) return false;
+              $('rule-duration-choice').value='60'; updateRuleForm();
+              if(ruleDwell() !== 60 || !$('rule-preview').textContent.includes('60 seconds')) return false;
+              document.querySelector('input[name=rule-kind][value=appears]').click();
+              return ruleDwell() === null && $('rule-duration').hidden;
+            })()` )"""), 'Simple alert defaults or duration controls failed'
+            js("document.getElementById('rule-class').value = 'person'; document.getElementById('rule-camera').value = 'cam2'; document.getElementById('rule-confidence').value = '0.6'")
             click('#rule-form button[type="submit"]')
             for _ in range(100):
                 if js("return document.getElementById('rule-list').children.length") == 2:
                     break
                 time.sleep(.05)
             assert RULE_REQUESTS[-1] == ('POST', '/api/rules', {'class_label': 'person', 'stream_id': 'cam2',
-                'min_confidence': 0.6, 'cooldown_seconds': 60, 'speak': True}), RULE_REQUESTS
+                'min_confidence': 0.6, 'cooldown_seconds': 60, 'dwell_seconds': None, 'active_hours': None, 'zone': None, 'speak': True}), RULE_REQUESTS
             click('#rule-list li:first-child button:nth-of-type(2)')
             for _ in range(100):
                 if RULE_REQUESTS[-1][0] == 'PATCH':
@@ -357,20 +367,68 @@ def main():
                     break
                 time.sleep(.05)
             assert RULE_REQUESTS[-1] == ('PATCH', '/api/rules/r1', {'class_label': 'person', 'stream_id': 'cam3',
-                'min_confidence': 0.7, 'cooldown_seconds': 60, 'speak': True, 'name': 'person on Camera 3'}), RULE_REQUESTS[-1]
+                'min_confidence': 0.7, 'cooldown_seconds': 60, 'dwell_seconds': None, 'active_hours': None, 'zone': None, 'speak': True, 'name': 'person on Camera 3'}), RULE_REQUESTS[-1]
             for _ in range(100):
-                if js("return document.getElementById('rule-submit').textContent") == 'Add rule':
+                if js("return document.getElementById('rule-submit').textContent") == 'Create alert':
                     break
                 time.sleep(.05)
-            assert js("return document.getElementById('rule-cancel-edit').hidden && document.getElementById('rule-list').textContent.includes('person on Camera 3')")
+            assert js("return document.getElementById('rule-cancel-edit').hidden && document.getElementById('rule-list').textContent.includes('Person appears in Camera 3')")
             click('#rule-list li:first-child button:nth-of-type(1)')
             click('#rule-cancel-edit')
-            assert js("return document.getElementById('rule-submit').textContent === 'Add rule' && !document.querySelector('#rule-list [data-editing]')")
+            assert js("return document.getElementById('rule-submit').textContent === 'Create alert' && !document.querySelector('#rule-list [data-editing]')")
+            js("""window.eval(`(() => {
+              document.querySelector('input[name=rule-kind][value=dwell]').checked=true; $('rule-duration-choice').value='custom'; updateRuleForm(); $('rule-camera').value = 'cam2'; $('rule-dwell').value = '45'; $('rule-active-start').value = '22:00'; $('rule-active-end').value = '06:00';
+              state.zoneDraft = {points:[[0.1,0.2],[0.8,0.2],[0.7,0.75]]}; updateZoneSummary();
+            })()` )""")
+            click('#rule-submit')
+            for _ in range(100):
+                if RULE_REQUESTS[-1][0] == 'POST' and RULE_REQUESTS[-1][2].get('dwell_seconds') == 45:
+                    break
+                time.sleep(.05)
+            rule_payload = RULE_REQUESTS[-1][2]
+            assert rule_payload['class_label'] is None and rule_payload['dwell_seconds'] == 45 and rule_payload['active_hours']['start'] == '22:00' \
+                and rule_payload['active_hours']['end'] == '06:00' and rule_payload['active_hours']['timezone'] \
+                and rule_payload['zone']['points'] == [[0.1, 0.2], [0.8, 0.2], [0.7, 0.75]], rule_payload
+            fixed_rules = async_js("""const done = arguments[arguments.length - 1];
+              window.eval(`(async () => {
+                const mutate = ruleMutation;
+                let submitted;
+                try {
+                  editRule({...state.rules.rules[0], stream_id:'cam2',
+                    active_hours:{start:'08:00',end:'17:00',timezone:'Pacific/Honolulu'},
+                    zone:{points:[[.1,.1],[.8,.1],[.8,.8]]}});
+                  state.zoneBackup=structuredClone(state.zoneDraft);
+                  $('zone-editor').hidden=false; drawZoneDraft();
+                  $('zone-clear').click();
+                  if ($('zone-done').disabled || $('zone-done').textContent !== 'Remove area') return 'cannot remove zone';
+                  $('zone-done').click();
+                  if (!$('zone-editor').hidden || state.zoneDraft.points.length) return 'zone removal not saved';
+                  ruleMutation=async (path,method,fields)=>{submitted=fields;return false;};
+                  await $('rule-form').onsubmit({preventDefault(){}});
+                  if(submitted.zone !== null || submitted.active_hours.timezone !== 'Pacific/Honolulu') return submitted;
+                  if(getComputedStyle($('alert-list')).maxHeight !== '150px') return 'alert height budget changed';
+                  const savedStreams=state.streams, savedPage=state.gridPage;
+                  try {
+                    state.streams=state.streams.slice(0,3);state.gridPage=0;renderCameraGrid();
+                    if (!$('grid-pager').hidden) return 'single page reserves pager space';
+                    state.streams=Array.from({length:5},(_,i)=>({...savedStreams[0],stream_id:'check'+i}));
+                    renderCameraGrid();
+                    if ($('grid-pager').hidden) return 'multiple pages cannot be reached';
+                  } finally {state.streams=savedStreams;state.gridPage=savedPage;renderCameraGrid();}
+                  return true;
+                } finally {ruleMutation=mutate;stopEditingRule();}
+              })()`).then(done).catch(error=>done(String(error)));
+            """)
+            assert fixed_rules is True, fixed_rules
+            js("document.getElementById('rule-camera').value = 'cam2'; document.getElementById('rule-draw-zone').click()")
+            assert js("return document.getElementById('rules-status').textContent.includes('Waiting for a frame')")
+            time.sleep(8.6)
+            assert js("return document.getElementById('rules-status').textContent.includes('No live frame') && document.getElementById('zone-editor').hidden")
             click('#close-rules')
             # Light dismiss: a click elsewhere closes Rules, Escape closes Mission from anywhere.
             click('#rules-toggle')
             assert js("return !document.getElementById('rules-panel').hidden")
-            click('#track-title')
+            js("document.getElementById('track-title').dispatchEvent(new PointerEvent('pointerdown', {bubbles: true}))")
             assert js("return document.getElementById('rules-panel').hidden"), 'outside click left Rules open'
             click('#mission-toggle')
             js("document.activeElement.blur(); document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))")
@@ -466,7 +524,8 @@ def main():
                 ok: rows[0].includes("Person · Camera 2") && rows[0].includes("Needs attention") && rows[0].includes("4 sightings")
                   && rows[0].includes("Undelivered") && rows[0].includes("text only")
                   && rows[1].includes("Snoozed") && rows[2].includes("false alarm")
-                  && buttons[0].join() === "View,Speak,Acknowledge,Remove" && buttons[1].join() === "View,Speak,Remove" && menus[2].length === 0
+                  && buttons[0].slice(1).join() === "Acknowledge,View,Speak" && buttons[1].join().endsWith("View,Speak")
+                  && !buttons.flat().includes("Remove") && menus.every(m => m[m.length - 1] === "remove") && menus[2].join() === ",remove"
                   && badge === "1" && noBadge && summary.includes("1 needs attention") && firstToast && toast};
             })()'''
             alerts = js('return window.eval(' + json.dumps(alert_check) + ')')
@@ -479,8 +538,9 @@ def main():
                 class_label: "dog", rule_id: "r1", rule_name: "dog", rule_enabled: true, match_count: 1, opened_utc: now,
                 last_match_utc: now, dispatch_state: "delivered", snip_url: null, track: null}];
               renderAlerts(); window.confirm = () => true;
-              const [speak, remove] = [...$("alert-list").querySelectorAll("button")].filter(b => b.textContent === "Speak" || b.textContent === "Remove");
-              speak.click(); remove.click();
+              const speak = [...$("alert-list").querySelectorAll("button")].find(b => b.textContent === "Speak");
+              const more = $("alert-list").querySelector("select");
+              speak.click(); more.value = "remove"; more.dispatchEvent(new Event("change"));
             })()`)""")
             time.sleep(.5)
             assert sorted(RULE_REQUESTS[before:]) == [('DELETE', '/api/incidents/ih', None), ('POST', '/api/incidents/ih/speak', None)], RULE_REQUESTS[before:]
@@ -560,6 +620,74 @@ def main():
             time.sleep(.5)
             assert js('return document.fullscreenElement') is None
             assert js('return document.getElementById("video-fullscreen").getAttribute("aria-pressed")') == 'false'
+            new_ui = async_js(r'''const done = arguments[arguments.length - 1];
+              window.eval(`(async () => {
+                const now = new Date().toISOString();
+                state.announced = new Set(["opt"]);
+                state.incidents = [{incident_id:"opt", head_match_id:"opt", state:"open", stream_id:"cam2", class_label:"person", rule_id:"r1", rule_name:"long status rule", rule_enabled:true, match_count:2, opened_utc:now, last_match_utc:now, dispatch_state:"delivered", speech:"unconfirmed", snip_url:null, track:null}];
+                renderCameras(); renderAlerts(); $("alerts").open = true;
+                const row = $("alert-list").querySelector("li"), main = row.querySelector(".incident-main"), ack = row.querySelector(".ack-button"), meta = row.querySelector(".incident-meta");
+                if (!main || main.tagName !== "BUTTON" || !main.getAttribute("aria-label").includes("View alert")) return "alert main is not accessible button";
+                const view = [...row.querySelectorAll('.incident-actions button')].find(b => b.textContent === "View");
+                if (row.querySelector('.incident-actions').firstElementChild !== ack || Math.abs(ack.getBoundingClientRect().height - view.getBoundingClientRect().height) > 1
+                    || getComputedStyle(ack).borderTopColor === getComputedStyle(view).borderTopColor) return "ack must be first, same size, distinct border";
+                if (getComputedStyle(meta).whiteSpace === "nowrap" || main.getBoundingClientRect().width < 220) return "alert text target too narrow";
+                if (innerWidth >= 1280 && row.getBoundingClientRect().height > 60) return "alert row wraps: " + row.getBoundingClientRect().height;
+                if (document.querySelector("header").getBoundingClientRect().height > 64 || !document.querySelector('.camera[data-alerts]')) return "alert badge grows header";
+                main.click(); await new Promise(r=>setTimeout(r,80));
+                if (state.selected !== "cam2" || !$('tracks-panel').classList.contains('alert-view')) return "alert main did not view incident";
+                exitAlertView(false);
+                let releaseReject;
+                const realRefreshIncidents = refreshIncidents; refreshIncidents = async () => {};
+                const pending = alertAction("Remove", () => new Promise((_, reject) => { releaseReject = reject; }), () => { state.incidents = []; });
+                if (state.incidents.length !== 0) return "remove did not apply optimistically";
+                releaseReject(new Error("offline")); await pending; refreshIncidents = realRefreshIncidents;
+                if (state.incidents.length !== 1 || !$('alert-error').textContent.startsWith('Remove failed')) return "optimistic rollback failed";
+                selectCamera("all"); await new Promise(r=>setTimeout(r,50));
+                if ($('camera-grid').children.length !== 4 || !$('grid-page-label').textContent.includes('1–4 of 7')) return "grid first page missing";
+                $('grid-next').click(); await new Promise(r=>setTimeout(r,50));
+                if ($('camera-grid').children.length !== 3 || !$('grid-page-label').textContent.includes('5–7 of 7')) return "grid pager missing";
+                if ($('video-wrap').classList.contains('inactive') ||
+                    [...$('camera-grid').querySelectorAll('video')].some(video=>getComputedStyle(video).opacity !== '1')) return 'All cameras is dimmed';
+                $('video-wrap').classList.add('inactive');
+                const isolated = [...$('camera-grid').querySelectorAll('video')].every(video=>getComputedStyle(video).opacity === '1')
+                  && getComputedStyle($('video')).opacity === '0.25';
+                $('video-wrap').classList.remove('inactive');
+                if (!isolated) return 'single-camera unavailable style leaks into grid';
+                const gridBox = $('camera-grid').getBoundingClientRect(), pagerBox = $('grid-pager').getBoundingClientRect();
+                if (pagerBox.top < gridBox.bottom || getComputedStyle($('video-note')).display !== 'none' || getComputedStyle($('video-fullscreen')).display !== 'none') return "grid controls overlap video";
+                const tileRects = [...$('camera-grid').children].map(t => t.getBoundingClientRect());
+                if (!tileRects.every(r => Math.abs(r.width - tileRects[0].width) < 2 && Math.abs(r.height - tileRects[0].height) < 2)) return "grid tiles uneven";
+                selectCamera("cam2");
+                if (localStorage.getItem('operator.selectedCamera') !== 'cam2') return "camera not remembered";
+                state.evidenceView = 'cards'; renderTracks(true); $('view-toggle').click();
+                if (!$('tracks-panel').classList.contains('compact') || localStorage.getItem('operator.evidenceView') !== 'compact') return "compact evidence not remembered";
+                localStorage.setItem('operator.lastActive', String(Date.now() - 360000)); state.awayChecked = false;
+                state.recent.cam2 = {tracks:[{track_id:700, class_label:'person', last_observed_utc:now}]}; state.incidents[0].opened_utc = now; showAwaySummary();
+                if (!$('away-summary').classList.contains('show') || !$('away-summary').textContent.includes('While you were away') || !$('away-summary').textContent.includes('Person')) return "away summary missing";
+                await openDrawer(visibleTracks()[0]); await new Promise(r=>setTimeout(r,100));
+                if ($('drawer-play').hidden) return "replay hidden for multiple candidates";
+                $('drawer-play').click(); await new Promise(r=>setTimeout(r,500));
+                if (!state.replayTimer || state.drawerCandidateIndex === 0) return "replay did not advance";
+                stopReplay(); $('drawer-ask').click(); await new Promise(r=>setTimeout(r,100));
+                if (!$('assistant-panel').classList.contains('open') || !$('ask-text').value.includes('track #')) return "ask object did not prefill";
+                $('search-camera').value = 'all'; closeAssistant(false); closeDrawer();
+                const reports = new Map([
+                  ['in', {type:'inbound-rtp', kind:'video', jitterBufferDelay:.3, jitterBufferEmittedCount:3}],
+                  ['cp', {type:'candidate-pair', nominated:true, currentRoundTripTime:.08}]
+                ]);
+                state.whep = {pc:{getStats: async () => reports}}; startLatency(state.whep); await new Promise(r=>setTimeout(r,1100));
+                if (!$('latency-badge').textContent.includes('receiver est.')) return "latency badge missing";
+                stopLatency(); state.whep = null;
+                if ($('cameras').scrollWidth <= $('cameras').clientWidth || !$('cameras').hasAttribute('data-overflow') || getComputedStyle($('cameras')).boxShadow !== 'none') return "camera tab overflow has no neutral scroll affordance";
+                renderConnectionState(true); $('connection').textContent = 'Connection lost · retrying'; $('connection').className = 'lost';
+                if (!$('tracks-panel').classList.contains('stale') || !$('connection').textContent.includes('Connection lost')) return "connection lost state missing";
+                renderConnectionState(false); $('connection').textContent = 'live updates'; $('connection').className = 'live';
+                $('away-summary').classList.remove('show'); markActive(); state.awayChecked = true; state.evidenceView = 'cards'; selectCamera('cam1'); renderTracks(true);
+                return true;
+              })()`).then(done).catch(e=>done(String(e)));
+            ''')
+            assert new_ui is True, new_ui
             result = async_js('''const done = arguments[arguments.length - 1];
               window.eval(`(async () => {
                 if (state.filter.mode !== "current" || $("track-mode").value !== "current") return "wrong default view";
@@ -748,16 +876,19 @@ def main():
               })()` ).then(done);
             ''')
             assert result is True, result
-            # Retry unchanged crop URLs, including crops replaced inside an existing card.
+            # Back off failed crop URLs, then retry even when the track data is unchanged.
             check('''(() => {
               state.paused = false; state.held = false; renderTracks(true);
               const card = document.querySelector(".track-card");
               for (let attempt = 0; attempt < 2; attempt++) {
                 const image = card.querySelector("img");
                 image.dispatchEvent(new Event("error"));
-                if (card.dataset.imageKey || !card.querySelector(".missing")) return false;
+                if (!card.dataset.imageKey || !card.querySelector(".missing") || Number(card.dataset.imageRetryAt) <= Date.now()) return "failure did not schedule back-off";
                 renderTracks();
-                if (!card.querySelector("img") || card.querySelector("img") === image) return false;
+                if (card.querySelector("img")) return "failed crop retried on next live tick";
+                card.dataset.imageRetryAt = String(Date.now() - 1);
+                renderTracks();
+                if (!card.querySelector("img") || card.querySelector("img") === image) return "unchanged crop not retried after back-off";
               }
               return card === document.querySelector(".track-card");
             })()''')
@@ -828,12 +959,24 @@ def main():
               state.incidents = [{incident_id: "test-incident", head_match_id: "test-alert", state: "open", stream_id: "cam2",
                 class_label: "person", rule_id: "r1", rule_name: "Entry", rule_enabled: true, match_count: 1,
                 opened_utc: now, last_match_utc: now, dispatch_state: "delivered", track: null, snip_url: null}];
-              renderAlerts(); const open = $("alerts").open;
+              $('alerts').open = false;
+              const video = $('video'), height = $('video-wrap').getBoundingClientRect().height;
+              renderAlerts();
+              const stable = !$('alerts').open && $('video') === video && $('video-wrap').getBoundingClientRect().height === height;
+              const firstRow = $('alert-list').firstChild;
+              state.incidents.push({...state.incidents[0],incident_id:'second-incident',head_match_id:'second-match'});
+              renderAlerts();
+              if ($('alert-list').firstChild !== firstRow) return 'unrelated alert rebuilt existing row';
+              const secondRow = $('alert-list').lastChild;
+              state.incidents[1].match_count++; renderAlerts();
+              if ($('alert-list').firstChild !== firstRow || $('alert-list').lastChild === secondRow) return 'alert update replaced unaffected rows';
+              $('alerts').open=true; state.incidents[1].match_count++; renderAlerts();
+              if (!$('alerts').open) return 'operator-opened tray collapsed';
               state.selected = "cam3"; renderCameras(); renderTracks(true);
               const global = $("alert-summary").textContent.includes("Camera 2");
               state.incidents = []; renderAlerts(); $("alerts").open = false; $("alert-toast").hidden = true;
               state.selected = "cam1"; renderCameras(); $("track-scroll").scrollTop = 0; renderTracks(true);
-              return open && global;
+              return stable && global;
             })()''')
             # Palette contrast: primary and secondary text, including selected surfaces.
             check('''(() => {
@@ -850,6 +993,22 @@ def main():
             })()''')
             if args.screenshots:
                 args.screenshots.mkdir(parents=True, exist_ok=True)
+            # The optional away banner must never leave an empty expanding row.
+            for width, height in [(1920, 1080), (1280, 900)]:
+                request('POST', base + '/window/rect', {'width': width, 'height': height})
+                check('''(() => {
+                  const banner = $("away-summary"), savedClass = banner.className, savedText = banner.textContent;
+                  try {
+                    for (const shown of [false, true, false]) {
+                      banner.textContent = "While you were away";
+                      banner.classList.toggle("show", shown);
+                      const bounds = $("workspace").getBoundingClientRect();
+                      if (Math.abs(bounds.bottom - innerHeight) > 1) return {shown, bottom:bounds.bottom, viewport:innerHeight};
+                      if (shown && bounds.top < banner.getBoundingClientRect().bottom) return "workspace overlaps banner";
+                    }
+                    return true;
+                  } finally {banner.className = savedClass; banner.textContent = savedText;}
+                })()''')
             for width, height in [(1280, 714), (1024, 682), (1280, 600), (1024, 540)]:
                 request('POST', base + '/window/rect', {'width': width, 'height': height})
                 chrome = js('return outerHeight - innerHeight')
@@ -870,7 +1029,7 @@ def main():
                         && history.top >= evidenceHead.top && history.bottom <= evidenceHead.bottom
                         && !$("track-count") && $("track-title").textContent === "Evidence"
                         && getComputedStyle($("open-assistant")).backgroundColor !== getComputedStyle($("toggle-diagnostics")).backgroundColor
-                        && [...document.querySelectorAll(".quiet-button:not(#ask-submit):not(#use-viewed-camera):not(#toggle-history-filters):not(.primary-action)")].every(button => parseFloat(getComputedStyle(button).borderTopWidth) >= 1 && getComputedStyle(button).height === "32px" && getComputedStyle(button).fontSize === "13px")
+                        && [...document.querySelectorAll(".quiet-button:not(#ask-submit):not(#use-viewed-camera):not(#toggle-history-filters):not(.primary-action):not(#grid-prev):not(#grid-next):not(#drawer-ask):not(#drawer-play):not(#zone-toolbar *)")].every(button => parseFloat(getComputedStyle(button).borderTopWidth) >= 1 && getComputedStyle(button).height === "32px" && getComputedStyle(button).fontSize === "13px")
                         && ["mission-toggle","rules-toggle","audio-toggle","open-assistant"].every(id => $(id).getBoundingClientRect().height === 40 && getComputedStyle($(id)).fontSize === "15px")
                         && parseFloat(getComputedStyle(document.querySelector(".track-seen")).fontSize) >= 15
                         && document.body.scrollWidth === innerWidth && document.body.scrollHeight === innerHeight
@@ -1135,8 +1294,32 @@ def main():
                   state.selected = one.stream_id; mode = "ice";
                   const gathering = attachWhep(one); await settle(); await fire(state.whep.timeout); await gathering;
                   assert(state.whep.retryTimer,"ICE timeout did not retry");
-                  selectCamera("all"); await settle();
-                  assert(!state.whep && timers.size === 0,"All cameras left connection or retry timers");
+                  state.gridPage = 0; selectCamera("all"); await settle();
+                  assert(!state.whep && state.gridWheps.size <= 4,"All cameras did not switch to grid sessions");
+                  const gridVideos = [...$('camera-grid').querySelectorAll('video')];
+                  const gridPeers = [...state.gridWheps.values()].map(c => c.pc);
+                  renderCameraGrid();
+                  assert(gridVideos.every((v,i) => v === $('camera-grid').querySelectorAll('video')[i]), "grid redraw replaced video elements");
+                  assert(gridPeers.every((pc,i) => pc === [...state.gridWheps.values()][i].pc), "grid redraw replaced peers");
+                  const gridCurrent = state.gridWheps.get(one.stream_id);
+                  retryGridWhep(gridCurrent); await settle();
+                  const retryTimer = gridCurrent.retryTimer;
+                  retryGridWhep(gridCurrent); await settle();
+                  assert(retryTimer === gridCurrent.retryTimer, "grid close scheduled duplicate retries");
+                  mode = "ok"; await fire(retryTimer);
+                  const restored = state.gridWheps.get(one.stream_id);
+                  assert(restored.pc.connectionState === "connected", "grid retry failed");
+                  restored.pc.track.onmute(); await fire(restored.mediaTimer); await fire(restored.retryTimer);
+                  assert(state.gridWheps.get(one.stream_id).pc !== restored.pc, "stalled grid track did not reconnect");
+                  await detachGridWheps();
+                  mode = "hold";
+                  const late = attachGridWhep(one, gridVideos[0], document.createElement('small'));
+                  await settle(); await detachGridWheps();
+                  held(new Response("late answer",{status:201,headers:{Location:"/session/grid-stale"}})); await late;
+                  assert(deleted.some(url => url.endsWith('/session/grid-stale')), "grid late session leaked");
+                  mode = "ok"; resumeWhep(); await settle();
+                  assert(state.gridWheps.size > 0 && [...state.gridWheps.values()].every(c => c.video.isConnected), "All cameras did not resume after page suspension");
+                  await detachGridWheps(); timers.clear();
                   return true;
                 } finally {
                   state.selected = "all"; await detachWhep();
@@ -1146,8 +1329,97 @@ def main():
               })()`).then(done).catch(e=>done(String(e)));
             ''')
             assert result is True, result
+            js("window.eval('closeAssistant(false)')")
+            assert js("""const button=document.getElementById('voice-talk'), box=button.getBoundingClientRect();
+              return button.closest('header') && !button.closest('[inert]') && box.height>=44
+                && box.top>=0 && box.right<=innerWidth && getComputedStyle(button).display!=='none';"""), 'Talk must be visible without opening Assistant'
+            assert js("""return window.eval(`(()=>{
+              const saved=state.speech, audio=state.audioOn;
+              try {
+                state.audioOn=true;
+                state.speech={preparing:'Answer text.',preparing_kind:'answer'};renderSpeech();
+                if($('speech-line').textContent || !$('assistant-speech-line').textContent.includes('Preparing speech')) return false;
+                state.speech={last:{kind:'answer',outcome:'text_only',text:'Answer text.'}};renderSpeech();
+                if($('speech-line').textContent || !$('assistant-speech-line').textContent.includes('Text only')) return false;
+                state.speech={last:{kind:'alert',outcome:'text_only',text:'Person detected.'}};renderSpeech();
+                return !$('assistant-speech-line').textContent && $('speech-line').textContent.includes('Person detected.');
+              } finally {state.speech=saved;state.audioOn=audio;renderSpeech();}
+            })()` )"""), 'Assistant speech leaked into alerts'
+            voice_check = async_js('''const done=arguments[arguments.length-1];
+              window.eval(`(async()=>{
+                const original={postApi,submitAssistant,fetch:window.fetch,AudioContext:window.AudioContext,
+                  getUserMedia:navigator.mediaDevices.getUserMedia};
+                let stops=0,closed=0,submitted=null,held=[],uploaded=false;
+                const assert=(ok,message)=>{if(!ok)throw Error(message);};
+                const node=()=>({connect(){},disconnect(){}});
+                class Context {
+                  sampleRate=48000; destination={};
+                  async resume(){} async close(){closed++;}
+                  createMediaStreamSource(){return node();}
+                  createScriptProcessor(){return node();}
+                  createGain(){return {...node(),gain:{value:1}};}
+                }
+                const stream=()=>({getTracks(){return this.getAudioTracks();},getAudioTracks(){return [this.track];},
+                  track:{readyState:'live',stop(){stops++;}}});
+                try {
+                  window.AudioContext=Context;
+                  navigator.mediaDevices.getUserMedia=async()=>stream();
+                  postApi=async(path,body)=>{if(path.endsWith('/talk')) held.push(body.held);return {};};
+                  submitAssistant=async payload=>{submitted=payload;};
+                  window.fetch=async(path,options)=>{
+                    if(path!=='/api/voice/transcribe') return original.fetch(path,options);
+                    const bytes=await options.body.arrayBuffer(), view=new DataView(bytes);
+                    assert(view.getUint32(24,true)===16000 && view.getUint16(22,true)===1,'not mono 16k WAV');
+                    uploaded=true;return new Response(JSON.stringify({data:{text:'How many people?'}}),{status:200});
+                  };
+                  state.assistantBusy=false; $('search-camera').value='cam2'; $('assistant-mode').value='auto';
+                  $('voice-talk').click();
+                  while(!voice.turn?.processor) await new Promise(resolve=>setTimeout(resolve,0));
+                  assert($('assistant-panel').classList.contains('open'),'Talk did not open Assistant');
+                  assert($('voice-talk').getAttribute('aria-pressed')==='true','capture indicator missing');
+                  voice.turn.processor.onaudioprocess({inputBuffer:{getChannelData:()=>new Float32Array(4800).fill(.2)}});
+                  await endVoice();
+                  assert(uploaded && submitted.text==='How many people?' && submitted.selected_stream==='cam2' && submitted.mode==='auto','voice bypasses typed request context');
+                  assert(stops===1 && closed===1 && held.join(',')==='true,true,false','capture resources or talk hold leaked');
+                  let permission;
+                  navigator.mediaDevices.getUserMedia=()=>new Promise(resolve=>permission=resolve);
+                  const pending=beginVoice();
+                  while(!permission) await new Promise(resolve=>setTimeout(resolve,0));
+                  await endVoice(false); permission(stream()); await pending;
+                  assert(!voice.turn && stops===2 && closed===2,'late permission started capture');
+                  navigator.mediaDevices.getUserMedia=async()=>{throw new DOMException('denied','NotAllowedError');};
+                  await beginVoice();
+                  assert(!voice.turn && $('voice-status').textContent.includes('permission denied'),'denial has no recovery');
+                  assert(!$('ask-text').disabled && !$('ask-submit').disabled,'typing blocked after failure');
+                  return true;
+                } finally {
+                  cancelVoice();postApi=original.postApi;submitAssistant=original.submitAssistant;
+                  window.fetch=original.fetch;window.AudioContext=original.AudioContext;
+                  navigator.mediaDevices.getUserMedia=original.getUserMedia;
+                }
+              })()`).then(done).catch(e=>done(String(e)));
+            ''')
+            assert voice_check is True, voice_check
             if args.screenshots:
+                args.screenshots.mkdir(parents=True, exist_ok=True)
                 request('POST', base + '/window/rect', {'width': 1280, 'height': 800})
+                js('return window.eval(' + json.dumps('showAlertError(""); renderConnectionState(false); $("connection").textContent="live updates"; $("connection").className="live";') + ')')
+                def shot(name):
+                    (args.screenshots / name).write_bytes(base64.b64decode(request('GET', base + '/screenshot')))
+                js('return window.eval(' + json.dumps('(() => { const now=new Date().toISOString(); closeAssistant(false); closeDrawer(); state.announced=new Set(["shot"]); state.incidents=[{incident_id:"shot",head_match_id:"shot",state:"open",stream_id:"cam2",class_label:"person",rule_id:"r1",rule_name:"perimeter dwell rule",rule_enabled:true,match_count:3,opened_utc:now,last_match_utc:now,dispatch_state:"delivered",speech:"unconfirmed",snip_url:"/fixture.svg",track:null}]; selectCamera("cam1"); renderAlerts(); $("alerts").open=true; })()') + ')')
+                shot('alert-row.png')
+                js('return window.eval(' + json.dumps('state.incidents[0].stream_id="cam6"; renderAlerts(); selectCamera("all"); state.gridPage=1; renderCameraGrid();') + ')')
+                shot('camera-grid-pager.png')
+                js('return window.eval(' + json.dumps('selectCamera("cam1"); state.evidenceView="compact"; renderTracks(true);') + ')')
+                shot('compact-evidence.png')
+                async_js('''const done = arguments[arguments.length - 1]; window.eval(`(async () => { await openDrawer(visibleTracks()[0]); $("drawer-play").hidden=false; return true; })()`).then(done).catch(e => done(String(e)));''')
+                shot('drawer-replay-ask.png')
+                js('return window.eval(' + json.dumps('localStorage.setItem("operator.lastActive", String(Date.now()-360000)); state.awayChecked=false; state.incidents[0].opened_utc=new Date().toISOString(); showAwaySummary();') + ')')
+                shot('away-summary.png')
+                js('return window.eval(' + json.dumps('closeDrawer(); closeAssistant(false); $("rules-panel").hidden=false; $("rules-toggle").setAttribute("aria-expanded","true"); state.rules={rules:[{rule_id:"rz",name:"person zone",class_label:"person",stream_id:"cam1",min_confidence:.6,cooldown_seconds:60,dwell_seconds:45,active_hours:{start:"22:00",end:"06:00",timezone:Intl.DateTimeFormat().resolvedOptions().timeZone},zone:{points:[[.1,.2],[.8,.2],[.7,.75]]},enabled:true,speak:true}],classes:["person","car"],streams:state.streams.map(s=>s.stream_id)}; renderRules(); $("rule-camera").value="cam1"; state.zoneDraft={points:[[.1,.2],[.8,.2],[.7,.75]]}; state.zoneBackup={points:[[.1,.2],[.8,.2],[.7,.75]]}; updateZoneSummary(); $("zone-editor").hidden=false; drawZoneDraft();') + ')')
+                shot('rule-zone-editor.png')
+                zone = js('return window.eval(' + json.dumps('(() => { const r = $("zone-stage").getBoundingClientRect(), v = $("video").getBoundingClientRect(); const big = getComputedStyle($("zone-editor")).position === "fixed" && r.width > v.width * 1.3; const svg = $("zone-svg"), r2 = svg.getBoundingClientRect(), n = state.zoneDraft.points.length; const opts = {bubbles: true, clientX: r2.left + r2.width * .9, clientY: r2.top + r2.height * .9}; svg.dispatchEvent(new PointerEvent("pointerdown", opts)); const drew = state.zoneDraft.points.length === n + 1 && !$("rules-panel").hidden && !$("zone-editor").hidden; for (const f of [.5, .6, .7]) svg.dispatchEvent(new PointerEvent("pointerdown", {...opts, clientX: r2.left + r2.width * f})); const capped = state.zoneDraft.points.length === 5 && $("zone-step").dataset.tone === "warn" && $("zone-count").textContent === "5 / 5 corners" && $("zone-handles").children.length === 5; const zb = $("zone-toolbar").querySelectorAll("button"); const tappable = [...zb].every(b => b.getBoundingClientRect().height >= 48) && zb[0].id === "zone-cancel" && zb[zb.length - 1].id === "zone-done"; closeRules(false); const restored = state.zoneDraft?.points?.length === 3; return {big, drew, capped, tappable, restored, closed: $("zone-editor").hidden}; })()') + ')')
+                assert all(zone.values()), zone
                 (args.screenshots / 'operator-welcome.png').write_bytes(base64.b64decode(request('GET', base + '/screenshot')))
                 js('return window.eval(' + json.dumps('state.assistantContext={text:"What can you do?",payload:{}}; renderAssistant({intent:"application_help",answer_text:"I can search recorded tracks, answer mission questions and explain general topics. I cannot see the live video.",errors:[]}); archiveAssistantTurn(); state.assistantContext={text:"Why is the sky blue?",payload:{}}; $("assistant-mode").value="general"; renderAssistant({intent:"general_chat",answer_text:"Air scatters blue sunlight more strongly than red light, so the daytime sky looks blue.",conversation:{turns:1},errors:[]});') + ')')
                 (args.screenshots / 'conversation.png').write_bytes(base64.b64decode(request('GET', base + '/screenshot')))
