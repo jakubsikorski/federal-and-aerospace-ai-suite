@@ -152,12 +152,22 @@ def test_migrate_is_idempotent_and_sync_preserves_run_state():
 
 
 def _observation(stream_id, tracker_id, label="person", observed_at=1000.0, session="s1",
-                 generation="g1", confidence=0.9):
+                 generation="g1", confidence=0.9, detection_rect=None, frame_width=None,
+                 frame_height=None, object_touches_frame=None):
+    obj = {"id": tracker_id, "detection": {"label": label, "confidence": confidence}}
+    if detection_rect is not None:
+        obj["detection_rect"] = detection_rect
+    if frame_width is not None:
+        obj["frame_width"] = frame_width
+    if frame_height is not None:
+        obj["frame_height"] = frame_height
+    if object_touches_frame is not None:
+        obj["object_touches_frame"] = object_touches_frame
     return json.dumps({"metadata": {
         "crop_context": {"stream_id": stream_id, "tracking_session_id": session,
                          "history_generation": generation, "observed_at": observed_at,
                          "frame_sequence": 1},
-        "objects": [{"id": tracker_id, "detection": {"label": label, "confidence": confidence}}],
+        "objects": [obj],
     }, "blob": ""}).encode()
 
 
@@ -381,6 +391,41 @@ def test_sidecar_reconciliation_recovers_undelivered_crops():
         assert ing.reconcile_sidecars() == 1
         assert ing.reconcile_sidecars() == 0, "a second scan must not re-ingest"
         assert ing.conn.execute("SELECT count(*) n FROM candidates").fetchone()["n"] == 1
+        ing.conn.close()
+
+
+def test_thumbnail_url_changes_only_when_best_candidate_changes():
+    from app.history import _snip
+    with tempfile.TemporaryDirectory() as tmp:
+        ing = _ingest(tmp, cameras=("cam1",))
+        _send(ing, _observation("cam1", 1), topic="detections/live")
+        track_id = ing.conn.execute("SELECT track_id FROM tracks").fetchone()[0]
+        def crop(cid, quality):
+            event = json.loads(_crop("cam1", 1, cid))
+            event["quality_score"] = quality
+            _send(ing, json.dumps(event).encode())
+        crop("a" * 32, .5)
+        first = _snip(ing.conn, track_id)
+        crop("b" * 32, .2)
+        assert _snip(ing.conn, track_id) == first
+        crop("c" * 32, .9)
+        improved = _snip(ing.conn, track_id)
+        assert first != improved and improved[0].endswith("c" * 32)
+        ing.conn.execute("UPDATE candidates SET image_state='missing' WHERE candidate_id=?", ("c" * 32,))
+        assert _snip(ing.conn, track_id) == first
+        ing.conn.close()
+
+
+def test_sidecar_read_failure_is_retried():
+    with tempfile.TemporaryDirectory() as tmp:
+        ing = _ingest(tmp, cameras=("cam1",))
+        cid = "f" * 32
+        sidecar = Path(ing.cfg["crop_dir"]) / "cam1" / (cid + ".json")
+        sidecar.write_text("{")
+        assert ing.reconcile_sidecars() == 0
+        sidecar.write_bytes(_crop("cam1", 1, cid))
+        assert ing.reconcile_sidecars() == 1
+        assert ing.reconcile_sidecars() == 0
         ing.conn.close()
 
 
@@ -1510,6 +1555,51 @@ def test_handheld_search_fast_path_and_recovery():
         conn.close()
 
 
+def test_camera_history_question_fast_path_common_phrasings():
+    from app.assistant import Assistant, simple_plan, _utc
+    labels = ("person", "car", "truck", "bicycle")
+    for text, classes, minutes in [
+        ("Were any cars seen in the last hour?", ["car"], 60),
+        ("Any people on camera 2 in the last 10 minutes?", ["person"], 10),
+        ("Did you see a truck today?", ["truck"], 1440),
+        ("How many persons were detected in the past 30 minutes?", ["person"], 30),
+        ("Show me cars from the last hour", ["car"], 60),
+    ]:
+        plan = simple_plan(text, labels, None)
+        assert plan and plan["classes"] == classes and plan["window"]["minutes"] == minutes, text
+    assert simple_plan("Were any red cars seen in the last hour?", labels, None) is None
+    assert simple_plan("Was there a bicycle on camera 1 since 14:00?", labels,
+                       {"kind": "absolute", "start_utc": "2026-09-25T12:00:00Z",
+                        "end_utc": "2026-09-25T13:00:00Z"})["classes"] == ["bicycle"]
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        conn, _, metadata = _phase5_fixture(root)
+        conn.execute("""INSERT INTO streams (stream_id, display_name, source_uri, annotated_path,
+                       enabled, sort_order, tracking_session_id, history_generation)
+                       VALUES ('cam2','Camera 2','rtsp://cam2','annotated2',1,1,'session-2','generation-2')""")
+        now = datetime.now(UTC).replace(microsecond=0)
+        conn.execute("""INSERT INTO tracks (
+             track_id, stream_id, tracking_session_id, history_generation, tracker_id,
+             class_label, first_observed_utc, last_observed_utc, observation_count,
+             peak_confidence, confidence_freshness, closed_at, closure_reason)
+             VALUES (99, 'cam2', 'session-2', 'generation-2', 99, 'person', ?, ?, 2, .9,
+                     'tracker_metadata_unverified', ?, 'timeout')""",
+                     (_utc(now - timedelta(minutes=6)), _utc(now - timedelta(minutes=5)),
+                      _utc(now - timedelta(minutes=4))))
+        conn.execute("""INSERT INTO track_intervals (
+             track_id, interval_index, stream_id, started_utc, ended_utc, observation_count)
+             VALUES (99, 0, 'cam2', ?, ?, 2)""",
+                     (_utc(now - timedelta(minutes=6)), _utc(now - timedelta(minutes=5))))
+        conn.commit()
+        calls = []
+        assistant = Assistant({"db_path": str(root / "phase5.db"), "detector_metadata_path": str(metadata)},
+                              None, generate=lambda prompt: calls.append(prompt) or '{"intent":"clarification"}')
+        answer = assistant.ask("Any people on camera 2 in the last 10 minutes?")
+        assert answer["intent"] == "video_history" and answer["query"]["filters"]["streams"] == ["cam2"]
+        assert not calls, "camera-history fast path invoked LLM router"
+        conn.close()
+
+
 def test_search_options_current_session_availability():
     from app.assistant import Assistant, _utc
     with tempfile.TemporaryDirectory() as tmp:
@@ -2159,6 +2249,31 @@ def test_chat_sessions_streaming_and_followups():
     client.close()
 
 
+def test_mission_answers_emit_streaming_deltas():
+    from app.assistant import Assistant
+    wire = b"data: Mission \n\ndata: answer.\n\n"
+    class Stream(httpx.SyncByteStream):
+        def __iter__(self):
+            yield wire
+    def handler(request):
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=Stream())
+    class Mission:
+        def answer(self, question, *, generate=None):
+            text = generate("mission prompt")
+            return {"intent": "mission_knowledge", "answer_text": text, "spoken_text": None,
+                    "source_inventory": [], "answer_citations_available": False,
+                    "citation_notice": "Answer-level citations are unavailable from the stock mission interface.",
+                    "errors": []}
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    assistant = Assistant({"assistant_queue_depth": 1},
+                          types.SimpleNamespace(client=client, urls={"chatqna": "http://stock"}),
+                          mission=Mission())
+    events = []
+    result = assistant._mission_answer("What is the mission?", events.append)
+    assert result["answer_text"] == "Mission answer."
+    assert "".join(e["delta"] for e in events if "delta" in e) == "Mission answer."
+    client.close()
+
 
 def test_application_knowledge_grounding():
     from app.assistant import Assistant, _routing_prompt
@@ -2185,14 +2300,14 @@ def test_application_knowledge_grounding():
             assert not prompts, "control explanations invoked inference"
             answer = assistant.ask("How does this application store evidence?", selected_stream="cam1")
             assert answer["intent"] == "application_help"
-            assert OPERATOR_GUIDE in prompts[-1]
+            assert "Application guide summary" in prompts[-1] and len(prompts[-1]) < len(OPERATOR_GUIDE) + 2000
             assert "Test doorway." in prompts[-1] and '"selected_camera": "cam1"' in prompts[-1]
             assert "is not documented" in prompts[-1]
             assert len(prompts) == 2
             assistant.ask("Explain that more simply.")
             assert len(prompts) == 3 and "How does this application store evidence?" in prompts[-1]
             assistant.ask("What are the limitations of this application?", mode="general")
-            assert len(prompts) == 4 and OPERATOR_GUIDE in prompts[-1]
+            assert len(prompts) == 4 and "Application guide summary" in prompts[-1]
         routing = _routing_prompt("How do I search camera history?", ("person",), None, None)
         assert "application_help" in routing and "HOW to use a control" in routing
         brief = _brief_prompt("objective")
@@ -2702,6 +2817,143 @@ def test_phase8_rule_fires_once_per_logical_track_and_restart_does_not_replay():
         again.close()
 
 
+def test_rule_options_validate_patch_clear_and_old_rows_load():
+    from app.alerts import RuleError, list_rules
+
+    good_zone = {"points": [[0.1, 0.1], [0.9, 0.1], [0.5, 0.9]]}
+    good_hours = {"start": "08:00", "end": "17:30", "timezone": "Europe/Warsaw"}
+    with tempfile.TemporaryDirectory() as tmp:
+        ing = _ingest(tmp, cameras=("cam1",))
+        alerts = _alerts(ing, str(Path(tmp) / "ingest.db"))
+        rule = alerts.create(ing.conn, {
+            "class_label": "person", "dwell_seconds": 10,
+            "active_hours": good_hours, "zone": good_zone,
+        })
+        assert rule["dwell_seconds"] == 10 and rule["active_hours"] == good_hours
+        assert rule["zone"] == good_zone, rule
+        cleared = alerts.update(ing.conn, rule["rule_id"], {
+            "dwell_seconds": None, "active_hours": None, "zone": None,
+        })
+        assert cleared["dwell_seconds"] is cleared["active_hours"] is cleared["zone"] is None
+
+        for bad in (
+            {"class_label": "person", "dwell_seconds": 0},
+            {"class_label": "person", "dwell_seconds": 3601},
+            {"class_label": "person", "active_hours": {"start": "08:00", "end": "08:00", "timezone": "Europe/Warsaw"}},
+            {"class_label": "person", "active_hours": {"start": "08:00", "end": "09:00", "timezone": "No/SuchZone"}},
+            {"class_label": "person", "zone": {"points": [[0, 0], [1, 1], [1, 1]]}},
+            {"class_label": "person", "zone": {"points": [[0, 0], [0.0001, 0], [0.0002, 0]]}},
+            {"class_label": "person", "zone": {"points": [[0.1, 0.1], [0.9, 0.1], [0.9, 0.9], [0.5, 0.95], [0.1, 0.9], [0.05, 0.5]]}},
+        ):
+            try:
+                alerts.create(ing.conn, bad)
+            except RuleError as exc:
+                assert str(exc), bad
+            else:
+                raise AssertionError(f"invalid rule accepted: {bad}")
+
+        ing.conn.execute(
+            """INSERT INTO rules (rule_id, name, class_label, enabled, created_utc, updated_utc, spec_json)
+               VALUES ('old', 'old', 'person', 1, 't', 't', '{}')""")
+        old = next(item for item in list_rules(ing.conn) if item["rule_id"] == "old")
+        assert old["dwell_seconds"] is old["active_hours"] is old["zone"] is None
+        ing.conn.close()
+        alerts.close()
+
+
+def test_zone_hysteresis_and_frame_touching_ignore():
+    zone = {"points": [[0.4, 0.4], [0.6, 0.4], [0.6, 0.6], [0.4, 0.6]]}
+    with tempfile.TemporaryDirectory() as tmp:
+        ing = _ingest(tmp, cameras=("cam1",))
+        alerts = _alerts(ing, str(Path(tmp) / "ingest.db"))
+        alerts.create(ing.conn, {"class_label": "person", "zone": zone})
+        rect = {"frame_width": 100, "frame_height": 100}
+        _observe(ing, "cam1", 1, detection_rect=[70, 40, 10, 10], **rect)
+        assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 0
+        _observe(ing, "cam1", 2, detection_rect=[45, 40, 10, 10],
+                 object_touches_frame=True, **rect)
+        assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 0
+        _observe(ing, "cam1", 2, start=1000.2, detection_rect=[45, 40, 10, 10], **rect)
+        assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 1
+
+        alerts.create(ing.conn, {"class_label": "person", "zone": zone, "dwell_seconds": 3})
+        _observe(ing, "cam1", 3, start=2000.0, detection_rect=[45, 40, 10, 10], **rect)
+        _observe(ing, "cam1", 3, start=2001.0, detection_rect=[45, 40, 10, 10], **rect)
+        _observe(ing, "cam1", 3, start=2002.5, detection_rect=[60, 40, 2, 10], **rect)
+        _observe(ing, "cam1", 3, start=2003.1, detection_rect=[60, 40, 2, 10], **rect)
+        assert ing.conn.execute(
+            "SELECT count(*) FROM rule_matches WHERE track_id=(SELECT track_id FROM tracks WHERE tracker_id=3)"
+        ).fetchone()[0] == 2, "zone dwell should survive edge jitter"
+        ing.conn.close()
+        alerts.close()
+
+
+def test_zone_uses_real_dlsps_message_shape():
+    # Live DLSPS: pixel box as x/y/w/h on the object, frame size as metadata width/height.
+    zone = {"points": [[0.4, 0.4], [0.6, 0.4], [0.6, 0.6], [0.4, 0.6]]}
+    with tempfile.TemporaryDirectory() as tmp:
+        ing = _ingest(tmp, cameras=("cam1",))
+        alerts = _alerts(ing, str(Path(tmp) / "ingest.db"))
+        alerts.create(ing.conn, {"class_label": "person", "zone": zone})
+        for tracker_id, x in ((1, 1400), (2, 900)):
+            message = json.loads(_observation("cam1", tracker_id, observed_at=1000.0 + tracker_id))
+            message["metadata"].update(width=1920, height=1080)
+            message["metadata"]["objects"][0].update(x=x, y=300, w=100, h=250)
+            ing._on_message(None, None, types.SimpleNamespace(
+                topic="detections/live", payload=json.dumps(message)))
+        rows = ing.conn.execute(
+            "SELECT t.tracker_id FROM rule_matches m JOIN tracks t USING (track_id)").fetchall()
+        assert [row[0] for row in rows] == [2], rows
+        ing.conn.close()
+        alerts.close()
+
+
+def test_dwell_brief_gap_survives_and_long_gap_resets():
+    zone = {"points": [[0.4, 0.4], [0.6, 0.4], [0.6, 0.6], [0.4, 0.6]]}
+    rect = {"frame_width": 100, "frame_height": 100}
+    with tempfile.TemporaryDirectory() as tmp:
+        ing = _ingest(tmp, cameras=("cam1",))
+        alerts = _alerts(ing, str(Path(tmp) / "ingest.db"))
+        alerts.create(ing.conn, {"class_label": "person", "zone": zone, "dwell_seconds": 3})
+        _observe(ing, "cam1", 1, start=1000.0, detection_rect=[45, 40, 10, 10], **rect)
+        _observe(ing, "cam1", 1, start=1001.2, detection_rect=[45, 40, 10, 10], **rect)
+        _observe(ing, "cam1", 1, start=1002.0, detection_rect=[75, 40, 10, 10], **rect)
+        _observe(ing, "cam1", 1, start=1003.1, detection_rect=[45, 40, 10, 10], **rect)
+        assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 1
+
+        _observe(ing, "cam1", 2, start=2000.0, detection_rect=[45, 40, 10, 10], **rect)
+        _observe(ing, "cam1", 2, start=2002.5, detection_rect=[75, 40, 10, 10], **rect)
+        _observe(ing, "cam1", 2, start=2003.1, detection_rect=[45, 40, 10, 10], **rect)
+        assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 1
+        _observe(ing, "cam1", 2, start=2004.5, detection_rect=[45, 40, 10, 10], **rect)
+        _observe(ing, "cam1", 2, start=2006.2, detection_rect=[45, 40, 10, 10], **rect)
+        assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 2
+        ing.conn.close()
+        alerts.close()
+
+
+def test_active_hours_daytime_and_overnight_windows():
+    with tempfile.TemporaryDirectory() as tmp:
+        ing = _ingest(tmp, cameras=("cam1",))
+        alerts = _alerts(ing, str(Path(tmp) / "ingest.db"))
+        alerts.create(ing.conn, {"class_label": "person", "active_hours": {
+            "start": "10:00", "end": "12:00", "timezone": "Europe/Warsaw"}})
+        inside = datetime(2026, 1, 1, 10, 30, tzinfo=UTC).timestamp()  # 11:30 Warsaw
+        outside = datetime(2026, 1, 1, 8, 30, tzinfo=UTC).timestamp()  # 09:30 Warsaw
+        _observe(ing, "cam1", 1, start=outside)
+        assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 0
+        _observe(ing, "cam1", 2, start=inside)
+        assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 1
+
+        alerts.create(ing.conn, {"class_label": "person", "active_hours": {
+            "start": "23:00", "end": "02:00", "timezone": "Europe/Warsaw"}})
+        overnight = datetime(2026, 1, 1, 22, 30, tzinfo=UTC).timestamp()  # 23:30 Warsaw
+        _observe(ing, "cam1", 3, start=overnight)
+        assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 2
+        ing.conn.close()
+        alerts.close()
+
+
 def test_classification_seen_before_track_admission_is_kept_at_its_own_time():
     with tempfile.TemporaryDirectory() as tmp:
         ing = _ingest(tmp, cameras=("cam1",), min_track_observations=3)
@@ -2870,7 +3122,8 @@ def test_alert_incidents_group_matches_and_follow_operator_actions():
 
         # Operator test speech repeats the announcement without a rule cooldown or match ref.
         assert alerts.speak_test(ing.conn, live["incident_id"])["id"]
-        assert said.said[-1][:2] == ("alert", "person on Camera 2.") and said.said[-1][2] == {}, said.said[-1]
+        assert said.said[-1][:2] == ("alert", "person on Camera 2.") \
+            and said.said[-1][2] == {"bypass_alert_floor": True}, said.said[-1]
         assert alerts.speak_test(ing.conn, "unknown") is None
         # Remove drops the incident; matches stay and the next sighting opens a new one.
         matches = ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0]
@@ -3033,7 +3286,7 @@ def test_phase8_arbiter_never_overlaps_and_preempts_by_priority():
         assert clip == _wav(1.0) and not hasattr(arbiter, "clip")
         arbiter.say("answer", "your answer")
         _settle(arbiter)
-        assert arbiter.outcome("a1") == "preempted"
+        assert arbiter.outcome("a1") == "unconfirmed"
         assert arbiter.snapshot()["current"] is None
         for index in range(4):
             arbiter.say("alert", f"alert {index}", ref=f"b{index}", rule_id=f"r{index}")
@@ -3046,7 +3299,7 @@ def test_phase8_arbiter_never_overlaps_and_preempts_by_priority():
             elif event["id"] == playing and event["event"] in {"unconfirmed", "preempted"}:
                 playing = None
         spoken = [e["text"] for e in arbiter.trace if e["event"] == "unconfirmed"]
-        assert spoken == ["your answer", "alert 0", "alert 1", "alert 2", "alert 3"], spoken
+        assert spoken == ["long alert", "your answer", "alert 0", "alert 1", "alert 2", "alert 3"], spoken
         last_alert_end = float("-inf")
         for event in arbiter.trace:
             if event["kind"] != "alert":
@@ -3187,6 +3440,514 @@ def test_phase8_arbiter_suppresses_while_talking_bounds_queue_and_rate_limits():
         assert failing.snapshot()["tts_ok"] is False
     finally:
         failing.close()
+
+
+def test_phase8_tts_cache_hit_skips_second_synthesis_and_is_visible():
+    from app import speech
+
+    speech.PLAYBACK_MARGIN_SECONDS = 0.0
+    calls = []
+
+    def synthesize(text):
+        calls.append(text)
+        return _wav(0.05)
+
+    arbiter = speech.Arbiter(synthesize, alert_floor=0.0, cache_identity="speecht5-gpu")
+    arbiter.start()
+    try:
+        arbiter.say("answer", "person on Camera 1", ref="c1")
+        _settle(arbiter)
+        arbiter.say("answer", "person on Camera 1", ref="c2")
+        _settle(arbiter)
+        assert calls == ["person on Camera 1"], calls
+        assert arbiter.outcome("c2") == "unconfirmed"
+        assert arbiter.snapshot()["last"]["cached"] is True
+        assert [e for e in arbiter.trace if e["event"] == "cache_hit" and e["ref"] == "c2"]
+    finally:
+        arbiter.close()
+
+
+def test_phase8_tts_cache_is_byte_bounded_lru_and_skips_failures():
+    from app import speech
+
+    cache = speech.AudioCache(max_bytes=10, max_entries=3)
+    cache.put(("a", "id"), b"12345")
+    cache.put(("b", "id"), b"12345")
+    assert cache.bytes == 10 and cache.get(("a", "id")) == b"12345"
+    cache.put(("c", "id"), b"12345")
+    assert cache.get(("b", "id")) is None and cache.get(("a", "id")) == b"12345"
+    cache.put(("too-big", "id"), b"12345678901")
+    assert cache.get(("too-big", "id")) is None and cache.bytes <= 10
+
+    speech.PLAYBACK_MARGIN_SECONDS = 0.0
+    calls = 0
+
+    def synthesize(text):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise httpx.ConnectError("tts down")
+        return _wav(0.05)
+
+    arbiter = speech.Arbiter(synthesize, alert_floor=0.0, cache_identity="speecht5-gpu")
+    arbiter.start()
+    try:
+        arbiter.say("answer", "not cached after failure", ref="f1")
+        _settle(arbiter)
+        assert arbiter.outcome("f1") == "text_only"
+        arbiter.say("answer", "not cached after failure", ref="f2")
+        _settle(arbiter)
+        assert calls == 2 and arbiter.outcome("f2") == "unconfirmed"
+        assert not arbiter.snapshot()["last"]["cached"]
+    finally:
+        arbiter.close()
+
+
+def test_phase8_manual_speak_skips_floor_without_overlap_and_auto_alerts_wait():
+    from app import speech
+
+    speech.PLAYBACK_MARGIN_SECONDS = 0.0
+    arbiter = speech.Arbiter(lambda text: _wav(0.2), alert_floor=0.8, cache_identity="speecht5-gpu")
+    arbiter.start()
+    try:
+        arbiter.say("alert", "first", ref="first")
+        first_id = _wait_current(arbiter, "first")
+        arbiter.say("alert", "manual", ref="manual", bypass_alert_floor=True)
+        time.sleep(0.05)
+        assert (arbiter.snapshot()["current"] or {}).get("ref") == "first", "manual overlapped current speech"
+        assert arbiter.ack(first_id, "ended")
+        _wait_current(arbiter, "manual")
+        assert arbiter.ack(arbiter.snapshot()["current"]["id"], "ended")
+        _settle(arbiter)
+
+        arbiter.say("alert", "automatic", ref="auto")
+        time.sleep(0.2)
+        assert arbiter.snapshot()["current"] is None, "automatic alert skipped the floor"
+        _wait_current(arbiter, "auto", timeout=2.0)
+    finally:
+        arbiter.close()
+
+
+def test_zone_dwell_rejects_stale_geometry_gaps_and_revised_rules():
+    zone = {"points": [[.4, .4], [.6, .4], [.6, .6], [.4, .6]]}
+    size = {"frame_width": 100, "frame_height": 100}
+    for case in ("missing_rect", "missing_size", "gap", "frame_edge", "zone_edit", "reenable"):
+        with tempfile.TemporaryDirectory() as tmp:
+            ing = _ingest(tmp, cameras=("cam1",))
+            alerts = _alerts(ing, str(Path(tmp) / "ingest.db"))
+            alerts.writer = ing.write
+            rule = alerts.create(ing.conn, {"class_label": "person", "stream_id": "cam1",
+                                           "zone": zone, "dwell_seconds": 3})
+            box = [45, 40, 10, 10]
+            _observe(ing, "cam1", 1, start=1000, detection_rect=box, **size)
+            _observe(ing, "cam1", 1, start=1001, detection_rect=box, **size)
+            if case == "missing_rect":
+                _observe(ing, "cam1", 1, start=1002, **size)
+            elif case == "missing_size":
+                _observe(ing, "cam1", 1, start=1002, detection_rect=box)
+            elif case == "frame_edge":
+                for offset in (2, 3, 4, 5):
+                    _observe(ing, "cam1", 1, start=1000+offset,
+                             detection_rect=[45, 90, 10, 10], **size)
+            elif case == "zone_edit":
+                alerts.update(ing.conn, rule["rule_id"], {"zone": {
+                    "points": [[.7, .4], [.9, .4], [.9, .6], [.7, .6]]}})
+                box = [75, 40, 10, 10]
+            elif case == "reenable":
+                alerts.update(ing.conn, rule["rule_id"], {"enabled": False})
+                alerts.update(ing.conn, rule["rule_id"], {"enabled": True})
+            returned = 1008 if case == "gap" else 1005.1 if case == "frame_edge" else 1003
+            _observe(ing, "cam1", 1, start=returned, detection_rect=box, **size)
+            assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 0, case
+            for offset in (1, 2, 3.1):
+                _observe(ing, "cam1", 1, start=returned+offset, detection_rect=box, **size)
+            assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 1, case
+            ing.conn.close()
+            alerts.close()
+
+
+def test_any_object_dwell_is_per_track_and_retains_actual_types():
+    from app.alerts import RuleError
+    with tempfile.TemporaryDirectory() as tmp:
+        ing = _ingest(tmp, cameras=("cam1",))
+        alerts = _alerts(ing, str(Path(tmp) / "ingest.db"))
+        alerts.writer = ing.write
+        rule = alerts.create(ing.conn, {"dwell_seconds": 3, "stream_id": "cam1"})
+        assert rule["class_label"] is None
+        for n in (0, 1, 2):
+            _observe(ing, "cam1", 1, start=1000+n, label="person")
+            _observe(ing, "cam1", 2, start=1000+n, label="car")
+        assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 0
+        _observe(ing, "cam1", 1, start=1003, label="person")
+        assert ing.conn.execute("SELECT class_label FROM alert_incidents").fetchone()[0] == "person"
+        _observe(ing, "cam1", 2, start=1003, label="car")
+        assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 2
+        assert ing.conn.execute("SELECT class_label FROM alert_incidents").fetchone()[0] == "object"
+        alerts.update(ing.conn, rule["rule_id"], {"class_label": "car"})
+        _observe(ing, "cam1", 3, count=40, start=1010, label="person")
+        assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 2
+        alerts.update(ing.conn, rule["rule_id"], {"class_label": None})
+        assert alerts.get(ing.conn, rule["rule_id"])["class_label"] is None
+        try:
+            alerts.create(ing.conn, {"class_label": ""})
+            assert False, "invalid empty class must not mean wildcard"
+        except RuleError:
+            pass
+        ing.conn.close()
+        alerts.close()
+
+
+def test_phase9_audio_upload_limits_and_stock_alias():
+    import asyncio
+    from types import SimpleNamespace
+    from app.main import create_app
+    from app.voice import validate_audio, transcribe
+    for data in (b"not audio", _wav(0), _wav(20.01), _wav(1)[:-10]):
+        try:
+            validate_audio(data)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("invalid or oversized duration accepted")
+    validate_audio(_wav(.5))
+    requests = []
+    def upstream(request):
+        requests.append(request)
+        assert b'whisper-1' in request.content and b'recording.wav' in request.content
+        return httpx.Response(200, json={"text": "How many people were detected?"})
+    services = SimpleNamespace(client=httpx.Client(transport=httpx.MockTransport(upstream)))
+    assert transcribe(services, 'http://whisper', _wav(.5)) == 'How many people were detected?'
+    async def check():
+        app = create_app()
+        app.state.services = services
+        app.state.cfg = {"services": {"audio_analyzer": "http://whisper"}}
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+            assert (await client.post('/api/voice/transcribe', content=b'bad')).status_code == 422
+            assert (await client.post('/api/voice/transcribe', content=b'x'*(10*1024*1024+1))).status_code == 413
+            response = await client.post('/api/voice/transcribe', content=_wav(.5))
+            assert response.status_code == 200 and response.json()['data']['text'] == 'How many people were detected?'
+            await app.state.voice_lock.acquire()
+            try:
+                assert (await client.post('/api/voice/transcribe', content=_wav(.5))).status_code == 429
+            finally:
+                app.state.voice_lock.release()
+    asyncio.run(check())
+    services.client.close()
+
+
+def test_phase9_chunked_answer_order_and_interruption():
+    from app.speech import Arbiter, answer_chunks
+    text = 'First answer. ' + ' '.join(['word'] * 75) + '. Last sentence.'
+    chunks = answer_chunks(text)
+    assert ' '.join(chunks) == text and all(len(c.split()) <= 12 for c in chunks)
+    seen = []
+    arbiter = Arbiter(lambda text: seen.append(text) or _wav(2))
+    arbiter.start()
+    try:
+        arbiter.say_answer('First sentence. Second sentence. Third sentence.', arbiter.answer_generation)
+        for expected in ('First sentence.', 'Second sentence.'):
+            deadline = time.monotonic() + 2
+            while not arbiter.snapshot()['current'] or arbiter.snapshot()['current']['text'] != expected:
+                assert time.monotonic() < deadline
+                time.sleep(.01)
+            current = arbiter.snapshot()['current']
+            assert expected in seen
+            if expected == 'First sentence.':
+                arbiter.ack(current['id'], 'ended')
+        generation = arbiter.answer_generation
+        arbiter.set_talk(True)
+        _settle(arbiter)
+        assert not [e for e in arbiter.trace if e["event"] == "playing" and e["text"] == "Third sentence."]
+        arbiter.set_talk(False)
+        assert arbiter.say_answer('Stale response.', generation) is None
+        arbiter.say_answer('New response. Must not play.', arbiter.answer_generation)
+        arbiter.stop_speaking()
+        _settle(arbiter)
+        assert 'Must not play.' not in seen
+        arbiter.set_talk(True)
+        with arbiter.cond:
+            arbiter.talk_deadline = arbiter.clock() - 1
+            arbiter.cond.notify_all()
+        deadline = time.monotonic() + 1
+        while arbiter.snapshot()['talk_held']:
+            assert time.monotonic() < deadline
+            time.sleep(.01)
+    finally:
+        arbiter.close()
+
+
+def test_phase9_prefetch_one_chunk_serial_order_and_missing_ack():
+    from app import speech
+
+    speech.PLAYBACK_MARGIN_SECONDS = 0.0
+    active = 0
+    max_active = 0
+    calls = []
+    lock = threading.Lock()
+
+    def synthesize(text):
+        nonlocal active, max_active
+        with lock:
+            active += 1
+            max_active = max(max_active, active)
+        try:
+            calls.append(text)
+            time.sleep(0.03)
+            return _wav(0.2)
+        finally:
+            with lock:
+                active -= 1
+
+    arbiter = speech.Arbiter(synthesize, alert_floor=0.0)
+    arbiter.start()
+    try:
+        arbiter.say_answer("One. Two. Three.", arbiter.answer_generation)
+        first = _wait_text_current(arbiter, "One.")
+        deadline = time.monotonic() + 2
+        while "Two." not in calls:
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        assert calls == ["One.", "Two."] and max_active == 1, calls
+        assert arbiter.ack(first, "ended")
+        second = _wait_text_current(arbiter, "Two.")
+        assert arbiter.ack(second, "ended")
+        third = _wait_text_current(arbiter, "Three.")
+        assert arbiter.ack(third, "ended")
+        _settle(arbiter)
+        assert calls == ["One.", "Two.", "Three."], calls
+
+        calls.clear()
+        arbiter.say_answer("Alpha. Beta. Gamma.", arbiter.answer_generation)
+        _wait_text_current(arbiter, "Alpha.")
+        deadline = time.monotonic() + 2
+        while "Beta." not in calls:
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        _settle(arbiter)
+        assert calls == ["Alpha.", "Beta."], "missing ACK must not advance past one prefetched chunk"
+    finally:
+        arbiter.close()
+
+
+def test_phase9_numbered_stream_preserves_order_and_chunk_shape():
+    from app.main import EarlyAnswerSpeech
+    from app import speech
+
+    speech.PLAYBACK_MARGIN_SECONDS = 0.0
+    answer = ("1. Drones primarily rely on direct radio waves for command and control. "
+              "2. Radio signals can face interference, obstruction, or even loss in areas "
+              "where there's no direct path for signals to travel. "
+              "3. By necessitating a line of sight, the pilot can ensure reliable "
+              "communication and maintain a visual reference when needed.")
+    chunks = speech.answer_chunks(answer)
+    assert all(chunk not in {"1.", "2.", "3."} for chunk in chunks), chunks
+    assert "to travel." not in chunks and all(len(chunk.split()) <= 12 for chunk in chunks), chunks
+    assert speech.answer_chunks("Dr. Smith measured 3.5 volts. 1. Test follows.") == [
+        "Dr. Smith measured 3.5 volts.", "1. Test follows."]
+
+    spoken = []
+    arbiter = speech.Arbiter(lambda text: spoken.append(text) or _wav(0.05), alert_floor=0.0)
+    arbiter.start()
+    try:
+        early = EarlyAnswerSpeech(arbiter, arbiter.answer_generation)
+        for delta in ("1. ", "Drones primarily rely on direct radio waves for command and control. 2. ",
+                      "Radio signals can face interference, obstruction, or even loss in areas where ",
+                      "there's no direct path for signals to travel. 3. By necessitating a line of sight, ",
+                      "the pilot can ensure reliable communication and maintain a visual reference when needed."):
+            early.feed(delta)
+        early.finish()
+        for expected in chunks:
+            speech_id = _wait_text_current(arbiter, expected)
+            assert arbiter.ack(speech_id, "ended")
+        _settle(arbiter)
+        assert spoken == chunks, spoken
+    finally:
+        arbiter.close()
+
+
+def test_phase9_prepared_chunk_starts_before_following_prefetch_finishes():
+    from app import speech
+
+    speech.PLAYBACK_MARGIN_SECONDS = 0.0
+    delays = {"First sentence.": 0.01, "Second sentence.": 0.01, "Third sentence.": 0.4}
+    calls = []
+
+    def synthesize(text):
+        calls.append((text, time.monotonic()))
+        time.sleep(delays[text])
+        return _wav(0.5)
+
+    arbiter = speech.Arbiter(synthesize, alert_floor=0.0)
+    arbiter.start()
+    try:
+        arbiter.say_answer("First sentence. Second sentence. Third sentence.",
+                           arbiter.answer_generation)
+        first = _wait_text_current(arbiter, "First sentence.")
+        deadline = time.monotonic() + 2
+        while "Second sentence." not in [text for text, _ in calls]:
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        assert arbiter.ack(first, "ended")
+        ended = time.monotonic()
+        _wait_text_current(arbiter, "Second sentence.", timeout=0.2)
+        assert time.monotonic() - ended < 0.2
+        assert "Third sentence." in [text for text, _ in calls]
+    finally:
+        arbiter.close()
+
+
+def _wait_text_current(arbiter, text, timeout=3.0):
+    deadline = time.monotonic() + timeout
+    while (arbiter.snapshot()["current"] or {}).get("text") != text:
+        assert time.monotonic() < deadline, f"{text!r} never became current"
+        time.sleep(0.01)
+    return arbiter.snapshot()["current"]["id"]
+
+
+def test_phase9_prefetch_rejects_late_results_failures_and_alerts_preempt():
+    from app import speech
+
+    speech.PLAYBACK_MARGIN_SECONDS = 0.0
+    calls = []
+
+    def synthesize(text):
+        calls.append(text)
+        if text == "Two fails.":
+            raise httpx.ConnectError("tts down")
+        if text == "Answer one.":
+            arbiter.say("alert", "urgent alert", ref="urgent")
+        return _wav(0.1)
+
+    arbiter = speech.Arbiter(synthesize, alert_floor=0.0)
+    arbiter.start()
+    try:
+        arbiter.say_answer("Answer one. Answer two.", arbiter.answer_generation)
+        _settle(arbiter)
+        assert arbiter.outcome("urgent") == "unconfirmed"
+        assert "Answer two." not in calls, "queued alert should block answer prefetch"
+
+        arbiter.say_answer("One ok. Two fails.", arbiter.answer_generation)
+        first = _wait_text_current(arbiter, "One ok.")
+        deadline = time.monotonic() + 2
+        while "Two fails." not in calls:
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        assert arbiter.ack(first, "ended")
+        _settle(arbiter)
+        assert arbiter.snapshot()["last"]["text"] == "Two fails."
+        assert arbiter.snapshot()["last"]["outcome"] == "text_only"
+
+        generation = arbiter.answer_generation
+        arbiter.say_answer("Late one. Late two.", generation)
+        _wait_text_current(arbiter, "Late one.")
+        arbiter.stop_speaking()
+        _settle(arbiter)
+        assert arbiter.say_answer("Rejected late.", generation) is None
+        assert "Rejected late." not in calls
+    finally:
+        arbiter.close()
+
+
+def test_phase9_streaming_answer_speech_once_order_and_races():
+    from app.main import EarlyAnswerSpeech
+    from app import speech
+
+    speech.PLAYBACK_MARGIN_SECONDS = 0.0
+    spoken = []
+    arbiter = speech.Arbiter(lambda text: spoken.append(text) or _wav(0.1), alert_floor=0.0)
+    arbiter.start()
+    try:
+        early = EarlyAnswerSpeech(arbiter, arbiter.answer_generation)
+        early.feed("First sentence. Second ")
+        first = _wait_text_current(arbiter, "First sentence.")
+        early.feed("sentence. Third")
+        early.finish()
+        assert early.first is not None
+        assert arbiter.ack(first, "ended")
+        second = _wait_text_current(arbiter, "Second sentence.")
+        assert arbiter.ack(second, "ended")
+        third = _wait_text_current(arbiter, "Third")
+        assert arbiter.ack(third, "ended")
+        _settle(arbiter)
+        assert spoken == ["First sentence.", "Second sentence.", "Third"], spoken
+
+        early = EarlyAnswerSpeech(arbiter, arbiter.answer_generation)
+        early.feed("Partial answer. ")
+        _wait_text_current(arbiter, "Partial answer.")
+        early.feed("Do not speak this yet")
+        early.cancel()
+        _settle(arbiter)
+        assert "Do not speak this yet" not in spoken
+
+        generation = arbiter.answer_generation
+        early = EarlyAnswerSpeech(arbiter, generation)
+        early.feed("Old conversation sentence. ")
+        arbiter.stop_speaking()
+        early.feed("Late sentence. ")
+        early.finish()
+        _settle(arbiter)
+        assert "Late sentence." not in spoken
+    finally:
+        arbiter.close()
+
+
+def test_live_and_rule_work_leave_event_loop_responsive():
+    import asyncio
+    from unittest.mock import patch
+    from starlette.requests import Request
+    from app.main import create_app, _live_events
+
+    async def check():
+        app = create_app()
+        owner = threading.get_ident()
+        calls = []
+        def operation(*args):
+            assert threading.get_ident() != owner, "database work ran on event loop"
+            calls.append(True)
+            return {"rule_id": "r1"}
+        with tempfile.TemporaryDirectory() as tmp:
+            db = str(Path(tmp) / "live.db")
+            conn = connect(db)
+            migrate(conn)
+            conn.close()
+            app.state.cfg = {"db_path": db, "streams": []}
+            app.state.ingest = types.SimpleNamespace(snapshot=lambda: {})
+            app.state.telemetry = types.SimpleNamespace(snapshot=lambda: {"metrics": []})
+            app.state.alerts = types.SimpleNamespace(create=operation, update=operation,
+                act=lambda *a: bool(operation(*a)), confirmed=set())
+            app.state.arbiter = types.SimpleNamespace(snapshot=lambda: {"version": 1})
+            async def receive():
+                await asyncio.sleep(60)
+                return {"type": "http.request", "body": b""}
+            request = Request({"type": "http", "app": app, "method": "GET",
+                               "path": "/api/stream", "headers": []}, receive=receive)
+            batch = _live_events(request, (), False, True)
+            assert len(batch) == 2 and batch[0].startswith("event: alert")
+            def slow_batch(*args):
+                operation()
+                time.sleep(.1)
+                return batch
+            endpoint = next(r.endpoint for r in app.routes if getattr(r, "path", None) == "/api/stream")
+            with patch("app.main._live_events", slow_batch):
+                response = await endpoint(request, classes=None, has_image=False, prioritize=True)
+                iterator = response.body_iterator
+                await anext(iterator)  # retry
+                await anext(iterator)  # mode
+                event = asyncio.create_task(anext(iterator))
+                await asyncio.sleep(.02)
+                assert not event.done(), "SSE read blocked event loop"
+                assert (await event).startswith("event: alert")
+                await iterator.aclose()
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+                assert (await client.post("/api/rules", json={})).status_code == 201
+                assert (await client.patch("/api/rules/r1", json={})).status_code == 200
+                assert (await client.post("/api/incidents/i1/acknowledge", json={})).status_code == 200
+                before = len(calls)
+                for payload in ("{", "[]", '"bad"', '{"unexpected":1}'):
+                    response = await client.post("/api/incidents/i1/acknowledge", content=payload)
+                    assert response.status_code == 422
+                assert len(calls) == before, "invalid action reached writer"
+    asyncio.run(check())
 
 
 if __name__ == "__main__":

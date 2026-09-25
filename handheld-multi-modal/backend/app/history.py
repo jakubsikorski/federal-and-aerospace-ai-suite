@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
+from urllib.parse import quote
 
 # Section 6.5 condition 4. Feed health is per camera, so one camera going dark
 # never makes another camera's answer unknown.
@@ -143,13 +144,19 @@ def current(conn: sqlite3.Connection, ingest, cfg: dict, stream_id: str) -> dict
 def _snip(conn: sqlite3.Connection, track_id: int) -> tuple[str | None, str]:
     """Return the best available image URL and the truthful retained state."""
     row = conn.execute(
-        """SELECT image_state FROM candidates WHERE track_id = ?
-           ORDER BY (image_state = 'present') DESC, quality_score DESC LIMIT 1""",
+        """SELECT c.image_state, c.candidate_id FROM candidates c
+           JOIN tracks t ON t.track_id = c.track_id WHERE c.track_id = ?
+           ORDER BY (c.image_state = 'present') DESC,
+                    (c.candidate_id = coalesce(t.selected_candidate_id, '')) DESC,
+                    c.quality_score DESC, c.candidate_id DESC LIMIT 1""",
         (track_id,)).fetchone()
     if row is None:
         return None, "none"
     state = row["image_state"]
-    return (f"/api/tracks/{track_id}/snip" if state == "present" else None), state
+    # Keep the missing-file fallback endpoint, but invalidate the browser cache
+    # and keyed thumbnail when a better candidate becomes available.
+    version = quote(row["candidate_id"], safe="")
+    return (f"/api/tracks/{track_id}/snip?v={version}" if state == "present" else None), state
 
 
 def recent(conn: sqlite3.Connection, ingest, cfg: dict, stream_id: str,

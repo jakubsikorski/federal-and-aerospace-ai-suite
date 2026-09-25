@@ -6,12 +6,15 @@ layer; its SSE stream is observability only and is never treated as the record.
 from __future__ import annotations
 
 import calendar
+from datetime import UTC, datetime
 import json
 import logging
+import math
 import sqlite3
 import threading
 import time
 import uuid
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 
@@ -23,6 +26,8 @@ MAX_ATTEMPTS = 1 + len(BACKOFF_SECONDS)
 MAX_RULES = 50
 SNOOZE_MINUTES = (5, 15, 60)
 INCIDENT_ACTIONS = ("acknowledge", "snooze", "dismiss", "false_alarm")
+ZONE_MARGIN = 0.02
+MAX_MATCH_STATE = 5000
 
 
 def _epoch(stamp: str) -> float:
@@ -44,12 +49,63 @@ def _row(row: sqlite3.Row) -> dict:
         "stream_id": row["stream_id"], "min_confidence": row["min_confidence"],
         "enabled": bool(row["enabled"]), "cooldown_seconds": spec.get("cooldown_seconds", 60),
         "speak": spec.get("speak", True),
+        "dwell_seconds": spec.get("dwell_seconds"),
+        "active_hours": spec.get("active_hours"),
+        "zone": spec.get("zone"),
         "created_utc": row["created_utc"], "updated_utc": row["updated_utc"],
     }
 
 
 def list_rules(conn: sqlite3.Connection) -> list[dict]:
     return [_row(r) for r in conn.execute("SELECT * FROM rules ORDER BY created_utc, rule_id")]
+
+
+def _time_minutes(value: str) -> int:
+    if not isinstance(value, str) or len(value) != 5 or value[2] != ":":
+        raise RuleError("active_hours start and end must be HH:MM")
+    try:
+        hour, minute = int(value[:2]), int(value[3:])
+    except ValueError:
+        raise RuleError("active_hours start and end must be HH:MM") from None
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        raise RuleError("active_hours start and end must be HH:MM")
+    return hour * 60 + minute
+
+
+def _area(points: list[list[float]]) -> float:
+    total = 0.0
+    for index, (x1, y1) in enumerate(points):
+        x2, y2 = points[(index + 1) % len(points)]
+        total += x1 * y2 - x2 * y1
+    return abs(total) / 2.0
+
+
+def _point_in_polygon(point: tuple[float, float], points: list[list[float]]) -> bool:
+    x, y = point
+    inside = False
+    j = len(points) - 1
+    for i, (xi, yi) in enumerate(points):
+        xj, yj = points[j]
+        if ((yi > y) != (yj > y)) and x < (xj - xi) * (y - yi) / (yj - yi) + xi:
+            inside = not inside
+        j = i
+    return inside
+
+
+def _edge_distance(point: tuple[float, float], points: list[list[float]]) -> float:
+    x, y = point
+    nearest = float("inf")
+    for index, (x1, y1) in enumerate(points):
+        x2, y2 = points[(index + 1) % len(points)]
+        dx, dy = x2 - x1, y2 - y1
+        length2 = dx * dx + dy * dy
+        if length2:
+            t = max(0.0, min(1.0, ((x - x1) * dx + (y - y1) * dy) / length2))
+            px, py = x1 + t * dx, y1 + t * dy
+        else:
+            px, py = x1, y1
+        nearest = min(nearest, math.hypot(x - px, y - py))
+    return nearest
 
 
 class Alerts:
@@ -79,6 +135,8 @@ class Alerts:
         self.events = {"connected": False, "received": 0, "confirmed": 0,
                        "reconnects": 0, "last_event_utc": None, "last_error": None}
         self.confirmed: dict[str, str] = {}
+        self.inside: dict[tuple[str, int], bool] = {}
+        self.dwell: dict[tuple[str, int], dict] = {}
         self.threads: list[threading.Thread] = []
         self.reload()
 
@@ -89,18 +147,30 @@ class Alerts:
 
     # -- rules (API connections) -------------------------------------------
     def reload(self, conn: sqlite3.Connection | None = None) -> None:
-        self.rules = tuple(r for r in list_rules(conn or self.conn) if r["enabled"])
+        previous = {r["rule_id"]: r for r in getattr(self, "rules", ())}
+        rules = [r for r in list_rules(conn or self.conn) if r["enabled"]]
+        fields = ("class_label", "stream_id", "min_confidence", "dwell_seconds", "active_hours", "zone")
+        for rule in rules:
+            old = previous.get(rule["rule_id"])
+            # Ingest invalidates pending timers on its own thread. Cosmetic edits
+            # keep continuity; changed conditions and re-enabling start afresh.
+            rule["match_revision"] = (old["match_revision"] if old and all(
+                old[k] == rule[k] for k in fields) else uuid.uuid4().hex)
+        self.rules = tuple(rules)
 
     def validate(self, body: dict, current: dict | None = None) -> dict:
         allowed = {"name", "class_label", "stream_id", "min_confidence",
-                   "cooldown_seconds", "speak", "enabled"}
+                   "cooldown_seconds", "speak", "enabled",
+                   "dwell_seconds", "active_hours", "zone"}
         if not isinstance(body, dict) or set(body) - allowed:
             raise RuleError("unknown rule field")
         rule = {**(current or {"stream_id": None, "min_confidence": None,
-                               "cooldown_seconds": 60, "speak": True, "enabled": True}), **body}
+                               "cooldown_seconds": 60, "speak": True, "enabled": True,
+                               "dwell_seconds": None, "active_hours": None,
+                               "zone": None, "class_label": None}), **body}
         label = rule.get("class_label")
-        if not isinstance(label, str) or label not in self.labels():
-            raise RuleError("class_label must be a detector class")
+        if label is not None and (not isinstance(label, str) or label not in self.labels()):
+            raise RuleError("class_label must be a detector class or null for any detected object")
         if rule["stream_id"] is not None and rule["stream_id"] not in self.enabled_streams:
             raise RuleError("stream_id must be an enabled camera or null for every camera")
         conf = rule["min_confidence"]
@@ -113,11 +183,55 @@ class Alerts:
         for flag in ("speak", "enabled"):
             if not isinstance(rule[flag], bool):
                 raise RuleError(f"{flag} must be true or false")
-        name = rule.get("name") or f"{label} on {self.names.get(rule['stream_id'], 'any camera')}"
+        dwell = rule["dwell_seconds"]
+        if dwell is not None and (isinstance(dwell, bool) or not isinstance(dwell, int)
+                                  or not 1 <= dwell <= 3600):
+            raise RuleError("dwell_seconds must be a whole number from 1 to 3600 or null")
+        active = rule["active_hours"]
+        if active is not None:
+            if not isinstance(active, dict) or set(active) != {"start", "end", "timezone"}:
+                raise RuleError("active_hours must include start, end and timezone")
+            start, end = _time_minutes(active["start"]), _time_minutes(active["end"])
+            if start == end:
+                raise RuleError("active_hours start and end must be different")
+            tz = active["timezone"]
+            if not isinstance(tz, str):
+                raise RuleError("active_hours timezone must be an IANA timezone name")
+            try:
+                ZoneInfo(tz)
+            except ZoneInfoNotFoundError:
+                raise RuleError("active_hours timezone must be an IANA timezone name") from None
+        zone = rule["zone"]
+        if zone is not None:
+            if not isinstance(zone, dict) or set(zone) != {"points"}:
+                raise RuleError("zone must include points")
+            points = zone["points"]
+            if not isinstance(points, list) or not 3 <= len(points) <= 5:
+                raise RuleError("zone points must contain 3 to 5 points")
+            normalised = []
+            for point in points:
+                if (not isinstance(point, list) or len(point) != 2
+                        or any(isinstance(v, bool) or not isinstance(v, (int, float))
+                               or not math.isfinite(v) or not 0 <= v <= 1 for v in point)):
+                    raise RuleError("zone points must be [x, y] values from 0 to 1")
+                normalised.append([float(point[0]), float(point[1])])
+            if len({(round(x, 6), round(y, 6)) for x, y in normalised}) < 3:
+                raise RuleError("zone must have at least 3 distinct points")
+            if _area(normalised) < 0.0001:
+                raise RuleError("zone area is too small")
+            rule["zone"] = {"points": normalised}
+        camera = self.names.get(rule['stream_id'], 'any camera')
+        default_name = (f"{label or 'Anything detected'} stays in {camera} for {dwell} seconds"
+                        if dwell else f"{label or 'Anything detected'} on {camera}")
+        name = rule.get("name") or default_name[:60]
         if not isinstance(name, str) or not name.strip() or len(name) > 60:
             raise RuleError("name must be 1 to 60 characters")
         rule["name"] = name.strip()
         return rule
+
+    def _spec(self, rule: dict) -> dict:
+        return {k: rule[k] for k in ("cooldown_seconds", "speak", "dwell_seconds",
+                                     "active_hours", "zone")}
 
     def create(self, conn: sqlite3.Connection, body: dict) -> dict:
         rule = self.validate(body)
@@ -130,7 +244,7 @@ class Alerts:
                    enabled, created_utc, updated_utc, spec_json) VALUES (?,?,?,?,?,?,?,?,?)""",
             (rule_id, rule["name"], rule["class_label"], rule["stream_id"],
              rule["min_confidence"], int(rule["enabled"]), now, now,
-             json.dumps({"cooldown_seconds": rule["cooldown_seconds"], "speak": rule["speak"]}))))
+             json.dumps(self._spec(rule)))))
         self.reload(conn)
         return self.get(conn, rule_id)
 
@@ -143,14 +257,15 @@ class Alerts:
         if current is None:
             return None
         base = {k: current[k] for k in ("name", "class_label", "stream_id", "min_confidence",
-                                        "cooldown_seconds", "speak", "enabled")}
+                                        "cooldown_seconds", "speak", "enabled",
+                                        "dwell_seconds", "active_hours", "zone")}
         rule = self.validate(body, base)
         self.writer(lambda c: c.execute(
             """UPDATE rules SET name=?, class_label=?, stream_id=?, min_confidence=?,
                    enabled=?, updated_utc=?, spec_json=? WHERE rule_id=?""",
             (rule["name"], rule["class_label"], rule["stream_id"], rule["min_confidence"],
              int(rule["enabled"]), _utc(),
-             json.dumps({"cooldown_seconds": rule["cooldown_seconds"], "speak": rule["speak"]}),
+             json.dumps(self._spec(rule)),
              rule_id)))
         if not rule["enabled"]:
             self._close_rule_incidents(rule_id, "rule_disabled")
@@ -225,7 +340,7 @@ class Alerts:
             (incident_id,)).fetchone()
         if row is None or self.arbiter is None:
             return None
-        return self.arbiter.say("alert", self.announcement(dict(row)))
+        return self.arbiter.say("alert", self.announcement(dict(row)), bypass_alert_floor=True)
 
     def close_quiet(self, now: float | None = None) -> int:
         """Handled incidents close after a quiet cooldown (and after any snooze).
@@ -284,14 +399,16 @@ class Alerts:
             snoozed = row["snoozed_until_utc"] and now < _epoch(row["snoozed_until_utc"])
             notify = reopen = not snoozed
         conn.execute(
-            """UPDATE alert_incidents SET last_match_utc=?, match_count=match_count+1,
+            """UPDATE alert_incidents SET class_label=CASE
+                   WHEN match_count=0 OR class_label=? THEN ? ELSE 'object' END,
+                   last_match_utc=?, match_count=match_count+1,
                    counted_from_utc=CASE WHEN match_count=0 THEN ? ELSE counted_from_utc END,
                    last_track_id=?, head_match_id=CASE WHEN ? THEN ? ELSE head_match_id END,
                    state=CASE WHEN ? THEN 'open' ELSE state END,
                    acknowledged_utc=CASE WHEN ? THEN NULL ELSE acknowledged_utc END,
                    snoozed_until_utc=CASE WHEN ? THEN NULL ELSE snoozed_until_utc END
                WHERE incident_id=?""",
-            (stamp, stamp, track_id, int(notify), match_id, int(reopen), int(reopen), int(reopen),
+            (entry["class_label"], entry["class_label"], stamp, stamp, track_id, int(notify), match_id, int(reopen), int(reopen), int(reopen),
              row["incident_id"]))
         return row["incident_id"], notify, reopen
 
@@ -304,18 +421,123 @@ class Alerts:
         return bool(changed)
 
     # -- matching (ingest thread, ingest connection) ------------------------
+    def drop_track(self, track_id: int) -> None:
+        for key in list(self.inside):
+            if key[1] == track_id:
+                self.inside.pop(key, None)
+        for key in list(self.dwell):
+            if key[1] == track_id:
+                self.dwell.pop(key, None)
+
+    def _prune_match_state(self) -> None:
+        for store in (self.inside, self.dwell):
+            while len(store) > MAX_MATCH_STATE:
+                store.pop(next(iter(store)))
+
+    def _active_now(self, rule: dict, observed_at: float) -> bool:
+        active = rule.get("active_hours")
+        if active is None:
+            return True
+        local = datetime.fromtimestamp(observed_at, UTC).astimezone(ZoneInfo(active["timezone"]))
+        now = local.hour * 60 + local.minute
+        start, end = _time_minutes(active["start"]), _time_minutes(active["end"])
+        if start < end:
+            return start <= now < end
+        return now >= start or now < end
+
+    def _foot(self, entry: dict) -> tuple[float, float] | None:
+        rect = entry.get("detection_rect")
+        width, height = entry.get("frame_width"), entry.get("frame_height")
+        if (not isinstance(rect, (list, tuple)) or len(rect) != 4
+                or any(isinstance(v, bool) or not isinstance(v, (int, float))
+                       or not math.isfinite(v) for v in rect)
+                or isinstance(width, bool) or isinstance(height, bool)
+                or not isinstance(width, (int, float)) or not isinstance(height, (int, float))
+                or not math.isfinite(width) or not math.isfinite(height)
+                or width <= 0 or height <= 0 or rect[2] <= 0 or rect[3] <= 0):
+            return None
+        x, y, w, h = rect
+        return ((x + w / 2.0) / width, (y + h) / height)
+
+    def _touches_frame(self, entry: dict) -> bool:
+        if entry.get("object_touches_frame") is True:
+            return True
+        rect = entry.get("detection_rect")
+        height = entry.get("frame_height")
+        if (not isinstance(rect, (list, tuple)) or len(rect) != 4
+                or isinstance(height, bool) or not isinstance(height, (int, float)) or height <= 0):
+            return False
+        try:
+            return (float(rect[1]) + float(rect[3])) / float(height) >= 0.99
+        except (TypeError, ValueError):
+            return False
+
+    def _in_zone(self, rule: dict, track_id: int, entry: dict) -> bool:
+        zone = rule.get("zone")
+        if zone is None:
+            return True
+        point = self._foot(entry)
+        if point is None:
+            return False
+        points = zone["points"]
+        key = (rule["rule_id"], track_id)
+        inside = _point_in_polygon(point, points)
+        if inside:
+            self.inside[key] = True
+            return True
+        if self.inside.get(key) and _edge_distance(point, points) <= ZONE_MARGIN:
+            return True
+        self.inside[key] = False
+        return False
+
+    def _dwell_ready(self, rule: dict, track_id: int, entry: dict, qualifies: bool) -> bool:
+        dwell = rule.get("dwell_seconds")
+        if dwell is None:
+            return qualifies
+        now = float(entry.get("last_at") or time.time())
+        key = (rule["rule_id"], track_id)
+        state = self.dwell.get(key)
+        if state is not None and (now < state["last_qual"] or
+                                  now - state["last_qual"] > max(2.0, dwell * 0.2)):
+            self.dwell.pop(key, None)
+            state = None
+        if qualifies:
+            if state is None:
+                state = self.dwell[key] = {"since": now, "last_qual": now}
+            else:
+                state["last_qual"] = now
+            return now - state["since"] >= dwell
+        return False
+
     def evaluate(self, conn: sqlite3.Connection, track_id: int, entry: dict) -> None:
         """Called by ingest per observation of a track. One match per (rule, track)."""
         matched = entry.setdefault("matched_rules", set())
+        self._prune_match_state()
         for rule in self.rules:
+            key = (rule["rule_id"], track_id)
+            revisions = entry.setdefault("rule_revisions", {})
+            if revisions.get(rule["rule_id"]) != rule["match_revision"]:
+                self.inside.pop(key, None)
+                self.dwell.pop(key, None)
+                revisions[rule["rule_id"]] = rule["match_revision"]
             if rule["rule_id"] in matched:
                 continue
-            if rule["class_label"] != entry["class_label"]:
+            if rule["class_label"] is not None and rule["class_label"] != entry["class_label"]:
                 continue
             if rule["stream_id"] is not None and rule["stream_id"] != entry["stream_id"]:
                 continue
             if rule["min_confidence"] is not None and (
                     entry.get("peak_confidence") or 0.0) < rule["min_confidence"]:
+                continue
+            constrained = rule.get("zone") is not None or rule.get("dwell_seconds") is not None
+            if rule.get("zone") is not None and self._foot(entry) is None:
+                self.inside.pop(key, None)
+                self.dwell.pop(key, None)
+                continue
+            qualifies = self._active_now(rule, float(entry.get("last_at") or time.time()))
+            qualifies = qualifies and not (constrained and self._touches_frame(entry))
+            qualifies = qualifies and self._in_zone(rule, track_id, entry)
+            if not self._dwell_ready(rule, track_id, entry, qualifies):
                 continue
             matched.add(rule["rule_id"])
             match_id = "m" + uuid.uuid4().hex[:12]

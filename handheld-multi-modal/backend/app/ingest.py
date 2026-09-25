@@ -262,7 +262,10 @@ class Ingest:
                 for key in [k for k in self.open_intervals if k[0] == stream_id]:
                     self.open_intervals.pop(key, None)
                 for key in [k for k in self.active if k[0] == stream_id]:
-                    self.active.pop(key, None)
+                    entry = self.active.pop(key, None)
+                    if (self.alerts is not None and entry is not None
+                            and entry.get("track_id") is not None):
+                        self.alerts.drop_track(entry["track_id"])
                 for key in [k for k in self.tentative if k[0] == stream_id]:
                     self.tentative.pop(key, None)
                 for key in [k for k in self.parked if k[0] == stream_id]:
@@ -339,6 +342,16 @@ class Ingest:
             entry["observation_count"] += count
             if confidence is not None:
                 entry["peak_confidence"] = max(entry["peak_confidence"] or 0.0, confidence)
+            rect = obj.get("detection_rect")
+            if rect is None and all(k in obj for k in ("x", "y", "w", "h")):
+                rect = [obj.get(k) for k in ("x", "y", "w", "h")]
+            entry["detection_rect"] = rect
+            # DLSPS publishes the frame size as metadata width/height.
+            for field, meta_field in (("frame_width", "width"), ("frame_height", "height")):
+                value = obj.get(field, context.get(field, meta.get(meta_field)))
+                entry[field] = value
+            entry["object_touches_frame"] = bool(
+                obj.get("object_touches_frame", context.get("object_touches_frame", False)))
             if count > 1:
                 self._touch_interval(key, first_at, first_stamp, count - 1)
             self._touch_interval(key, observed_at, stamp)
@@ -487,6 +500,8 @@ class Ingest:
             for key, entry in list(self.active.items()):
                 if key[0] == stream_id and _utc(entry["last_at"]) < cutoff:
                     self.active.pop(key, None)
+                    if self.alerts is not None and entry.get("track_id") is not None:
+                        self.alerts.drop_track(entry["track_id"])
             for key, seed in list(self.tentative.items()):
                 if key[0] == stream_id and _utc(seed["last_at"]) < cutoff:
                     self.tentative.pop(key, None)
@@ -678,6 +693,7 @@ class Ingest:
                 try:
                     event = json.loads((root / stream_id / (stem + ".json")).read_text())
                 except (OSError, ValueError):
+                    self.scanned[stream_id].discard(stem)
                     continue
                 if isinstance(event, dict) and event.get("event") == "crop_ready":
                     events.append(event)

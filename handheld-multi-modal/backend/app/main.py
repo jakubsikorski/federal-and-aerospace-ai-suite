@@ -1,7 +1,6 @@
 """Backend application: services, camera history, telemetry and live UI state.
 
-Phases 1-8 of docs/design/APPLICATION_DESIGN.md, Appendix A. Voice capture
-remains a later phase.
+Phases 1-9 of docs/design/APPLICATION_DESIGN.md, Appendix A.
 """
 from __future__ import annotations
 
@@ -24,7 +23,8 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import alerts as alerting, history, pipelines, reset
-from .speech import Arbiter
+from .speech import Arbiter, complete_answer_sentences
+from .voice import MAX_AUDIO_BYTES, validate_audio, transcribe
 from .assistant import (
     Assistant,
     InvalidInput,
@@ -59,6 +59,40 @@ from .core import (
 )
 
 log = logging.getLogger("backend")
+
+
+class EarlyAnswerSpeech:
+    def __init__(self, arbiter: Arbiter, generation: int | None):
+        self.arbiter = arbiter
+        self.generation = generation
+        self.buffer = ""
+        self.first: dict | None = None
+        self.sent = False
+
+    def feed(self, text: object) -> None:
+        if self.generation is None or not isinstance(text, str) or not text:
+            return
+        self.buffer += text
+        sentences, self.buffer = complete_answer_sentences(self.buffer)
+        for sentence in sentences:
+            self._say(sentence)
+
+    def finish(self) -> None:
+        if self.generation is not None:
+            self._say(self.buffer.strip())
+        self.buffer = ""
+
+    def cancel(self) -> None:
+        self.buffer = ""
+        self.arbiter.cancel(group="answer", reason="cancelled")
+
+    def _say(self, text: str) -> None:
+        if not text:
+            return
+        item = self.arbiter.say_answer(text, self.generation)
+        if item and self.first is None:
+            self.first = item
+        self.sent = self.sent or item is not None
 
 
 @contextmanager
@@ -133,6 +167,34 @@ def local_checks(cfg: dict, conn: sqlite3.Connection) -> list[Probe]:
     return checks
 
 
+def warm_chatqna_once(services: Services, timeout: float) -> None:
+    def run():
+        url = services.urls.get("chatqna")
+        if not url:
+            return
+        deadline = time.monotonic() + max(1.0, timeout)
+        while time.monotonic() < deadline:
+            try:
+                health = services.client.get(url + "/health", timeout=min(2.0, timeout))
+                if health.status_code == 200:
+                    break
+            except Exception:
+                time.sleep(1.0)
+        else:
+            log.info("Chat Q&A warm-up skipped: service did not report healthy")
+            return
+        try:
+            started = time.monotonic()
+            response = services.client.post(
+                url + "/chat", json={"input": "Say ready.", "stream": False}, timeout=timeout)
+            response.raise_for_status()
+            log.info("Chat Q&A warm-up completed in %d ms", int((time.monotonic() - started) * 1000))
+        except Exception as exc:
+            log.info("Chat Q&A warm-up failed without blocking startup: %s", exc)
+
+    threading.Thread(target=run, name="chatqna-warmup", daemon=True).start()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     cfg = load_config()
@@ -163,6 +225,7 @@ async def lifespan(app: FastAPI):
         on_corpus_change=app.state.assistant.reset_context,
     )
     app.state.assistant.mission = app.state.mission
+    warm_chatqna_once(app.state.services, float(cfg.get("assistant_chat_timeout_seconds", 60)))
 
     def synthesize(text: str) -> bytes:
         # Stock JSON mode: the WAV arrives as audio_base64 and is handed to the
@@ -179,6 +242,11 @@ async def lifespan(app: FastAPI):
             raise ValueError("TTS response is not WAV audio")
         return audio
 
+    synthesize.cache_identity = json.dumps({
+        "service": cfg["services"]["tts"].rstrip("/"),
+        "voice": cfg.get("tts_voice") or "",
+        "model": cfg.get("tts_model") or "",
+    }, sort_keys=True)
     app.state.arbiter = Arbiter(synthesize, alert_floor=float(cfg.get("alert_speech_floor_seconds", 3.0)),
                                 trace_path=cfg.get("arbiter_trace_path"))
     app.state.alerts = alerting.Alerts(
@@ -426,20 +494,27 @@ def create_app() -> FastAPI:
 
     @app.post("/api/incidents/{incident_id}/{action}")
     async def incident_action(request: Request, incident_id: str, action: str):
-        body = await request.json() if await request.body() else {}
-        minutes = body.get("minutes") if isinstance(body, dict) else None
         try:
-            changed = request.app.state.alerts.act(incident_id, action, minutes)
-        except alerting.RuleError as exc:
+            body = await request.json() if await request.body() else {}
+        except json.JSONDecodeError:
+            body = None
+        if not isinstance(body, dict) or set(body) - {"minutes"}:
             return JSONResponse(status_code=422, content=envelope(error={
-                "code": "invalid_action", "message": str(exc)}))
-        if not changed:
-            return JSONResponse(status_code=409, content=envelope(error={
-                "code": "not_active", "message": "This alert was already handled or closed."}))
-        with read_connection(request) as conn:
-            incident = next((i for i in _incidents(request.app.state, conn, 100)
-                             if i["incident_id"] == incident_id), None)
-        return envelope(incident)
+                "code": "invalid_action", "message": "Provide an action object with optional minutes."}))
+        def apply():
+            try:
+                changed = request.app.state.alerts.act(incident_id, action, body.get("minutes"))
+            except alerting.RuleError as exc:
+                return JSONResponse(status_code=422, content=envelope(error={
+                    "code": "invalid_action", "message": str(exc)}))
+            if not changed:
+                return JSONResponse(status_code=409, content=envelope(error={
+                    "code": "not_active", "message": "This alert was already handled or closed."}))
+            with read_connection(request) as conn:
+                incident = next((i for i in _incidents(request.app.state, conn, 100)
+                                 if i["incident_id"] == incident_id), None)
+            return envelope(incident)
+        return await asyncio.to_thread(apply)
 
     # -- rules (Phase 8) -------------------------------------------------------
     def _rule_error(exc: Exception) -> JSONResponse:
@@ -463,11 +538,13 @@ def create_app() -> FastAPI:
             body = await request.json()
         except json.JSONDecodeError:
             body = None
-        with read_connection(request) as conn:
-            try:
-                return envelope(request.app.state.alerts.create(conn, body))
-            except (alerting.RuleError, ServiceUnavailable) as exc:
-                return _rule_error(exc)
+        def create():
+            with read_connection(request) as conn:
+                try:
+                    return envelope(request.app.state.alerts.create(conn, body))
+                except (alerting.RuleError, ServiceUnavailable) as exc:
+                    return _rule_error(exc)
+        return await asyncio.to_thread(create)
 
     @app.patch("/api/rules/{rule_id}")
     async def update_rule(request: Request, rule_id: str):
@@ -475,14 +552,16 @@ def create_app() -> FastAPI:
             body = await request.json()
         except json.JSONDecodeError:
             body = None
-        with read_connection(request) as conn:
-            try:
-                rule = request.app.state.alerts.update(conn, rule_id, body)
-            except (alerting.RuleError, ServiceUnavailable) as exc:
-                return _rule_error(exc)
-        if rule is None:
-            raise HTTPException(status_code=404, detail="unknown rule")
-        return envelope(rule)
+        def update():
+            with read_connection(request) as conn:
+                try:
+                    rule = request.app.state.alerts.update(conn, rule_id, body)
+                except (alerting.RuleError, ServiceUnavailable) as exc:
+                    return _rule_error(exc)
+            if rule is None:
+                raise HTTPException(status_code=404, detail="unknown rule")
+            return envelope(rule)
+        return await asyncio.to_thread(update)
 
     @app.delete("/api/rules/{rule_id}")
     def delete_rule(request: Request, rule_id: str, confirm: str = ""):
@@ -528,6 +607,44 @@ def create_app() -> FastAPI:
                 "code": "invalid_request", "message": "provide held as true or false"}))
         request.app.state.arbiter.set_talk(body["held"])
         return envelope(request.app.state.arbiter.snapshot())
+
+    @app.post("/api/speech/stop")
+    async def stop_speech(request: Request):
+        request.app.state.arbiter.stop_speaking()
+        return envelope(request.app.state.arbiter.snapshot())
+
+    @app.post("/api/voice/transcribe")
+    async def voice_transcribe(request: Request):
+        # Read before multipart parsing to enforce the limit even without a
+        # Content-Length header. Browser sends WAV; upstream receives multipart.
+        data = bytearray()
+        try:
+            async with asyncio.timeout(20):
+                async for chunk in request.stream():
+                    if len(data) + len(chunk) > MAX_AUDIO_BYTES:
+                        raise HTTPException(413, "Recording is too large.")
+                    data.extend(chunk)
+        except TimeoutError as exc:
+            raise HTTPException(408, "Recording upload timed out.") from exc
+        try:
+            validate_audio(bytes(data))
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        lock = getattr(request.app.state, "voice_lock", None)
+        if lock is None:
+            lock = request.app.state.voice_lock = asyncio.Lock()
+        if lock.locked():
+            raise HTTPException(429, "Transcription is busy. Please try again.")
+        async with lock:
+            try:
+                text = await asyncio.to_thread(transcribe, request.app.state.services,
+                    request.app.state.cfg["services"]["audio_analyzer"], bytes(data))
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
+            except Exception as exc:
+                log.warning("Transcription failed: %s", type(exc).__name__)
+                raise HTTPException(503, "Transcription unavailable. Type your question or try again.") from exc
+        return envelope({"text": text})
 
     @app.get("/api/history/options")
     def history_options(request: Request):
@@ -642,12 +759,19 @@ def create_app() -> FastAPI:
                 "message": "selected_stream is not valid with page_token",
             }))
         conversation_id = body.get("conversation_id", uuid.uuid4().hex)
-        def perform(emit=None):
+        speech_generation = request.app.state.arbiter.answer_generation if body.get("speak") is True else None
+        def perform(emit=None, early_speech: EarlyAnswerSpeech | None = None):
             answer = answer_for(emit)
             text = answer.get("spoken_text") or answer.get("answer_text")
             if body.get("speak") is True and isinstance(text, str) and text.strip():
-                # A direct reply to the operator: priority 0 in the arbiter.
-                answer["speech_id"] = request.app.state.arbiter.say("answer", text)["id"]
+                if early_speech is not None:
+                    early_speech.finish()
+                    if early_speech.first is not None:
+                        answer["speech_id"] = early_speech.first["id"]
+                if early_speech is None or not early_speech.sent:
+                    item = request.app.state.arbiter.say_answer(text, speech_generation)
+                    if item:
+                        answer["speech_id"] = item["id"]
             return answer
         def answer_for(emit=None):
             assistant = request.app.state.assistant
@@ -665,16 +789,24 @@ def create_app() -> FastAPI:
             async def updates():
                 loop = asyncio.get_running_loop()
                 messages = asyncio.Queue()
+                early_speech = EarlyAnswerSpeech(
+                    request.app.state.arbiter, speech_generation) if body.get("speak") is True else None
                 def emit(event):
                     # Serialize now: the worker may subsequently append warnings.
                     loop.call_soon_threadsafe(messages.put_nowait, json.dumps(event) + "\n")
+                    if early_speech is not None and isinstance(event, dict):
+                        early_speech.feed(event.get("delta"))
                 def run():
                     try:
-                        answer = perform(emit)
+                        answer = perform(emit, early_speech)
                         emit({"answer": answer, "done": True})
                     except (InvalidInput, QueueFull, QueryBudgetExceeded, ServiceUnavailable) as exc:
+                        if early_speech is not None:
+                            early_speech.cancel()
                         emit({"error": str(exc), "done": True})
                     except Exception:
+                        if early_speech is not None:
+                            early_speech.cancel()
                         log.exception("history request failed")
                         emit({"error": "History query failed. Please try again.", "done": True})
                     finally:
@@ -716,6 +848,7 @@ def create_app() -> FastAPI:
     def reset_assistant_context(request: Request, conversation_id: str):
         if not re.fullmatch(r"[a-f0-9-]{32,36}", conversation_id):
             raise HTTPException(status_code=422, detail="Invalid conversation_id")
+        request.app.state.arbiter.stop_speaking()
         return envelope(request.app.state.assistant.reset_context(conversation_id))
 
     @app.get("/api/stream")
@@ -732,42 +865,21 @@ def create_app() -> FastAPI:
                 "identity": "tracks_not_people",
             })
             last_speech = None
-            with read_connection(request) as conn:
-                while not pipelines.shutdown.is_set() and not await request.is_disconnected():
-                    state = request.app.state
-                    feeds = state.ingest.snapshot()
-                    for stream in state.cfg["streams"]:
-                        if not stream.get("enabled", True):
-                            continue
-                        stream_id = stream["stream_id"]
-                        feed = feeds.get(stream_id, {"ok": None, "reason": "unknown"})
-                        yield _event("feed", {"stream_id": stream_id, "feed": feed})
-                        yield _event("track", {
-                            "stream_id": stream_id,
-                            "current": history.current(
-                                conn, state.ingest, state.cfg, stream_id),
-                            "recent": history.recent(
-                                conn, state.ingest, state.cfg, stream_id, limit=50,
-                                class_labels=class_labels, has_image=has_image, prioritize=prioritize),
-                        })
-                    yield _event("alert", {
-                        "stream_id": None,
-                        "alerts": _alerts(state, conn, 50),
-                        "incidents": _incidents(state, conn),
-                        "incident_counts": history.incident_counts(conn),
-                    })
-                    yield _event("telemetry", {
-                        "stream_id": None,
-                        **state.telemetry.snapshot(),
-                    })
-                    # Speech changes are pushed within ~0.2 s so a preempted or
-                    # suppressed clip stops promptly; the rest refreshes at 1 Hz.
-                    for _ in range(5):
-                        speech = state.arbiter.snapshot()
-                        if speech["version"] != last_speech:
-                            last_speech = speech["version"]
-                            yield _event("speech", {"stream_id": None, **speech})
-                        await asyncio.sleep(0.2)
+            while not pipelines.shutdown.is_set() and not await request.is_disconnected():
+                state = request.app.state
+                # SQLite, ingest locks and JSON encoding must not stall other
+                # requests or playback acknowledgements on the event loop.
+                batch = await asyncio.to_thread(
+                    _live_events, request, class_labels, has_image, prioritize)
+                for event in batch:
+                    yield event
+                # Speech still refreshes at 5 Hz, independently of the 1 Hz data.
+                for _ in range(5):
+                    speech = state.arbiter.snapshot()
+                    if speech["version"] != last_speech:
+                        last_speech = speech["version"]
+                        yield _event("speech", {"stream_id": None, **speech})
+                    await asyncio.sleep(0.2)
 
         return StreamingResponse(events(), media_type="text/event-stream", headers={
             "Cache-Control": "no-cache",
@@ -832,7 +944,7 @@ def create_app() -> FastAPI:
                    JOIN tracks t ON t.track_id = c.track_id
                    WHERE c.track_id = ? AND c.image_state = 'present'
                    ORDER BY (c.candidate_id = coalesce(t.selected_candidate_id, '')) DESC,
-                            c.quality_score DESC LIMIT 10""", (track_id,)).fetchall()
+                            c.quality_score DESC, c.candidate_id DESC LIMIT 10""", (track_id,)).fetchall()
             for row in rows:
                 response = _serve(request, conn, row)
                 if response.status_code != 404:
@@ -875,6 +987,35 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+
+
+def _live_events(request: Request, class_labels: tuple[str, ...],
+                 has_image: bool, prioritize: bool) -> list[str]:
+    """Build one SSE batch; the connection is owned and closed by this worker."""
+    state = request.app.state
+    feeds = state.ingest.snapshot()
+    batch = []
+    with read_connection(request) as conn:
+        for stream in state.cfg["streams"]:
+            if not stream.get("enabled", True):
+                continue
+            stream_id = stream["stream_id"]
+            batch.append(_event("feed", {"stream_id": stream_id,
+                "feed": feeds.get(stream_id, {"ok": None, "reason": "unknown"})}))
+            batch.append(_event("track", {
+                "stream_id": stream_id,
+                "current": history.current(conn, state.ingest, state.cfg, stream_id),
+                "recent": history.recent(conn, state.ingest, state.cfg, stream_id,
+                    limit=50, class_labels=class_labels, has_image=has_image,
+                    prioritize=prioritize),
+            }))
+        batch.append(_event("alert", {
+            "stream_id": None, "alerts": _alerts(state, conn, 50),
+            "incidents": _incidents(state, conn),
+            "incident_counts": history.incident_counts(conn),
+        }))
+    batch.append(_event("telemetry", {"stream_id": None, **state.telemetry.snapshot()}))
+    return batch
 
 
 def _alerts(state, conn: sqlite3.Connection, limit: int) -> list[dict]:

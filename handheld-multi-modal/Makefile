@@ -321,6 +321,10 @@ restart: stop up
 
 demo-restart: stop demo-up
 
+.PHONY: speech-restart
+speech-restart:
+	$(COMPOSE) restart tts
+
 # DLSPS must restart with Backend: a failed publisher can retain crop locks.
 pipelines-restart demo-pipelines-restart:
 	@$(readiness)

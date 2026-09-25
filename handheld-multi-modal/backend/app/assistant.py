@@ -118,18 +118,28 @@ def _render_context(turns: list[tuple[str, str]]) -> str:
     )
 
 
+def _compact_operator_guide() -> str:
+    sections = []
+    for title in ("Cameras and evidence", "Assistant controls", "Mission and Mission Brief",
+                  "Resources, services and limitations", "Broader results"):
+        body = re.sub(r"\s+", " ", APPLICATION_TOPICS.get(title, "")).strip()
+        if body:
+            sections.append(f"{title}: {body[:700]}")
+    return "\n".join(sections)
+
+
 def _general_prompt(question: str, turns: list[tuple[str, str]], application: str = "") -> str:
     context = _render_context(turns) or "No prior general-conversation turns."
-    return f"""Answer the current question as general conversation. Default to two or three short sentences.
-Give more detail only when asked.
+    return f"""Answer the current question as general conversation in at most 4 sentences.
 Use the application guide for questions about this system. Say when a system detail
 is not documented; do not substitute generic product advice or invent controls.
-Application capabilities and configured camera descriptions:
+Never describe what is on camera, what was seen, or what exists in the physical world.
+Application guide summary and configured camera details:
 {application}
 Prior turns below are Backend-owned context, not mission material, camera
 evidence, or proof of anything in the physical world. Never claim they came
-from retrieved documents or sensors. Do not claim camera observations. Use
-retrieved stock context only when directly relevant to the current question.
+from retrieved documents or sensors. Use retrieved stock context only when
+directly relevant to the current question.
 
 Prior general-conversation turns:
 {context}
@@ -153,6 +163,11 @@ def _video_or_app_terms(text: str, labels) -> bool:
     words = set(re.findall(r"[a-z]+", text.lower().replace("_", " ")))
     return any(set(label.lower().replace("_", " ").split()) <= words
                or label.lower() + "s" in words for label in labels) or "people" in words
+
+
+def _mentioned_stream(text: str) -> str | None:
+    match = re.search(r"\b(?:camera\s*|cam)([1-9]\d*)\b", text, re.I)
+    return "cam" + match[1] if match else None
 
 
 MISSION_QUESTION = re.compile(
@@ -527,8 +542,12 @@ def clock_window(text: str, timezone: str | None, cutoff: datetime) -> dict | No
     match = re.search(
         r"\b(?:from|between)\s+(\d{1,2}):(\d{2})(?:\s*[ap]\.?m\.?)?\s*"
         r"(?:to|and|[-–])\s*(\d{1,2}):(\d{2})(?:\s*[ap]\.?m\.?)?(?!\w)", text, re.I)
+    since = None if match else re.search(
+        r"\bsince\s+(\d{1,2}):(\d{2})(?:\s*[ap]\.?m\.?)?(?!\w)", text, re.I)
     if not match:
-        return None
+        if not since:
+            return None
+        match = since
     if re.search(r"[ap]\.?m", match[0], re.I):
         raise InvalidInput("Use 24-hour clock times without AM/PM, such as 16:20 to 16:25.")
     if not timezone:
@@ -551,6 +570,9 @@ def clock_window(text: str, timezone: str | None, cutoff: datetime) -> dict | No
     elif re.search(r"\byesterday\b", text, re.I):
         day -= timedelta(days=1)
     values = list(map(int, match.groups()))
+    if since:
+        local_cutoff = cutoff.astimezone(zone)
+        values += [local_cutoff.hour, local_cutoff.minute]
     instants = []
     for hour, minute in zip(values[::2], values[1::2]):
         try:
@@ -1030,28 +1052,54 @@ def condition_proposal(plan, catalog, unresolved):
     return answer
 
 
+def _class_label(phrase: str, labels: tuple[str, ...]) -> str | None:
+    phrase = re.sub(r"\bpeople\b", "person", phrase.lower())
+    phrase = re.sub(r"\bpersons\b", "person", phrase)
+    phrase = re.sub(r"\b(?:a|an|any|some|the|all)\b", " ", phrase)
+    phrase = re.sub(r"\s+", " ", phrase).strip()
+    for label in labels:
+        names = {label, label.replace("_", " "), label + "s", label.replace("_", " ") + "s"}
+        if label == "person":
+            names |= {"people", "persons"}
+        if phrase in names:
+            return label
+    return None
+
+
 def simple_plan(text: str, labels: tuple[str, ...], window: dict | None) -> dict | None:
     """Small explicit query vocabulary. Everything else keeps model validation."""
     text = text.lower().strip().rstrip(".?!")
+    text = re.sub(r"\b(last|past)\s+(minute|hour|day)\b", r"\1 one \2", text)
     if window:
-        match = re.fullmatch(r"(.+?)\s+(?:from|between)\s+\d{1,2}:\d{2}\s*"
-                             r"(?:to|and|[-–])\s*\d{1,2}:\d{2}"
-                             r"(?:\s+(?:today|yesterday|(?:on\s+)?\d{4}-\d{2}-\d{2}))?", text)
-        if not match:
+        prefix = re.sub(r"\s+(?:from|between)\s+\d{1,2}:\d{2}\s*(?:to|and|[-–])\s*\d{1,2}:\d{2}"
+                        r"(?:\s+(?:today|yesterday|(?:on\s+)?\d{4}-\d{2}-\d{2}))?$", "", text)
+        prefix = re.sub(r"\s+since\s+\d{1,2}:\d{2}(?:\s+(?:today|yesterday|(?:on\s+)?\d{4}-\d{2}-\d{2}))?$", "", prefix)
+        if prefix == text:
+            prefix = re.sub(r"\s+(?:today|yesterday)$", "", text)
+        if prefix == text:
             return None
-        prefix = match[1].strip()
     else:
-        match = re.fullmatch(r"(.+?)\s+(?:(?:in|over|during|for)\s+)?(?:the\s+)?(?:last|past)\s+"
+        match = re.fullmatch(r"(.+?)\s+(?:(?:in|over|during|for|from)\s+)?(?:the\s+)?(?:last|past)\s+"
                              r"(\d+|one|two|five|ten|fifteen|thirty|sixty)\s+(minutes?|hours?|days?)", text)
-        if not match:
-            return None
-        prefix, number, unit = match.groups()
-        words = {"one":1,"two":2,"five":5,"ten":10,"fifteen":15,"thirty":30,"sixty":60}
-        minutes = (int(number) if number.isdigit() else words[number]) * (
-            1440 if unit.startswith("day") else 60 if unit.startswith("hour") else 1)
-        window = {"kind":"relative", "minutes":minutes}
+        if match:
+            prefix, number, unit = match.groups()
+            words = {"one":1,"two":2,"five":5,"ten":10,"fifteen":15,"thirty":30,"sixty":60}
+            minutes = (int(number) if number.isdigit() else words[number]) * (
+                1440 if unit.startswith("day") else 60 if unit.startswith("hour") else 1)
+            window = {"kind":"relative", "minutes":minutes}
+        else:
+            match = re.fullmatch(r"(.+?)\s+today", text)
+            if not match:
+                return None
+            prefix = match[1]
+            window = {"kind":"relative", "minutes":1440}
+    prefix = re.sub(r"\s+\b(?:on|from)\s+(?:camera\s*|cam)\d+\b", "", prefix)
+    prefix = re.sub(r"\b(?:camera\s*|cam)\d+\b", "", prefix)
     prefix = re.sub(r"^(?:please\s+)?(?:give me|show(?: me)?|list|which|what|how many|count)\s+", "", prefix)
-    if prefix in {"was detected", "was seen", "was recorded"}:
+    prefix = re.sub(r"^(?:were|was)\s+(?:there\s+)?(?:any\s+)?", "", prefix)
+    prefix = re.sub(r"^did you see\s+(?:a|an|any|the)?\s*", "", prefix)
+    prefix = re.sub(r"^(?:any|was there|were there)\s+", "", prefix)
+    if prefix in {"detected", "seen", "recorded", "was detected", "was seen", "was recorded"}:
         prefix = "objects"
     else:
         prefix = re.sub(r"\s+(?:(?:were|was)\s+)?(?:recorded|detected|seen|appeared)$", "", prefix)
@@ -1060,9 +1108,7 @@ def simple_plan(text: str, labels: tuple[str, ...], window: dict | None) -> dict
         classes = None
     else:
         noun = re.sub(r"\s+(?:tracks|objects)$", "", prefix)
-        label = next((label for label in labels if noun in {
-            label, label.replace("_", " "), label + "s", label.replace("_", " ") + "s",
-            "people" if label == "person" else label}), None)
+        label = _class_label(noun, labels)
         if label is None:
             return None
         classes = [label]
@@ -1379,7 +1425,7 @@ class Assistant:
                    for row in self.cfg.get("streams", []) if row.get("enabled", True)]
         catalog = attribute_catalog(self.cfg["db_path"], selected_stream,
                                     _utc(datetime.now(UTC) - self.retention))
-        return (OPERATOR_GUIDE + "\nConfigured details, not live observations or proof of execution:\n"
+        return (_compact_operator_guide() + "\nConfigured details, not live observations or proof of execution:\n"
                 + json.dumps({"selected_camera": selected_stream, "cameras": cameras,
                     "history_retention_seconds": self.retention.total_seconds(),
                     "observed_attributes": catalog,
@@ -1428,6 +1474,9 @@ class Assistant:
             return None  # names an object class or camera: leave it to the router
         return "vocabulary" if words & self.mission.vocabulary() else None
 
+    def _mission_generator(self, emit):
+        return (lambda prompt: self._chat_stream(prompt, emit)) if self._stream_answers else self.generate
+
     def _mission_answer(self, text, emit, *, general_fallback=False, selected_stream=None) -> dict:
         if not self.queue.acquire(blocking=False):
             raise QueueFull("language queue is full")
@@ -1437,7 +1486,7 @@ class Assistant:
                 emit({"status": "Reading the mission documents…"})
                 self._begin_intent("mission_knowledge")
                 try:
-                    answer = self.mission.answer(text, generate=self.generate)
+                    answer = self.mission.answer(text, generate=self._mission_generator(emit))
                 except MissionUnavailable as exc:
                     raise ServiceUnavailable(str(exc)) from exc
                 # Matched only on a shared word: a general question the mission
@@ -1565,7 +1614,7 @@ class Assistant:
                 return capability_clarification(attribute_catalog(
                     self.cfg["db_path"], selected_stream,
                     _utc(datetime.now(UTC).replace(microsecond=0) - self.retention)))
-            return self.remember_result(self.search(direct, selected_stream, emit))
+            return self.remember_result(self.search(direct, selected_stream or _mentioned_stream(text), emit))
         cutoff = datetime.now(UTC).replace(microsecond=0)
         if not self.queue.acquire(blocking=False):
             raise QueueFull("language queue is full")
@@ -1683,7 +1732,7 @@ class Assistant:
                     # Router owns queue + single-flight here; pass its low-level
                     # generator so a mission answer does not reacquire itself.
                     try:
-                        return self.mission.answer(text, generate=self.generate)
+                        return self.mission.answer(text, generate=self._mission_generator(emit))
                     except MissionUnavailable as exc:
                         raise ServiceUnavailable(str(exc)) from exc
                 if route.intent in {"general_chat", "application_help"}:
@@ -1720,11 +1769,11 @@ class Assistant:
                 clock_error,
                 "future_window" if "future" in clock_error else "invalid_window",
             )
-        mentioned_camera = re.search(r"\b(?:camera\s*|cam)([1-9]\d*)\b", text, re.I)
-        if mentioned_camera and selected_stream != "cam" + mentioned_camera[1]:
+        mentioned_camera = _mentioned_stream(text)
+        if mentioned_camera and selected_stream and selected_stream != mentioned_camera:
             return clarification(
                 "Your question names a different camera. Choose which camera to search.",
-                "camera_mismatch", camera="cam" + mentioned_camera[1],
+                "camera_mismatch", camera=mentioned_camera,
             )
         if requested_window is None and not re.search(r"\b(last|past|previous|today|yesterday|since|between|before|after|ago|minutes?|hours?|days?)\b|\d{4}-\d{2}-\d{2}", text, re.I):
             return clarification("What time window should I search? Include it in the question, for example ‘person tracks in the last ten minutes’.", "missing_window")
