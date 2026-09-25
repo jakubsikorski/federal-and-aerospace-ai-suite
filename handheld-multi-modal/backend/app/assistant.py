@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import httpx
 import yaml
 
-from .mission import MissionUnavailable, OPERATOR_GUIDE
+from .mission import MISSION_UNAVAILABLE_ANSWER, MissionUnavailable, OPERATOR_GUIDE
 
 log = logging.getLogger("backend.assistant")
 
@@ -158,6 +158,27 @@ def _video_or_app_terms(text: str, labels) -> bool:
 MISSION_QUESTION = re.compile(
     r"^(?:what|which|who|when|where|how|is|are|does|do|list|summari[sz]e|tell me|describe)\b"
     r".*\b(?:mission (?:documents?|material|orders?|files?)|mission's documents)\b", re.I | re.S)
+
+
+# With mission documents loaded, operational questions ("When is the report due?",
+# "Am I allowed to stop people?") go straight to mission knowledge. The router
+# model sent most of them to camera search and asked for a clarification.
+MISSION_TERMS = re.compile(
+    r"\b(?:missions?|objectives?|goals?|tasks?|tasked|orders?|exercise|operation|brief\w*|sectors?"
+    r"|restrict\w*|rules of engagement|allowed|permitted|forbidden|prohibited|(?:am|may|can|should|must|do) (?:i|we)"
+    r"|reports?|reporting|due|deadline|watch|shifts?|safety|officers?|warden|in charge|commander|units?|team"
+    r"|personnel|operators?|resources?|equipment|dependenc\w*|prerequisites?|risks?|hazards?|threats?"
+    r"|schedule|timeline|call ?signs?)\b", re.I)
+HISTORY_TERMS = re.compile(
+    r"\b(?:seen|saw|see|detect\w*|recorded|observed|tracks?|tracked|footage|video|images?|snips?|crops?"
+    r"|evidence|alerts?|appeared|passed|today|yesterday|ago|since|minutes?|hours?|seconds?|right now|currently"
+    r"|last \d+|past \d+|show me|find)\b", re.I)
+# Brief words that say nothing about the mission itself.
+_ROUTING_STOPWORDS = {
+    "what", "which", "when", "where", "does", "that", "this", "there", "their", "they", "with", "from",
+    "have", "about", "mission", "camera", "cameras", "documents", "specified", "information", "material",
+    "only", "also", "each", "into", "will", "would", "should", "could", "must", "been", "being", "were",
+}
 
 
 def _unsolicited_general(payload: object) -> bool:
@@ -1383,6 +1404,51 @@ class Assistant:
         return {"intent": intent, "answer_text": answer.strip(), "spoken_text": None,
                 "conversation": conversation, "errors": []}
 
+    def _mission_loaded(self) -> bool:
+        try:
+            return self.mission is not None and self.mission.loaded()
+        except Exception:  # an unreadable inventory must not break other questions
+            log.warning("mission inventory unavailable for routing", exc_info=True)
+            return False
+
+    def _mission_route(self, text: str, timezone) -> str | None:
+        """"terms" or "vocabulary" when a loaded mission should answer, else None."""
+        if HISTORY_TERMS.search(text) or not self._mission_loaded():
+            return None
+        try:
+            if clock_window(text, timezone, datetime.now(UTC).replace(microsecond=0)):
+                return None
+        except InvalidInput:
+            return None
+        if MISSION_TERMS.search(text):
+            return "terms"
+        words = set(re.findall(r"[a-z]{4,}", text.lower())) - _ROUTING_STOPWORDS
+        if self.cfg.get("detector_metadata_path") and _video_or_app_terms(
+                text, detector_labels(self.cfg["detector_metadata_path"])):
+            return None  # names an object class or camera: leave it to the router
+        return "vocabulary" if words & self.mission.vocabulary() else None
+
+    def _mission_answer(self, text, emit, *, general_fallback=False, selected_stream=None) -> dict:
+        if not self.queue.acquire(blocking=False):
+            raise QueueFull("language queue is full")
+        try:
+            emit({"status": "Waiting to answer…"})
+            with self.single_flight:
+                emit({"status": "Reading the mission documents…"})
+                self._begin_intent("mission_knowledge")
+                try:
+                    answer = self.mission.answer(text, generate=self.generate)
+                except MissionUnavailable as exc:
+                    raise ServiceUnavailable(str(exc)) from exc
+                # Matched only on a shared word: a general question the mission
+                # does not cover still gets a general answer.
+                if general_fallback and MISSION_UNAVAILABLE_ANSWER.rstrip(".").casefold() in answer["answer_text"].casefold():
+                    context, generation = self._begin_intent("general_chat")
+                    return self._general_answer(text, selected_stream, emit, context, generation)
+                return answer
+        finally:
+            self.queue.release()
+
     def ask(self, text: object, selected_stream: object = None, emit=None, timezone=None, mode="auto") -> dict:
         if not isinstance(text, str) or not text.strip() or len(text) > 500:
             raise InvalidInput("text must contain 1 to 500 characters")
@@ -1416,6 +1482,10 @@ class Assistant:
                     return self._general_answer(text, selected_stream, emit, context, generation)
             finally:
                 self.queue.release()
+        mission_route = self._mission_route(text, timezone)
+        if mission_route:
+            return self._mission_answer(text, emit, general_fallback=(mission_route == "vocabulary"),
+                                        selected_stream=selected_stream)
         # Plain knowledge questions ("What is YOLO26s?") need no routing call: the
         # router tended to write the whole answer inside its JSON, taking 15+ s
         # and then failing validation. Anything naming cameras, time, recorded
@@ -1437,19 +1507,7 @@ class Assistant:
         if MISSION_QUESTION.match(text.strip()):
             if self.mission is None:
                 raise ServiceUnavailable("Mission knowledge is not configured.")
-            if not self.queue.acquire(blocking=False):
-                raise QueueFull("language queue is full")
-            try:
-                emit({"status": "Waiting to answer…"})
-                with self.single_flight:
-                    emit({"status": "Reading the mission documents…"})
-                    self._begin_intent("mission_knowledge")
-                    try:
-                        return self.mission.answer(text, generate=self.generate)
-                    except MissionUnavailable as exc:
-                        raise ServiceUnavailable(str(exc)) from exc
-            finally:
-                self.queue.release()
+            return self._mission_answer(text, emit)
         if text.strip().lower().rstrip("?.!") in {
                 "what can you do", "what can you help me do here", "what can this application do"}:
             return self._application_answer(text,
@@ -1464,6 +1522,8 @@ class Assistant:
                            if row["stream_id"] == camera_id and row.get("enabled", True)), None)
             if camera is None:
                 return clarification("Select a configured camera to read its coverage description.")
+            if not camera.get("description") and self._mission_loaded():
+                return self._mission_answer(text, emit)
             return self._application_answer(text,
                     camera.get("display_name", camera_id) + ": " +
                     str(camera.get("description", "Coverage and location have not been configured."))[:500] +

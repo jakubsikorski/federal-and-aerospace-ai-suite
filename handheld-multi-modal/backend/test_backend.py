@@ -2033,8 +2033,9 @@ def test_mission_phase6_failure_matrix():
         mission._set_mode("ready", "Mission corpus is reconciled.")
         assistant.mission = mission
         errors = []
+        # Operational wording is routed without the model; this one still needs it.
         routed = threading.Thread(
-            target=lambda: _capture(errors, assistant.ask, "What is the mission objective?"))
+            target=lambda: _capture(errors, assistant.ask, "Summarise the packet for me"))
         routed.start()
         assert routing_started.wait(1)
         direct = threading.Thread(
@@ -2046,6 +2047,22 @@ def test_mission_phase6_failure_matrix():
         direct.join(1)
         assert not routed.is_alive() and not direct.is_alive(), "mission request lock-order deadlock"
         assert not errors, errors
+        for question in ("When is the report due?", "Am I allowed to stop people?", "Who is the safety officer?",
+                         "What are the risks?", "What resources do I have?", "When does the watch start?"):
+            assert assistant._mission_route(question, None) == "terms", question
+        for question in ("Were any people seen in the last 10 minutes?", "Show person tracks",
+                         "What is YOLO26s?", "Explain photosynthesis", "Any cars at 14:05?"):
+            assert assistant._mission_route(question, None) is None, question
+        routing_started.clear()
+        answer = assistant.ask("When is the report due?")
+        assert answer["intent"] == "mission_knowledge" and not routing_started.is_set()
+        with mission._connection() as conn:
+            conn.execute("INSERT INTO mission_brief (corpus_version, generated_utc, brief_json, stale) "
+                         "VALUES (0, '2026-01-01T00:00:00Z', ?, 0)",
+                         (json.dumps({"fields": {"objective": "Exercise AMBER FIELD watches the benches."}}),))
+            conn.commit()
+        assert assistant._mission_route("Tell me about amber field", None) == "vocabulary"
+        assert assistant._mission_route("Which person waited near the benches?", None) is None
         services.client.close()
 
 

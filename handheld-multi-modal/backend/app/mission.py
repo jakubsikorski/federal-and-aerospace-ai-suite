@@ -170,14 +170,16 @@ Do not infer facts. Do not include citations, filenames, page numbers, markdown,
 or any commentary outside the sentence."""
 
 
+MISSION_UNAVAILABLE_ANSWER = "That information is not available in the mission material."
+
+
 def _mission_prompt(question: str) -> str:
     # Stock /chat retrieves with the whole prompt and keeps only two chunks, so
     # the question leads (as in _brief_prompt). Leading with instructions pulled
     # the wrong chunks and the model said the packet has no objective.
     return f"""{question}
 Answer only from the mission documents in the retrieved context, concisely. If
-they do not establish it, reply exactly: That information is not available in
-the mission material. Do not use general knowledge and do not invent citations
+they do not establish it, reply exactly: {MISSION_UNAVAILABLE_ANSWER} Do not use general knowledge and do not invent citations
 or page numbers."""
 
 
@@ -684,6 +686,24 @@ class MissionService:
         if needs_brief:
             self._queue_brief()
         return result
+
+    def loaded(self) -> bool:
+        """Mission documents are retained (local inventory only; no stock call)."""
+        with self._connection() as conn:
+            return bool(self._sources(conn))
+
+    def vocabulary(self) -> set[str]:
+        """Distinctive words of the current brief, used only to route questions."""
+        with self._connection() as conn:
+            row = conn.execute("""SELECT brief_json FROM mission_brief
+                                  WHERE corpus_version = ? AND stale = 0
+                                  ORDER BY brief_id DESC LIMIT 1""", (self._version(conn),)).fetchone()
+        try:
+            fields = json.loads(row["brief_json"]).get("fields") or {} if row else {}
+        except (json.JSONDecodeError, AttributeError):
+            return set()
+        return {word for value in fields.values() if isinstance(value, str)
+                for word in re.findall(r"[a-z]{4,}", value.lower())}
 
     def answer(self, question: object, *, generate: Callable[[str], str] | None = None) -> dict:
         if not isinstance(question, str) or not question.strip() or len(question) > 500:
