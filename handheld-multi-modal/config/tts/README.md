@@ -34,7 +34,7 @@ Two candidates fully investigated:
    confirmation of provenance override.**
 
 `config/tts/config.yaml` now pins: `models.tts.name: microsoft/speecht5_tts`,
-`runtime: openvino`, `device: GPU`, `dtype: fp16`, `model_variant: default`,
+`runtime: openvino`, `device: CPU` (GPU until 2026-09-28, see below), `dtype: fp16`, `model_variant: default`,
 `default_speaker: Ryan`. Deployed cleanly w/ no packaging issues —
 `transformers`/`torch`/`optimum-intel[openvino]` (already in pinned
 image's `requirements.txt`) are all SpeechT5 needs; no extra pip package
@@ -44,7 +44,12 @@ required, unlike Parler.
 
 - Host port `127.0.0.1:8012` -> container `8011`.
 - `user: 1000:1000` (hardcoded upstream, matches named-volume ownership).
-- `group_add: [video, 992]` for `/dev/dri` GPU access.
+- CPU placement (owner-directed 2026-09-28): no `/dev/dri` or render group;
+  compose caps the service at 4 CPUs so DLSPS keeps headroom. On the shared
+  GPU, SpeechT5 queued behind LLM generation (6-word chunk 8.1 s, runaway
+  12-word chunks hitting the 30 s Backend timeout); on CPU the same chunk
+  took 1.5 s during generation. Evidence:
+  `docs/application/evidence/latency-optimizations/tts-cpu-vs-gpu-2026-09-28.txt`.
 - Named volumes for `/app/text-to-speech/{models,storage,.cache}` persist
   exported OpenVINO IR and HF cache across restarts.
 - Needs host's real corporate proxy passed through (not blanked) for
@@ -57,7 +62,7 @@ required, unlike Parler.
   `utils.preload_models: Preloaded TTS model microsoft/speecht5_tts`, then
   `main: GPU warmup completed`.
 - `GET /health` -> 200 OK.
-- `GET /v1/model-info` confirms live: `device: GPU`, `dtype: fp16`,
+- `GET /v1/model-info` confirmed live (2026-09-10 GPU run): `device: GPU`, `dtype: fp16`,
   `implementation: speecht5`, 7 supported CMU-Arctic-derived voices
   (Ryan/Miles/Aaron/Nora/Elena/Kabir/Angus).
 - Real synthesis: `POST /v1/audio/speech`
@@ -73,7 +78,7 @@ required, unlike Parler.
 TTS_URL=http://127.0.0.1:8012 bash scripts/smoke/11_tts.sh
 ```
 
-Checks `/health`, asserts `device=GPU` via `/v1/model-info`, posts real
+Checks `/health`, asserts `device=CPU` via `/v1/model-info`, posts real
 sentence to `/v1/audio/speech`, validates response is non-trivial
 WAV file (RIFF/WAVE magic bytes, `audio/wav` content type, >1KB). PASS
 confirmed on this host.

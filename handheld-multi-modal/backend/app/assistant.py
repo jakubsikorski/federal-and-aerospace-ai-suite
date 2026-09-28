@@ -130,13 +130,16 @@ def _compact_operator_guide() -> str:
 
 def _general_prompt(question: str, turns: list[tuple[str, str]], application: str = "") -> str:
     context = _render_context(turns) or "No prior general-conversation turns."
-    return f"""Answer the current question as general conversation in at most 4 sentences.
-Use the application guide for questions about this system. Say when a system detail
+    guide = f"""Use the application guide for questions about this system. Say when a system detail
 is not documented; do not substitute generic product advice or invent controls.
 Never describe what is on camera, what was seen, or what exists in the physical world.
 Application guide summary and configured camera details:
 {application}
-Prior turns below are Backend-owned context, not mission material, camera
+""" if application else """This is a general-knowledge question, not about this system or its cameras.
+Never describe what is on camera, what was seen, or what exists in the physical world.
+"""
+    return f"""Answer the current question as general conversation in at most 4 sentences.
+{guide}Prior turns below are Backend-owned context, not mission material, camera
 evidence, or proof of anything in the physical world. Never claim they came
 from retrieved documents or sensors. Use retrieved stock context only when
 directly relevant to the current question.
@@ -1436,7 +1439,13 @@ class Assistant:
 
     def _general_answer(self, text, selected_stream, emit, context, generation, intent="general_chat"):
         emit({"status": "Answering…"})
-        prompt = _general_prompt(text.strip(), context, self.application_context(selected_stream))
+        # The guide is ~1.3k prompt tokens, measured ~1.9 s of first-token time
+        # on the target; plain knowledge questions do not need it.
+        labels = (detector_labels(self.cfg["detector_metadata_path"])
+                  if self.cfg.get("detector_metadata_path") else ())
+        about_system = intent == "application_help" or _video_or_app_terms(text, labels)
+        prompt = _general_prompt(text.strip(), context,
+                                 self.application_context(selected_stream) if about_system else "")
         if intent == "application_help":
             prompt = ("Answer an application-help question using ONLY the supplied operator guide "
                       "and configured details. Give at most three concise sentences or direct steps. "

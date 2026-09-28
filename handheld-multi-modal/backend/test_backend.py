@@ -2195,7 +2195,11 @@ def test_chat_sessions_streaming_and_followups():
             calls = len(prompts)
             assistant.ask("Why is the sky blue?", mode="general")
             assert len(prompts) == calls + 1, "explicit general chat called the router"
-            assert "Configured test coverage" in prompts[-1]
+            # Plain knowledge: no ~1.3k-token application guide in the prompt.
+            assert "Configured test coverage" not in prompts[-1] and "ORANGE-17" in prompts[-1]
+            assert len(prompts[-1]) < 1500, len(prompts[-1])
+            assistant.ask("Which model does this app use for detection?", mode="general")
+            assert "Configured test coverage" in prompts[-1], "system question lost the guide"
         with assistant.conversation(second):
             assistant.ask("What do you remember?")
             assert "ORANGE-17" not in prompts[-1], "browser contexts mixed"
@@ -3284,8 +3288,10 @@ def test_phase8_arbiter_never_overlaps_and_preempts_by_priority():
         # The browser plays the stock TTS base64 WAV straight from the speech state.
         clip = base64.b64decode(arbiter.snapshot()["current"]["audio_base64"])
         assert clip == _wav(1.0) and not hasattr(arbiter, "clip")
+        # The operator's answer outranks the alert: the alert yields, then replays.
         arbiter.say("answer", "your answer")
         _settle(arbiter)
+        assert any(e["event"] == "deferred" and e["ref"] == "a1" for e in arbiter.trace)
         assert arbiter.outcome("a1") == "unconfirmed"
         assert arbiter.snapshot()["current"] is None
         for index in range(4):
@@ -3296,17 +3302,17 @@ def test_phase8_arbiter_never_overlaps_and_preempts_by_priority():
             if event["event"] == "playing":
                 assert playing is None, "two utterances were playing at once"
                 playing = event["id"]
-            elif event["id"] == playing and event["event"] in {"unconfirmed", "preempted"}:
+            elif event["id"] == playing and event["event"] in {"unconfirmed", "preempted", "deferred"}:
                 playing = None
         spoken = [e["text"] for e in arbiter.trace if e["event"] == "unconfirmed"]
-        assert spoken == ["long alert", "your answer", "alert 0", "alert 1", "alert 2", "alert 3"], spoken
+        assert spoken == ["your answer", "long alert", "alert 0", "alert 1", "alert 2", "alert 3"], spoken
         last_alert_end = float("-inf")
         for event in arbiter.trace:
             if event["kind"] != "alert":
                 continue
             if event["event"] == "playing":
                 assert event["mono"] - last_alert_end >= 0.09, "alert speech ignored the global floor"
-            elif event["event"] in {"unconfirmed", "preempted"}:
+            elif event["event"] in {"unconfirmed", "preempted", "deferred"}:
                 last_alert_end = event["mono"]
     finally:
         arbiter.close()
@@ -3631,6 +3637,74 @@ def test_phase9_audio_upload_limits_and_stock_alias():
                 assert (await client.post('/api/voice/transcribe', content=_wav(.5))).status_code == 429
             finally:
                 app.state.voice_lock.release()
+            # A warm-up holding the lock delays a real question instead of refusing it.
+            await app.state.voice_lock.acquire()
+            app.state.voice_warming = True
+            waiting = asyncio.create_task(client.post('/api/voice/transcribe', content=_wav(.5)))
+            await asyncio.sleep(0.05)
+            assert not waiting.done(), "transcription ran beside the warm-up"
+            app.state.voice_warming = False
+            app.state.voice_lock.release()
+            assert (await waiting).status_code == 200
+            # Audio on: a recognized question is acknowledged at once; silence is not.
+            from app import speech
+            spoken = []
+            app.state.arbiter = speech.Arbiter(lambda text: spoken.append(text) or _wav(.05), alert_floor=0.0)
+            app.state.cfg["speech_ack_text"] = "Checking."
+            app.state.voice_warmed = float("-inf")
+            assert (await client.post('/api/voice/transcribe', content=_wav(.5))).status_code == 200
+            assert not app.state.arbiter.queue, "ack without speak=true"
+            assert (await client.post('/api/voice/transcribe?speak=true', content=_wav(.5))).status_code == 200
+            assert [i["text"] for i in app.state.arbiter.queue] == ["Checking."]
+            app.state.arbiter.queue.clear()
+            # Released with a pending question: alerts wait from that instant;
+            # a failed upload releases them.
+            arbiter = app.state.arbiter
+            assert (await client.post('/api/speech/talk', json={"held": False, "answer_pending": True})).status_code == 200
+            assert arbiter.answer_hold == arbiter.answer_generation
+            assert (await client.post('/api/voice/transcribe?speak=true', content=b'bad')).status_code == 422
+            assert arbiter.answer_hold is None and not arbiter.queue
+            for bad in ({"held": True, "answer_pending": True}, {"answer_pending": True}, {"held": False, "x": 1}):
+                assert (await client.post('/api/speech/talk', json=bad)).status_code == 422, bad
+            # Cancel during transcription: the answer generation moves on, so no cue.
+            release = asyncio.Event()
+            import app.main as main_module
+            original_transcribe = main_module.transcribe
+            def slow(services, url, data):
+                asyncio.run_coroutine_threadsafe(release.wait(), loop).result(2)
+                return original_transcribe(services, url, data)
+            loop = asyncio.get_running_loop()
+            main_module.transcribe = slow
+            try:
+                arbiter.say("alert", "person on Camera 2.", ref="kept")
+                running = asyncio.create_task(client.post('/api/voice/transcribe?speak=true', content=_wav(.5)))
+                await asyncio.sleep(0.05)
+                assert (await client.post('/api/voice/cancel')).status_code == 200
+                release.set()
+                assert (await running).status_code == 200
+            finally:
+                main_module.transcribe = original_transcribe
+            assert [i["text"] for i in arbiter.queue] == ["person on Camera 2."], "cancel spoke a cue or dropped the alert"
+            assert arbiter.answer_hold is None
+            arbiter.queue.clear()
+            # Talk press wakes Whisper once per interval, off the request path;
+            # recent real use counts as warm.
+            before = len(requests)
+            for held in (True, False):
+                assert (await client.post('/api/speech/talk', json={"held": held})).status_code == 200
+            await asyncio.sleep(0.1)
+            assert len(requests) == before, "warmed a device that was just used"
+            app.state.voice_warmed = float("-inf")
+            arbiter.start()
+            for held in (True, False, True):
+                assert (await client.post('/api/speech/talk', json={"held": held})).status_code == 200
+            deadline = time.monotonic() + 2
+            while len(requests) == before or "Checking." not in spoken:
+                assert time.monotonic() < deadline, "Talk did not warm Whisper and TTS"
+                await asyncio.sleep(0.01)
+            await asyncio.sleep(0.1)
+            assert len(requests) == before + 1 and spoken == ["Checking."], (len(requests) - before, spoken)
+            arbiter.close()
     asyncio.run(check())
     services.client.close()
 
@@ -3756,11 +3830,144 @@ def test_phase9_numbered_stream_preserves_order_and_chunk_shape():
                       "the pilot can ensure reliable communication and maintain a visual reference when needed."):
             early.feed(delta)
         early.finish()
-        for expected in chunks:
+        expected_chunks = speech.short_head(chunks)
+        assert expected_chunks[0] == "1. Drones primarily rely on direct", expected_chunks
+        for expected in expected_chunks:
             speech_id = _wait_text_current(arbiter, expected)
             assert arbiter.ack(speech_id, "ended")
         _settle(arbiter)
-        assert spoken == chunks, spoken
+        assert spoken == expected_chunks, spoken
+    finally:
+        arbiter.close()
+
+
+def test_first_answer_words_are_spoken_before_the_first_sentence_ends():
+    from app.main import EarlyAnswerSpeech
+    from app import speech
+
+    assert speech.short_head(["A thermal camera detects infrared radiation and shows it as heat."]) == [
+        "A thermal camera detects infrared radiation", "and shows it as heat."]
+    # A clause boundary inside the head wins; short sentences stay whole.
+    assert speech.short_head(["A thermal camera detects heat, so it sees through smoke and fog."])[0] == (
+        "A thermal camera detects heat,")
+    assert speech.short_head(["Two people, both near the door."]) == ["Two people, both near the door."]
+    assert speech.short_head(["Radar sends pulses, then times echoes back."]) == [
+        "Radar sends pulses, then times echoes back."], "tail under 4 words must not split"
+    assert speech.early_head("A thermal camera") == (None, "A thermal camera")
+    assert speech.early_head("A thermal camera detects infrared radiat") == (None, "A thermal camera detects infrared radiat")
+    assert speech.early_head("A thermal camera detects infrared radiation and ") == (
+        "A thermal camera detects infrared radiation", "and ")
+
+    speech.PLAYBACK_MARGIN_SECONDS = 0.0
+    spoken = []
+    arbiter = speech.Arbiter(lambda text: spoken.append(text) or _wav(0.05), alert_floor=0.0)
+    arbiter.start()
+    try:
+        early = EarlyAnswerSpeech(arbiter, arbiter.answer_generation)
+        for delta in ("A thermal ", "camera detects infrared ", "radiation and "):
+            early.feed(delta)
+        first = _wait_text_current(arbiter, "A thermal camera detects infrared radiation")
+        early.feed("turns it into images. It sees through smoke.")
+        early.finish()
+        assert arbiter.ack(first, "ended")
+        for expected in ("and turns it into images.", "It sees through smoke."):
+            assert arbiter.ack(_wait_text_current(arbiter, expected), "ended")
+        _settle(arbiter)
+        assert spoken == ["A thermal camera detects infrared radiation", "and turns it into images.",
+                          "It sees through smoke."], spoken
+    finally:
+        arbiter.close()
+
+
+def test_voice_acknowledgement_plays_first_and_is_separate_from_the_answer():
+    from app import speech
+
+    speech.PLAYBACK_MARGIN_SECONDS = 0.0
+    calls = []
+    arbiter = speech.Arbiter(lambda text: calls.append(text) or _wav(0.05), alert_floor=0.0)
+    arbiter.start()
+    try:
+        arbiter.warm("Checking.")
+        deadline = time.monotonic() + 2
+        while "Checking." not in calls:
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        time.sleep(0.05)
+        assert arbiter.snapshot()["current"] is None, "warm-up must never play"
+        generation = arbiter.answer_generation
+        arbiter.begin_answer(generation)
+        arbiter.say("alert", "person on Camera 1.", ref="held")
+        cue = arbiter.acknowledge("Checking.")
+        # Cached by the warm-up: no second synthesis, playable at once.
+        _wait_text_current(arbiter, "Checking.")
+        assert calls.count("Checking.") == 1 and arbiter.snapshot()["current"]["cached"]
+        # The browser never confirms the cue: the answer must still be spoken whole.
+        arbiter.say_answer("Two people are near the door. Both arrived recently.", generation)
+        arbiter.end_answer(generation)
+        for expected in ("Two people are near the door.", "Both arrived recently."):
+            assert arbiter.ack(_wait_text_current(arbiter, expected), "ended")
+        _settle(arbiter)
+        order = [e["text"] for e in arbiter.trace if e["event"] == "playing"]
+        assert order == ["Checking.", "Two people are near the door.", "Both arrived recently.",
+                         "person on Camera 1."], order
+        assert arbiter.outcome("held") == "unconfirmed" and cue["kind"] == "answer"
+        # Talk cancels a pending cue like any other answer speech.
+        arbiter.set_talk(True)
+        assert arbiter.acknowledge("Checking.") is None
+        arbiter.set_talk(False)
+        # A cue for a question abandoned before transcription finished is stale.
+        stale = arbiter.answer_generation
+        arbiter.cancel_answer()
+        assert arbiter.acknowledge("Checking.", stale) is None
+        assert arbiter.acknowledge("Checking.", arbiter.answer_generation) is not None
+    finally:
+        arbiter.close()
+
+
+def test_voice_release_holds_alerts_and_warmup_never_overlaps_synthesis():
+    from app import speech
+
+    speech.PLAYBACK_MARGIN_SECONDS = 0.0
+    active, peak, calls = [0], [0], []
+    lock = threading.Lock()
+
+    def synthesize(text):
+        with lock:
+            active[0] += 1
+            peak[0] = max(peak[0], active[0])
+        calls.append(text)
+        time.sleep(0.15)
+        with lock:
+            active[0] -= 1
+        return _wav(0.05)
+
+    arbiter = speech.Arbiter(synthesize, alert_floor=0.0)
+    arbiter.start()
+    try:
+        # Microphone released with a question uploading: an alert queued in
+        # that gap must not synthesize ahead of the answer.
+        arbiter.set_talk(True)
+        arbiter.set_talk(False, answer_pending=True)
+        arbiter.say("alert", "person on Camera 1.", ref="gap")
+        time.sleep(0.2)
+        assert "person on Camera 1." not in calls, "alert took TTS between recording and transcription"
+        # Warm-up requested while operator speech is synthesizing waits its turn.
+        generation = arbiter.answer_generation
+        arbiter.say_answer("One. Two. Three.", generation)
+        time.sleep(0.02)
+        assert arbiter.warm("Checking.")
+        assert not arbiter.warm("Checking."), "overlapping warm-ups"
+        arbiter.end_answer(generation)
+        deadline = time.monotonic() + 5
+        while "Checking." not in calls or "person on Camera 1." not in calls:
+            assert time.monotonic() < deadline, calls
+            current = arbiter.snapshot()["current"]
+            if current:
+                arbiter.ack(current["id"], "ended")
+            time.sleep(0.01)
+        assert peak[0] == 1, "warm-up ran beside real synthesis"
+        # TTS just ran: the device is awake, nothing to warm.
+        assert not arbiter.warm("Checking.", idle_seconds=20)
     finally:
         arbiter.close()
 
@@ -3804,7 +4011,7 @@ def _wait_text_current(arbiter, text, timeout=3.0):
     return arbiter.snapshot()["current"]["id"]
 
 
-def test_phase9_prefetch_rejects_late_results_failures_and_alerts_preempt():
+def test_phase9_prefetch_rejects_late_results_failures_and_answer_outranks_alerts():
     from app import speech
 
     speech.PLAYBACK_MARGIN_SECONDS = 0.0
@@ -3822,9 +4029,12 @@ def test_phase9_prefetch_rejects_late_results_failures_and_alerts_preempt():
     arbiter.start()
     try:
         arbiter.say_answer("Answer one. Answer two.", arbiter.answer_generation)
+        for text in ("Answer one.", "Answer two."):
+            assert arbiter.ack(_wait_text_current(arbiter, text), "ended")
         _settle(arbiter)
         assert arbiter.outcome("urgent") == "unconfirmed"
-        assert "Answer two." not in calls, "queued alert should block answer prefetch"
+        order = [e["text"] for e in arbiter.trace if e["event"] == "playing"]
+        assert order[-3:] == ["Answer one.", "Answer two.", "urgent alert"], order
 
         arbiter.say_answer("One ok. Two fails.", arbiter.answer_generation)
         first = _wait_text_current(arbiter, "One ok.")
@@ -3844,6 +4054,46 @@ def test_phase9_prefetch_rejects_late_results_failures_and_alerts_preempt():
         _settle(arbiter)
         assert arbiter.say_answer("Rejected late.", generation) is None
         assert "Rejected late." not in calls
+    finally:
+        arbiter.close()
+
+
+def test_answer_window_holds_alerts_until_the_answer_is_spoken():
+    from app import speech
+
+    speech.PLAYBACK_MARGIN_SECONDS = 0.0
+    calls = []
+    arbiter = speech.Arbiter(lambda text: calls.append(text) or _wav(0.1), alert_floor=0.0)
+    arbiter.start()
+    try:
+        generation = arbiter.answer_generation
+        arbiter.begin_answer(generation)
+        arbiter.say("alert", "person on Camera 1.", ref="held")
+        time.sleep(0.3)
+        # The alert must not take the TTS lock while the LLM is still thinking.
+        assert calls == [] and arbiter.outcome("held") == "queued"
+        arbiter.say_answer("First part. Second part.", generation)
+        arbiter.end_answer(generation)
+        for text in ("First part.", "Second part."):
+            assert arbiter.ack(_wait_text_current(arbiter, text), "ended")
+        _settle(arbiter)
+        order = [e["text"] for e in arbiter.trace if e["event"] == "playing"]
+        assert order == ["First part.", "Second part.", "person on Camera 1."], order
+        assert calls[0] == "First part."
+
+        # A lost request cannot starve alerts: the window is bounded.
+        arbiter.begin_answer(arbiter.answer_generation, seconds=0.3)
+        arbiter.say("alert", "dog on Camera 2.", ref="bounded")
+        _settle(arbiter)
+        assert arbiter.outcome("bounded") == "unconfirmed"
+
+        # Stop speaking (new generation) releases the window at once.
+        arbiter.begin_answer(arbiter.answer_generation)
+        arbiter.stop_speaking()
+        started = time.monotonic()
+        arbiter.say("alert", "car on Camera 1.", ref="released")
+        _settle(arbiter)
+        assert arbiter.outcome("released") == "unconfirmed" and time.monotonic() - started < 2
     finally:
         arbiter.close()
 

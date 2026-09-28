@@ -273,7 +273,7 @@ $(if $(DEMO_FEEDS),$(wait_demo_video))
 wait_for "Backend telemetry" telemetry_ready
 WAIT_SECONDS=$(AI_WAIT_SECONDS) wait_for "Chat Q&A neural-chat model" json_ready http://127.0.0.1:8888/model llm_model Intel/neural-chat-7b-v3-3
 WAIT_SECONDS=$(AI_WAIT_SECONDS) wait_for "Whisper GPU service" json_ready http://127.0.0.1:8011/health status ok
-WAIT_SECONDS=$(AI_WAIT_SECONDS) wait_for "SpeechT5 GPU service" json_ready http://127.0.0.1:8012/v1/model-info device GPU
+WAIT_SECONDS=$(AI_WAIT_SECONDS) wait_for "SpeechT5 CPU service" json_ready http://127.0.0.1:8012/v1/model-info device CPU
 wait_for "Alert Agent" curl -fsS --max-time 5 http://127.0.0.1:8010/api/v1/health
 dashboard=$$(curl -skfsS --max-time 5 https://127.0.0.1:8443/)
 [[ $$dashboard == *'id="pause-updates"'* ]]

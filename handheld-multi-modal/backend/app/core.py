@@ -81,6 +81,8 @@ DEFAULTS: dict[str, Any] = {
     "alert_dispatch_timeout_seconds": 15.0,
     "tts_timeout_seconds": 30.0,
     "alert_speech_floor_seconds": 3.0,
+    "speech_ack_text": "Checking.",
+    "voice_warm_interval_seconds": 20.0,
     "timeout_seconds": 5.0,
     "log_level": "INFO",
 }

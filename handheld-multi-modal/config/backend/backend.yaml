@@ -128,6 +128,11 @@ alert_dispatch_timeout_seconds: 15.0
 # still occupies the stock service until it finishes.
 tts_timeout_seconds: 30.0
 alert_speech_floor_seconds: 3.0
+# Spoken the moment a voice question is transcribed (Audio on), from the WAV
+# cache, so the operator hears a reply within about a second. Empty disables it.
+speech_ack_text: "Checking."
+# Talk press wakes TTS and Whisper at most this often (idle devices were 4-9 s slower).
+voice_warm_interval_seconds: 20.0
 # Optional stock voice name from GET /v1/model-info; unset uses the service default.
 # tts_voice: Ryan
 # Optional JSONL arbiter trace for evidence; unset keeps only the in-memory ring.

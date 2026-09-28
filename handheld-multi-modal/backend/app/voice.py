@@ -30,3 +30,14 @@ def transcribe(services, url: str, data: bytes) -> str:
     if len(text) > 500:
         raise ValueError('Please ask a shorter question (up to 500 characters).')
     return text
+
+
+def silent_wav(seconds: float = 0.5) -> bytes:
+    """A valid recording of silence, used only to wake the Whisper device."""
+    buffer = io.BytesIO()
+    with wave.open(buffer, 'wb') as clip:
+        clip.setnchannels(1)
+        clip.setsampwidth(2)
+        clip.setframerate(16000)
+        clip.writeframes(b'\0\0' * int(16000 * seconds))
+    return buffer.getvalue()

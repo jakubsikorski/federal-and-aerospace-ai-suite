@@ -1349,7 +1349,7 @@ def main():
               window.eval(`(async()=>{
                 const original={postApi,submitAssistant,fetch:window.fetch,AudioContext:window.AudioContext,
                   getUserMedia:navigator.mediaDevices.getUserMedia};
-                let stops=0,closed=0,submitted=null,held=[],uploaded=false;
+                let stops=0,closed=0,submitted=null,held=[],uploaded=false,cancels=0,stall=false;
                 const assert=(ok,message)=>{if(!ok)throw Error(message);};
                 const node=()=>({connect(){},disconnect(){}});
                 class Context {
@@ -1364,10 +1364,12 @@ def main():
                 try {
                   window.AudioContext=Context;
                   navigator.mediaDevices.getUserMedia=async()=>stream();
-                  postApi=async(path,body)=>{if(path.endsWith('/talk')) held.push(body.held);return {};};
+                  postApi=async(path,body)=>{if(path.endsWith('/talk')) held.push(body.held+(body.answer_pending?'+pending':''));return {};};
                   submitAssistant=async payload=>{submitted=payload;};
                   window.fetch=async(path,options)=>{
-                    if(path!=='/api/voice/transcribe') return original.fetch(path,options);
+                    if(path==='/api/voice/cancel') {cancels++;return new Response('{}');}
+                    if(!String(path).startsWith('/api/voice/transcribe')) return original.fetch(path,options);
+                    if(stall) return new Promise((_,reject)=>options.signal.addEventListener('abort',()=>reject(new DOMException('aborted','AbortError'))));
                     const bytes=await options.body.arrayBuffer(), view=new DataView(bytes);
                     assert(view.getUint32(24,true)===16000 && view.getUint16(22,true)===1,'not mono 16k WAV');
                     uploaded=true;return new Response(JSON.stringify({data:{text:'How many people?'}}),{status:200});
@@ -1380,7 +1382,7 @@ def main():
                   voice.turn.processor.onaudioprocess({inputBuffer:{getChannelData:()=>new Float32Array(4800).fill(.2)}});
                   await endVoice();
                   assert(uploaded && submitted.text==='How many people?' && submitted.selected_stream==='cam2' && submitted.mode==='auto','voice bypasses typed request context');
-                  assert(stops===1 && closed===1 && held.join(',')==='true,true,false','capture resources or talk hold leaked');
+                  assert(stops===1 && closed===1 && held.join(',')==='true,true,false+pending','capture resources or talk hold leaked');
                   let permission;
                   navigator.mediaDevices.getUserMedia=()=>new Promise(resolve=>permission=resolve);
                   const pending=beginVoice();
@@ -1391,6 +1393,17 @@ def main():
                   await beginVoice();
                   assert(!voice.turn && $('voice-status').textContent.includes('permission denied'),'denial has no recovery');
                   assert(!$('ask-text').disabled && !$('ask-submit').disabled,'typing blocked after failure');
+                  navigator.mediaDevices.getUserMedia=async()=>stream(); stall=true; $('voice-talk').click();
+                  while(!voice.turn?.processor) await new Promise(resolve=>setTimeout(resolve,0));
+                  voice.turn.processor.onaudioprocess({inputBuffer:{getChannelData:()=>new Float32Array(4800).fill(.2)}});
+                  const sending=endVoice();
+                  while($('voice-status').textContent!=='Transcribing…') await new Promise(resolve=>setTimeout(resolve,0));
+                  cancelVoice(); await sending; stall=false;
+                  assert(cancels===1 && !voice.turn && $('voice-status').textContent==='Voice request cancelled.','cancel during transcription left server cue');
+                  held.length=0; $('voice-talk').click();
+                  while(!voice.turn?.processor) await new Promise(resolve=>setTimeout(resolve,0));
+                  await endVoice();
+                  assert(held.at(-1)==='false' && cancels===1,'silent release held answer speech');
                   return true;
                 } finally {
                   cancelVoice();postApi=original.postApi;submitAssistant=original.submitAssistant;

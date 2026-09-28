@@ -85,10 +85,10 @@ class Services:
         return "health ok", body
 
     def tts(self) -> tuple[str, dict | None]:
-        """/v1/model-info proves both provenance-approved model and GPU placement."""
+        """/v1/model-info proves both provenance-approved model and CPU placement (D52)."""
         body = self._get("tts", "/v1/model-info").json()
-        if body.get("device") != "GPU":
-            raise RuntimeError(f"TTS device is {body.get('device')!r}, expected GPU")
+        if body.get("device") != "CPU":
+            raise RuntimeError(f"TTS device is {body.get('device')!r}, expected CPU")
         return f"{body.get('model')} on {body.get('device')}", {
             "model": body.get("model"),
             "device": body.get("device"),

@@ -1,6 +1,6 @@
 ---
 name: oep-text-to-speech
-description: Use when resolving provenance-compliant stock OEP GPU TTS configuration, synthesis API, and model ownership; deployed as SpeechT5 (owner-approved).
+description: Use when resolving provenance-compliant stock OEP TTS configuration (CPU placement, D52), synthesis API, and model ownership; deployed as SpeechT5 (owner-approved).
 ---
 
 # OEP Text To Speech
@@ -26,8 +26,8 @@ not set in this repo's Compose.
 Model configuration lives under `models.tts`; runtime `openvino|pytorch`,
 `device`, model identity and variant are distinct fields.
 
-GPU device access `/dev/dri`, `video` group + actual render GID (992
-observed on this host).
+Device: CPU (owner-directed 2026-09-28, D52; Compose `cpus: 4`, no `/dev/dri`).
+On the shared GPU SpeechT5 queued behind LLM generation.
 Stock persistent targets `/app/text-to-speech/{models,storage,.cache}`;
 service owns model export/download. No custom TTS service or unrelated LLM.
 
@@ -39,7 +39,8 @@ Compose) — use the host port from outside the container. `GET /health`;
 {"input":"The camera stream is ready.","response_format":"wav"}
 ```
 
-Confirmed working this session: `/v1/model-info` reports `device:GPU`; a real
+Confirmed: `/v1/model-info` reports `device:CPU` (2026-09-28; `device:GPU` at the
+2026-09-10 deploy); a real
 synthesis via `POST http://127.0.0.1:8012/v1/audio/speech` returned a valid
 50220-byte WAV file (see `docs/application/evidence/tts/smoke.log`). A
 successful WAV request returns `audio/wav` and `X-Session-ID`; JSON mode
@@ -50,6 +51,6 @@ Qwen TTS remains prohibited (PRC provenance). Do not equate a Microsoft or
 Hugging Face namespace with provenance approval by default — this specific
 SpeechT5 approval was an explicit, recorded owner decision, not a general rule.
 Startup exports models and warmup failures are nonfatal; health alone is not
-GPU-synthesis evidence — the `/v1/model-info` device field and a real
+synthesis evidence — the `/v1/model-info` device field and a real
 synthesized WAV are the actual evidence.
 `scripts/smoke/11_tts.sh` is **PASS** (needs `TTS_URL`), not a blocked gate.

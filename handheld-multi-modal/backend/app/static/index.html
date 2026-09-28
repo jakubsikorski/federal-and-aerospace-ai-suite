@@ -2111,13 +2111,16 @@ async function endVoice(send=true) {
   if(!send) { turn.abort.abort(); voice.version++; }
   try {
     await turn.hold?.catch(()=>{});
-    await postApi('/api/speech/talk',{held:false},{signal:AbortSignal.timeout(5000)});
-    if(!send || !turn.parts.length || !turn.heard) {
+    const pending=send && turn.parts.length>0 && turn.heard;
+    // answer_pending holds alerts in the same step that frees the microphone,
+    // so none can take the voice before this question's answer.
+    await postApi('/api/speech/talk',pending?{held:false,answer_pending:true}:{held:false},{signal:AbortSignal.timeout(5000)});
+    if(!pending) {
       voiceStatus(send ? 'No speech captured. Tap Talk again, or type your question.' : 'Recording cancelled.');
       return;
     }
     voiceStatus('Transcribing…');
-    const response=await fetch('/api/voice/transcribe',{method:'POST',headers:{'content-type':'audio/wav'},
+    const response=await fetch('/api/voice/transcribe'+(state.audioOn?'?speak=true':''),{method:'POST',headers:{'content-type':'audio/wav'},
       body:pcmWav(turn.parts,turn.rate),signal:AbortSignal.any([turn.abort.signal,AbortSignal.timeout(70000)])});
     const body=await response.json();
     if(turn.version!==voice.version) return;
@@ -2140,6 +2143,8 @@ async function endVoice(send=true) {
 function cancelVoice() {
   if(voice.turn?.ending) {
     voice.turn.abort.abort(); voice.version++; voice.turn=null;
+    // Aborting the upload alone leaves the server free to speak "Checking."
+    fetch('/api/voice/cancel',{method:'POST',keepalive:true}).catch(()=>{});
     $('ask-submit').disabled=state.assistantBusy; $('ask-text').disabled=state.assistantBusy; $('search-fields').inert=state.assistantBusy;
     voiceStatus('Voice request cancelled.');
   } else endVoice(false);
@@ -2209,6 +2214,7 @@ window.addEventListener('blur',cancelVoice);
 document.addEventListener('keydown',event=>{if(event.key==='Escape' && voice.turn) cancelVoice();});
 document.addEventListener('visibilitychange',()=>{ if(document.hidden) cancelVoice(); });
 window.addEventListener('pagehide',()=>{
+  if(voice.turn?.ending) fetch('/api/voice/cancel',{method:'POST',keepalive:true}).catch(()=>{});
   if(!voice.turn || voice.turn.ending) return;
   cleanCapture(voice.turn);
   fetch('/api/speech/talk',{method:'POST',headers:{'content-type':'application/json'},body:'{"held":false}',keepalive:true}).catch(()=>{});

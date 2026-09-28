@@ -270,9 +270,8 @@ services:
     user: "1000:1000"
     ports:
       - "127.0.0.1:8012:8011/tcp"
-    group_add:
-      - video
-      - "${RENDER_GID:-992}"
+    # SpeechT5 runs on CPU (D52); cap it so DLSPS decode/track keeps headroom.
+    cpus: 4
     environment:
       HF_HOME: /app/text-to-speech/.cache/huggingface
       HF_TOKEN: "${HF_TOKEN:-}"
@@ -282,8 +281,6 @@ services:
       - tts_models:/app/text-to-speech/models
       - tts_storage:/app/text-to-speech/storage
       - tts_cache:/app/text-to-speech/.cache
-    devices:
-      - "/dev/dri:/dev/dri"
     healthcheck:
       <<: *gpu-healthcheck
       test: ["CMD", "python3", "-c",

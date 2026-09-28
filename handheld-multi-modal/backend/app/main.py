@@ -23,8 +23,8 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import alerts as alerting, history, pipelines, reset
-from .speech import Arbiter, complete_answer_sentences
-from .voice import MAX_AUDIO_BYTES, validate_audio, transcribe
+from .speech import Arbiter, complete_answer_sentences, early_head
+from .voice import MAX_AUDIO_BYTES, silent_wav, validate_audio, transcribe
 from .assistant import (
     Assistant,
     InvalidInput,
@@ -76,6 +76,11 @@ class EarlyAnswerSpeech:
         sentences, self.buffer = complete_answer_sentences(self.buffer)
         for sentence in sentences:
             self._say(sentence)
+        if self.first is None and self.buffer:
+            # Do not wait for the whole first sentence: its first words go now.
+            head, self.buffer = early_head(self.buffer)
+            if head:
+                self._say(head)
 
     def finish(self) -> None:
         if self.generation is not None:
@@ -167,6 +172,53 @@ def local_checks(cfg: dict, conn: sqlite3.Connection) -> list[Probe]:
     return checks
 
 
+def voice_lock(app) -> asyncio.Lock:
+    lock = getattr(app.state, "voice_lock", None)
+    if lock is None:
+        lock = app.state.voice_lock = asyncio.Lock()
+    return lock
+
+
+async def warm_whisper(app) -> None:
+    """One silent transcription under the same lock as real ones.
+
+    A real question arriving meanwhile waits for it (0.3-0.8 s warm) instead
+    of running beside it on the device.
+    """
+    lock = voice_lock(app)
+    if lock.locked():
+        return
+    async with lock:
+        app.state.voice_warming = True
+        try:
+            await asyncio.to_thread(transcribe, app.state.services,
+                                    app.state.cfg["services"]["audio_analyzer"], silent_wav())
+        except Exception as exc:
+            log.info("Whisper warm-up failed: %s", type(exc).__name__)
+        finally:
+            app.state.voice_warming = False
+
+
+def warm_voice_path(app) -> None:
+    """Talk was pressed: wake TTS and Whisper while the operator speaks.
+
+    Both devices idle down between questions and the first request after idle
+    measured 4-9 s slower. Skipped within the interval of the last warm-up or
+    real use, so an active device never gets dummy work. TTS warm-up runs on
+    the arbiter worker only while it is idle; Whisper's takes the voice lock.
+    """
+    cfg = app.state.cfg
+    interval = float(cfg.get("voice_warm_interval_seconds", 20.0))
+    now = time.monotonic()
+    if now - getattr(app.state, "voice_warmed", float("-inf")) < interval:
+        return
+    app.state.voice_warmed = now
+    if cfg.get("speech_ack_text", "Checking."):
+        app.state.arbiter.warm(cfg.get("speech_ack_text", "Checking."), idle_seconds=interval)
+    task = asyncio.get_running_loop().create_task(warm_whisper(app))
+    app.state.voice_warm_task = task  # keep a reference until it finishes
+
+
 def warm_chatqna_once(services: Services, timeout: float) -> None:
     def run():
         url = services.urls.get("chatqna")
@@ -249,6 +301,9 @@ async def lifespan(app: FastAPI):
     }, sort_keys=True)
     app.state.arbiter = Arbiter(synthesize, alert_floor=float(cfg.get("alert_speech_floor_seconds", 3.0)),
                                 trace_path=cfg.get("arbiter_trace_path"))
+    app.state.voice_warmed = float("-inf")
+    if cfg.get("speech_ack_text", "Checking."):
+        app.state.arbiter.warm(cfg.get("speech_ack_text", "Checking."))
     app.state.alerts = alerting.Alerts(
         cfg, cfg["db_path"], app.state.arbiter,
         lambda: detector_labels(cfg["detector_metadata_path"]))
@@ -602,10 +657,15 @@ def create_app() -> FastAPI:
             body = await request.json()
         except json.JSONDecodeError:
             body = None
-        if not isinstance(body, dict) or set(body) != {"held"} or not isinstance(body["held"], bool):
+        if (not isinstance(body, dict) or "held" not in body or not set(body) <= {"held", "answer_pending"}
+                or not all(isinstance(v, bool) for v in body.values())
+                or (body.get("answer_pending") and body["held"])):
             return JSONResponse(status_code=422, content=envelope(error={
-                "code": "invalid_request", "message": "provide held as true or false"}))
-        request.app.state.arbiter.set_talk(body["held"])
+                "code": "invalid_request",
+                "message": "provide held as true or false; answer_pending only when releasing"}))
+        request.app.state.arbiter.set_talk(body["held"], answer_pending=body.get("answer_pending", False))
+        if body["held"]:
+            warm_voice_path(request.app)
         return envelope(request.app.state.arbiter.snapshot())
 
     @app.post("/api/speech/stop")
@@ -614,37 +674,58 @@ def create_app() -> FastAPI:
         return envelope(request.app.state.arbiter.snapshot())
 
     @app.post("/api/voice/transcribe")
-    async def voice_transcribe(request: Request):
-        # Read before multipart parsing to enforce the limit even without a
-        # Content-Length header. Browser sends WAV; upstream receives multipart.
-        data = bytearray()
+    async def voice_transcribe(request: Request, speak: bool = False):
+        # The browser released Talk with answer_pending, so automatic speech is
+        # already held for this generation. Every exit without a transcript
+        # releases it; the following /api/ask re-arms or ends it otherwise.
+        arbiter = getattr(request.app.state, "arbiter", None)
+        generation = arbiter.answer_generation if arbiter else None
+        text = ""
         try:
-            async with asyncio.timeout(20):
-                async for chunk in request.stream():
-                    if len(data) + len(chunk) > MAX_AUDIO_BYTES:
-                        raise HTTPException(413, "Recording is too large.")
-                    data.extend(chunk)
-        except TimeoutError as exc:
-            raise HTTPException(408, "Recording upload timed out.") from exc
-        try:
-            validate_audio(bytes(data))
-        except ValueError as exc:
-            raise HTTPException(422, str(exc)) from exc
-        lock = getattr(request.app.state, "voice_lock", None)
-        if lock is None:
-            lock = request.app.state.voice_lock = asyncio.Lock()
-        if lock.locked():
-            raise HTTPException(429, "Transcription is busy. Please try again.")
-        async with lock:
+            # Read before multipart parsing to enforce the limit even without a
+            # Content-Length header. Browser sends WAV; upstream receives multipart.
+            data = bytearray()
             try:
-                text = await asyncio.to_thread(transcribe, request.app.state.services,
-                    request.app.state.cfg["services"]["audio_analyzer"], bytes(data))
+                async with asyncio.timeout(20):
+                    async for chunk in request.stream():
+                        if len(data) + len(chunk) > MAX_AUDIO_BYTES:
+                            raise HTTPException(413, "Recording is too large.")
+                        data.extend(chunk)
+            except TimeoutError as exc:
+                raise HTTPException(408, "Recording upload timed out.") from exc
+            try:
+                validate_audio(bytes(data))
             except ValueError as exc:
                 raise HTTPException(422, str(exc)) from exc
-            except Exception as exc:
-                log.warning("Transcription failed: %s", type(exc).__name__)
-                raise HTTPException(503, "Transcription unavailable. Type your question or try again.") from exc
+            lock = voice_lock(request.app)
+            if lock.locked() and not getattr(request.app.state, "voice_warming", False):
+                raise HTTPException(429, "Transcription is busy. Please try again.")
+            if arbiter:
+                arbiter.begin_answer(generation, seconds=10.0)
+            async with lock:
+                try:
+                    text = await asyncio.to_thread(transcribe, request.app.state.services,
+                        request.app.state.cfg["services"]["audio_analyzer"], bytes(data))
+                except ValueError as exc:
+                    raise HTTPException(422, str(exc)) from exc
+                except Exception as exc:
+                    log.warning("Transcription failed: %s", type(exc).__name__)
+                    raise HTTPException(503, "Transcription unavailable. Type your question or try again.") from exc
+                finally:
+                    # Whisper was just used; Talk need not warm it again.
+                    request.app.state.voice_warmed = time.monotonic()
+        finally:
+            if arbiter and not text.strip():
+                arbiter.end_answer(generation)
+        if arbiter and speak and text.strip() and not await request.is_disconnected():
+            arbiter.acknowledge(request.app.state.cfg.get("speech_ack_text", "Checking."), generation)
         return envelope({"text": text})
+
+    @app.post("/api/voice/cancel")
+    async def voice_cancel(request: Request):
+        """The operator abandoned a voice question: its cue and answer never speak."""
+        request.app.state.arbiter.cancel_answer()
+        return envelope(request.app.state.arbiter.snapshot())
 
     @app.get("/api/history/options")
     def history_options(request: Request):
@@ -759,9 +840,20 @@ def create_app() -> FastAPI:
                 "message": "selected_stream is not valid with page_token",
             }))
         conversation_id = body.get("conversation_id", uuid.uuid4().hex)
-        speech_generation = request.app.state.arbiter.answer_generation if body.get("speak") is True else None
+        arbiter = getattr(request.app.state, "arbiter", None)
+        speech_generation = arbiter.answer_generation if body.get("speak") is True else None
+        if arbiter is not None and speech_generation is None:
+            arbiter.end_answer()
+        elif speech_generation is not None:
+            arbiter.begin_answer(speech_generation)
         def perform(emit=None, early_speech: EarlyAnswerSpeech | None = None):
-            answer = answer_for(emit)
+            try:
+                return spoken(answer_for(emit), early_speech)
+            finally:
+                # Queued answer chunks keep outranking alerts after this point.
+                if speech_generation is not None:
+                    arbiter.end_answer(speech_generation)
+        def spoken(answer, early_speech):
             text = answer.get("spoken_text") or answer.get("answer_text")
             if body.get("speak") is True and isinstance(text, str) and text.strip():
                 if early_speech is not None:

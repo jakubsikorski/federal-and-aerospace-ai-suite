@@ -130,7 +130,7 @@ controls but cannot change alert rules for the operator.
 Tap Talk in the persistent top bar to open Assistant and start recording.
 Allow microphone access on first use. Tap Send question to finish; no hold is required. Capture happens only in the browser over trusted HTTPS. Listening
 indicates an active microphone; Send question, 15 seconds or a pause after speech ends
-capture and closes the microphone. Cancel or Escape discards capture/transcription.
+capture and closes the microphone. Cancel or Escape discards capture/transcription; a cancelled question never speaks, and queued alert announcements are kept.
 The recognized question uses the same camera scope, answer mode, conversation
 and routing as typing. Transcribing and answering have visible progress. If the
 microphone or transcription is unavailable, type the question instead.
@@ -138,3 +138,6 @@ Audio on enables spoken replies. Answers play in short sequential sentences or
 clauses, with the full text visible. Stop speaking cancels the current speech and
 its remaining chunks; Talk immediately interrupts playback. Speech already
 being synthesized may finish on the service, but cancelled audio is not played.
+With audio on, "Checking." plays as soon as a spoken question is recognized, and the
+answer follows within a few seconds. Your answer is spoken before alert announcements: an alert never interrupts it and
+is announced right after. Alerts still appear on screen immediately.

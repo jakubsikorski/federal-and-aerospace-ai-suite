@@ -22,7 +22,15 @@ from collections.abc import Callable
 
 log = logging.getLogger("backend.speech")
 
-ALERT, ANSWER, NOTICE = 0, 1, 2
+# The operator's own question outranks automatic alerts: an alert never
+# interrupts or drops an answer. Alerts stay visible in the UI immediately.
+ANSWER, ALERT, NOTICE = 0, 1, 2
+# While an operator question is in flight (transcription + LLM), automatic
+# speech waits so it cannot occupy the single TTS lock ahead of the answer's
+# first sentence. Bounded so a lost request cannot starve alerts.
+ANSWER_HOLD_SECONDS = 30.0
+# Talk release -> upload -> transcription; the transcription route re-arms it.
+VOICE_UPLOAD_HOLD_SECONDS = 15.0
 KINDS = {"answer": ANSWER, "alert": ALERT, "notice": NOTICE}
 # Measured on the pinned SpeechT5 service: ~0.6 s per word up to ~35 words,
 # while ~60-word inputs never hit the stop criterion and hold the service's
@@ -36,6 +44,9 @@ PLAYBACK_MARGIN_SECONDS = 1.5
 PLAYBACK_EVENTS = ("started", "ended", "error")
 ANSWER_CHUNK_WORDS = 12
 MIN_TAIL_WORDS = 4
+# The first chunk of an answer is short so the operator hears words sooner:
+# synthesis cost grows with length and the LLM needs fewer tokens to reach it.
+FIRST_CHUNK_WORDS = 6
 _ABBREVIATIONS = {
     "mr.", "mrs.", "ms.", "dr.", "prof.", "sr.", "jr.", "st.",
     "e.g.", "i.e.", "etc.", "vs.", "u.s.", "u.k.",
@@ -131,6 +142,40 @@ def answer_chunks(text: str) -> list[str]:
     return chunks
 
 
+def _head_end(words: list[str]) -> int | None:
+    """Where to cut a short first chunk, or None when the text is short already."""
+    if len(words) <= FIRST_CHUNK_WORDS:
+        return None
+    for i in range(FIRST_CHUNK_WORDS - 1, 2, -1):
+        if words[i].endswith((",", ";", ":")):
+            return i + 1
+    return FIRST_CHUNK_WORDS
+
+
+def short_head(chunks: list[str]) -> list[str]:
+    if not chunks:
+        return chunks
+    words = chunks[0].split()
+    end = _head_end(words)
+    if end is None or len(words) - end < MIN_TAIL_WORDS:
+        return chunks
+    return [" ".join(words[:end]), " ".join(words[end:])] + chunks[1:]
+
+
+def early_head(buffer: str) -> tuple[str | None, str]:
+    """Split a short first chunk off a streaming, not yet finished sentence."""
+    words = buffer.split()
+    complete = words if buffer[-1:].isspace() else words[:-1]
+    if len(complete) <= FIRST_CHUNK_WORDS:  # one word of lookahead: the sentence goes on
+        return None, buffer
+    end = _head_end(complete) or FIRST_CHUNK_WORDS
+    head = " ".join(complete[:end])
+    position = 0
+    for word in complete[:end]:
+        position = buffer.index(word, position) + len(word)
+    return head, buffer[position:].lstrip()
+
+
 def wav_seconds(data: bytes) -> float:
     with wave.open(io.BytesIO(data)) as clip:
         return clip.getnframes() / float(clip.getframerate() or 1)
@@ -180,6 +225,10 @@ class Arbiter:
         self.talk_held = False
         self.talk_deadline = 0.0
         self.answer_generation = 0
+        self.answer_hold: int | None = None
+        self.answer_hold_until = 0.0
+        self.warm_pending: str | None = None
+        self.last_synth_at = float("-inf")
         self.seq = 0
         self.version = 0
         self.last_alert_end = float("-inf")
@@ -232,10 +281,95 @@ class Arbiter:
             existing = self._append_answer_chunks(chunks, generation)
             if existing is not None:
                 return existing
+            chunks = short_head(chunks)
             item = self.say("answer", chunks[0], group="answer")
             item["answer_generation"] = generation
             item["remaining"] = chunks[1:]
             return item
+
+    def acknowledge(self, text: str, generation: int | None = None) -> dict | None:
+        """Speak a short cue the moment a voice question is understood.
+
+        Answer priority, but outside any answer chain so a missing browser ack
+        cannot drop the answer that follows it. `generation` is the question's
+        generation captured before transcription: Stop, Talk or a cancelled
+        voice request in the meantime make the cue stale.
+        """
+        with self.cond:
+            if not text or self.talk_held:
+                return None
+            if generation is not None and generation != self.answer_generation:
+                self._event("ack_stale", None)
+                return None
+            return self.say("answer", text, group="answer")
+
+    def warm(self, text: str, idle_seconds: float = 0.0) -> bool:
+        """Wake the TTS device and keep the cue cached; never queued or played.
+
+        Runs on the arbiter worker, only while it has nothing to synthesize, so
+        it never competes with operator speech for the single-inference
+        service. Skipped while one is already pending or when TTS ran within
+        `idle_seconds` (the device is awake). Returns whether it was scheduled.
+        """
+        text = " ".join(str(text).split())
+        with self.cond:
+            if (not text or self.warm_pending is not None
+                    or self.clock() - self.last_synth_at < idle_seconds):
+                return False
+            self.warm_pending = text
+            self.cond.notify_all()
+            return True
+
+    def _warm_now(self) -> None:
+        text, self.warm_pending = self.warm_pending, None
+        self._event("warming", None, text=text)
+        self.cond.release()
+        try:
+            try:
+                wav = self.synthesize(text)
+            except Exception as exc:
+                wav = None
+                log.info("TTS warm-up failed: %s", type(exc).__name__)
+        finally:
+            self.cond.acquire()
+        self.last_synth_at = self.clock()
+        if wav is not None:
+            self.audio_cache.put(self._cache_key(text), wav)
+
+    def begin_answer(self, generation: int, seconds: float = ANSWER_HOLD_SECONDS) -> None:
+        with self.cond:
+            if generation != self.answer_generation:
+                return
+            self.answer_hold = generation
+            self.answer_hold_until = self.clock() + seconds
+            self._event("answer_pending", None)
+            self.cond.notify_all()
+
+    def end_answer(self, generation: int | None = None) -> None:
+        with self.cond:
+            if self.answer_hold is None or (generation is not None and generation != self.answer_hold):
+                return
+            self.answer_hold = None
+            self._event("answer_released", None)
+            self.cond.notify_all()
+
+    def _answer_holding(self) -> bool:
+        return (self.answer_hold is not None and self.answer_hold == self.answer_generation
+                and self.clock() < self.answer_hold_until)
+
+    def cancel_answer(self) -> None:
+        """The operator abandoned a voice question: nothing it started may speak.
+
+        Unlike Stop, queued alerts stay queued; only answer speech and the
+        pending-answer hold go.
+        """
+        with self.cond:
+            self.answer_generation += 1
+            self.cancel(group="answer")
+            if self.answer_hold is not None:
+                self.answer_hold = None
+                self._event("answer_released", None)
+            self.cond.notify_all()
 
     def stop_speaking(self) -> None:
         with self.cond:
@@ -286,12 +420,22 @@ class Arbiter:
             self.cond.notify_all()
             return True
 
-    def set_talk(self, held: bool) -> None:
+    def set_talk(self, held: bool, answer_pending: bool = False) -> None:
+        """`answer_pending` on release: a recorded question is being uploaded.
+
+        The answer hold starts in the same critical section that releases the
+        microphone, so no alert can start synthesis between recording and
+        transcription.
+        """
         with self.cond:
             self.talk_deadline = self.clock() + 25 if held else 0
             if held:
                 self.answer_generation += 1
                 self.cancel(group="answer")
+            elif answer_pending:
+                self.answer_hold = self.answer_generation
+                self.answer_hold_until = self.clock() + VOICE_UPLOAD_HOLD_SECONDS
+                self._event("answer_pending", None)
             if self.talk_held != held:
                 self.talk_held = bool(held)
                 self._event("talk_held" if held else "talk_released", None)
@@ -369,7 +513,10 @@ class Arbiter:
             self._event("talk_expired", None)
         if self.talk_held or not self.queue:
             return None
+        holding = self._answer_holding()
         for item in sorted(self.queue, key=lambda i: (i["priority"], i["seq"])):
+            if holding and item["priority"] != ANSWER:
+                continue
             if (item["priority"] == ALERT and not item.get("bypass_alert_floor")
                     and self.clock() - self.last_alert_end < self.alert_floor):
                 continue
@@ -417,6 +564,7 @@ class Arbiter:
         try:
             try:
                 item["wav"] = self.synthesize(item["text"])
+                self.last_synth_at = self.clock()
                 item["duration_s"] = round(wav_seconds(item["wav"]), 2)
                 self.audio_cache.put(self._cache_key(item["text"]), item["wav"])
                 self.tts_ok = True
@@ -434,9 +582,14 @@ class Arbiter:
             if item is not None:
                 self.queue.remove(item)
                 return item
+            if self.warm_pending is not None and self.current is None and self.preparing is None:
+                self._warm_now()
+                continue
             timeout = max(0.05, self.talk_deadline - self.clock()) if self.talk_held else None
             if self.queue and not self.talk_held:
                 timeout = max(0.05, self.alert_floor - (self.clock() - self.last_alert_end))
+                if self._answer_holding():
+                    timeout = max(0.05, min(timeout, self.answer_hold_until - self.clock()))
             self.cond.wait(timeout)
         return None
 
@@ -455,10 +608,19 @@ class Arbiter:
                     continue
                 self._play(item)
 
+    def _defer_or_drop(self, item: dict) -> None:
+        if item["priority"] == ALERT:
+            item.pop("acks", None)
+            item.pop("mode", None)
+            self.queue.append(item)
+            self._event("deferred", item)
+        else:
+            self._finish(item, "preempted")
+
     def _prefetch_next(self, item: dict) -> None:
         if item["kind"] != "answer" or not item.get("remaining"):
             return
-        if item.get("cancelled") or self.talk_held or any(i["priority"] <= ALERT for i in self.queue):
+        if item.get("cancelled") or self.talk_held:
             return
         next_item = self._new_answer_item(
             item["remaining"][0], item["remaining"][1:], item.get("answer_generation"))
@@ -489,10 +651,10 @@ class Arbiter:
         return next_item
 
     def _play(self, item: dict) -> None:
-        # Anything more urgent that arrived during synthesis wins; this item was
-        # preempted before it started and is dropped, not re-queued.
+        # Anything more urgent that arrived during synthesis wins. A deferred
+        # alert keeps its audio and plays after the answer; notices are dropped.
         if any(i["priority"] < item["priority"] for i in self.queue):
-            self._finish(item, "preempted")
+            self._defer_or_drop(item)
             return
         if self.talk_held:
             if item["priority"] == ALERT:
@@ -544,7 +706,9 @@ class Arbiter:
         self.current = None
         if item["priority"] == ALERT:
             self.last_alert_end = self.clock()
-        if outcome == "suppressed_talk_held":
+        if outcome == "preempted" and item["priority"] == ALERT and not item.get("cancelled"):
+            self._defer_or_drop(item)
+        elif outcome == "suppressed_talk_held":
             # Never spoken over the microphone, but not lost: replayed on release.
             self.queue.append(item)
             self._event(outcome, item)

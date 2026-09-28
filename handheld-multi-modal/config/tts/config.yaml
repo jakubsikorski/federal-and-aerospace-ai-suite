@@ -12,7 +12,7 @@ models:
     # Inference device. Permitted values: CPU | GPU
     #   SpeechT5: CPU or GPU
     #   Qwen:     CPU or GPU
-    device: GPU  # PINNED per application spec: GPU only
+    device: CPU  # Owner-directed 2026-09-28: CPU (GPU is shared with the LLM; see D52)
     # Model precision. Permitted values: int8 | int4 | fp16 | fp32
     #   SpeechT5: int8, int4, fp16, or fp32
     #   Qwen:     int8, int4, fp16, or fp32

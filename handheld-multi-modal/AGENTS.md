@@ -42,7 +42,9 @@ Read `STATUS.md`, `MANIFEST.yaml`, `COMPONENTS.md`,
   exporter, no config rewrite, no one-off inference script replacing backend.
 - Audio Analyzer (required): OpenVINO, `whisper-medium`, GPU; sentiment +
   diarization disabled. Browser captures mic audio; Backend validates/forwards bounded audio; service transcribes (owner-confirmed 2026-09-25).
-- OEP TTS (required): stock-supported, provenance-approved model, GPU.
+- OEP TTS (required): stock-supported, provenance-approved model, CPU
+  (owner-directed 2026-09-28, replacing GPU: SpeechT5 on the shared GPU queued
+  behind LLM generation and delayed first answer audio to 5–14 s; see D52).
 - Detector: YOLO26s OpenVINO IR, INT8 preferred, NPU default, CPU `gvatrack`,
   Intel HW decode/encode (owner-directed 2026-09-24 replacement for YOLO11s).
   CPU/GPU = fixed alternatives, not dynamically edited pipelines.

@@ -17,7 +17,7 @@ entirely on the device, built from unmodified Open Edge Platform
 - **Mission** — upload PDF/DOCX orders; a Mission Brief and document-grounded
   answers come from stock Chat Q&A (`Intel/neural-chat-7b-v3-3` on the GPU).
 - **Alerts** — operator rules (e.g. "person on Camera 1") dispatched through
-  the stock Alert Agent and spoken via SpeechT5 TTS on the GPU.
+  the stock Alert Agent and spoken via SpeechT5 TTS on the CPU.
 - **Voice (next phase)** — Whisper-medium transcription runs on the GPU;
   microphone input in the UI is not built yet.
 - **Resources** — live CPU, memory, GPU, NPU and package power telemetry.
