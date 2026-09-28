@@ -25,11 +25,12 @@ alerts and warnings, and red only for a recording Talk button or failures.
 4. **Manage alerts** — alert rules (see [Rules](#rules)).
 5. **Audio off / Audio on** — tap once so the browser may play spoken
    alerts and answers. Amber means off; green means on. Speech is silent
-   until you tap it. **Stop speaking** appears beside it while speech plays.
+   until you tap it. **Stop audio** appears beside it while speech plays.
 6. **Clock** — local time; "live updates" means the UI is connected.
    **Connection lost · retrying** means data may be stale until it reconnects.
 7. **Models & devices** — each model with its device and status (Vision on
    NPU, LLM and Transcription on GPU, Speech on CPU). Click one for details.
+   Transcription uses whisper-medium with FP16 weights; Speech uses the voice Miles.
 
 ![Model details](images/guide-model-details.jpg)
 
@@ -44,11 +45,91 @@ alerts and warnings, and red only for a recording Talk button or failures.
    Tiles with open alerts glow.
 2. **‹ / ›** — next or previous four cameras (shown only with more than four).
 
+## Adding and removing cameras
+
+![Manage cameras](images/guide-cameras.jpg)
+
+1. **Cameras** — in the top bar, right after the camera tabs. It shows how
+   many cameras are on (for example "2 of 3 on"). Tap it to open **Manage
+   cameras**.
+2. **Count** — cameras on out of the limit measured for this device (3); one
+   bar per slot.
+3. **State** — **Live**, **Starting**, **No frames received**, **Signal
+   lost** or **Off**. **Deployment** marks cameras set by the deployment.
+4. **View** — show that camera's video and close the panel.
+5. **Edit** — rename, turn off or remove the camera.
+6. **+ Add camera** — opens the add form. When all slots are in use it is
+   disabled and an amber note says to turn a camera off or remove one first.
+
+### Adding a camera
+
+![Add a camera](images/guide-camera-add.jpg)
+
+1. **Name** — what the camera is called in tabs, alerts and evidence.
+2. **Publisher on this device** — an app or encoder on this handheld sends
+   the video. You get the address after adding.
+3. **Network camera** — an IP camera on the local network that this device
+   connects to.
+4. **Add camera** — or **Cancel** to close the form.
+
+For a network camera, enter its address:
+
+![Network camera](images/guide-camera-network.jpg)
+
+1. **Camera RTSP address** — the camera's `rtsp://` address.
+2. **Note** — the allowed networks. Addresses outside them, or with a user
+   name or password, are refused; an administrator sets those cameras up in
+   MediaMTX instead.
+
+After adding a **publisher** camera, the panel shows where to send its video:
+
+![Camera added](images/guide-camera-added.jpg)
+
+1. **Waiting for video** — nothing has arrived yet.
+2. **Address** — send H.264 RTSP video here, for example
+   `rtsp://127.0.0.1:8554/cam4`. It works only on this device.
+3. **Copy** — copies the address for the publisher app.
+4. **Example** — a ready ffmpeg command that sends a video file.
+5. **View camera** — available once video arrives.
+
+The card updates by itself when video arrives:
+
+![Camera live](images/guide-camera-live.jpg)
+
+1. **Live** — video, detection and alerts are running.
+2. **View camera** — switch to it. **Done** closes the card.
+
+The address is also shown under **Edit** at any time.
+
+### Editing and removing
+
+![Edit camera](images/guide-camera-edit.jpg)
+
+1. **Name** and **Save name** — rename the camera.
+2. **Address** and **Copy** — where to send video (publisher cameras).
+3. **Turn off / Turn on** — stops or restarts its video and detection.
+4. **Remove camera…** — asks to confirm:
+
+![Remove camera](images/guide-camera-remove.jpg)
+
+1. **Remove** — removes the camera.
+2. **Keep camera** — cancels.
+
+Turning off or removing a camera keeps its recorded history and alerts. A
+removed camera's name can be reused; its id never is. **Deployment** cameras
+(`backend.yaml`, `make CAMERAS`) can only be renamed here. Alert rules on a
+camera that was turned off or removed show **(camera off or removed)**; they
+can be turned off or deleted, not turned back on.
+
+No restart is needed; other open consoles pick up the change on their next
+update. Every change is written to an audit log on the device.
+
 ## Live camera and alerts
 
 ![Live camera and alerts](images/guide-video-alerts.jpg)
 
-New alerts update camera badges, highlights and a notification. Tap **Alerts**
+Tap **Cameras** in the top bar to add, rename, turn off or remove cameras
+(see above). New alerts update camera badges, highlights and a notification. Tap **Alerts**
 (the amber bar under the video) to open the list. Incoming alerts do not
 automatically expand it or resize video.
 
@@ -97,9 +178,8 @@ through the existing history APIs; tap **View** to jump into them.
 ![Evidence details](images/guide-drawer.jpg)
 
 1. **Back** — close the details.
-2. Stored image, camera, times and confidence; thumbnails switch images.
-   **Play** (shown with two or more images) cycles them like a flip book.
-3. **Ask about this object** — opens Ask with a question prefilled; you send it.
+2. The whole stored image (tap it for full screen), then camera, times and
+   confidence; thumbnails switch images.
 
 ## Ask (assistant)
 
@@ -120,6 +200,20 @@ through the existing history APIs; tap **View** to jump into them.
 
 General chat remembers the last few exchanges; camera and mission answers do
 not. General answers never describe what is on camera.
+
+The Assistant never asks you to rephrase. It answers with its closest search
+and says first what it assumed:
+
+- No time given → it searches the **last 10 minutes** and says so.
+- A camera named in the question wins over **Camera scope**.
+- A detail detections cannot check (for example a colour, when attributes are
+  unavailable) → it shows all matching tracks for that time and says
+  "I can't check … — check their images."
+
+Questions with no camera, object or time words are answered as general
+conversation, including **What model is this?** or **What hardware are you
+running on?**; the language model answers from the Models & devices facts, so
+check that panel for the exact device.
 
 ## Mission
 
@@ -166,11 +260,15 @@ vehicles walk; an object counts by where its feet touch the ground.
 
 1. **Corners** — 3 to 5. Turns amber at 5.
 2. **Next step** — what to do now. A sixth tap shows an amber warning.
-3. **Corner** — tap the picture to add, drag to move.
+3. **Corner** — tap the picture to add, drag to move. Each new corner gets
+   the next number and joins the last corner to the first. Only if that
+   would make the edges cross does it go into the nearest edge instead; the
+   step line then says where it went and which corners were renumbered.
 4. **Cancel** — leave without changes. Closing Rules also cancels.
-5. **Undo point** — remove the last corner.
+5. **Undo point** — remove the corner tapped last.
 6. **Clear all** — start again.
-7. **Use this area** — enabled from 3 corners; then tap **Create alert** or **Save changes**.
+7. **Use this area** — enabled from 3 corners. If dragging makes the outline
+   cross itself it turns red and this button waits until you fix it; then tap **Create alert** or **Save changes**.
    To remove a zone, tap **Remove area** in the alert form, then **Save changes**.
 
 ## Resources
@@ -195,9 +293,11 @@ vehicles walk; an object counts by where its feet touch the ground.
 ![Spoken answer](images/guide-voice-answer.jpg)
 
 1. **Answer** — full text, always shown.
-2. **Speech line** — what is being spoken now, or text only if speech is
-   unavailable.
-3. **Stop speaking** — silence the rest of the answer; the text stays.
+2. **Speech line** — what is being spoken now. A green **Speaking:** tag
+   marks audio playing; an amber tag (**Preparing speech:**, **Starting
+   speech:**) means it is not audible yet. The spoken sentence follows in
+   italics. Text only if speech is unavailable.
+3. **Stop audio** — silence the rest of the answer; the text stays.
 
 Tap **Talk** in the top bar from any console view. It opens Assistant and
 starts recording after microphone permission is granted. Tap **Send question**
@@ -213,11 +313,41 @@ progress. Voice uses the same camera scope and answer mode as typing. If capture
 or transcription fails, type your question; no camera settings are changed.
 
 With **Audio on**, you hear "Checking." as soon as your question is recognized,
-then the answer starts within a few seconds. Answers play as short sentences (long sentences split into
-bounded clauses). The complete text stays visible. **Stop speaking** cancels the
+then the answer starts within a few seconds. Answers are spoken by the voice
+**Miles**, in short parts (long sentences split into bounded clauses). The first
+part starts before the model has finished writing. Each part plays to its end,
+then the next starts without a gap once ready. If several tabs or devices
+have Audio on, each plays the answer at its own pace. Close extra tabs to hear
+it once. The complete text stays visible. **Stop audio** cancels the
 remaining speech without deleting the answer. Tapping Talk interrupts
 playback immediately. Your answer is spoken first: alert announcements that
 arrive while you ask or listen wait until the answer finishes, while the alert
 itself appears on screen at once. Audio off, synthesis errors or browser playback restrictions
 leave the text available. Tablet microphone and autoplay behavior still require
 verification on the target browser; see Phase 9 evidence.
+
+### Recovering a question
+
+![Answer running](images/guide-answer-running.jpg)
+
+1. **Cancel question** — abandons the running question and stops its speech.
+   The stock inference service may still finish its in-flight work, so the
+   next answer can be slower. Finish or cancel a question before starting
+   another with Talk.
+2. **Streaming answer** — text appears as it is generated.
+
+![Answer recovery](images/guide-answer-recovery.jpg)
+
+1. **Edit and resend** — puts the recognized question, with its original
+   camera scope, back in the box for correction.
+2. **Answer** — the complete text. An interrupted answer stays on screen
+   marked incomplete, with **Retry question**.
+3. **Replay answer** — reads the completed answer again (about the first
+   1,500 characters) without asking the model again. Refused while an answer
+   is still in progress.
+4. **Replies as text · Enable audio** — shown when Audio is off; enable audio
+   before Replay.
+
+**Stop audio** silences speech while the text request keeps running. Failed
+playback stays visible. While recording, a hint shows the 1.5-second silence
+auto-send and 15-second limit.
