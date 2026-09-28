@@ -27,6 +27,17 @@ RULES = [dict(rule_id='r1', name='person on any camera', class_label='person', s
               active_hours=None, zone=None, speak=True)]
 RULE_REQUESTS = []
 ALERTS = {'alerts': [], 'incidents': []}
+CAMERAS = [dict(stream_id='cam1', display_name='Camera 1', enabled=True, origin='config', running=True,
+                source={'kind': 'publish', 'publish_url': 'rtsp://127.0.0.1:8554/cam1'}, feed={'ok': True, 'reason': None}),
+           dict(stream_id='cam9', display_name='Roof', enabled=True, origin='operator', running=True,
+                source={'kind': 'pull', 'url': 'rtsp://192.168.1.9/s'}, feed={'ok': True, 'reason': None})]
+CAMERA_REQUESTS = []
+
+
+def camera_view(**extra):
+    enabled = sum(c['enabled'] for c in CAMERAS)
+    return dict(cameras=CAMERAS, max_streams=3, enabled_count=enabled,
+                allowed_sources=['192.168.0.0/16'], **extra)
 
 
 class Fixture(BaseHTTPRequestHandler):
@@ -41,7 +52,34 @@ class Fixture(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
+    def _camera_mutation(self):
+        length = int(self.headers.get('content-length', '0'))
+        body = json.loads(self.rfile.read(length) or b'null')
+        CAMERA_REQUESTS.append((self.command, self.path, body))
+        if self.command == 'POST':
+            if sum(c['enabled'] for c in CAMERAS) >= 3:
+                payload = json.dumps({'data': None, 'error': {'code': 'camera_limit', 'message': '3 of 3 cameras are already on.'}}).encode()
+                self.send_response(409)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
+            sid = f'cam{10 + len(CAMERA_REQUESTS)}'
+            CAMERAS.append(dict(stream_id=sid, display_name=body['display_name'], enabled=True, origin='operator',
+                                running=False, feed={'ok': None, 'reason': 'starting'},
+                                source={'kind': 'publish', 'publish_url': f'rtsp://127.0.0.1:8554/{sid}'}))
+            return self._json(camera_view(stream_id=sid), 201)
+        sid = self.path.split('/')[3].split('?')[0]
+        if self.command == 'DELETE':
+            CAMERAS[:] = [c for c in CAMERAS if c['stream_id'] != sid]
+        else:
+            next(c for c in CAMERAS if c['stream_id'] == sid).update(body)
+        return self._json(camera_view())
+
     def _rule_mutation(self):
+        if self.path.startswith('/api/cameras'):
+            return self._camera_mutation()
         if self.path.startswith('/api/incidents/'):
             RULE_REQUESTS.append((self.command, self.path, None))
             if self.command == 'DELETE':
@@ -116,6 +154,8 @@ class Fixture(BaseHTTPRequestHandler):
                      'last_observed_utc': now_iso, 'matched_utc': now_iso, 'observation_count': 5,
                      'peak_confidence': .9, 'snip_url': None, 'snip_state': 'none', 'candidate_count': 0,
                      'state_source': 'history'} for n in (41, 42, 43)]}
+            elif self.path == '/api/cameras':
+                data = camera_view()
             elif self.path == '/api/rules':
                 data = {'rules': RULES, 'classes': ['person', 'car'], 'streams': [f'cam{i}' for i in range(1, 8)]}
             elif self.path == '/api/models':
@@ -147,6 +187,8 @@ class Fixture(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def do_POST(self):
+        if self.path == '/api/cameras':
+            return self._camera_mutation()
         if self.path == '/api/rules' or self.path.endswith('/speak'):
             return self._rule_mutation()
         if self.path.startswith('/api/speech/'):
@@ -600,7 +642,7 @@ def main():
                 $("audio-toggle").click(); await wait();
                 const speaking = $("speech-line").textContent.startsWith("Speaking:") && clips.length === 2 && state.playingId === "sp1";
                 clips[1].onended(); await wait();
-                stopPlayback(); block = true; state.playback = null;
+                stopPlayback(); state.endedId = null; block = true; state.playback = null;
                 renderSpeech(); await wait();
                 const blocked = !state.audioOn && $("audio-toggle").textContent === "Audio off"
                   && $("speech-line").textContent.includes("browser blocked audio");
@@ -612,6 +654,35 @@ def main():
             acks = [(p, b) for _, p, b in RULE_REQUESTS[before:]]
             assert acks == [('/api/speech/sp1/playback', {'event': 'started'}), ('/api/speech/sp1/playback', {'event': 'ended'}),
                             ('/api/speech/sp1/playback', {'event': 'error'})], acks
+            # Another tab ending a chunk first must not cut this tab: it plays out,
+            # then the preloaded next chunk starts at once.
+            chain = async_js('''const done = arguments[arguments.length - 1];
+              window.eval(`(async () => {
+                const RealAudio = window.Audio, clips = [];
+                window.Audio = class { constructor(src) { this.src = src; this.paused = false; clips.push(this); }
+                  play() { setTimeout(() => this.onplaying?.(), 0); return Promise.resolve(); }
+                  pause() { this.paused = true; } };
+                const wait = () => new Promise(r => setTimeout(r, 50));
+                state.audioOn = true; state.endedId = null; stopPlayback();
+                const a = {id: "c1", kind: "answer", text: "First part.", audio_base64: "AAAA"};
+                const b = {id: "c2", kind: "answer", text: "Second part.", audio_base64: "BBBB"};
+                state.speech = {current: a, next: b, queued: [], talk_held: false, last: null};
+                renderSpeech(); await wait();
+                const preloaded = state.nextUp?.id === "c2";
+                state.speech = {current: b, queued: [], talk_held: false, last: {id: "c1", kind: "answer", outcome: "spoken"}};
+                renderSpeech(); await wait();
+                const notCut = state.playingId === "c1" && !clips[0].paused && $("speech-line").textContent === ""
+                  && $("assistant-speech-line").textContent === "Speaking: First part."
+                  && $("assistant-speech-line").querySelector(".speech-label")?.textContent === "Speaking:";
+                clips[0].onended(); await wait();
+                const next = state.playingId === "c2" && state.audio === clips[1];
+                state.speech = {current: null, queued: [], talk_held: false, last: {id: "c2", kind: "answer", outcome: "stopped"}};
+                renderSpeech(); await wait();
+                const stopped = state.audio === null && clips[1].paused;
+                window.Audio = RealAudio;
+                return {preloaded, notCut, next, stopped};
+              })()`).then(done, e => done(String(e)))''')
+            assert isinstance(chain, dict) and all(chain.values()), chain
             click('#video-fullscreen')
             time.sleep(.5)
             assert js('return document.fullscreenElement?.id') == 'video-wrap'
@@ -666,12 +737,16 @@ def main():
                 state.recent.cam2 = {tracks:[{track_id:700, class_label:'person', last_observed_utc:now}]}; state.incidents[0].opened_utc = now; showAwaySummary();
                 if (!$('away-summary').classList.contains('show') || !$('away-summary').textContent.includes('While you were away') || !$('away-summary').textContent.includes('Person')) return "away summary missing";
                 await openDrawer(visibleTracks()[0]); await new Promise(r=>setTimeout(r,100));
-                if ($('drawer-play').hidden) return "replay hidden for multiple candidates";
-                $('drawer-play').click(); await new Promise(r=>setTimeout(r,500));
-                if (!state.replayTimer || state.drawerCandidateIndex === 0) return "replay did not advance";
-                stopReplay(); $('drawer-ask').click(); await new Promise(r=>setTimeout(r,100));
-                if (!$('assistant-panel').classList.contains('open') || !$('ask-text').value.includes('track #')) return "ask object did not prefill";
-                $('search-camera').value = 'all'; closeAssistant(false); closeDrawer();
+                if ($('drawer-play') || $('drawer-ask')) return "drawer still has Play/Ask buttons";
+                const crop = document.createElement('div'); crop.className = 'crop'; crop.style.width = '200px';
+                const img = new Image(); img.src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"/>');
+                crop.append(img); $('drawer-body').append(crop); await img.decode();
+                const box = crop.getBoundingClientRect(), shown = img.getBoundingClientRect();
+                crop.remove();
+                if (shown.height > box.height + 1 || shown.width > box.width + 1) return "crop image overflows its box: " + shown.height + " > " + box.height;
+                const large = $('large-crop').getBoundingClientRect();
+                if ($('large-crop').querySelector('img') && large.height < large.width * 0.7 && large.height < innerHeight - 240) return "drawer image not enlarged: " + large.width + "x" + large.height;
+                $('search-camera').value = 'all'; closeDrawer();
                 const reports = new Map([
                   ['in', {type:'inbound-rtp', kind:'video', jitterBufferDelay:.3, jitterBufferEmittedCount:3}],
                   ['cp', {type:'candidate-pair', nominated:true, currentRoundTripTime:.08}]
@@ -1030,7 +1105,7 @@ def main():
                         && history.top >= evidenceHead.top && history.bottom <= evidenceHead.bottom
                         && !$("track-count") && $("track-title").textContent === "Evidence"
                         && getComputedStyle($("open-assistant")).backgroundColor !== getComputedStyle($("toggle-diagnostics")).backgroundColor
-                        && [...document.querySelectorAll(".quiet-button:not(#ask-submit):not(#use-viewed-camera):not(#toggle-history-filters):not(.primary-action):not(#grid-prev):not(#grid-next):not(#drawer-ask):not(#drawer-play):not(#zone-toolbar *)")].every(button => parseFloat(getComputedStyle(button).borderTopWidth) >= 1 && getComputedStyle(button).height === "32px" && getComputedStyle(button).fontSize === "13px")
+                        && [...document.querySelectorAll(".quiet-button:not(#ask-submit):not(#use-viewed-camera):not(#toggle-history-filters):not(.primary-action):not(#grid-prev):not(#grid-next):not(#drawer-ask):not(#zone-toolbar *):not(#cameras-panel *)")].every(button => parseFloat(getComputedStyle(button).borderTopWidth) >= 1 && getComputedStyle(button).height === "32px" && getComputedStyle(button).fontSize === "13px")
                         && ["mission-toggle","rules-toggle","audio-toggle","open-assistant"].every(id => $(id).getBoundingClientRect().height === 40 && getComputedStyle($(id)).fontSize === "15px")
                         && parseFloat(getComputedStyle(document.querySelector(".track-seen")).fontSize) >= 15
                         && document.body.scrollWidth === innerWidth && document.body.scrollHeight === innerHeight
@@ -1414,6 +1489,155 @@ def main():
               })()`).then(done).catch(e=>done(String(e)));
             ''')
             assert voice_check is True, voice_check
+            recovery = async_js(r"""const done = arguments[arguments.length - 1];
+              window.eval(`(async () => {
+                const original={fetch:window.fetch,postApi,compactAssistant,getUserMedia:navigator.mediaDevices.getUserMedia};
+                const assert=(ok,message)=>{if(!ok) throw Error(message);};
+                try {
+                  compactAssistant=()=>true; sizeAssistant();
+                  assert(!$('alert-toast').closest('[inert]'),'alert toast inaccessible in compact Assistant');
+                  compactAssistant=original.compactAssistant; sizeAssistant();
+                  state.assistantBusy=true;$('ask-text').disabled=true;
+                  const version=assistantRequestVersion;
+                  navigator.mediaDevices.getUserMedia=undefined;
+                  await beginVoice();
+                  assert(state.assistantBusy && assistantRequestVersion===version,'failed microphone discarded active question');
+                  navigator.mediaDevices.getUserMedia=original.getUserMedia;
+                  state.assistantBusy=false;$('ask-text').disabled=false;
+                  for(const outcome of ['playback_failed','unconfirmed']) {
+                    state.speech={current:null,last:{kind:'answer',outcome,text:'Retained answer'}}; renderSpeech();
+                    assert($('assistant-speech-line').textContent.includes('Retained answer'),'playback failure vanished');
+                  }
+                  state.audioOn=true;state.playback=null;voiceStatus('Microphone permission denied.');
+                  state.speech={current:{id:'a1',kind:'alert',text:'dog on Camera 2.'}};renderSpeech();
+                  assert($('voice-status').textContent==='Microphone permission denied.','alert speech overwrote voice status');
+                  state.assistantBusy=true;state.speech={current:{id:'c1',kind:'answer',text:'Checking.'}};renderSpeech();
+                  assert($('voice-status').textContent==='Preparing speech…','answer speech status missing');
+                  state.speech={current:null,last:{kind:'answer',outcome:'spoken',text:'Checking.'}};renderSpeech();
+                  assert($('voice-status').textContent==='Answering…','status stuck after cue while answering');
+                  state.assistantBusy=false;state.speech={current:{id:'c2',kind:'answer',text:'Done.'}};renderSpeech();
+                  state.speech={current:null,last:{kind:'answer',outcome:'spoken',text:'Done.'}};renderSpeech();
+                  assert($('voice-status').textContent.startsWith('Done.'),'status stuck after answer speech');
+                  stopPlayback();
+                  state.speech=null;state.audioOn=false;
+                  window.fetch=async()=>new Response([{delta:'Useful partial answer.'},{error:'Disconnected'}].map(e=>JSON.stringify(e)+String.fromCharCode(10)).join(''),
+                    {headers:{'content-type':'application/x-ndjson'}});
+                  await submitAssistant({text:'Which objects?',selected_stream:'cam2',mode:'auto'});
+                  assert($('assistant-answer').textContent==='Useful partial answer.','partial answer erased');
+                  assert($('assistant-scope').textContent.includes('Incomplete') && $('answer-actions').textContent.includes('Retry'),'partial answer has no recovery');
+                  $('ask-text').value='';$('edit-question').click();
+                  assert($('ask-text').value==='Which objects?' && $('search-camera').value==='cam2','edit lost original question/scope');
+                  let aborted=false, requested=false;
+                  postApi=async()=>({});
+                  window.fetch=async(url,options)=>{
+                    requested=true;
+                    return new Response(new ReadableStream({start(controller){
+                      options.signal.addEventListener('abort',()=>{aborted=true;controller.error(new DOMException('Cancelled','AbortError'));});
+                    }}),{headers:{'content-type':'application/x-ndjson'}});
+                  };
+                  const pending=submitAssistant({text:'Long request',mode:'general'});
+                  while(!requested) await new Promise(resolve=>setTimeout(resolve,0));
+                  await cancelQuestion();await pending;
+                  assert(aborted && !state.assistantBusy && !$('ask-text').disabled && $('voice-cancel').hidden,'cancel did not restore composer');
+                  assert($('assistant-warnings').textContent.includes('cancelled'),'cancel has no visible outcome');
+                  return true;
+                } finally {
+                  window.fetch=original.fetch;postApi=original.postApi;compactAssistant=original.compactAssistant;
+                  navigator.mediaDevices.getUserMedia=original.getUserMedia;
+                  state.assistantBusy=false;sizeAssistant();
+                }
+              })()`).then(done).catch(error=>done(String(error)));
+            """)
+            assert recovery is True, recovery
+            # Cameras panel: add a publisher camera, hit the limit, remove behind a confirm.
+            js("closeAssistant(false); closeDrawer();")
+            click('#cameras-toggle')
+            for _ in range(100):
+                if js("return document.getElementById('camera-count').textContent.startsWith('2 of 3')"):
+                    break
+                time.sleep(.05)
+            cams = js('return window.eval(' + json.dumps('''(() => {
+              const items = [...$("camera-list").children];
+              const open = !$("cameras-panel").hidden && $("cameras-toggle").getAttribute("aria-expanded") === "true";
+              const rows = items.length === 2 && items[1].textContent.includes("Network camera · rtsp://192.168.1.9/s");
+              items[0].querySelector(".camera-edit-toggle").click();
+              const config = $("camera-list").children[0].textContent.includes("rename only")
+                && !$("camera-list").children[0].querySelector(".camera-actions, .camera-remove");
+              const addHidden = $("camera-add").hidden && !$("camera-add-open").hidden;
+              $("camera-add-open").click();
+              const addShown = !$("camera-add").hidden && $("camera-add-open").hidden
+                && $("cameras-toggle-count").textContent === state.streams.length + " of 3 on · manage";
+              $("camera-add-submit").click();
+              const empty = $("camera-status").textContent === "Give the camera a name.";
+              const pullHidden = $("camera-url-label").hidden;
+              document.querySelector('input[name="camera-source"][value="pull"]').click();
+              const pullShown = !$("camera-url-label").hidden && $("camera-add-note").textContent.includes("192.168.0.0/16");
+              document.querySelector('input[name="camera-source"][value="publish"]').click();
+              $("camera-name").value = "Dock";
+              $("camera-add-submit").click();
+              return {open, rows, config, addHidden, addShown, empty, pullHidden, pullShown};
+            })()''') + ')')
+            assert all(cams.values()), cams
+            for _ in range(100):
+                if js("return !document.getElementById('camera-added').hidden && document.getElementById('camera-added').textContent.includes('Waiting for video') && document.querySelector('#camera-added code')?.textContent.startsWith('rtsp://127.0.0.1:8554/cam') && document.activeElement?.textContent === 'Copy'"):
+                    break
+                time.sleep(.05)
+            else:
+                raise AssertionError('post-add publish address card missing')
+            added = CAMERAS[-1]['stream_id']
+            assert CAMERA_REQUESTS[-1] == ('POST', '/api/cameras', {'display_name': 'Dock', 'source': {'kind': 'publish'}}), CAMERA_REQUESTS
+            limit = js('return window.eval(' + json.dumps('''(() => {
+              const full = $("camera-add-open").disabled && $("camera-add").hidden && !$("camera-full-note").hidden
+                && $("camera-full-note").textContent.includes("Turn a camera off") && $("camera-count").textContent.includes("3 of 3");
+              $("camera-list").querySelector('li[data-stream="ADDED"] .camera-edit-toggle').click();
+              const item = $("camera-list").querySelector('li[data-stream="ADDED"]');
+              const editing = !!item.querySelector(".camera-edit") && item.textContent.includes("rtsp://127.0.0.1:8554/ADDED");
+              item.querySelector(".camera-remove button").click();
+              const again = $("camera-list").querySelector('li[data-stream="ADDED"]');
+              const asks = again.textContent.includes("Recorded history and alerts stay") && again.querySelectorAll(".camera-remove button").length === 2;
+              again.querySelector(".camera-remove .danger").click();
+              return {full, editing, asks};
+            })()'''.replace('ADDED', added)) + ')')
+            assert all(limit.values()), limit
+            for _ in range(100):
+                if js("return document.getElementById('camera-count').textContent.startsWith('2 of 3')"):
+                    break
+                time.sleep(.05)
+            assert CAMERA_REQUESTS[-1][:2] == ('DELETE', f'/api/cameras/{added}?confirm={added}'), CAMERA_REQUESTS
+            assert js("return document.getElementById('camera-status').textContent.includes('removed. Its history is kept.')")
+            assert js('return ruleSummary({stream_id:"cam99",class_label:null,dwell_seconds:null}).includes("(camera off or removed)")')
+            zone_order = js('return window.eval(' + json.dumps('''(() => {
+              const square = zoneInsert([[.1,.1],[.9,.1],[.1,.9]], [.9,.9]);
+              const ordered = JSON.stringify(square) === JSON.stringify([[.1,.1],[.9,.1],[.9,.9],[.1,.9]]);
+              const bowtie = zoneCrosses([[.1,.1],[.9,.1],[.1,.9],[.9,.9]]) && !zoneCrosses(square);
+              const appended = JSON.stringify(zoneInsert([[.1,.1],[.9,.1],[.9,.9]], [.1,.9])) === JSON.stringify([[.1,.1],[.9,.1],[.9,.9],[.1,.9]]);
+              const quad = [[.1,.1],[.9,.1],[.9,.9],[.1,.9]];
+              const fifth = JSON.stringify(zoneInsert(quad, [.05,.5])) === JSON.stringify([...quad, [.05,.5]]);
+              const reordered = JSON.stringify(zoneInsert(quad, [.5,.05])) === JSON.stringify([[.1,.1],[.5,.05],[.9,.1],[.9,.9],[.1,.9]]);
+              state.zoneDraft = {points: [[.1,.1],[.9,.1],[.1,.9]]}; state.zoneAdded = [];
+              $("zone-editor").hidden = false; drawZoneDraft();
+              const r = $("zone-svg").getBoundingClientRect();
+              $("zone-svg").dispatchEvent(new PointerEvent("pointerdown", {bubbles: true, clientX: r.left + r.width * .9, clientY: r.top + r.height * .9}));
+              const tapped = state.zoneDraft.points.length === 4 && Math.abs(state.zoneDraft.points[2][0] - .9) < .01 && !$("zone-done").disabled;
+              state.zoneDraft.points = [[.1,.1],[.9,.1],[.9,.9],[.1,.9]]; state.zoneAdded = [];
+              $("zone-svg").dispatchEvent(new PointerEvent("pointerdown", {bubbles: true, clientX: r.left + r.width * .05, clientY: r.top + r.height * .5}));
+              const kept = state.zoneDraft.points.length === 5 && Math.abs(state.zoneDraft.points[4][0] - .05) < .01 && !$("zone-step").textContent.includes("renumbered");
+              $("zone-undo").click();
+              $("zone-svg").dispatchEvent(new PointerEvent("pointerdown", {bubbles: true, clientX: r.left + r.width * .5, clientY: r.top + r.height * .05}));
+              const noted = Math.abs(state.zoneDraft.points[1][0] - .5) < .01 && $("zone-step").textContent.includes("Corner 2 placed between 1 and 3");
+              $("zone-undo").click();
+              state.zoneDraft.points = [[.1,.1],[.9,.1],[.1,.9]]; state.zoneAdded = [];
+              $("zone-svg").dispatchEvent(new PointerEvent("pointerdown", {bubbles: true, clientX: r.left + r.width * .9, clientY: r.top + r.height * .9}));
+              $("zone-undo").click();
+              const undone = JSON.stringify(state.zoneDraft.points) === JSON.stringify([[.1,.1],[.9,.1],[.1,.9]]);
+              state.zoneDraft.points = [[.1,.1],[.9,.1],[.1,.9],[.9,.9]]; drawZoneDraft();
+              const blocked = $("zone-done").disabled && $("zone-step").textContent.includes("crosses");
+              $("zone-editor").hidden = true; state.zoneDraft = null;
+              return {ordered, bowtie, appended, fifth, reordered, tapped, kept, noted, undone, blocked};
+            })()''') + ')')
+            assert all(zone_order.values()), zone_order
+            js("document.activeElement.blur(); document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true, cancelable: true}))")
+            assert js("return document.getElementById('cameras-panel').hidden"), 'Escape left Cameras open'
             if args.screenshots:
                 args.screenshots.mkdir(parents=True, exist_ok=True)
                 request('POST', base + '/window/rect', {'width': 1280, 'height': 800})
@@ -1426,8 +1650,8 @@ def main():
                 shot('camera-grid-pager.png')
                 js('return window.eval(' + json.dumps('selectCamera("cam1"); state.evidenceView="compact"; renderTracks(true);') + ')')
                 shot('compact-evidence.png')
-                async_js('''const done = arguments[arguments.length - 1]; window.eval(`(async () => { await openDrawer(visibleTracks()[0]); $("drawer-play").hidden=false; return true; })()`).then(done).catch(e => done(String(e)));''')
-                shot('drawer-replay-ask.png')
+                async_js('''const done = arguments[arguments.length - 1]; window.eval(`(async () => { await openDrawer(visibleTracks()[0]); return true; })()`).then(done).catch(e => done(String(e)));''')
+                shot('drawer.png')
                 js('return window.eval(' + json.dumps('localStorage.setItem("operator.lastActive", String(Date.now()-360000)); state.awayChecked=false; state.incidents[0].opened_utc=new Date().toISOString(); showAwaySummary();') + ')')
                 shot('away-summary.png')
                 js('return window.eval(' + json.dumps('closeDrawer(); closeAssistant(false); $("rules-panel").hidden=false; $("rules-toggle").setAttribute("aria-expanded","true"); state.rules={rules:[{rule_id:"rz",name:"person zone",class_label:"person",stream_id:"cam1",min_confidence:.6,cooldown_seconds:60,dwell_seconds:45,active_hours:{start:"22:00",end:"06:00",timezone:Intl.DateTimeFormat().resolvedOptions().timeZone},zone:{points:[[.1,.2],[.8,.2],[.7,.75]]},enabled:true,speak:true}],classes:["person","car"],streams:state.streams.map(s=>s.stream_id)}; renderRules(); $("rule-camera").value="cam1"; state.zoneDraft={points:[[.1,.2],[.8,.2],[.7,.75]]}; state.zoneBackup={points:[[.1,.2],[.8,.2],[.7,.75]]}; updateZoneSummary(); $("zone-editor").hidden=false; drawZoneDraft();') + ')')
@@ -1437,7 +1661,7 @@ def main():
                 (args.screenshots / 'operator-welcome.png').write_bytes(base64.b64decode(request('GET', base + '/screenshot')))
                 js('return window.eval(' + json.dumps('state.assistantContext={text:"What can you do?",payload:{}}; renderAssistant({intent:"application_help",answer_text:"I can search recorded tracks, answer mission questions and explain general topics. I cannot see the live video.",errors:[]}); archiveAssistantTurn(); state.assistantContext={text:"Why is the sky blue?",payload:{}}; $("assistant-mode").value="general"; renderAssistant({intent:"general_chat",answer_text:"Air scatters blue sunlight more strongly than red light, so the daytime sky looks blue.",conversation:{turns:1},errors:[]});') + ')')
                 (args.screenshots / 'conversation.png').write_bytes(base64.b64decode(request('GET', base + '/screenshot')))
-            print('PASS: WHEP recovery/backoff/cleanup/switch races, compact in-panel search without mode tabs, alphabetical types, session/custom ranges, question correction, images-only results, fixed Search/paging controls, typed history overlay/paging, stable evidence/focus/scroll, pending updates, reconnect pause/All, diagnostics, chart axes/gaps, stale readings, drawer, native video fullscreen, model placement/detail/failure states, filter failure recovery, repeated crop retry, 200px minimum video at 1280/1024 widths and 714/682/600/540 heights')
+            print('PASS: cameras panel add/limit/remove, WHEP recovery/backoff/cleanup/switch races, compact in-panel search without mode tabs, alphabetical types, session/custom ranges, question correction, images-only results, fixed Search/paging controls, typed history overlay/paging, stable evidence/focus/scroll, pending updates, reconnect pause/All, diagnostics, chart axes/gaps, stale readings, drawer, native video fullscreen, model placement/detail/failure states, filter failure recovery, repeated crop retry, 200px minimum video at 1280/1024 widths and 714/682/600/540 heights')
         finally:
             if session:
                 request('DELETE', f'/session/{session}')

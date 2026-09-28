@@ -1010,6 +1010,23 @@ def test_model_placement_separates_configuration_runtime_and_availability():
         assert result["models"][3]["status"] == "unavailable"
         assert result["models"][3]["configured_device"] == "GPU"
         assert result["models"][3]["runtime_device"] is None
+        # make TTS_DEVICE=CPU: placement and the readiness probe follow the selection.
+        replies["/v1/model-info"] = {"model": "microsoft/speecht5_tts", "device": "GPU"}
+        os.environ["TTS_DEVICE"] = "CPU"
+        try:
+            placement.expires = 0
+            speech = placement.snapshot({}, {})["models"][3]
+            assert speech["configured_device"] == "CPU" and speech["status"] == "mismatch"
+            try:
+                services.tts()
+                raise AssertionError("GPU speech must fail the CPU selection")
+            except RuntimeError as exc:
+                assert "expected CPU" in str(exc)
+            replies["/v1/model-info"]["device"] = "CPU"
+            assert services.tts()[0] == "microsoft/speecht5_tts on CPU"
+        finally:
+            del os.environ["TTS_DEVICE"]
+        assert services.tts()[0] == "microsoft/speecht5_tts on CPU", "CPU is the default speech device"
         replies["/pipelines/status"] = None
         placement.expires = 0
         result = placement.snapshot({"cam1": "owned"}, {"cam1": {"ok": True}})
@@ -1146,8 +1163,8 @@ def test_phase5_plan_validation_retries_then_fails_safely():
              "history_retention_seconds": 604800},
             None, generate=lambda prompt: calls.append(prompt) or bad)
         answer = assistant.ask("Summarize the recorded evidence during the last ten minutes?", "cam1")
-        assert answer["recovery"]["reason"] == "unmapped_conditions"
-        assert len(calls) == 2, "invalid plan gets one retry, never an unbounded loop"
+        # No classification fields are recorded: classes and time need no router call.
+        assert answer["intent"] == "video_history" and not answer.get("assumption") and not calls, answer
         conn.close()
 
 
@@ -1246,7 +1263,7 @@ def test_phase7_general_conversation_context_and_echo_adapter():
             assert fast.ask(question)["intent"] == "general_chat", question
         assert routed == [], routed
         for question in ("What is on camera 1?", "What was seen in the last 10 minutes?",
-                         "What are the rules?", "What is the mission objective?", "What is the NPU doing?"):
+                         "What are the rules?", "What is the mission objective?"):
             before = len(routed)
             try:
                 intent = fast.ask(question)["intent"]
@@ -1533,9 +1550,10 @@ def test_handheld_search_fast_path_and_recovery():
             assert answer["query"]["filters"]["classes"] == ["person"]
             assert a.search({"window":{"kind":"relative", "minutes":10}, "classes":None}, "cam1")["query"]
         a.queue.release()
-        assert a.ask("What was seen?", "cam1")["recovery"]["reason"] == "missing_window"
+        assert a.ask("What was seen?", "cam1")["assumption"].startswith("You didn't give a time")
         a.generate = lambda _: '{"intent":"clarification"}'
-        assert a.ask("Were there weapons in the last ten minutes?", "cam1")["recovery"]["reason"] == "unmapped_conditions"
+        weapons = a.ask("Were there weapons in the last ten minutes?", "cam1")
+        assert weapons["intent"] == "video_history" and weapons["assumption"].startswith("I can't check weapons"), weapons
         assert a.search({"window":{"kind":"relative", "minutes":10}, "classes":["invented"]}, "cam1")["recovery"]["reason"] == "invalid_filters"
         known, ceiling, scope = query_context(str(root / "phase5.db"))
         plan = validate_plan({"window":{"kind":"relative", "minutes":10}, "classes":None},
@@ -1600,6 +1618,52 @@ def test_camera_history_question_fast_path_common_phrasings():
         conn.close()
 
 
+def test_questions_never_dead_end():
+    from app.assistant import Assistant
+    snapshot = {"models": [
+        {"id": "chatqna", "label": "LLM", "configured_model": "Intel/neural-chat-7b-v3-3",
+         "configured_device": "GPU", "runtime_model": "Intel/neural-chat-7b-v3-3", "status": "ready"}]}
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        conn, _, metadata = _phase5_fixture(root)
+        cfg = {"db_path": str(root / "phase5.db"), "detector_metadata_path": str(metadata),
+               "streams": [{"stream_id": "cam1", "display_name": "Camera 1"},
+                           {"stream_id": "cam2", "display_name": "Camera 2"}]}
+        prompts = []
+        a = Assistant(cfg, None, generate=lambda prompt: prompts.append(prompt) or "It runs neural-chat on the GPU.")
+        a.models = lambda: snapshot
+        # No record words: one general call, no routing call, models in context.
+        answer = a.ask("What model is this?")
+        assert answer["intent"] == "general_chat" and len(prompts) == 1, (answer, len(prompts))
+        assert "language model: Intel/neural-chat-7b-v3-3 on GPU" in prompts[0] and "intent" not in prompts[0][:200]
+        assert "using ONLY these facts" in prompts[0]
+        # A general question that merely names hardware keeps the normal prompt.
+        prompts.clear()
+        a.ask("What is an NPU?")
+        assert len(prompts) == 1 and "using ONLY these facts" not in prompts[0], prompts
+
+        prompts.clear()
+        answer = a.ask("Tell me a joke about this setup")
+        assert answer["intent"] == "general_chat" and len(prompts) == 1
+
+        # A record question with no time searches the last 10 minutes and says so.
+        a = Assistant(cfg, None, generate=lambda _: (_ for _ in ()).throw(AssertionError("unneeded model call")))
+        answer = a.ask("What was seen?", "cam1")
+        assert answer["intent"] == "video_history" and answer["answer_text"].startswith("You didn't give a time"), answer
+
+        # Router cannot map the question: search everything, never refuse.
+        a = Assistant(cfg, None, generate=lambda _: '{"intent":"clarification"}')
+        answer = a.ask("Anything odd with the suitcases I should know about?")
+        assert answer["intent"] == "video_history" and "I can't check odd from" in answer["answer_text"], answer
+
+        # The spoken camera wins over a stale scope selector.
+        a = Assistant(cfg, None, generate=lambda _: (_ for _ in ()).throw(AssertionError("unneeded model call")))
+        answer = a.ask("Any people on camera 1 in the last 10 minutes?", "cam2")
+        assert answer["intent"] == "video_history" and answer["query"]["filters"]["streams"] == ["cam1"]
+        assert answer["answer_text"].startswith("You named Camera 1"), answer
+        conn.close()
+
+
 def test_search_options_current_session_availability():
     from app.assistant import Assistant, _utc
     with tempfile.TemporaryDirectory() as tmp:
@@ -1630,8 +1694,6 @@ def test_history_ux_regressions():
     from app.assistant import Assistant, _history_answer
     truth = {"total": 7, "class_counts": {"person": 7}, "warnings": []}
     assert _history_answer(truth) == "Found 7 person tracks in the requested window."
-    a = Assistant({}, None, generate=lambda _: (_ for _ in ()).throw(AssertionError("unneeded model call")))
-    assert a.ask("What was seen?", "cam1")["intent"] == "clarification"
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -1646,7 +1708,8 @@ def test_history_ux_regressions():
         )["recovery"]["reason"] == "camera_mismatch"
         calls.clear()
         answer = a.ask("Summarize evidence concerning person tracks in the last ten minutes?", "cam1")
-        assert not answer.get("query") and len(calls) == 2
+        # No classification fields are recorded, so no routing call is needed.
+        assert answer["query"]["filters"]["classes"] == ["person"] and not calls
         conn.close()
 
     async def responsive():
@@ -2332,14 +2395,10 @@ def test_partial_clarification_offers_broader_search():
         a = Assistant({"db_path":str(root/'phase5.db'),"detector_metadata_path":str(metadata)},
             None, generate=lambda _: next(responses))
         answer = a.ask("How many people wearing red shirts were detected in the last 10 minutes?", "cam1")
-        assert 'query' not in answer, 'partial proposal ran automatically'
-        alternative = answer['broader_search']
-        assert alternative['excluded_conditions'] == ['other conditions in the original question']
-        assert alternative['plan']['classes'] == ['person'] and alternative['plan']['streams'] == ['cam1']
-        assert alternative['plan']['window']['kind'] == 'absolute'
-        result = a.search(alternative['plan'],alternative['selected_stream'])
-        assert result['query']['total'] == 1
-        assert result['query']['window']['started_utc'] == alternative['plan']['window']['start_utc']
+        # The broader search runs, and the answer leads with what it did not check.
+        assert answer['query']['filters']['classes'] == ['person'] and answer['query']['filters']['streams'] == ['cam1']
+        assert answer['answer_text'].startswith("I can't check wearing red shirts"), answer
+        assert answer['query']['total'] == 1
         for changes in ({'unresolved_conditions':[]}, {'unresolved_conditions':['x'*257]},
                         {'plan':dict(proposal['plan'],classes=None)}):
             try:
@@ -2350,19 +2409,18 @@ def test_partial_clarification_offers_broader_search():
             else:
                 raise AssertionError('unsafe partial proposal accepted')
         a.generate = lambda _: '{"intent":"clarification"}'
-        assert 'broader_search' not in a.ask('What happened?', 'cam1'), 'invented scope for ambiguous request'
+        vague = a.ask('What happened?', 'cam1')
+        assert vague['intent'] == 'video_history' and vague['answer_text'].startswith("You didn't give a time"), vague
         short = a.ask('red shirt in the last 10 minutes', 'cam1')
-        assert short['broader_search']['plan']['classes'] is None
-        assert 'all recorded object types' in short['answer_text']
-        assert short['broader_search']['plan']['window']['kind'] == 'absolute'
+        assert short['query']['filters']['classes'] is None and 'recorded objects' in short['answer_text'], short
 
         responses = iter(['not JSON', json.dumps(proposal) + '\nUntrusted extra commentary.'])
         a.generate = lambda _: next(responses)
         recovered = a.ask('How many people wearing red shirts were detected in the last 10 minutes?', 'cam1')
-        assert recovered['broader_search']['excluded_conditions'] == ['wearing red shirts']
-        assert 'query' not in recovered and 'Untrusted extra' not in recovered['answer_text']
+        assert recovered['answer_text'].startswith("I can't check wearing red shirts"), recovered
+        assert 'Untrusted extra' not in recovered['answer_text']
         a.generate = lambda _: 'not JSON'
-        assert a.ask('How many people wearing red shirts were detected in the last 10 minutes?', 'cam1')['broader_search']['plan']['classes'] == ['person']
+        assert a.ask('How many people wearing red shirts were detected in the last 10 minutes?', 'cam1')['query']['filters']['classes'] == ['person']
 
 
         conn.close()
@@ -2416,17 +2474,17 @@ def test_dynamic_classification_metadata_queries():
         assert search({'upper_color':'red','lower_color':'black'})['query']['total'] == 0, 'labels from different moments combined'
         assert search({'upper_color':'purple'})['query']['total'] == 0, 'unseen value treated as unsupported taxonomy'
         assert search({'surface_finish':'A42'})['query']['total'] == 1, 'domain vocabulary was hardcoded'
-        assert search({'surface_finish':'A42'},'cam2')['recovery']['reason'] == 'attribute_data_unavailable'
+        other = search({'surface_finish':'A42'},'cam2')
+        assert other['missing_attributes'] == ['surface_finish'] and other['query']['filters']['attributes'] == []
         window = {'kind':'absolute','start_utc':_utc(now-timedelta(seconds=118)), 'end_utc':_utc(now-timedelta(seconds=100))}
         assert search({'upper_color':'red'},window=window)['query']['total'] == 0, 'old attributes leaked into later window'
-        assert search({'invented_field':'x'})['recovery']['reason'] == 'attribute_data_unavailable'
+        assert search({'invented_field':'x'})['missing_attributes'] == ['invented_field']
         unavailable = search({'upper_color':'red','invented_field':'x'})
-        alternative = unavailable['broader_search']
-        assert alternative['excluded_attributes'] == [{'name':'invented_field','value':'x'}]
-        assert alternative['plan']['attributes'] == [{'name':'upper_color','value':'red'}]
-        assert alternative['plan']['classes'] == ['person'] and alternative['plan']['streams'] == ['cam1']
-        assert alternative['plan']['window']['kind'] == 'absolute'
-        assert a.search(alternative['plan'], alternative['selected_stream'])['query']['total'] == 1
+        # Unavailable data is searched around and stated, never reported as a zero count.
+        assert unavailable['missing_attributes'] == ['invented_field']
+        assert unavailable['query']['filters']['attributes'] == [{'name':'upper_color','value':'red'}]
+        assert unavailable['query']['filters']['classes'] == ['person'] and unavailable['query']['filters']['streams'] == ['cam1']
+        assert unavailable['answer_text'].startswith('No invented_field data is recorded')
         empty = search({'upper_color':'purple'})
         assert empty['query']['total'] == 0 and empty['broader_search']['plan']['attributes'] == []
         assert empty['broader_search']['plan']['window']['start_utc'] == empty['query']['window']['started_utc']
@@ -2441,7 +2499,7 @@ def test_dynamic_classification_metadata_queries():
             observed_at=now.timestamp()-10,session='s2')))
         ing._flush_intervals(force=True); ing.conn.commit()
         assert attribute_catalog(cfg['db_path'],'cam1') == []
-        assert search({'upper_color':'red'})['recovery']['reason'] == 'attribute_data_unavailable'
+        assert search({'upper_color':'red'})['missing_attributes'] == ['upper_color']
         ing.conn.execute("DELETE FROM tracks WHERE stream_id='cam1'")
         ing.conn.commit()
         assert ing.conn.execute('SELECT count(*) FROM attribute_samples').fetchone()[0] == 1
@@ -2471,10 +2529,10 @@ def test_unmapped_conditions_and_catalog_overflow_degrade_safely():
                          "Show suspicious people in the last ten minutes",
                          "Which people in uniform were seen in the last ten minutes"):
             answer = dropped.ask(question, "cam1")
-            assert "query" not in answer, f"unfiltered search answered {question!r}"
-            assert answer["intent"] == "clarification", answer
-            assert answer["broader_search"]["plan"]["classes"] == ["person"], answer
-            assert "will not check" in answer["answer_text"] or "not check" in answer["answer_text"]
+            # The broader search is labelled as such before any count is given.
+            assert answer["intent"] == "video_history", answer
+            assert answer["query"]["filters"]["classes"] == ["person"], answer
+            assert answer["answer_text"].startswith("I can't check"), answer
         # The same guard must not block an ordinary question.
         plain = dropped.ask("Show people in the last ten minutes", "cam1")
         assert plain["intent"] == "video_history" and plain["query"]["total"] == 1, plain
@@ -2848,6 +2906,7 @@ def test_rule_options_validate_patch_clear_and_old_rows_load():
             {"class_label": "person", "zone": {"points": [[0, 0], [1, 1], [1, 1]]}},
             {"class_label": "person", "zone": {"points": [[0, 0], [0.0001, 0], [0.0002, 0]]}},
             {"class_label": "person", "zone": {"points": [[0.1, 0.1], [0.9, 0.1], [0.9, 0.9], [0.5, 0.95], [0.1, 0.9], [0.05, 0.5]]}},
+            {"class_label": "person", "zone": {"points": [[0.1, 0.1], [0.9, 0.1], [0.1, 0.9], [0.9, 0.9]]}},
         ):
             try:
                 alerts.create(ing.conn, bad)
@@ -3160,6 +3219,7 @@ def test_tracker_predicted_confidence_never_becomes_peak_or_matches_threshold_ru
             crop = json.loads(pipelines._request_body({"source_uri": "rtsp://x", "annotated_path": "a",
                                                        "stream_id": "cam1"})["parameters"]["crop-config"])
             assert crop.get("predicted_confidence") == expected, crop
+            assert crop["config"].endswith("/template.json") and crop["stream_id"] == "cam1", crop
         pipelines.PIPELINE, pipelines.PREDICTED_CONFIDENCE = saved
         ing = _ingest(tmp)
         ing.predicted_confidence = 1.0
@@ -3831,7 +3891,7 @@ def test_phase9_numbered_stream_preserves_order_and_chunk_shape():
             early.feed(delta)
         early.finish()
         expected_chunks = speech.short_head(chunks)
-        assert expected_chunks[0] == "1. Drones primarily rely on direct", expected_chunks
+        assert expected_chunks[0] == "1. Drones primarily rely on direct radio", expected_chunks
         for expected in expected_chunks:
             speech_id = _wait_text_current(arbiter, expected)
             assert arbiter.ack(speech_id, "ended")
@@ -3847,6 +3907,8 @@ def test_first_answer_words_are_spoken_before_the_first_sentence_ends():
 
     assert speech.short_head(["A thermal camera detects infrared radiation and shows it as heat."]) == [
         "A thermal camera detects infrared radiation", "and shows it as heat."]
+    assert speech.short_head(["The sky appears blue due to the scattering of sunlight."])[0] == (
+        "The sky appears blue"), "the head must not end on a leaning word"
     # A clause boundary inside the head wins; short sentences stay whole.
     assert speech.short_head(["A thermal camera detects heat, so it sees through smoke and fog."])[0] == (
         "A thermal camera detects heat,")
@@ -3856,7 +3918,9 @@ def test_first_answer_words_are_spoken_before_the_first_sentence_ends():
     assert speech.early_head("A thermal camera") == (None, "A thermal camera")
     assert speech.early_head("A thermal camera detects infrared radiat") == (None, "A thermal camera detects infrared radiat")
     assert speech.early_head("A thermal camera detects infrared radiation and ") == (
-        "A thermal camera detects infrared radiation", "and ")
+        None, "A thermal camera detects infrared radiation and ")
+    assert speech.early_head("A thermal camera detects infrared radiation and turns ") == (
+        "A thermal camera detects infrared radiation", "and turns ")
 
     speech.PLAYBACK_MARGIN_SECONDS = 0.0
     spoken = []
@@ -3864,11 +3928,15 @@ def test_first_answer_words_are_spoken_before_the_first_sentence_ends():
     arbiter.start()
     try:
         early = EarlyAnswerSpeech(arbiter, arbiter.answer_generation)
-        for delta in ("A thermal ", "camera detects infrared ", "radiation and "):
+        for delta in ("A thermal ", "camera detects infrared ", "radiation and turns "):
             early.feed(delta)
         first = _wait_text_current(arbiter, "A thermal camera detects infrared radiation")
-        early.feed("turns it into images. It sees through smoke.")
+        early.feed("it into images. It sees through smoke.")
         early.finish()
+        deadline = time.time() + 2
+        while "and turns it into images." not in spoken and time.time() < deadline:
+            time.sleep(0.01)
+        assert "and turns it into images." in spoken, "text streamed during playback must be synthesized before it ends"
         assert arbiter.ack(first, "ended")
         for expected in ("and turns it into images.", "It sees through smoke."):
             assert arbiter.ack(_wait_text_current(arbiter, expected), "ended")
@@ -4009,6 +4077,34 @@ def _wait_text_current(arbiter, text, timeout=3.0):
         assert time.monotonic() < deadline, f"{text!r} never became current"
         time.sleep(0.01)
     return arbiter.snapshot()["current"]["id"]
+
+
+def test_ready_next_chunk_is_exposed_and_its_early_acks_are_kept():
+    from app import speech
+
+    speech.PLAYBACK_MARGIN_SECONDS = 0.0
+    arbiter = speech.Arbiter(lambda text: _wav(0.5), alert_floor=0.0)
+    arbiter.start()
+    try:
+        assert arbiter.say_answer("First chunk here now. Second chunk follows here.", arbiter.answer_generation)
+        first = _wait_text_current(arbiter, "First chunk here now.")
+        deadline = time.monotonic() + 3
+        while arbiter.snapshot()["next"] is None:
+            assert time.monotonic() < deadline, "prefetched chunk never exposed"
+            time.sleep(0.01)
+        nxt = arbiter.snapshot()["next"]
+        assert nxt["text"] == "Second chunk follows here." and nxt["audio_base64"]
+        # The browser starts the preload as its clip ends, before promotion.
+        assert arbiter.ack(first, "started")
+        assert arbiter.ack(nxt["id"], "started"), "early start of the ready next chunk must be accepted"
+        assert arbiter.ack(first, "ended")
+        assert _wait_text_current(arbiter, "Second chunk follows here.") == nxt["id"]
+        assert arbiter.ack(nxt["id"], "ended")
+        _settle(arbiter)
+        assert arbiter.snapshot()["last"]["outcome"] == "spoken"
+        assert not arbiter.ack("unknown", "started")
+    finally:
+        arbiter.close()
 
 
 def test_phase9_prefetch_rejects_late_results_failures_and_answer_outranks_alerts():
@@ -4198,6 +4294,327 @@ def test_live_and_rule_work_leave_event_loop_responsive():
                     assert response.status_code == 422
                 assert len(calls) == before, "invalid action reached writer"
     asyncio.run(check())
+
+
+def test_old_stream_error_cannot_cancel_new_answer():
+    from app.main import EarlyAnswerSpeech
+    from app.speech import Arbiter
+    arbiter = Arbiter(lambda text: _wav(.01))
+    old = EarlyAnswerSpeech(arbiter, arbiter.answer_generation)
+    arbiter.cancel_answer()
+    new = arbiter.say_answer("Keep this newer answer.", arbiter.answer_generation)
+    old.cancel()
+    assert new in arbiter.queue
+    active = EarlyAnswerSpeech(arbiter, arbiter.answer_generation)
+    active.cancel()
+    assert new not in arbiter.queue
+
+
+def test_replay_answer_validation_and_recording_guard():
+    import asyncio
+    from app.main import create_app
+    from app.speech import Arbiter
+    async def check():
+        app = create_app()
+        app.state.arbiter = Arbiter(lambda text: _wav(.01))
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            for body in ({}, {"text": ""}, {"text": 5}, {"text": "x" * 8001}, {"text": "ok", "extra": 1}):
+                assert (await client.post("/api/speech/replay", json=body)).status_code == 422
+            assert (await client.post("/api/speech/replay", content="{")).status_code == 422
+            app.state.arbiter.set_talk(True)
+            assert (await client.post("/api/speech/replay", json={"text": "Hello."})).status_code == 409
+            app.state.arbiter.set_talk(False)
+            response = await client.post("/api/speech/replay", json={"text": "Hello."})
+            assert response.status_code == 200
+            assert app.state.arbiter.queue[0]["text"] == "Hello."
+            arbiter = app.state.arbiter
+            arbiter.begin_answer(arbiter.answer_generation)
+            assert (await client.post("/api/speech/replay", json={"text": "Hello."})).status_code == 409
+            arbiter.end_answer()
+            response = await client.post("/api/speech/replay", json={"text": "Short sentence here. " * 200})
+            assert response.status_code == 200
+            item = arbiter.queue[-1]
+            spoken = " ".join([item["text"], *item["remaining"]])
+            assert len(spoken) <= 1500 and spoken.endswith("."), len(spoken)
+            # A generation change between cancel and queueing yields no item: 422, not 500.
+            real = arbiter.say_answer
+            arbiter.say_answer = lambda text, generation: None
+            assert (await client.post("/api/speech/replay", json={"text": "Hello."})).status_code == 422
+            arbiter.say_answer = real
+    asyncio.run(check())
+
+
+class FakeMediaMtx:
+    """MediaMTX config-path API: add/patch/delete/list, with injectable refusal."""
+
+    def __init__(self):
+        self.paths, self.calls, self.refuse = {}, [], None
+
+    def __call__(self, request):
+        verb, _, name = request.url.path.removeprefix("/v3/config/paths/").partition("/")
+        self.calls.append((request.method, verb, name))
+        if verb == "list":
+            return httpx.Response(200, json={"items": [
+                {"name": n, "source": body["source"]} for n, body in self.paths.items()]})
+        if verb == "add":
+            if self.refuse:
+                return httpx.Response(400, json={"error": self.refuse})
+            if name in self.paths:
+                return httpx.Response(400, json={"error": "path already exists"})
+            self.paths[name] = json.loads(request.content)
+            return httpx.Response(200)
+        if verb == "patch":
+            self.paths[name] = json.loads(request.content)
+            return httpx.Response(200)
+        if verb == "delete":
+            return httpx.Response(200 if self.paths.pop(name, None) else 404)
+        return httpx.Response(404)
+
+
+def _camera_state(tmp, config=("cam1", "cam2")):
+    from app import cameras
+
+    ing = _ingest(tmp, cameras=config)
+    db = str(Path(tmp) / "ingest.db")
+    mediamtx = FakeMediaMtx()
+    cfg = {"db_path": db, "max_streams": 3, "rtsp_base": "rtsp://mediamtx:8554",
+           "services": {"mediamtx": "http://mediamtx:9997"},
+           "camera_source_allow": ["192.168.0.0/16", "cam.example"],
+           "streams": [{"stream_id": c, "display_name": c, "description": "yard"} for c in config]}
+    cfg["config_streams"] = list(cfg["streams"])
+    state = types.SimpleNamespace(cfg=cfg, ingest=ing,
+        services=types.SimpleNamespace(client=httpx.Client(transport=httpx.MockTransport(mediamtx))))
+    state.alerts = _alerts(ing, db, streams=config)
+    cameras.refresh(state)
+    return state, mediamtx
+
+
+def _camera_error(call):
+    from app.cameras import CameraError
+    try:
+        call()
+    except CameraError as exc:
+        return exc
+    raise AssertionError("expected CameraError")
+
+
+def test_camera_pull_url_validation():
+    from app.cameras import validate_pull_url
+    allow = ["192.168.0.0/16", "10.0.0.0/8", "cam.example"]
+    for good in ("rtsp://192.168.1.20:554/stream1", "rtsps://10.1.2.3/live", "rtsp://cam.example/a"):
+        assert validate_pull_url(good, allow) == good
+    for bad, status in (("http://192.168.1.2/x", 422), ("rtsp://user:pw@192.168.1.2/x", 422),
+                        ("rtsp://@192.168.1.2/x", 422), ("rtsp://127.0.0.1/cam1", 403),
+                        ("rtsp://169.254.1.1/x", 403), ("rtsp://224.0.0.1/x", 403),
+                        ("rtsp://0.0.0.0/x", 403), ("rtsp://8.8.8.8/x", 403),
+                        ("rtsp://other.example/x", 403), ("rtsp://192.168.1.2:99999/x", 422),
+                        ("rtsp://192.168.1.2/a b", 422), ("rtsp:///x", 422), ("", 422), (5, 422),
+                        ("rtsp://192.168.1.2/" + "x" * 600, 422)):
+        assert _camera_error(lambda: validate_pull_url(bad, allow)).status == status, bad
+
+
+def test_config_cameras_keep_operator_rows_and_locked_names():
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = connect(str(Path(tmp) / "app.db"))
+        migrate(conn)
+        migrate(conn)
+        row = lambda sid, name="cam", enabled=True: {"stream_id": sid, "display_name": name,
+            "source_uri": "u", "annotated_path": "a", "enabled": enabled, "sort_order": 0}
+        sync_streams(conn, [row("cam1", "Gate")])
+        conn.execute("INSERT INTO streams (stream_id, display_name, source_uri, annotated_path,"
+                     " enabled, origin) VALUES ('cam2','Mine','u','a',1,'operator')")
+        conn.execute("UPDATE streams SET display_name='Front', name_locked=1 WHERE stream_id='cam1'")
+        sync_streams(conn, [row("cam1", "Gate"), row("cam2", "Config two")])
+        rows = {r["stream_id"]: r for r in conn.execute("SELECT * FROM streams")}
+        assert rows["cam1"]["display_name"] == "Front"
+        assert rows["cam2"]["display_name"] == "Mine" and rows["cam2"]["origin"] == "operator"
+        sync_streams(conn, [])  # retiring config cameras never touches operator ones
+        rows = {r["stream_id"]: r for r in conn.execute("SELECT * FROM streams")}
+        assert not rows["cam1"]["enabled"] and rows["cam2"]["enabled"]
+        conn.close()
+
+
+def test_camera_add_rename_toggle_remove_and_limits():
+    from app import cameras, pipelines
+
+    with tempfile.TemporaryDirectory() as tmp:
+        state, mediamtx = _camera_state(tmp)
+        conn = state.ingest.conn
+        pipelines.wake.clear()
+        cam3 = cameras.add(state, {"display_name": " Back  door ", "source": {"kind": "publish"}})
+        assert cam3 == "cam3" and pipelines.wake.is_set()
+        row = conn.execute("SELECT * FROM streams WHERE stream_id='cam3'").fetchone()
+        assert row["display_name"] == "Back door" and row["origin"] == "operator"
+        assert row["source_uri"] == "rtsp://mediamtx:8554/cam3" and row["annotated_path"] == "annotated3"
+        assert "cam3" in state.ingest.known and "cam3" in state.alerts.enabled_streams
+        assert [s["stream_id"] for s in state.cfg["streams"]] == ["cam1", "cam2", "cam3"]
+        assert state.cfg["streams"][0]["description"] == "yard"  # config extras kept
+        # At the measured limit: refused, nothing written, nothing sent to MediaMTX.
+        full = _camera_error(lambda: cameras.add(state, {"display_name": "Roof",
+            "source": {"kind": "pull", "url": "rtsp://192.168.1.9/s"}}))
+        assert full.status == 409 and full.code == "camera_limit" and not mediamtx.calls
+        for body in ({"display_name": "BACK DOOR", "source": {"kind": "publish"}},):
+            cameras.update(state, "cam3", {"enabled": False})
+            assert _camera_error(lambda: cameras.add(state, body)).code == "name_taken"
+        for body in (None, {}, {"display_name": "x"}, {"display_name": "x", "source": {"kind": "file"}},
+                     {"display_name": "x", "source": {"kind": "publish", "url": "rtsp://x"}},
+                     {"display_name": "\x07", "source": {"kind": "publish"}},
+                     {"display_name": "x" * 41, "source": {"kind": "publish"}},
+                     {"display_name": "x", "source": {"kind": "publish"}, "extra": 1}):
+            assert _camera_error(lambda: cameras.add(state, body)).status == 422, body
+        assert "cam3" not in state.ingest.known and "cam3" not in state.alerts.enabled_streams
+        # Pull camera: MediaMTX path added over TCP; the failed add leaves no row.
+        mediamtx.refuse = "invalid source"
+        refused = _camera_error(lambda: cameras.add(state, {"display_name": "Roof",
+            "source": {"kind": "pull", "url": "rtsp://192.168.1.9/s"}}))
+        assert refused.status == 502 and "invalid source" in str(refused)
+        assert conn.execute("SELECT count(*) FROM streams").fetchone()[0] == 3
+        mediamtx.refuse = None
+        cam4 = cameras.add(state, {"display_name": "Roof",
+                                   "source": {"kind": "pull", "url": "rtsp://192.168.1.9/s"}})
+        assert cam4 == "cam4" and mediamtx.paths["cam4"] == {
+            "source": "rtsp://192.168.1.9/s", "sourceOnDemand": False, "rtspTransport": "tcp"}
+        assert _camera_error(lambda: cameras.add(state, {"display_name": "Dup",
+            "source": {"kind": "pull", "url": "rtsp://192.168.1.9/s"}})).code == "camera_limit"
+        # Re-enable at the limit is refused; rename is always allowed.
+        assert _camera_error(lambda: cameras.update(state, "cam3", {"enabled": True})).code == "camera_limit"
+        cameras.update(state, "cam1", {"display_name": "Gate"})
+        assert state.alerts.names["cam1"] == "Gate"
+        assert conn.execute("SELECT name_locked FROM streams WHERE stream_id='cam1'").fetchone()[0] == 1
+        # Config cameras follow the deployment for on/off and removal.
+        assert _camera_error(lambda: cameras.update(state, "cam1", {"enabled": False})).code == "config_camera"
+        assert _camera_error(lambda: cameras.remove(state, "cam1", "cam1")).code == "config_camera"
+        assert _camera_error(lambda: cameras.update(state, "cam9", {"display_name": "x"})).status == 404
+        # Disabling a pull camera drops its MediaMTX path; removal is soft.
+        cameras.update(state, "cam4", {"enabled": False})
+        assert "cam4" not in mediamtx.paths
+        assert _camera_error(lambda: cameras.remove(state, "cam3", "cam4")).status == 422
+        cameras.remove(state, "cam3", "cam3")
+        row = conn.execute("SELECT * FROM streams WHERE stream_id='cam3'").fetchone()
+        assert row["removed_utc"] and not row["enabled"]
+        assert "cam3" not in [s["stream_id"] for s in state.cfg["streams"]]
+        assert state.alerts.names["cam3"] == "Back door"  # past alerts keep their label
+        assert _camera_error(lambda: cameras.update(state, "cam3", {"display_name": "x"})).status == 404
+        # Removed ids are never reused; a removed name is free again.
+        assert cameras.add(state, {"display_name": "Back door", "source": {"kind": "publish"}}) == "cam5"
+        actions = [r[0] for r in conn.execute("SELECT action FROM camera_audit ORDER BY audit_id")]
+        assert actions == ["added", "disabled", "added", "add_failed", "added", "renamed", "disabled", "removed", "added"], actions
+        view = cameras.view(conn, state.cfg, {})
+        assert [c["stream_id"] for c in view["cameras"]] == ["cam1", "cam2", "cam4", "cam5"]
+        assert view["enabled_count"] == 3 and view["max_streams"] == 3
+        assert view["cameras"][3]["source"]["publish_url"] == "rtsp://127.0.0.1:8554/cam5"
+        assert view["cameras"][2]["feed"]["reason"] == "off"
+        state.alerts.close()
+        state.ingest.conn.close()
+
+
+def test_camera_budget_and_pull_path_restore():
+    from app import cameras
+
+    with tempfile.TemporaryDirectory() as tmp:
+        state, mediamtx = _camera_state(tmp, config=("cam1",))
+        conn = state.ingest.conn
+        cameras.add(state, {"display_name": "A", "source": {"kind": "pull", "url": "rtsp://192.168.1.2/a"}})
+        cameras.add(state, {"display_name": "B", "source": {"kind": "publish"}})
+        # MediaMTX restarted (runtime path gone) and holds a path nobody wants.
+        mediamtx.paths = {"cam7": {"source": "rtsp://192.168.1.7/x"}}
+        cameras.ensure_pull_paths(conn, state.cfg, state.services.client)
+        assert set(mediamtx.paths) == {"cam2"}
+        calls = len(mediamtx.calls)
+        cameras.ensure_pull_paths(conn, state.cfg, state.services.client)
+        assert len(mediamtx.calls) == calls + 1  # steady state: one list, no writes
+        # The deployment grew to 2 config cameras: newest console camera turns off.
+        conn.execute("INSERT INTO streams (stream_id, display_name, source_uri, annotated_path,"
+                     " enabled, origin) VALUES ('cam9','cfg','u','a',1,'config')")
+        assert cameras.enforce_budget(conn, 3) == ["cam3"]
+        assert cameras.enforce_budget(conn, 3) == []
+        assert conn.execute("SELECT action FROM camera_audit ORDER BY audit_id DESC").fetchone()[0] \
+            == "disabled_over_budget"
+        state.alerts.close()
+        state.ingest.conn.close()
+
+
+def test_ingest_set_known_closes_removed_camera_and_grants_new_grace():
+    with tempfile.TemporaryDirectory() as tmp:
+        ing = _ingest(tmp)
+        ing._on_message(None, None, types.SimpleNamespace(
+            topic="detections/live", payload=_observation("cam2", 1)))
+        assert ing.active and ing.health.get("cam2")
+        ing.started_at -= 10_000  # long past the startup grace
+        ing.set_known(["cam1", "cam3"])
+        assert ing.known == {"cam1", "cam3"}
+        assert not any(k[0] == "cam2" for k in ing.active) and "cam2" not in ing.health
+        closed = ing.conn.execute("SELECT closure_reason FROM tracks WHERE stream_id='cam2'").fetchone()
+        assert closed[0] == "camera_disabled"
+        assert ing.conn.execute("SELECT count(*) FROM feed_health WHERE stream_id='cam2' "
+                                "AND ended_utc IS NULL").fetchone()[0] == 0
+        now = time.monotonic()
+        assert ing.initial_feed_reason(now, "cam3") == "starting"
+        assert ing.initial_feed_reason(now, "cam1") == "no_signal_yet"
+        ing._on_message(None, None, types.SimpleNamespace(
+            topic="detections/live", payload=_observation("cam2", 2, observed_at=2000.0)))
+        assert not any(k[0] == "cam2" for k in ing.active)  # a removed camera is ignored
+        ing.conn.close()
+
+
+def test_rule_on_removed_camera_can_still_be_turned_off():
+    from app.alerts import RuleError
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ing = _ingest(tmp)
+        alerts = _alerts(ing, str(Path(tmp) / "ingest.db"))
+        rule = alerts.create(ing.conn, {"stream_id": "cam2", "class_label": "person"})
+        alerts.set_streams({"cam1": "Camera 1", "cam2": "Camera 2"}, ["cam1"])
+        for body in ({"cooldown_seconds": 90}, {"enabled": True}):
+            try:
+                alerts.update(ing.conn, rule["rule_id"], body)
+            except RuleError:
+                pass
+            else:
+                raise AssertionError(f"rule on a removed camera accepted {body}")
+        assert alerts.update(ing.conn, rule["rule_id"], {"enabled": False})["enabled"] is False
+        alerts.update(ing.conn, rule["rule_id"], {"cooldown_seconds": 90})  # off: editable
+        try:
+            alerts.create(ing.conn, {"stream_id": "cam2"})
+        except RuleError:
+            pass
+        else:
+            raise AssertionError("new rule on a removed camera accepted")
+        alerts.close()
+        ing.conn.close()
+
+
+def test_camera_api_envelopes():
+    import asyncio
+    from app.main import create_app
+
+    with tempfile.TemporaryDirectory() as tmp:
+        state, _ = _camera_state(tmp)
+        app = create_app()
+        for key, value in vars(state).items():
+            setattr(app.state, key, value)
+        app.state.db = state.ingest.conn
+
+        async def check():
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                         base_url="http://test") as client:
+                listed = (await client.get("/api/cameras")).json()["data"]
+                assert listed["enabled_count"] == 2
+                added = await client.post("/api/cameras", json={"display_name": "Dock",
+                                                                "source": {"kind": "publish"}})
+                assert added.status_code == 201 and added.json()["data"]["stream_id"] == "cam3"
+                full = await client.post("/api/cameras", json={"display_name": "Yard",
+                                                               "source": {"kind": "publish"}})
+                assert full.status_code == 409 and full.json()["error"]["code"] == "camera_limit"
+                assert (await client.post("/api/cameras", content="{")).status_code == 422
+                renamed = await client.patch("/api/cameras/cam3", json={"display_name": "Dock 2"})
+                assert renamed.status_code == 200
+                gone = await client.delete("/api/cameras/cam3?confirm=cam3")
+                assert gone.status_code == 200 and gone.json()["data"]["enabled_count"] == 2
+                assert (await client.delete("/api/cameras/cam3?confirm=cam3")).status_code == 404
+        asyncio.run(check())
+        state.alerts.close()
+        state.ingest.conn.close()
 
 
 if __name__ == "__main__":

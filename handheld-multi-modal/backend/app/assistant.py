@@ -128,8 +128,15 @@ def _compact_operator_guide() -> str:
     return "\n".join(sections)
 
 
-def _general_prompt(question: str, turns: list[tuple[str, str]], application: str = "") -> str:
+def _general_prompt(question: str, turns: list[tuple[str, str]], application: str = "", facts: str = "",
+                    about_self: bool = False) -> str:
     context = _render_context(turns) or "No prior general-conversation turns."
+    if about_self and facts and not application:
+        return f"""The operator is asking about you, this console assistant, and the device you run on.
+Answer in at most 3 sentences using ONLY these facts; name each model and its device.
+Ignore retrieved documents. "This" and "you" mean this assistant.
+{facts}
+Current user question: {question}"""
     guide = f"""Use the application guide for questions about this system. Say when a system detail
 is not documented; do not substitute generic product advice or invent controls.
 Never describe what is on camera, what was seen, or what exists in the physical world.
@@ -147,7 +154,7 @@ directly relevant to the current question.
 Prior general-conversation turns:
 {context}
 
-Current user question: {question}"""
+{facts}Current user question: {question}"""
 
 
 GENERAL_QUESTION = re.compile(
@@ -158,6 +165,47 @@ _VIDEO_OR_APP = re.compile(
     r"|mission|brief|sector|today|yesterday|tonight|now|currently|current|recent\w*|last|past|ago|since|minutes?"
     r"|hours?|seconds?|morning|afternoon|evening|\d{1,2}:\d{2}|here|there|this|that|it|they|them"
     r"|pause|search|application|app|button|panel|screen|audio|speech|model|device|npu|gpu|cpu)\b", re.I)
+
+
+DEFAULT_WINDOW = {"kind": "relative", "minutes": 10}
+NO_TIME_NOTE = "You didn't give a time, so I searched the last 10 minutes."
+TIME_WORDS = re.compile(r"\b(?:last|past|previous|today|yesterday|since|between|before|after|ago|minutes?|hours?|days?)\b"
+                        r"|\d{4}-\d{2}-\d{2}", re.I)
+_RECORD_TERMS = re.compile(
+    r"\b(?:cam(?:era)?\s*\d+|tracks?|tracked|seen|saw|see|seeing|detected|detections?|recorded|observed|footage"
+    r"|evidence|images?|snips?|happen\w*|going on|activity|movement|moving|show me|find|any(?:one|body|thing)"
+    r"|alerts?|today|yesterday|tonight|last|past|ago|since|between|minutes?|hours?|morning|afternoon|evening"
+    r"|\d{1,2}:\d{2})\b", re.I)
+_PLAIN_QUERY_WORDS = {
+    "show", "find", "list", "were", "was", "there", "any", "anything", "anyone", "anybody", "seen", "see",
+    "detected", "recorded", "observed", "tracks", "track", "the", "a", "an", "in", "on", "of", "for", "me",
+    "last", "past", "minutes", "minute", "hours", "hour", "today", "all", "camera", "cameras", "cam",
+    "how", "many", "what", "which", "did", "do", "you", "is", "are", "i", "people", "going", "happened",
+    "happening", "activity", "movement", "moving", "images", "evidence", "ten", "five", "two", "one",
+    "fifteen", "thirty", "sixty", "yesterday", "since", "ago", "and", "or", "summarize", "summarise",
+    "summary", "during", "within", "over", "from", "recent", "recently", "give", "tell", "about", "check",
+    "report", "been", "some", "time", "period", "window", "please", "can", "could", "would", "shows",
+    "happen", "happens", "has", "have", "had", "any", "to", "at", "by", "with", "it", "that", "this",
+    "there", "here", "number", "count", "total", "concerning", "regarding", "record", "records",
+    "should", "know", "need", "want", "look", "looking", "we", "us", "my", "our", "be", "if", "so", "just",
+    "right", "now", "currently", "still", "yet", "were", "get", "got", "notice", "noticed", "else"}
+
+
+def _leftover_words(text: str, labels) -> list[str]:
+    """Words a class-and-time search would silently ignore."""
+    words = re.findall(r"[a-z]+", re.sub(r"\bcam(?:era)?\s*\d+", " ", text.lower()))
+    names = {part for label in labels for part in label.lower().replace("_", " ").split()}
+    return [w for w in words if w not in _PLAIN_QUERY_WORDS and w not in names
+            and w.rstrip("s") not in names and not w.isdigit()]
+
+
+def _record_terms(text: str, labels) -> bool:
+    """Whether a question asks about recorded observations rather than general topics."""
+    if _RECORD_TERMS.search(text):
+        return True
+    words = set(re.findall(r"[a-z]+", text.lower().replace("_", " ")))
+    return any(set(label.lower().replace("_", " ").split()) <= words
+               or label.lower() + "s" in words for label in labels) or "people" in words
 
 
 def _video_or_app_terms(text: str, labels) -> bool:
@@ -1011,17 +1059,6 @@ def broader_search(plan, excluded_names):
             "selected_stream": plan["streams"][0] if len(plan["streams"]) == 1 else None}
 
 
-def capability_clarification(catalog):
-    names = sorted({row["name"] for row in catalog})
-    available = ("Recorded attribute fields: " + ", ".join(names) + ". "
-                 if names else "No classification attributes are indexed for the selected camera scope. ")
-    if getattr(catalog, "truncated", False):
-        available += ("More recorded fields exist than are listed here; select one camera to describe fewer. ")
-    return clarification("I can’t map every condition in this question to the available records. "
-        + available + "No search was run. Clarify the recorded field you mean, or change the requested filters.",
-        "unmapped_conditions", available_attributes=catalog)
-
-
 def unsupported_concept_pattern(terms: object = None) -> str:
     """Regex matching qualities the detector cannot establish by itself."""
     words = terms if isinstance(terms, list) and terms else UNSUPPORTED_CONCEPT_TERMS
@@ -1038,21 +1075,6 @@ def unmapped_conditions(text, plan, pattern: str | None = None):
         if phrase not in mapped and phrase not in found:
             found.append(phrase)
     return found
-
-
-def condition_proposal(plan, catalog, unresolved):
-    """Offer a broader search instead of answering a question we did not fully filter."""
-    answer = capability_clarification(catalog)
-    missing = {a["name"] for a in plan["attributes"]} - {row["name"] for row in catalog}
-    alternative = broader_search(plan, missing)
-    alternative["excluded_conditions"] = list(unresolved)
-    answer["broader_search"] = alternative
-    subject = (", ".join(plan["classes"]) + " tracks" if plan["classes"]
-               else "all recorded object types")
-    answer["answer_text"] = ("I can offer a broader search for " + subject
-        + " in the same camera scope and time window. It will not check: "
-        + "; ".join(unresolved) + ". No search has run yet.")
-    return answer
 
 
 def _class_label(phrase: str, labels: tuple[str, ...]) -> str | None:
@@ -1139,6 +1161,7 @@ class Assistant:
         self.retention = timedelta(seconds=float(cfg.get("history_retention_seconds", 604800)))
         self.page_secret = secrets.token_bytes(32)
         self.mission = mission
+        self.models = None
         self._context_lock = threading.RLock()
         self._conversation_id = ContextVar("conversation_id", default="")
         self._conversations = {"": Conversation()}
@@ -1397,11 +1420,11 @@ class Assistant:
             names = {row["name"] for row in catalog if row["stream_id"] in plan["streams"]}
             missing = sorted(set(requested) - names)
             if missing:
-                answer = clarification("No indexed observations of " + ", ".join(missing)
-                    + " are available for this camera scope and time window. This is unavailable data, not a zero count. "
-                    "You can view broader records without those conditions.",
-                    "attribute_data_unavailable", missing_attributes=missing)
-                answer["broader_search"] = broader_search(plan, missing)
+                broader = broader_search(plan, missing)
+                answer = self._best_effort(broader["plan"], broader["selected_stream"],
+                    "No " + ", ".join(missing) + " data is recorded for this camera and time, so I searched without it"
+                    " (unavailable data, not a zero count).")
+                answer["missing_attributes"] = missing
                 return answer
         result = query_history(self.cfg["db_path"], plan, cutoff, ceiling, scope, cursor)
         next_cursor = result.pop("next_cursor")
@@ -1416,6 +1439,18 @@ class Assistant:
             answer["broader_search"] = broader_search(plan, {a["name"] for a in plan["attributes"]})
             answer["answer_text"] += " You can view the same object types in this window without the attribute filters."
         return answer
+
+    def _best_effort(self, raw_plan, selected_stream, note, emit=None):
+        """Answer with the closest search the records support and say what it skipped.
+
+        Operators asked by voice cannot fill in a form, so a question is never
+        refused for a missing detail: the note states the assumption or the
+        condition that was not checked, ahead of the counts.
+        """
+        answer = self.search(raw_plan, selected_stream, emit)
+        answer["answer_text"] = note + " " + answer["answer_text"]
+        answer["assumption"] = note
+        return self.remember_result(answer)
 
     def _application_answer(self, question, answer):
         _, generation = self._begin_intent("general_chat")
@@ -1436,6 +1471,23 @@ class Assistant:
                     "detector_classes": list(detector_labels(self.cfg["detector_metadata_path"]))
                         if self.cfg.get("detector_metadata_path") else None}))
 
+    def model_facts(self) -> str:
+        """One short line, always in general prompts: "what model/hardware are you" is common."""
+        if not self.models:
+            return ""
+        roles = {"dlsps": "object detection", "chatqna": "this assistant's language model",
+                 "audio_analyzer": "voice transcription", "tts": "spoken answers"}
+        try:
+            rows = self.models().get("models", [])
+        except Exception:
+            log.warning("model placement unavailable for the general prompt", exc_info=True)
+            return ""
+        return ("True facts about you, this assistant, which you may state when asked: you run on this "
+                "edge device with these models: " + "; ".join(
+                    f"{roles.get(row.get('id'), row.get('label'))}: {row.get('runtime_model') or row.get('configured_model')}"
+                    f" on {row.get('runtime_device') or row.get('configured_device') or 'an unreported device'}"
+                    for row in rows) + ".\n")
+
 
     def _general_answer(self, text, selected_stream, emit, context, generation, intent="general_chat"):
         emit({"status": "Answering…"})
@@ -1443,9 +1495,16 @@ class Assistant:
         # on the target; plain knowledge questions do not need it.
         labels = (detector_labels(self.cfg["detector_metadata_path"])
                   if self.cfg.get("detector_metadata_path") else ())
-        about_system = intent == "application_help" or _video_or_app_terms(text, labels)
+        # Model/hardware questions are answered by the short facts line; the long
+        # guide made the 7B model deflect them ("model details are not in scope").
+        about_models = re.search(r"\b(?:models?|llms?|hardware|devices?|npu|gpu|cpu|chips?|processors?)\b", text, re.I)
+        about_system = intent == "application_help" or (_video_or_app_terms(text, labels) and not (
+            about_models and not _record_terms(text, labels)))
         prompt = _general_prompt(text.strip(), context,
-                                 self.application_context(selected_stream) if about_system else "")
+                                 self.application_context(selected_stream) if about_system else "",
+                                 self.model_facts(), about_self=bool(about_models) and not about_system and bool(re.search(
+                                     r"\b(?:you|your|this|these|here|running|runs?|uses?|using|detector|assistant|console|app|application|system)\b",
+                                     text, re.I)))
         if intent == "application_help":
             prompt = ("Answer an application-help question using ONLY the supplied operator guide "
                       "and configured details. Give at most three concise sentences or direct steps. "
@@ -1517,6 +1576,14 @@ class Assistant:
         emit = emit or (lambda event: None)
         if not isinstance(mode, str) or mode not in {"auto", "general"}:
             raise InvalidInput("mode must be auto or general")
+        scope_note = ""
+        named = _mentioned_stream(text)
+        cameras = {row["stream_id"]: row.get("display_name", row["stream_id"])
+                   for row in self.cfg.get("streams", []) if row.get("enabled", True)}
+        if named and selected_stream and named != selected_stream and named in cameras:
+            # The spoken camera is the operator's latest intent; the selector may be stale.
+            scope_note = f"You named {cameras[named]}, so I searched it instead of {cameras.get(selected_stream, selected_stream)}."
+            selected_stream = named
         # Common control explanations use the shipped guide verbatim: no routing
         # latency and no invented behavior. Action requests still use the router.
         help_question = re.match(r"^(?:how (?:do|does|can|is|are)|what (?:does|is|are)|why|explain|tell me about|does the language model|can (?:you|the language model))\b", text.strip(), re.I)
@@ -1578,8 +1645,14 @@ class Assistant:
             camera_id = "cam" + coverage[1] if coverage[1] else selected_stream
             camera = next((row for row in self.cfg.get("streams", [])
                            if row["stream_id"] == camera_id and row.get("enabled", True)), None)
+            if camera is None and camera_id is None:
+                rows = [row for row in self.cfg.get("streams", []) if row.get("enabled", True)]
+                return self._application_answer(text, " ".join(
+                    row.get("display_name", row["stream_id"]) + ": "
+                    + str(row.get("description") or "coverage not configured.")[:300] for row in rows)
+                    + " These are configured descriptions, not live observations.")
             if camera is None:
-                return clarification("Select a configured camera to read its coverage description.")
+                return clarification(f"{camera_id} is not a configured camera.", "camera_mismatch", camera=camera_id)
             if not camera.get("description") and self._mission_loaded():
                 return self._mission_answer(text, emit)
             return self._application_answer(text,
@@ -1591,7 +1664,8 @@ class Assistant:
             previous_query = self._conversation_state().query
         if followup:
             if previous_query is None:
-                return clarification("Choose an object and time range first, then compare cameras.")
+                return self._best_effort({"window": DEFAULT_WINDOW, "classes": None, "attributes": []},
+                                         "cam" + followup[1], NO_TIME_NOTE, emit)
             return self.remember_result(self.search(previous_query, "cam" + followup[1], emit))
         try:
             requested_window = clock_window(text, timezone, datetime.now(UTC).replace(microsecond=0))
@@ -1602,13 +1676,13 @@ class Assistant:
             clock_error = None
         if clock_error and "24-hour" in clock_error:
             return clarification(clock_error, "invalid_window")
+        def noted(*parts):
+            return " ".join(part for part in (scope_note, *parts) if part)
         if requested_window is None and re.fullmatch(
                 r"\s*(?:what|which)\s+(?:objects?\s+)?(?:were|was)\s+"
                 r"(?:seen|detected|recorded|observed)\s*\??\s*", text, re.I):
-            return clarification(
-                "What time window should I search? Include it in the question, for example ‘person tracks in the last ten minutes’.",
-                "missing_window",
-            )
+            return self._best_effort({"window": DEFAULT_WINDOW, "classes": None, "attributes": []},
+                                     selected_stream, noted(NO_TIME_NOTE), emit)
         labels = detector_labels(self.cfg["detector_metadata_path"])
         direct = simple_plan(text, labels, requested_window)
         if direct is not None:
@@ -1617,13 +1691,39 @@ class Assistant:
                 text, selected_stream, requested_window, clock_error)
             if clarification_result:
                 return clarification_result
-            if unmapped_conditions(text, direct, self.unsupported_concepts):
+            unmapped = unmapped_conditions(text, direct, self.unsupported_concepts)
+            if unmapped:
                 # The fast path recognises only classes and a window, so it can
                 # never have filtered on a quality named beside them.
-                return capability_clarification(attribute_catalog(
-                    self.cfg["db_path"], selected_stream,
-                    _utc(datetime.now(UTC).replace(microsecond=0) - self.retention)))
-            return self.remember_result(self.search(direct, selected_stream or _mentioned_stream(text), emit))
+                subject = ", ".join(direct["classes"]) + " tracks" if direct.get("classes") else "recorded objects"
+                return self._best_effort(direct, selected_stream or _mentioned_stream(text), noted(
+                    f"I can't check {', '.join(unmapped)} from the detections, so here are all {subject} "
+                    "for that time; check their images."), emit)
+            answer = self.search(direct, selected_stream or _mentioned_stream(text), emit)
+            if scope_note:
+                answer["answer_text"] = scope_note + " " + answer["answer_text"]
+            return self.remember_result(answer)
+        record_question = _record_terms(text, labels)
+        if (not record_question and requested_window is None and not clock_error
+                and not MISSION_TERMS.search(text)
+                and not (self._mission_loaded() and re.search(r"\b(?:packet|documents?|docs?|pdf|docx|files?|papers?)\b", text, re.I))
+                and not re.search(r"\b(?:rules?|mute|pause|turn|switch|start|stop)\b", text, re.I)):
+            # Nothing in the question refers to recorded observations: answer it
+            # directly and skip the routing model call (one fewer LLM round trip).
+            if not self.queue.acquire(blocking=False):
+                raise QueueFull("language queue is full")
+            try:
+                emit({"status": "Waiting to answer…"})
+                with self.single_flight:
+                    context, generation = self._begin_intent("general_chat")
+                    return self._general_answer(text, selected_stream, emit, context, generation)
+            finally:
+                self.queue.release()
+        time_note = ""
+        clearly_records = bool(requested_window) or bool(re.search(
+            r"\b(?:seen|saw|detected|recorded|observed|happen\w*|going on)\b", text, re.I))
+        if record_question and requested_window is None and not clock_error and not TIME_WORDS.search(text):
+            requested_window, time_note = DEFAULT_WINDOW, NO_TIME_NOTE
         cutoff = datetime.now(UTC).replace(microsecond=0)
         if not self.queue.acquire(blocking=False):
             raise QueueFull("language queue is full")
@@ -1643,6 +1743,29 @@ class Assistant:
                 known_streams, ceiling, current_scope = query_context(self.cfg["db_path"])
                 labels = detector_labels(self.cfg["detector_metadata_path"])
                 catalog = attribute_catalog(self.cfg["db_path"], selected_stream, _utc(cutoff - self.retention))
+                def everything(reason):
+                    return self._best_effort({"window": requested_window or DEFAULT_WINDOW,
+                                              "classes": None, "attributes": []},
+                                             selected_stream, noted(time_note, reason), emit)
+
+                def broader(plan, unresolved):
+                    missing = {a["name"] for a in plan["attributes"]} - {row["name"] for row in catalog}
+                    alternative = broader_search(plan, missing)
+                    subject = (", ".join(plan["classes"]) + " tracks" if plan["classes"]
+                               else "recorded objects")
+                    if list(unresolved) == ["other conditions in the original question"]:
+                        unresolved = unmapped_conditions(text, plan, self.unsupported_concepts) or unresolved
+                    generic = list(unresolved) == ["other conditions in the original question"]
+                    skipped = ("I couldn't match every detail of that to the records" if generic
+                               else f"I can't check {', '.join(unresolved)} from the detections")
+                    return self._best_effort(alternative["plan"], alternative["selected_stream"], noted(
+                        time_note, f"{skipped}, so here are all {subject} for that time; check their images."), emit)
+
+                def conversational():
+                    # A question with no object, camera or time words that the router
+                    # could not place is answered as conversation, not a dead end.
+                    context, generation = self._begin_intent("general_chat")
+                    return self._general_answer(text, selected_stream, emit, context, generation)
                 coarse = coarse_plan(text, labels, requested_window) if not clock_error else None
                 if coarse:
                     try:
@@ -1651,6 +1774,15 @@ class Assistant:
                             cutoff=cutoff, retention=self.retention), ("other conditions in the original question",))
                     except InvalidPlan:
                         coarse = None
+                if coarse and not catalog and (coarse.plan["classes"] or clearly_records):
+                    # With no classification fields recorded the router can add
+                    # nothing beyond classes and time: skip its LLM call (~3-15 s).
+                    unmapped = unmapped_conditions(text, coarse.plan, self.unsupported_concepts)
+                    leftover = _leftover_words(text, labels)
+                    if unmapped or leftover:
+                        return broader(coarse.plan, unmapped or [" ".join(leftover)])
+                    return self._best_effort(broader_search(coarse.plan, set())["plan"], selected_stream,
+                                             noted(time_note), emit)
                 route = None
                 retry_reason = None
                 partial_retry = False
@@ -1685,6 +1817,8 @@ class Assistant:
                         if route.intent == "clarification" and route.plan is None and coarse:
                             route = coarse
                             break
+                        if route.intent == "clarification" and route.plan is None and not record_question:
+                            return conversational()
                         if route.intent == "clarification" and route.plan is None and attempt == 0:
                             partial_retry = True
                             retry_reason = ("If the object type and time can be established, return a clarification WITH "
@@ -1718,11 +1852,13 @@ class Assistant:
                     except InvalidPlan as exc:
                         retry_reason = str(exc)
                         partial_retry = True
+                    if not record_question and not coarse:
+                        return conversational()
                     if attempt:
                         if coarse:
                             route = coarse
                             break
-                        return capability_clarification(catalog)
+                        return everything("I couldn't match every detail of that to the records, so here is everything recorded for that time.")
                 if route.intent == "clarification":
                     if route.plan:
                         mismatch = self._history_clarification(text, selected_stream, requested_window, clock_error)
@@ -1732,8 +1868,9 @@ class Assistant:
                         if any(item.casefold() not in text.casefold() for item in unresolved):
                             unresolved = ["other conditions in the original question"]
                         # Proposed fields must also exist; metadata may change while routing.
-                        return condition_proposal(route.plan, catalog, unresolved)
-                    return capability_clarification(catalog)
+                        return broader(route.plan, unresolved)
+                    return conversational() if not record_question else everything(
+                        "I couldn't match every detail of that to the records, so here is everything recorded for that time.")
                 context, context_generation = self._begin_intent("general_chat" if route.intent == "application_help" else route.intent)
                 if route.intent == "mission_knowledge":
                     if self.mission is None:
@@ -1765,10 +1902,15 @@ class Assistant:
                 # presented as the answer to a qualified question.
                 unmapped = unmapped_conditions(text, route.plan, self.unsupported_concepts)
                 if unmapped:
-                    return condition_proposal(route.plan, catalog, unmapped)
+                    return broader(route.plan, unmapped)
                 scope = {stream: current_scope[stream] for stream in route.plan["streams"]}
                 emit({"status": "Searching records…"})
-                return self.remember_result(self._execute(route.plan, cutoff, ceiling, scope))
+                answer = self._execute(route.plan, cutoff, ceiling, scope)
+                note = noted(time_note)
+                if note and answer.get("intent") == "video_history":
+                    answer["answer_text"] = note + " " + answer["answer_text"]
+                    answer["assumption"] = note
+                return self.remember_result(answer)
         finally:
             self.queue.release()
 
@@ -1780,12 +1922,12 @@ class Assistant:
             )
         mentioned_camera = _mentioned_stream(text)
         if mentioned_camera and selected_stream and selected_stream != mentioned_camera:
+            names = ", ".join(row.get("display_name", row["stream_id"]) for row in self.cfg.get("streams", [])
+                              if row.get("enabled", True))
             return clarification(
-                "Your question names a different camera. Choose which camera to search.",
+                f"{mentioned_camera} is not a configured camera." + (f" Configured cameras: {names}." if names else ""),
                 "camera_mismatch", camera=mentioned_camera,
             )
-        if requested_window is None and not re.search(r"\b(last|past|previous|today|yesterday|since|between|before|after|ago|minutes?|hours?|days?)\b|\d{4}-\d{2}-\d{2}", text, re.I):
-            return clarification("What time window should I search? Include it in the question, for example ‘person tracks in the last ten minutes’.", "missing_window")
         return None
 
     def page(self, token: object) -> dict:

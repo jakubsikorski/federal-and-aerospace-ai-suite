@@ -20,6 +20,21 @@ Opaque field names may require clarification; do not invent their meaning. Feed 
 Search covers retained records in each camera's current tracking session, not all
 past sessions. A pipeline restart starts a new tracking session.
 
+## Adding and removing cameras
+The Cameras button in the top bar, right after the camera tabs, opens Manage cameras.
+It adds, renames, turns off or removes a camera while the system runs, up to the
+measured limit of 3 cameras on. Each row shows the camera state (Live, Starting, Off)
+with View and Edit. A new camera is either a publisher on this device or a network
+camera by rtsp:// address on an allowed network; addresses with a user name or
+password are refused and belong in MediaMTX. After adding a publisher camera, a card
+shows the rtsp://127.0.0.1:8554/camN address to send H.264 video to, with Copy and an
+example ffmpeg command. The address works only on this device and is also shown under
+Edit. The card changes to Live when video arrives. Turning off or removing a camera
+stops its video and detection but keeps its history and alerts. Deployment cameras
+can only be renamed. Alert rules on a removed camera show "camera off or removed" and
+can only be turned off or deleted. The assistant
+cannot add or remove cameras.
+
 ## Assistant controls
 Open Assistant beside the live video. On short screens it opens a focused chat
 view: camera status stays in the top bar, and Back to camera returns to video.
@@ -92,6 +107,14 @@ New conversation clears the visible chat and starts a fresh conversation context
 It does not delete camera history, evidence images, or mission documents. The
 assistant only retains a short, temporary conversation context, not permanent memory.
 
+## Closest answer, never a refusal
+The Assistant always answers with its closest search and states what it assumed
+first: no time given means the last 10 minutes; a camera named in the question
+overrides Camera scope; details the detections cannot check are named, and all
+matching tracks for that time are shown so the operator can check the images.
+Questions without camera, object or time words, including "What model is this?",
+are answered as general conversation from the Models & devices facts.
+
 ## Video understanding
 The language model cannot see or watch live camera video. DL Streamer detects and
 tracks objects; the Assistant searches those recorded observations and evidence
@@ -118,7 +141,8 @@ Anything detected matches any object type detected by the configured pipeline.
 Stays too long offers 10 seconds, 30 seconds, 1 minute or a custom duration.
 Each tracked object has its own dwell timer; times from different objects never add up.
 Area defaults to the whole view. Draw an area restricts matching to a polygon on one
-camera; Remove area restores the whole view after saving. More options contains
+camera; after three corners a new corner joins the nearest edge, and an outline that
+crosses itself cannot be saved; Remove area restores the whole view after saving. More options contains
 confidence, active hours and speech settings. Read the preview and Create alert.
 Existing rules can be edited, turned off/on or deleted. Save changes completes edits.
 Switch to Appears to remove dwell. Missing qualifying observations can reset dwell;
@@ -135,9 +159,21 @@ The recognized question uses the same camera scope, answer mode, conversation
 and routing as typing. Transcribing and answering have visible progress. If the
 microphone or transcription is unavailable, type the question instead.
 Audio on enables spoken replies. Answers play in short sequential sentences or
-clauses, with the full text visible. Stop speaking cancels the current speech and
+clauses, with the full text visible. Stop audio cancels the current speech and
 its remaining chunks; Talk immediately interrupts playback. Speech already
 being synthesized may finish on the service, but cancelled audio is not played.
 With audio on, "Checking." plays as soon as a spoken question is recognized, and the
 answer follows within a few seconds. Your answer is spoken before alert announcements: an alert never interrupts it and
 is announced right after. Alerts still appear on screen immediately.
+
+Voice recovery controls: **Cancel question** abandons a running question and stops
+its answer speech; the stock inference service may still finish its in-flight work,
+so the next answer can be slower.
+**Stop audio** silences speech while leaving the text request running. Finish or
+cancel a running question before starting another with Talk. **Edit and resend**
+restores the recognized question and its original camera scope for correction.
+**Replay answer** reads the completed answer again without asking the model again;
+if Audio is off, enable it first. Failed playback remains visible. Interrupted text
+stays on screen as incomplete, with **Retry question** available. While recording, a
+hint shows the 1.5-second silence auto-send and 15-second limit. Replay reads about
+the first 1,500 characters and is refused while an answer is still in progress.

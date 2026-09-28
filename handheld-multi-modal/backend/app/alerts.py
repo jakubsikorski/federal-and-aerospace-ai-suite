@@ -80,6 +80,28 @@ def _area(points: list[list[float]]) -> float:
     return abs(total) / 2.0
 
 
+def _crosses(points: list[list[float]]) -> bool:
+    """True when two non-adjacent edges of the closed outline intersect."""
+    def turn(a, b, c):
+        value = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+        return (value > 1e-12) - (value < -1e-12)
+
+    def on(a, b, c):
+        return min(a[0], b[0]) <= c[0] <= max(a[0], b[0]) and min(a[1], b[1]) <= c[1] <= max(a[1], b[1])
+
+    edges = [(points[i], points[(i + 1) % len(points)]) for i in range(len(points))]
+    for i, (a, b) in enumerate(edges):
+        for j in range(i + 1, len(edges)):
+            if j == i + 1 or (i == 0 and j == len(edges) - 1):
+                continue
+            c, d = edges[j]
+            t1, t2, t3, t4 = turn(a, b, c), turn(a, b, d), turn(c, d, a), turn(c, d, b)
+            if (t1 != t2 and t3 != t4) or (t1 == 0 and on(a, b, c)) or (t2 == 0 and on(a, b, d)) \
+                    or (t3 == 0 and on(c, d, a)) or (t4 == 0 and on(c, d, b)):
+                return True
+    return False
+
+
 def _point_in_polygon(point: tuple[float, float], points: list[list[float]]) -> bool:
     x, y = point
     inside = False
@@ -171,7 +193,11 @@ class Alerts:
         label = rule.get("class_label")
         if label is not None and (not isinstance(label, str) or label not in self.labels()):
             raise RuleError("class_label must be a detector class or null for any detected object")
-        if rule["stream_id"] is not None and rule["stream_id"] not in self.enabled_streams:
+        # A rule left on a camera that was turned off or removed can still be
+        # edited into the off state; it cannot be (re)enabled or moved there.
+        moved = current is None or rule["stream_id"] != current.get("stream_id")
+        if (rule["stream_id"] is not None and rule["stream_id"] not in self.enabled_streams
+                and (moved or rule["enabled"])):
             raise RuleError("stream_id must be an enabled camera or null for every camera")
         conf = rule["min_confidence"]
         if conf is not None and (isinstance(conf, bool) or not isinstance(conf, (int, float))
@@ -217,6 +243,9 @@ class Alerts:
                 normalised.append([float(point[0]), float(point[1])])
             if len({(round(x, 6), round(y, 6)) for x, y in normalised}) < 3:
                 raise RuleError("zone must have at least 3 distinct points")
+            # Older saved outlines are left alone so they can still be turned off.
+            if "zone" in body and _crosses(normalised):
+                raise RuleError("zone outline must not cross itself")
             if _area(normalised) < 0.0001:
                 raise RuleError("zone area is too small")
             rule["zone"] = {"points": normalised}
@@ -574,6 +603,11 @@ class Alerts:
         return text + "."
 
     # -- dispatch (own thread, own connection) ------------------------------
+    def set_streams(self, names: dict[str, str], enabled: list[str]) -> None:
+        """Camera registry changed; replaced whole so readers never see a partial list."""
+        self.names = dict(names)
+        self.enabled_streams = list(enabled)
+
     def start(self) -> None:
         # A process that died mid-request left rows in `dispatching`. Their
         # outcome is unknown, so they are sent again (agent dedup may then

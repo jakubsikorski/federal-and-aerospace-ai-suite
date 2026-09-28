@@ -24,10 +24,11 @@
   [hidden] { display: none !important; }
   #app { width: 100vw; max-width: 100vw; overflow: hidden; height: 100dvh; display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); }
   header { min-width: 0; display: flex; align-items: center; gap: 16px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
+  .brand { white-space: nowrap; }
   .brand strong { font-size: 16px; letter-spacing: -.3px; }
   .brand span { display: block; color: var(--muted); font-size: 11px; letter-spacing: .35px; }
   .micro { color: var(--muted); font-size: 12px; }
-  #cameras { display: flex; gap: 8px; min-width: 0; flex: 1 1 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+  #cameras { display: flex; gap: 8px; min-width: 0; flex: 0 1 auto; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
   #cameras[data-overflow] { mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); }
   #cameras::-webkit-scrollbar { display: none; }
   .camera { position: relative; flex: 0 0 auto; min-width: 104px; max-width: 180px; overflow: hidden; min-height: 44px; padding: 4px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
@@ -42,6 +43,73 @@
   #audio-toggle[data-state="off"] { color: var(--warn); }
   #rules-panel { position: fixed; top: 58px; right: 12px; width: min(460px, calc(100vw - 24px)); max-height: calc(100dvh - 72px); z-index: 11; overflow: auto; box-shadow: 0 12px 30px #0008; }
   #rules-panel .panel-head button { margin-left: auto; }
+  #voice-talk { margin-left: auto; }
+  header .top-status { margin-left: 0; }
+  #cameras-toggle { flex: 0 0 auto; max-width: none; border-style: dashed; border-color: var(--control); text-align: left; }
+  #cameras-toggle span::before { content: ""; display: inline-block; width: 17px; height: 17px; margin-right: 6px; vertical-align: -3px; background: var(--accent); mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M3%208a2%202%200%200%201%202-2h9a2%202%200%200%201%202%202v8a2%202%200%200%201-2%202H5a2%202%200%200%201-2-2Z%22/%3E%3Cpath%20d%3D%22m16%2011%205-3v8l-5-3%22/%3E%3Cpath%20d%3D%22M9.5%209.5v5M7%2012h5%22/%3E%3C/svg%3E") center / contain no-repeat; }
+  #cameras-toggle[aria-expanded="true"] { border-style: solid; border-color: var(--accent); background: var(--selected); }
+  #cameras-panel { position: fixed; top: 58px; left: 12px; width: min(480px, calc(100vw - 24px)); max-height: calc(100dvh - 72px); z-index: 11; overflow: auto; box-shadow: 0 12px 30px #0008; }
+  #cameras-panel .panel-head button { margin-left: auto; }
+  #cameras-body { display: grid; gap: 12px; padding: 12px 14px 14px; }
+  #cameras-body .camera-intro { margin: 0; color: #c3d3e0; line-height: 1.4; }
+  #camera-capacity { display: flex; align-items: center; gap: 10px; }
+  #camera-count { margin: 0; font-weight: 600; }
+  #camera-slots { display: flex; gap: 4px; }
+  #camera-slots i { width: 22px; height: 8px; border-radius: 4px; background: #2c4256; }
+  #camera-slots i.on { background: var(--accent); }
+  #camera-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  #camera-list > li { border: 1px solid #2c4256; border-radius: 8px; padding: 10px 12px; display: grid; gap: 10px; background: #0f1d2e; }
+  #camera-list > li.editing { border-color: var(--accent); }
+  #camera-list > li.off strong { color: #9fb4c6; }
+  #camera-list .camera-row { display: flex; align-items: center; gap: 10px; }
+  #camera-list .camera-row > span { display: grid; gap: 3px; min-width: 0; flex: 1; }
+  #camera-list .camera-row strong { font-size: 16px; }
+  #camera-list .camera-row small { color: #9fb4c6; overflow-wrap: anywhere; }
+  #camera-list .camera-row button { min-width: 64px; }
+  .camera-chip { display: inline-block; margin-right: 6px; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; background: #2c4256; color: #c3d3e0; }
+  .camera-chip.up { background: #1d4a3a; color: #9ff0c8; }
+  .camera-chip.idle, .camera-chip.unknown { background: #4a4020; color: #f4d49e; }
+  .camera-chip.down { background: #4d2426; color: #ffc2c2; }
+  .camera-tag { font-size: 12px; color: #9fb4c6; border: 1px solid #3a5169; border-radius: 10px; padding: 0 7px; margin-left: 6px; font-weight: 400; }
+  #camera-list .camera-edit { display: grid; gap: 10px; border-top: 1px solid #2c4256; padding-top: 10px; }
+  #camera-list .camera-edit label { display: grid; gap: 4px; color: #c3d3e0; }
+  #camera-list .camera-edit form { display: flex; gap: 8px; align-items: end; }
+  #camera-list .camera-edit form label { flex: 1; min-width: 0; }
+  #camera-list .camera-actions, #camera-add .camera-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #camera-list .camera-remove { border-top: 1px dashed #5a3b3b; padding-top: 10px; display: grid; gap: 8px; }
+  #camera-list .danger, #camera-list .camera-remove .danger { border-color: #b85c5c; color: #ffd0d0; }
+  #camera-list .camera-note, #camera-add .camera-note { margin: 0; color: #9fb4c6; font-size: .92em; line-height: 1.4; }
+  .camera-address { display: flex; gap: 8px; align-items: center; }
+  .camera-address code { flex: 1; min-width: 0; overflow-wrap: anywhere; padding: 8px 10px; border-radius: 6px; background: #07111d; border: 1px solid #2c4256; font-size: 14px; user-select: all; }
+  #camera-add-open { justify-self: start; }
+  #cameras-panel .quiet-button { height: auto; min-height: 44px; font-size: 15px; padding: 6px 14px; }
+  #cameras-panel .camera-address .quiet-button { min-width: 76px; }
+  #camera-added { display: grid; gap: 10px; padding: 14px; border: 2px solid #3f8f6c; border-radius: 10px; background: #12281f; }
+  #camera-added h3 { margin: 0; font-size: 17px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  #camera-added p { margin: 0; line-height: 1.4; }
+  #camera-added .camera-address code { font-size: 17px; padding: 10px 12px; }
+  #camera-added details summary { cursor: pointer; min-height: 32px; color: #c3d3e0; }
+  #camera-added details .camera-address code { font-size: 13px; }
+  #camera-added .camera-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  @media (max-width: 1366px) { header .brand { display: none; } }
+  @media (max-width: 1100px) { #cameras-toggle small { display: none; } #cameras-toggle { min-width: 0; } }
+  #camera-full-note { margin: 0; padding: 10px 12px; border-radius: 8px; border: 1px solid #a28b5f; background: #363629; color: #f4d49e; }
+  #camera-add { display: grid; gap: 12px; border: 1px solid var(--accent); border-radius: 8px; padding: 12px; background: #0f1d2e; }
+  #camera-add > strong { font-size: 16px; }
+  #camera-add fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; }
+  #camera-add legend { padding: 0; margin-bottom: 6px; color: #c3d3e0; }
+  #camera-add label { display: grid; gap: 4px; color: #c3d3e0; }
+  #camera-add .source-card { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border: 1px solid #2c4256; border-radius: 8px; cursor: pointer; }
+  #camera-add .source-card:has(input:checked) { border-color: var(--accent); background: var(--selected); }
+  #camera-add .source-card input { margin-top: 3px; width: 18px; height: 18px; }
+  #camera-add .source-card span { display: grid; gap: 2px; }
+  #camera-add .source-card strong { color: #eef5fb; }
+  #camera-add .source-card small { color: #9fb4c6; line-height: 1.35; }
+  #camera-status { margin: 0; overflow-wrap: anywhere; padding: 10px 12px; border-radius: 8px; border: 1px solid #2c4256; background: #102436; display: grid; gap: 8px; }
+  #camera-status[data-tone="error"] { border-color: #b85c5c; background: #2a1618; color: #ffd0d0; }
+  #camera-status[data-tone="ok"] { border-color: #3f8f6c; background: #12281f; }
+  #camera-status:empty { display: none; }
+  #camera-add input[type="text"], #camera-add input[type="url"], #camera-list input { min-height: 44px; }
   #rules-body { padding: 12px; display: grid; gap: 10px; }
   #rule-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 8px; }
   #rule-form label { display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
@@ -200,11 +268,15 @@
   #voice-controls { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
   #voice-talk { flex:0 0 auto; min-height:44px; min-width:112px; white-space:nowrap; background:var(--accent); color:#162d3b; border:2px solid var(--accent); font-weight:700; }
   #voice-talk[aria-pressed="true"] { background:#a5443c; color:white; }
+  #voice-hint { font-size: 11px; color: var(--muted); }
   #voice-status { font-size:12px; color:var(--muted); }
   #speech-line, #assistant-speech-line { padding: 0 12px 6px; font-size: 12px; color: var(--muted); min-height: 0; }
   #speech-line:empty, #assistant-speech-line:empty { display: none; }
   #speech-line[data-mode="audio"], #assistant-speech-line[data-mode="audio"] { color: var(--accent); }
   #speech-line[data-mode="text"], #assistant-speech-line[data-mode="text"] { color: var(--warn); }
+  .speech-label { font-weight: 700; padding: 1px 6px; border-radius: 4px; background: var(--warn); color: #1b1305; }
+  [data-mode="audio"] > .speech-label { background: var(--good); color: #0c2418; }
+  .speech-text { color: var(--text); font-style: italic; }
   #alert-list li.empty { display: block; }
   #alert-error { margin: 0 12px 6px; padding: 6px 8px; border: 1px solid var(--bad); border-radius: 6px; color: var(--bad); font-size: 12px; }
   #alert-error[hidden], #alert-page[hidden] { display: none; }
@@ -276,8 +348,9 @@
   .track-card { min-width: 0; padding: 0; overflow: hidden; text-align: left; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); }
   .track-card:hover, .candidate:hover { border-color: var(--accent); }
   .track-card[aria-current="true"], .candidate[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: -2px; }
-  .crop { height: 132px; display: grid; place-items: center; overflow: hidden; background: #222932; color: var(--muted); }
-  .crop img { width: 100%; height: 100%; object-fit: contain; }
+  /* A definite track lets the image's 100% height resolve, so contain shows the whole crop. */
+  .crop { height: 132px; display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: center; overflow: hidden; background: #222932; color: var(--muted); }
+  .crop img { display: block; width: 100%; height: 100%; min-height: 0; object-fit: contain; }
   .crop.missing { padding: 12px; text-align: center; }
   .track-copy { padding: 8px 10px; }
   .track-copy strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -289,9 +362,11 @@
   #drawer.open { display: grid; }
   #drawer-head { display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-bottom: 1px solid var(--line); }
   #drawer-body { min-height: 0; overflow: auto; padding: 12px; }
-  #large-crop { height: 46%; min-height: 190px; border-radius: 8px; }
-  #drawer-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
-  #drawer-actions .quiet-button { min-height: 44px; }
+  #large-crop { height: auto; aspect-ratio: 4 / 3; max-height: calc(100dvh - 230px); min-height: 190px; border-radius: 8px; }
+  #large-crop.missing { aspect-ratio: auto; height: 190px; }
+  #large-crop img { cursor: zoom-in; }
+  #large-crop:fullscreen { max-height: none; border-radius: 0; background: #000; }
+  #large-crop:fullscreen img { cursor: zoom-out; }
   #candidate-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
   .candidate { min-height: 76px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 4px; overflow: hidden; }
   .candidate img { width: 100%; height: 58px; object-fit: contain; display: block; }
@@ -480,7 +555,7 @@
   .chat-turn:nth-child(even) { background: #1d3550; }
   #assistant-speech-line:not(:empty) { border-left: 2px solid var(--accent); background: #204156; padding: 6px 8px; margin-bottom: 8px; border-radius: 0 6px 6px 0; }
   #assistant-speech-line[data-mode="text"] { border-left-color: var(--warn); background: #3e3527; }
-  #rules-panel, #mission-panel, #model-details, #drawer { box-shadow: 0 14px 45px #02071299; border-color: #5c7e99; }
+  #rules-panel, #cameras-panel, #mission-panel, #model-details, #drawer { box-shadow: 0 14px 45px #02071299; border-color: #5c7e99; }
   #rule-trigger label { background: var(--surface); border-color: var(--control); }
   #rule-trigger label:has(:checked) { background: var(--selected); box-shadow: inset 0 0 0 1px var(--accent); }
   #rule-area { padding: 8px 10px; border: 1px solid #46627f; border-radius: 9px; background: #152d46; }
@@ -512,10 +587,11 @@
   <header>
     <div class="brand"><strong>Field console</strong><span>LIVE OPERATIONS</span></div>
     <nav id="cameras" aria-label="Camera selection"></nav>
+    <button id="cameras-toggle" class="camera" type="button" aria-controls="cameras-panel" aria-expanded="false" title="Add, rename, turn off or remove cameras"><span>Cameras</span><small id="cameras-toggle-count">Add or remove</small></button>
     <button id="voice-talk" type="button" class="quiet-button primary-action" aria-pressed="false" aria-controls="assistant-panel" title="Tap to start a voice question; tap again to send">Talk</button>
     <button id="mission-toggle" class="quiet-button primary-action" type="button" aria-controls="mission-panel" aria-expanded="false">Mission</button>
     <button id="rules-toggle" class="quiet-button primary-action" type="button" aria-controls="rules-panel" aria-expanded="false">Manage alerts</button>
-    <button id="stop-speaking" class="quiet-button" type="button" hidden>Stop speaking</button>
+    <button id="stop-speaking" class="quiet-button" type="button" hidden>Stop audio</button>
     <button id="audio-toggle" class="quiet-button primary-action" type="button" aria-pressed="false" data-state="off" title="Browsers play speech only after a tap">Audio off</button>
     <div class="top-status">
       <div class="clock-status"><time id="operator-clock" aria-label="Current local time"></time><div id="connection">connecting</div></div>
@@ -597,6 +673,36 @@
       <ul id="rule-list" aria-label="Alert rules"></ul>
     </div>
   </aside>
+  <aside id="cameras-panel" class="panel" aria-labelledby="cameras-title" hidden>
+    <div class="panel-head"><h2 id="cameras-title">Manage cameras</h2><button id="close-cameras" class="quiet-button" type="button">Close</button></div>
+    <div id="cameras-body">
+      <p class="camera-intro">Every camera that is on gets live video, object detection and alerts.
+        Changes apply right away; no restart is needed.</p>
+      <div id="camera-capacity"><p id="camera-count" role="status"></p><span id="camera-slots" aria-hidden="true"></span></div>
+      <div id="camera-status" role="status" aria-live="polite"></div>
+      <ul id="camera-list" aria-label="Cameras"></ul>
+      <div id="camera-added" role="status" hidden></div>
+      <p id="camera-full-note" hidden></p>
+      <button id="camera-add-open" class="quiet-button primary-action" type="button" aria-controls="camera-add" aria-expanded="false">+ Add camera</button>
+      <form id="camera-add" novalidate hidden>
+        <strong>Add a camera</strong>
+        <label>Name<input id="camera-name" type="text" maxlength="40" autocomplete="off" placeholder="e.g. North gate"></label>
+        <fieldset><legend>Where does the video come from?</legend>
+          <label class="source-card"><input type="radio" name="camera-source" value="publish" checked>
+            <span><strong>Publisher on this device</strong><small>An app or encoder on this handheld sends the video. You get an address to send it to.</small></span></label>
+          <label class="source-card"><input type="radio" name="camera-source" value="pull">
+            <span><strong>Network camera</strong><small>An IP camera on the local network. You enter its RTSP address and this device connects to it.</small></span></label>
+        </fieldset>
+        <label id="camera-url-label" hidden>Camera RTSP address<input id="camera-url" type="url" maxlength="512" autocomplete="off" placeholder="rtsp://192.168.1.20:554/stream1"></label>
+        <p id="camera-add-note" class="camera-note"></p>
+        <div class="camera-actions">
+          <button id="camera-add-submit" class="quiet-button primary-action" type="submit">Add camera</button>
+          <button id="camera-add-cancel" class="quiet-button" type="button">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </aside>
+  <button id="alert-toast" type="button" hidden></button>
   <main id="workspace">
     <section id="video-panel" class="panel" aria-labelledby="video-heading">
       <div class="panel-head">
@@ -618,7 +724,6 @@
         <ul id="alert-list"></ul>
         <div id="alert-page" hidden><button id="alert-more" class="quiet-button" type="button" aria-controls="alert-list"></button><span id="alert-page-note"></span></div>
       </details>
-      <button id="alert-toast" type="button" hidden></button>
     </section>
 
     <div id="lower">
@@ -691,6 +796,7 @@
             </div>
             <div id="voice-controls">
               <button id="voice-cancel" class="quiet-button" type="button" hidden>Cancel</button><span id="voice-status" role="status"></span></div>
+            <div id="voice-hint"><span id="voice-hint-text">Auto-send after 1.5 s of silence · 15 s maximum. </span><button id="voice-enable-audio" class="quiet-button" type="button">Replies as text · Enable audio</button></div>
             <div id="search-fields">
               <div class="scope-field"><div class="field-head"><label for="search-camera">Camera scope</label><button id="use-viewed-camera" type="button" hidden>Use on-screen camera</button></div><select id="search-camera"></select></div>
               <label>Answer mode<select id="assistant-mode"><option value="auto">Ask anything</option><option value="general">General chat</option></select></label>
@@ -729,9 +835,11 @@
             <div id="assistant-transcript" aria-label="Previous messages"></div>
             <div id="assistant-result-head">
               <p id="assistant-submitted"></p>
+              <button id="edit-question" class="quiet-button" type="button" hidden>Edit and resend</button>
               <div id="assistant-answer" role="status">Ask about this application, your mission, or recorded objects. Try “What can you do?”</div>
               <div id="assistant-progress" role="status"></div>
               <div id="assistant-speech-line" role="status"></div>
+              <button id="replay-answer" class="quiet-button" type="button" hidden>Replay answer</button>
               <div id="answer-actions" aria-label="Follow-up actions"></div>
               <div id="assistant-scope"></div>
               <div id="assistant-warnings" role="status"></div>
@@ -756,7 +864,6 @@
         <div id="drawer-body">
           <div id="large-crop" class="crop missing">No stored image</div>
           <dl id="drawer-detail"></dl>
-          <div id="drawer-actions"><button id="drawer-ask" class="quiet-button" type="button">Ask about this object</button><button id="drawer-play" class="quiet-button" type="button" hidden>Play</button></div>
           <div id="candidate-list"></div>
         </div>
       </aside>
@@ -782,7 +889,7 @@ const state = {
   models: [], selectedModel: null, modelsUnavailable: false,
   mission: null, rules: null, speech: null, audioOn: false, audio: null, playingId: null, playback: null, incidentCounts: null, alertsExpanded: false, editingRule: null,
   gridPage: 0, gridWheps: new Map(), evidenceView: storeGet("operator.evidenceView") || "cards",
-  drawerCandidates: [], drawerCandidateIndex: 0, replayTimer: null, connectionLost: false, latencyTimer: null,
+  drawerCandidates: [], drawerCandidateIndex: 0, connectionLost: false, latencyTimer: null,
   awayChecked: false, zoneDraft: null,
   assistantToken: null, assistantBusy: false, assistantPrevious: null,
   assistantAnswer: null, assistantContext: null, assistantPages: new Map(),
@@ -800,7 +907,7 @@ async function api(path) {
   const response = await fetch(path, {headers: {accept: "application/json"}});
   const body = await response.json();
   if (!response.ok || body.error) {
-    throw new Error((body.error && body.error.message) || response.statusText);
+    throw new Error((body.error && body.error.message) || body.detail || response.statusText);
   }
   return body.data;
 }
@@ -814,7 +921,7 @@ async function postApi(path, payload, options = {}) {
   });
   const body = await response.json();
   if (!response.ok || body.error) {
-    throw new Error((body.error && body.error.message) || response.statusText);
+    throw new Error((body.error && body.error.message) || body.detail || response.statusText);
   }
   return body.data;
 }
@@ -823,7 +930,7 @@ async function missionMutation(path, options) {
   const response = await fetch(path, {headers: {accept: "application/json"}, ...options});
   const body = await response.json();
   if (!response.ok || body.error) {
-    throw new Error((body.error && body.error.message) || response.statusText);
+    throw new Error((body.error && body.error.message) || body.detail || response.statusText);
   }
   state.mission = body.data;
   renderMission();
@@ -920,6 +1027,7 @@ $("mission-toggle").onclick = async () => {
   if (opening) {
     closeAssistant(false);
     closeRules(false);
+    closeCameras(false);
     await refreshMission();
     $("close-mission").focus();
     $("mission-file").focus();
@@ -1133,6 +1241,14 @@ function renderCameras() {
       : "";
   }
   markGridPages();
+  renderCamerasToggle();
+  const pressed = [...nav.children].find((node) => node.dataset.stream === state.selected);
+  if (pressed && pressed.dataset.stream !== nav.dataset.shown) {
+    nav.dataset.shown = pressed.dataset.stream;
+    const box = nav.getBoundingClientRect(), tab = pressed.getBoundingClientRect();
+    if (tab.left < box.left) nav.scrollLeft -= box.left - tab.left + 4;
+    else if (tab.right > box.right) nav.scrollLeft += tab.right - box.right + 4;
+  }
   [...nav.children].filter((node) => !choices.some((s) => s.stream_id === node.dataset.stream))
     .forEach((node) => node.remove());
   markTabOverflow();
@@ -1737,6 +1853,7 @@ async function viewIncident(incident) {
   incident = state.incidents.find((item) => item.incident_id === incident.incident_id) || incident;
   closeMission(false);
   closeRules(false);
+  closeCameras(false);
   closeAssistant(false);
   selectCamera(incident.stream_id);
   const view = {incident, tracks: [], loading: true};
@@ -2065,7 +2182,13 @@ function dispatchLabel(alert) {
 // Browser microphone only. A released/cancelled permission request cannot start
 // recording later, and every exit closes both MediaStream and AudioContext.
 const voice = {turn: null, version: 0, blocked: false};
-function voiceStatus(text) { $('voice-status').textContent = text; $('voice-cancel').hidden = !voice.turn; }
+function voiceStatus(text) {
+  $('voice-status').textContent = text;
+  $('voice-cancel').hidden = !voice.turn && !state.assistantBusy;
+  $('voice-cancel').textContent = voice.turn && !voice.turn.ending ? 'Cancel recording' : 'Cancel question';
+  $('voice-hint').hidden = state.audioOn && !voice.turn;
+  $('voice-hint-text').hidden = !voice.turn || voice.turn.ending;
+}
 async function stopSpeaking() {
   voice.blocked = true;
   stopPlayback();
@@ -2119,6 +2242,7 @@ async function endVoice(send=true) {
       voiceStatus(send ? 'No speech captured. Tap Talk again, or type your question.' : 'Recording cancelled.');
       return;
     }
+    $('voice-talk').textContent='Transcribing…'; $('voice-talk').disabled=true;
     voiceStatus('Transcribing…');
     const response=await fetch('/api/voice/transcribe'+(state.audioOn?'?speak=true':''),{method:'POST',headers:{'content-type':'audio/wav'},
       body:pcmWav(turn.parts,turn.rate),signal:AbortSignal.any([turn.abort.signal,AbortSignal.timeout(70000)])});
@@ -2132,12 +2256,12 @@ async function endVoice(send=true) {
     voice.turn=null; $('voice-cancel').hidden=true;
     await submitAssistant({text:body.data.text,selected_stream:turn.camera,mode:turn.mode,
       timezone:Intl.DateTimeFormat().resolvedOptions().timeZone});
-    if(turn.version===voice.version) voiceStatus('Ready to talk again.');
+    if(turn.version===voice.version && !$('assistant-editor-error').textContent) voiceStatus('Answer received. Ready to talk again.');
   } catch(error) {
     if(turn.version===voice.version && error.name!=='AbortError') voiceStatus(error.message+' You can still type your question.');
   } finally {
     if(voice.turn===turn) voice.turn=null;
-    if(!voice.turn) { $('voice-cancel').hidden=true; $('ask-submit').disabled=state.assistantBusy; $('ask-text').disabled=state.assistantBusy; $('search-fields').inert=state.assistantBusy; }
+    if(!voice.turn) { $('voice-talk').textContent='Talk'; $('voice-talk').disabled=false; $('voice-cancel').hidden=!state.assistantBusy; $('ask-submit').disabled=state.assistantBusy; $('ask-text').disabled=state.assistantBusy; $('search-fields').inert=state.assistantBusy; }
   }
 }
 function cancelVoice() {
@@ -2146,13 +2270,14 @@ function cancelVoice() {
     // Aborting the upload alone leaves the server free to speak "Checking."
     fetch('/api/voice/cancel',{method:'POST',keepalive:true}).catch(()=>{});
     $('ask-submit').disabled=state.assistantBusy; $('ask-text').disabled=state.assistantBusy; $('search-fields').inert=state.assistantBusy;
+    $('voice-talk').textContent='Talk'; $('voice-talk').disabled=false;
     voiceStatus('Voice request cancelled.');
   } else endVoice(false);
 }
 async function beginVoice() {
   if(voice.turn) return;
-  if(state.assistantBusy) { ++assistantRequestVersion; state.assistantBusy=false; $("assistant-progress").textContent=""; }
   if(!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) { voiceStatus('Microphone requires a trusted HTTPS connection. You can type your question.'); return; }
+  if(state.assistantBusy) { voiceStatus('A question is running. Cancel question before starting another.'); return; }
   const turn={version:++voice.version,parts:[],abort:new AbortController(),camera:$('search-camera').value || null,
     mode:$('assistant-mode').value,heard:false};
   voice.turn=turn;
@@ -2191,7 +2316,7 @@ async function beginVoice() {
       turn.parts.push(new Float32Array(data)); seconds+=dt;
       const loud=Math.sqrt(data.reduce((sum,v)=>sum+v*v,0)/data.length)>0.01;
       if(loud) { turn.heard=true; quiet=0; } else quiet+=dt;
-      voiceStatus('Listening… '+Math.floor(seconds)+' / 15 s · tap Send question when finished');
+      voiceStatus('Listening… '+Math.max(0,Math.ceil(15-seconds))+' s left · auto-send after silence');
       if(seconds>=15 || (turn.heard && quiet>=1.5)) endVoice();
     };
     $('voice-talk').setAttribute('aria-pressed','true'); $('voice-talk').textContent='Send question';
@@ -2209,7 +2334,7 @@ $('voice-talk').onclick=()=>{
   $('voice-talk').focus();
   beginVoice();
 };
-$('voice-cancel').onclick=cancelVoice;
+$('voice-cancel').onclick=()=>voice.turn ? cancelVoice() : cancelQuestion();
 window.addEventListener('blur',cancelVoice);
 document.addEventListener('keydown',event=>{if(event.key==='Escape' && voice.turn) cancelVoice();});
 document.addEventListener('visibilitychange',()=>{ if(document.hidden) cancelVoice(); });
@@ -2227,29 +2352,70 @@ function renderSpeech() {
   for (const id of ["speech-line", "assistant-speech-line"]) { $(id).textContent=""; $(id).dataset.mode=""; }
   const line = $(kind === "answer" && !speech.talk_held ? "assistant-speech-line" : "speech-line");
   // playingId is only the utterance whose audio this tab actually started.
-  if (state.playingId && current?.id !== state.playingId) stopPlayback();
-  if (current && state.audioOn && !voice.turn && !voice.blocked && current.audio_base64 && current.id !== state.playingId) startPlayback(current);
-  const playback = current && state.playback?.id === current.id ? state.playback : null;
-  if (current) {
+  // A chunk this tab is still playing is never cut just because the Backend
+  // moved on (another tab may have finished first): it plays out and the
+  // next chunk follows from the preload, gaplessly.
+  const playingOn = state.playingId && current?.id !== state.playingId && keepPlaying(speech, current);
+  if (state.playingId && current?.id !== state.playingId && !playingOn) stopPlayback();
+  if (playingOn) { if (current?.audio_base64 && current.id !== state.endedId) queueNext(current); }
+  else if (current?.id === state.playingId) { if (speech.next?.audio_base64) queueNext(speech.next); }
+  else if (current && state.audioOn && !voice.turn && !voice.blocked && current.audio_base64 && current.id !== state.endedId) startPlayback(current);
+  const shown = playingOn ? {...(current || {}), id: state.playingId, text: state.playingText} : current;
+  const playback = shown && state.playback?.id === shown.id ? state.playback : null;
+  // Voice status follows answer speech only; alerts keep their own line.
+  if (!voice.turn && state.audioOn && current?.kind === "answer") {
+    state.answerSpeechStatus = true;
+    voiceStatus(playback?.status === "playing" ? "Speaking…" : "Preparing speech…");
+  } else if (state.answerSpeechStatus && !voice.turn) {
+    state.answerSpeechStatus = false;
+    const failed = speech.last?.kind === "answer" && ["playback_failed", "unconfirmed"].includes(speech.last.outcome);
+    voiceStatus(state.assistantBusy ? "Answering…" : failed ? "Playback failed. Tap Replay answer." : "Done. Ready for your next question.");
+  }
+  if (shown) {
     const status = playback?.status;
     line.dataset.mode = status === "playing" ? "audio" : "text";
-    line.textContent = (status === "playing" ? "Speaking: "
-      : status === "starting" ? "Starting speech: "
-      : status === "failed" ? "Playback failed (" + playback.error + ") · "
-      : state.audioOn ? "Preparing speech: " : "Audio off · ") + current.text;
+    speechLine(line, status === "playing" ? "Speaking:"
+      : status === "starting" ? "Starting speech:"
+      : status === "failed" ? "Playback failed (" + playback.error + ") ·"
+      : state.audioOn ? "Preparing speech:" : "Audio off ·", shown.text);
   } else if (speech.talk_held) {
     line.dataset.mode = "text";
     line.textContent = "Alert speech held while you talk" + (speech.queued?.length ? " · " + speech.queued.length + " queued" : "");
   } else if (speech.preparing && !speech.preparing_cancelled && state.audioOn) {
-    line.dataset.mode = "audio";
-    line.textContent = "Preparing speech: " + speech.preparing;
-  } else if (speech.last?.outcome === "text_only") {
     line.dataset.mode = "text";
-    line.textContent = "Text only (speech unavailable): " + speech.last.text;
+    speechLine(line, "Preparing speech:", speech.preparing);
+  } else if (["text_only", "playback_failed", "unconfirmed"].includes(speech.last?.outcome)) {
+    line.dataset.mode = "text";
+    line.textContent = (speech.last.outcome === "text_only" ? "Text only (speech unavailable): "
+      : speech.last.outcome === "unconfirmed" ? "Playback not confirmed. " : "Playback failed. ") + speech.last.text;
   } else {
     line.dataset.mode = "";
     line.textContent = "";
   }
+}
+
+function speechLine(line, label, text) {
+  const tag = document.createElement("span"); tag.className = "speech-label"; tag.textContent = label;
+  const words = document.createElement("span"); words.className = "speech-text"; words.textContent = text;
+  line.replaceChildren(tag, " ", words);
+}
+
+// Keep local playback when the Backend finished this chunk as spoken (another
+// tab ended it first) or is promoting the preloaded next chunk; stop it for
+// Stop, cancel, preemption, or anything unrelated.
+function keepPlaying(speech, current) {
+  if (!state.audio || state.audio.ended || !state.audioOn || voice.turn) return false;
+  const last = speech.last;
+  if (last?.id === state.playingId) return last.outcome === "spoken" && (!current || current.kind === "answer");
+  if (state.playingId !== state.earlyId) return false;
+  return (!current || current.id === state.endedId) && Date.now() - state.earlyAt < 4000;
+}
+
+function queueNext(item) {
+  if (state.nextUp?.id === item.id || item.id === state.playingId) return;
+  const audio = new Audio("data:audio/wav;base64," + item.audio_base64);
+  audio.preload = "auto";
+  state.nextUp = {id: item.id, kind: item.kind, text: item.text, audio};
 }
 
 function reportPlayback(id, event) {
@@ -2268,11 +2434,13 @@ function playChime() {
     osc.stop(ctx.currentTime + 0.2);
   } catch (_) {}
 }
-function startPlayback(current) {
+function startPlayback(current, preloaded = null) {
   const id = current.id;
-  const audio = new Audio("data:audio/wav;base64," + current.audio_base64);
+  const audio = preloaded || new Audio("data:audio/wav;base64," + current.audio_base64);
   state.audio = audio;
   state.playingId = id;
+  state.playingText = current.text;
+  state.nextUp = null;
   state.playback = {id, status: "starting"};
   const mine = () => state.audio === audio;
   const fail = (error) => {
@@ -2287,7 +2455,19 @@ function startPlayback(current) {
     reportPlayback(id, "started");
     renderSpeech();
   };
-  audio.onended = () => { if (mine()) reportPlayback(id, "ended"); };
+  audio.onended = () => {
+    if (!mine()) return;
+    reportPlayback(id, "ended");
+    state.endedId = id;
+    const next = state.nextUp;
+    if (next && state.audioOn && !voice.turn && !voice.blocked) {
+      // Straight on from the preload; the Backend accepts this chunk's acks
+      // while it is still promoting it.
+      state.earlyId = next.id; state.earlyAt = Date.now();
+      startPlayback(next, next.audio);
+    }
+    renderSpeech();
+  };
   audio.onerror = () => fail("audio could not be decoded");
   if (current.kind !== "answer") playChime();
   audio.play().catch((error) => {
@@ -2304,10 +2484,13 @@ function stopPlayback() {
   if (state.audio) { state.audio.onended = state.audio.onerror = state.audio.onplaying = null; state.audio.pause(); state.audio.src = ""; }
   state.audio = null;
   state.playingId = null;
+  state.nextUp = null;
 }
 
 function renderAudioToggle() {
   const toggle = $("audio-toggle");
+  $("voice-enable-audio").hidden = state.audioOn;
+  $("voice-hint").hidden = state.audioOn && !voice.turn;
   $("stop-speaking").hidden = !state.audioOn;
   toggle.textContent = state.audioOn ? "Audio on" : "Audio off";
   toggle.dataset.state = state.audioOn ? "on" : "off";
@@ -2317,7 +2500,7 @@ function renderAudioToggle() {
 $("audio-toggle").onclick = () => {
   state.audioOn = !state.audioOn;
   // Either way the current utterance restarts from this tab's new setting.
-  stopPlayback();
+  stopPlayback(); state.endedId = null;
   if (!state.audioOn) stopSpeaking();
   if (state.audioOn) {
     // A user gesture unlocks playback; a silent clip proves it before speech arrives.
@@ -2343,8 +2526,13 @@ function renderRules() {
     classSelect.value = data.classes.includes(selected) ? selected : "";
   }
   const cameraSelect = $("rule-camera");
-  if (cameraSelect.options.length !== data.streams.length + 1) {
-    cameraSelect.replaceChildren(new Option("Any camera", ""), ...data.streams.map(id => new Option(cameraName(id), id)));
+  const selectedCamera = cameraSelect.value;
+  const cameraOptions = [["", "Any camera"], ...data.streams.map(id => [id, cameraName(id)])];
+  // A rule being edited may still name a camera that is now off or removed.
+  if (selectedCamera && !data.streams.includes(selectedCamera)) cameraOptions.push([selectedCamera, cameraName(selectedCamera) + " (off)"]);
+  if (JSON.stringify([...cameraSelect.options].map(o => [o.value, o.text])) !== JSON.stringify(cameraOptions)) {
+    cameraSelect.replaceChildren(...cameraOptions.map(([id, name]) => new Option(name, id)));
+    cameraSelect.value = selectedCamera;
   }
   const list = $("rule-list");
   list.replaceChildren();
@@ -2426,6 +2614,7 @@ $("rules-toggle").onclick = async () => {
   if (opening) {
     closeMission(false);
     closeAssistant(false);
+    closeCameras(false);
     await refreshRules();
     if (!state.editingRule) {
       const camera = state.selected === "all" ? "" : state.selected;
@@ -2441,7 +2630,8 @@ $("rules-panel").addEventListener("keydown", (event) => { if (event.key === "Esc
 
 // Mission and Rules are light-dismiss popovers: Escape or a click elsewhere closes them.
 for (const [panel, toggle, close] of [["mission-panel", "mission-toggle", () => closeMission(false)],
-                                       ["rules-panel", "rules-toggle", () => closeRules(false)]]) {
+                                       ["rules-panel", "rules-toggle", () => closeRules(false)],
+                                       ["cameras-panel", "cameras-toggle", () => closeCameras(false)]]) {
   document.addEventListener("pointerdown", (event) => {
     // The zone editor belongs to Rules; drawing on it must not dismiss the panel.
     if ($(panel).hidden || $(panel).contains(event.target) || $(toggle).contains(event.target)
@@ -2453,15 +2643,286 @@ document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || event.defaultPrevented) return;
   if (!$("mission-panel").hidden) closeMission();
   else if (!$("rules-panel").hidden) closeRules();
+  else if (!$("cameras-panel").hidden) closeCameras();
   else if (state.alertView && !state.drawerTrack) exitAlertView();
 });
+// -- Cameras: add, rename, turn on/off, remove at runtime (D53) --------------
+async function cameraMutation(path, method, payload) {
+  const response = await fetch(path, {method, headers: {"content-type": "application/json", accept: "application/json"},
+    body: payload === undefined ? undefined : JSON.stringify(payload)});
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || body.error) throw new Error(body.error?.message || body.detail || response.statusText);
+  return body.data;
+}
+function cameraSourceText(camera) {
+  return camera.source.kind === "pull" ? "Network camera · " + camera.source.url : "Publisher on this device";
+}
+function cameraAddress(url) {
+  const box = document.createElement("div"); box.className = "camera-address";
+  const code = document.createElement("code"); code.textContent = url;
+  const copy = document.createElement("button"); copy.type = "button"; copy.className = "quiet-button"; copy.textContent = "Copy";
+  copy.onclick = async () => {
+    try { await navigator.clipboard.writeText(url); copy.textContent = "Copied"; }
+    catch { getSelection().selectAllChildren(code); copy.textContent = "Selected"; }
+    setTimeout(() => { copy.textContent = "Copy"; }, 2000);
+  };
+  box.append(code, copy);
+  return box;
+}
+function cameraNotice(text, tone = "", address = null) {
+  const status = $("camera-status");
+  status.replaceChildren();
+  status.dataset.tone = tone;
+  if (!text) return;
+  const line = document.createElement("span"); line.textContent = text;
+  status.append(line);
+  if (address) status.append(cameraAddress(address));
+}
+function renderCamerasToggle() {
+  const max = state.cameraRegistry?.max_streams;
+  $("cameras-toggle-count").textContent = max ? `${state.streams.length} of ${max} on · manage` : "Add or remove";
+}
+function renderCameraRegistry() {
+  const data = state.cameraRegistry || {cameras: [], max_streams: 0, enabled_count: 0};
+  const full = data.enabled_count >= data.max_streams;
+  renderCamerasToggle();
+  $("camera-count").textContent = data.max_streams
+    ? `${data.enabled_count} of ${data.max_streams} cameras on` + (full ? " · limit reached" : "")
+    : "Cameras unavailable";
+  $("camera-slots").replaceChildren(...Array.from({length: data.max_streams}, (_, i) => {
+    const slot = document.createElement("i"); if (i < data.enabled_count) slot.className = "on"; return slot; }));
+  const list = $("camera-list");
+  list.replaceChildren();
+  for (const camera of data.cameras) {
+    const editing = state.cameraEdit === camera.stream_id;
+    const item = document.createElement("li");
+    item.dataset.stream = camera.stream_id;
+    item.className = [camera.enabled ? "" : "off", editing ? "editing" : ""].join(" ").trim();
+    const row = document.createElement("div"); row.className = "camera-row";
+    const copy = document.createElement("span");
+    const name = document.createElement("strong"); name.textContent = camera.display_name;
+    if (camera.origin !== "operator") {
+      const tag = document.createElement("span"); tag.className = "camera-tag"; tag.textContent = "Deployment"; name.append(tag);
+    }
+    const detail = document.createElement("small");
+    const chip = document.createElement("span");
+    chip.className = "camera-chip " + (camera.enabled ? feedClass(camera.feed) : "off");
+    chip.textContent = camera.enabled ? feedStatus(camera.feed) : "Off";
+    detail.append(chip, cameraSourceText(camera));
+    copy.append(name, detail);
+    row.append(copy);
+    if (camera.enabled && !editing) {
+      const view = document.createElement("button"); view.type = "button"; view.className = "quiet-button camera-view"; view.textContent = "View";
+      view.title = "Show this camera's video";
+      view.onclick = () => { closeCameras(false); selectCamera(camera.stream_id); };
+      row.append(view);
+    }
+    const edit = document.createElement("button"); edit.type = "button"; edit.className = "quiet-button camera-edit-toggle";
+    edit.textContent = editing ? "Done" : "Edit";
+    edit.setAttribute("aria-expanded", String(editing));
+    edit.onclick = () => { state.cameraEdit = editing ? null : camera.stream_id; state.cameraRemoving = null; renderCameraRegistry();
+      const opened = !editing && list.querySelector(`li[data-stream="${camera.stream_id}"]`);
+      if (opened) { opened.querySelector("input")?.focus(); opened.scrollIntoView({block: "nearest"}); } };
+    row.append(edit);
+    item.append(row);
+    if (editing) item.append(cameraEditor(camera, full));
+    list.append(item);
+  }
+  const pull = document.querySelector('input[name="camera-source"]:checked').value === "pull";
+  $("camera-url-label").hidden = !pull;
+  const note = $("camera-full-note");
+  note.hidden = !(full && data.max_streams) || !$("camera-added").hidden;
+  note.textContent = `All ${data.max_streams} camera slots are in use. Turn a camera off or remove one before adding another.`;
+  renderCameraAdded(data);
+  if (full) state.cameraAdding = false;
+  $("camera-add").hidden = !state.cameraAdding;
+  $("camera-add-open").hidden = !!state.cameraAdding || !$("camera-added").hidden;
+  $("camera-add-open").disabled = full || state.cameraBusy;
+  $("camera-add-open").setAttribute("aria-expanded", String(!!state.cameraAdding));
+  $("camera-add-submit").disabled = full || state.cameraBusy;
+  $("camera-add-note").textContent = full
+    ? `Turn a camera off or remove one before adding another (limit ${data.max_streams}).`
+    : pull ? "Allowed networks: " + (data.allowed_sources || []).join(", ") + ". Cameras that need a user name or password are set up by an administrator in MediaMTX, not here."
+    : "After adding, you get the address to send H.264 RTSP video to. Video and detection start once it arrives.";
+}
+function renderCameraAdded(data) {
+  const box = $("camera-added");
+  const camera = data.cameras.find((c) => c.stream_id === state.cameraAdded && c.enabled);
+  box.hidden = !camera;
+  if (!camera) { state.cameraAdded = null; box.replaceChildren(); return; }
+  const live = camera.feed?.ok === true;
+  const url = camera.source.publish_url;
+  const title = document.createElement("h3");
+  const chip = document.createElement("span"); chip.className = "camera-chip " + (live ? "up" : "idle");
+  chip.textContent = live ? "Live" : "Waiting for video";
+  title.append("✓ " + camera.display_name + " added", chip);
+  const step = document.createElement("p");
+  step.textContent = live ? "Video is arriving. Detection and alerts are running for this camera."
+    : "Next: send H.264 RTSP video from this device to this address:";
+  const where = document.createElement("p"); where.className = "camera-note";
+  where.textContent = "This address works only on this device. Video and detection start by themselves when it arrives; this card shows Live when they do.";
+  const example = document.createElement("details");
+  example.open = state.cameraExampleOpen || false;
+  example.ontoggle = () => { state.cameraExampleOpen = example.open; };
+  const summary = document.createElement("summary"); summary.textContent = "Example: send a video file with ffmpeg";
+  example.append(summary, cameraAddress(`ffmpeg -re -stream_loop -1 -i video.mp4 -an -c:v libx264 -preset veryfast -tune zerolatency -f rtsp -rtsp_transport tcp ${url}`));
+  const actions = document.createElement("div"); actions.className = "camera-actions";
+  const view = document.createElement("button"); view.type = "button"; view.className = "quiet-button primary-action"; view.textContent = "View camera";
+  view.disabled = !live;
+  view.onclick = () => { const id = camera.stream_id; state.cameraAdded = null; closeCameras(false); selectCamera(id); };
+  const done = document.createElement("button"); done.type = "button"; done.className = "quiet-button"; done.textContent = "Done";
+  done.onclick = () => { state.cameraAdded = null; renderCameraRegistry(); $("camera-add-open").focus(); };
+  actions.append(view, done);
+  box.replaceChildren(title, step, ...(live ? [] : [cameraAddress(url), where, example]), actions);
+}
+function watchCameraAdded() {
+  clearInterval(state.cameraWatch);
+  state.cameraWatch = setInterval(() => {
+    if (!state.cameraAdded || $("cameras-panel").hidden) { clearInterval(state.cameraWatch); return; }
+    if (state.cameraBusy || state.cameraEdit || state.cameraAdding) return;
+    const wasLive = state.cameraRegistry?.cameras.find((c) => c.stream_id === state.cameraAdded)?.feed?.ok === true;
+    refreshCameraRegistry().then(() => {
+      if (!wasLive && state.cameraRegistry?.cameras.find((c) => c.stream_id === state.cameraAdded)?.feed?.ok === true) refreshState().catch(() => {});
+    });
+  }, 3000);
+}
+function cameraEditor(camera, full) {
+  const panel = document.createElement("div"); panel.className = "camera-edit";
+  const form = document.createElement("form");
+  const label = document.createElement("label"); label.textContent = "Name";
+  const input = document.createElement("input"); input.type = "text"; input.maxLength = 40; input.value = camera.display_name;
+  input.setAttribute("aria-label", "Camera name");
+  label.append(input);
+  const save = document.createElement("button"); save.type = "submit"; save.className = "quiet-button primary-action"; save.textContent = "Save name";
+  form.append(label, save);
+  form.onsubmit = (event) => { event.preventDefault();
+    cameraAction(() => cameraMutation("/api/cameras/" + camera.stream_id, "PATCH", {display_name: input.value}), "Renamed to " + input.value.trim() + "."); };
+  panel.append(form);
+  if (camera.source.kind === "publish") {
+    const note = document.createElement("p"); note.className = "camera-note";
+    note.textContent = "Send H.264 RTSP video from this device to:";
+    panel.append(note, cameraAddress(camera.source.publish_url));
+  }
+  if (camera.origin !== "operator") {
+    const note = document.createElement("p"); note.className = "camera-note";
+    note.textContent = "Set by the deployment: rename only. Turn it off or remove it in the deployment configuration.";
+    panel.append(note);
+    return panel;
+  }
+  const actions = document.createElement("div"); actions.className = "camera-actions";
+  const toggle = document.createElement("button"); toggle.type = "button"; toggle.className = "quiet-button";
+  toggle.textContent = camera.enabled ? "Turn off" : "Turn on";
+  toggle.disabled = !camera.enabled && full;
+  const hint = document.createElement("span"); hint.className = "camera-note";
+  hint.textContent = toggle.disabled ? "All slots in use. Turn another camera off first."
+    : camera.enabled ? "Stops video and detection. History is kept." : "Starts video and detection again.";
+  toggle.onclick = () => cameraAction(() => cameraMutation("/api/cameras/" + camera.stream_id, "PATCH", {enabled: !camera.enabled}),
+    camera.display_name + (camera.enabled ? " turned off. Its history is kept." : " turned on. Video starts once the source is live."));
+  actions.append(toggle, hint);
+  panel.append(actions);
+  const danger = document.createElement("div"); danger.className = "camera-remove";
+  if (state.cameraRemoving === camera.stream_id) {
+    const ask = document.createElement("p"); ask.className = "camera-note";
+    ask.textContent = `Remove ${camera.display_name}? Video and detection stop. Recorded history and alerts stay.`;
+    const buttons = document.createElement("div"); buttons.className = "camera-actions";
+    const yes = document.createElement("button"); yes.type = "button"; yes.className = "quiet-button danger"; yes.textContent = "Remove";
+    yes.onclick = () => cameraAction(() => cameraMutation("/api/cameras/" + camera.stream_id + "?confirm=" + encodeURIComponent(camera.stream_id), "DELETE"),
+      camera.display_name + " removed. Its history is kept.", () => { state.cameraEdit = null; });
+    const no = document.createElement("button"); no.type = "button"; no.className = "quiet-button"; no.textContent = "Keep camera";
+    no.onclick = () => { state.cameraRemoving = null; renderCameraRegistry(); };
+    buttons.append(yes, no);
+    danger.append(ask, buttons);
+  } else {
+    const remove = document.createElement("button"); remove.type = "button"; remove.className = "quiet-button danger"; remove.textContent = "Remove camera…";
+    remove.onclick = () => { state.cameraRemoving = camera.stream_id; renderCameraRegistry(); };
+    danger.append(remove);
+  }
+  panel.append(danger);
+  return panel;
+}
+async function cameraAction(run, message, after) {
+  if (state.cameraBusy) return;
+  state.cameraBusy = true;
+  cameraNotice("Saving…");
+  renderCameraRegistry();
+  try {
+    state.cameraRegistry = await run();
+    state.cameraRemoving = null;
+    cameraNotice(message, "ok");
+    after?.();
+  } catch (error) {
+    cameraNotice(error.message, "error");
+  } finally {
+    state.cameraBusy = false;
+    renderCameraRegistry();
+  }
+  refreshState().catch(() => {});
+  if (state.rules) refreshRules();
+}
+async function refreshCameraRegistry() {
+  try { state.cameraRegistry = await api("/api/cameras"); }
+  catch (error) { cameraNotice("Cameras unavailable: " + error.message, "error"); }
+  renderCameraRegistry();
+}
+function closeCameras(restoreFocus = true) {
+  if ($("cameras-panel").hidden) return;
+  $("cameras-panel").hidden = true;
+  $("cameras-toggle").setAttribute("aria-expanded", "false");
+  state.cameraEdit = state.cameraRemoving = null;
+  state.cameraAdding = false;
+  state.cameraAdded = null;
+  clearInterval(state.cameraWatch);
+  if (restoreFocus) $("cameras-toggle").focus();
+}
+$("cameras-toggle").onclick = async () => {
+  if (!$("cameras-panel").hidden) { closeCameras(); return; }
+  closeMission(false);
+  closeRules(false);
+  closeAssistant(false);
+  const panel = $("cameras-panel");
+  const anchor = $("cameras-toggle").getBoundingClientRect();
+  const width = Math.min(480, innerWidth - 24);
+  panel.style.left = Math.max(12, Math.min(anchor.left, innerWidth - width - 12)) + "px";
+  panel.hidden = false;
+  $("cameras-toggle").setAttribute("aria-expanded", "true");
+  cameraNotice("");
+  await refreshCameraRegistry();
+  $("close-cameras").focus();
+};
+$("close-cameras").onclick = () => closeCameras();
+$("camera-add-open").onclick = () => { state.cameraAdding = true; state.cameraAdded = null; state.cameraEdit = null; cameraNotice(""); renderCameraRegistry(); $("camera-name").focus(); $("camera-add").scrollIntoView({block: "nearest"}); };
+$("camera-add-cancel").onclick = () => { state.cameraAdding = false; $("camera-name").value = ""; $("camera-url").value = ""; renderCameraRegistry(); $("camera-add-open").focus(); };
+for (const radio of document.querySelectorAll('input[name="camera-source"]')) radio.addEventListener("change", renderCameraRegistry);
+$("camera-add").onsubmit = (event) => {
+  event.preventDefault();
+  const name = $("camera-name").value.trim();
+  const pull = document.querySelector('input[name="camera-source"]:checked').value === "pull";
+  const url = $("camera-url").value.trim();
+  if (!name) { cameraNotice("Give the camera a name.", "error"); $("camera-name").focus(); return; }
+  if (pull && !url) { cameraNotice("Enter the camera's rtsp:// address.", "error"); $("camera-url").focus(); return; }
+  cameraAction(() => cameraMutation("/api/cameras", "POST", {display_name: name, source: pull ? {kind: "pull", url} : {kind: "publish"}}),
+    "", () => {
+      const added = state.cameraRegistry.cameras.find(c => c.stream_id === state.cameraRegistry.stream_id);
+      $("camera-name").value = ""; $("camera-url").value = "";
+      state.cameraAdding = false;
+      state.cameraEdit = null;
+      if (added?.source.kind === "publish") {
+        cameraNotice("");
+        state.cameraAdded = added.stream_id;
+        watchCameraAdded();
+        setTimeout(() => { $("camera-added").scrollIntoView({block: "nearest"}); $("camera-added").querySelector(".camera-address button")?.focus(); });
+      } else cameraNotice(`${added?.display_name || name} added. Video starts once this device connects to the camera.`, "ok");
+    });
+};
 function ruleDwell() {
   if (document.querySelector('input[name="rule-kind"]:checked').value !== "dwell") return null;
   return Number($("rule-duration-choice").value === "custom" ? $("rule-dwell").value : $("rule-duration-choice").value);
 }
 function ruleSummary(rule) {
   const subject = rule.class_label ? titleCase(rule.class_label) : "Anything detected";
-  const camera = rule.stream_id ? cameraName(rule.stream_id) : "any camera";
+  const camera = !rule.stream_id ? "any camera"
+    : state.streams.some(s => s.stream_id === rule.stream_id) ? cameraName(rule.stream_id)
+    : cameraName(rule.stream_id) + " (camera off or removed)";
   return `${subject} ${rule.dwell_seconds ? "stays" : "appears"} in ${camera}${rule.zone?.points?.length ? "’s selected area" : ""}${rule.dwell_seconds ? " for " + rule.dwell_seconds + " seconds" : ""}`;
 }
 function updateRulePreview() {
@@ -2565,10 +3026,39 @@ function renderZoneOverlay() {
   }
 }
 const ZONE_MAX = 5;
+function zoneCrosses(points) {
+  const turn = (a, b, c) => Math.sign(Math.round(((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) * 1e12));
+  const on = (a, b, c) => Math.min(a[0], b[0]) <= c[0] && c[0] <= Math.max(a[0], b[0]) && Math.min(a[1], b[1]) <= c[1] && c[1] <= Math.max(a[1], b[1]);
+  const n = points.length;
+  for (let i = 0; i < n; i++) for (let j = i + 2; j < n; j++) {
+    if (i === 0 && j === n - 1) continue;
+    const [a, b, c, d] = [points[i], points[(i + 1) % n], points[j], points[(j + 1) % n]];
+    const t1 = turn(a, b, c), t2 = turn(a, b, d), t3 = turn(c, d, a), t4 = turn(c, d, b);
+    if ((t1 !== t2 && t3 !== t4) || (!t1 && on(a, b, c)) || (!t2 && on(a, b, d)) || (!t3 && on(c, d, a)) || (!t4 && on(c, d, b))) return true;
+  }
+  return false;
+}
+// A new corner is appended (keeping tap numbering) unless that would cross the
+// outline; then it goes into the edge it lengthens least without crossing.
+function zoneInsert(points, point) {
+  if (points.length < 3 || !zoneCrosses([...points, point])) return [...points, point];
+  const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  let best = null;
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i], b = points[(i + 1) % points.length];
+    const candidate = [...points.slice(0, i + 1), point, ...points.slice(i + 1)];
+    const score = [zoneCrosses(candidate) ? 1 : 0, dist(a, point) + dist(point, b) - dist(a, b)];
+    if (!best || score[0] < best.score[0] || (score[0] === best.score[0] && score[1] < best.score[1])) best = {candidate, score};
+  }
+  return best.candidate;
+}
 function renderZoneStatus(warn = false) {
   const n = state.zoneDraft?.points?.length || 0, step = $("zone-step"), count = $("zone-count");
-  step.dataset.tone = warn ? "warn" : "";
-  step.textContent = warn ? "Maximum " + ZONE_MAX + " corners. Drag a corner to move it, or tap Undo point."
+  const crossed = n >= 4 && zoneCrosses(state.zoneDraft.points);
+  step.dataset.tone = warn || crossed ? "warn" : "";
+  step.textContent = crossed ? "The outline crosses itself. Drag a corner so the edges do not cross."
+    : warn ? "Maximum " + ZONE_MAX + " corners. Drag a corner to move it, or tap Undo point."
+    : state.zoneNote ? state.zoneNote
     : n === 0 ? "Tap the ground at the first corner of the area."
     : n < 3 ? "Tap the next corner — " + (3 - n) + " more needed."
     : n < ZONE_MAX ? "Zone ready. Save it, or tap to add up to " + (ZONE_MAX - n) + " more corner" + (ZONE_MAX - n === 1 ? "." : "s.")
@@ -2576,7 +3066,7 @@ function renderZoneStatus(warn = false) {
   count.textContent = n + " / " + ZONE_MAX + " corners";
   count.toggleAttribute("data-full", n >= ZONE_MAX);
   $("zone-undo").disabled = $("zone-clear").disabled = n === 0;
-  $("zone-done").disabled = n > 0 && n < 3;
+  $("zone-done").disabled = (n > 0 && n < 3) || crossed;
   $("zone-done").textContent = n === 0 ? "Remove area" : "Use this area";
 }
 function drawZoneDraft() {
@@ -2585,7 +3075,9 @@ function drawZoneDraft() {
   if (points.length > 1) {
     const line = document.createElementNS("http://www.w3.org/2000/svg", points.length > 2 ? "polygon" : "polyline");
     line.setAttribute("points", points.map(p => p.join(",")).join(" ")); line.setAttribute("fill", points.length > 2 ? "rgba(153,197,245,.22)" : "none");
-    line.setAttribute("stroke", "#99c5f5"); line.setAttribute("stroke-width", "3"); line.setAttribute("vector-effect", "non-scaling-stroke"); svg.append(line);
+    const crossed = points.length >= 4 && zoneCrosses(points);
+    if (crossed) line.setAttribute("fill", "rgba(255,120,120,.22)");
+    line.setAttribute("stroke", crossed ? "#ff7a7a" : "#99c5f5"); line.setAttribute("stroke-width", "3"); line.setAttribute("vector-effect", "non-scaling-stroke"); svg.append(line);
   }
   $("zone-handles").replaceChildren(...points.map((p, index) => {
     const handle = document.createElement("div");
@@ -2618,6 +3110,7 @@ async function openZoneEditor() {
   try { canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height); } catch (error) { $("rules-status").textContent = "No live frame available yet for this camera."; return; }
   state.zoneBackup = state.zoneDraft ? {points: state.zoneDraft.points.map(p => [...p])} : null;
   state.zoneDraft = {points: (state.zoneDraft?.points || []).slice(0, ZONE_MAX).map(p => [...p])};
+  state.zoneAdded = []; state.zoneNote = "";
   $("zone-title").textContent = "Draw zone · " + (state.streams.find(s => s.stream_id === streamId)?.display_name || streamId);
   $("zone-editor").hidden = false; drawZoneDraft();
 }
@@ -2632,19 +3125,36 @@ $("zone-stage").addEventListener("pointerdown", event => {
     navigator.vibrate?.(80);
     return;
   }
-  draft.points.push(zonePoint(event)); drawZoneDraft();
+  const point = zonePoint(event);
+  draft.points = zoneInsert(draft.points, point);
+  const at = draft.points.indexOf(point), n = draft.points.length;
+  state.zoneNote = at === n - 1 ? "" : "Corner " + (at + 1) + " placed between " + (at || n) + " and "
+    + (at + 2 > n ? 1 : at + 2) + " so the edges do not cross; later corners renumbered.";
+  (state.zoneAdded ||= []).push(point);
+  drawZoneDraft();
 });
-$("zone-stage").addEventListener("pointermove", event => { if (state.dragZone == null) return; state.zoneDraft.points[state.dragZone] = zonePoint(event); drawZoneDraft(); });
+$("zone-stage").addEventListener("pointermove", event => {
+  if (state.dragZone == null) return;
+  const points = state.zoneDraft.points, old = points[state.dragZone], moved = zonePoint(event);
+  const added = state.zoneAdded?.indexOf(old) ?? -1;
+  if (added >= 0) state.zoneAdded[added] = moved;
+  points[state.dragZone] = moved; state.zoneNote = ""; drawZoneDraft();
+});
 for (const type of ["pointerup", "pointercancel"]) $("zone-stage").addEventListener(type, () => { state.dragZone = null; });
 function closeZoneEditor(save) {
   if ($("zone-editor").hidden) return;
   if (!save) state.zoneDraft = state.zoneBackup ?? null;
   state.dragZone = null; $("zone-editor").hidden = true; updateZoneSummary();
 }
-$("zone-undo").onclick = () => { state.zoneDraft?.points?.pop(); drawZoneDraft(); };
-$("zone-clear").onclick = () => { state.zoneDraft = {points: []}; drawZoneDraft(); };
+$("zone-undo").onclick = () => {
+  const points = state.zoneDraft?.points; if (!points?.length) return;
+  const last = state.zoneAdded?.pop(), index = points.indexOf(last);
+  points.splice(index >= 0 ? index : points.length - 1, 1); state.zoneNote = ""; drawZoneDraft();
+};
+$("zone-clear").onclick = () => { state.zoneDraft = {points: []}; state.zoneAdded = []; state.zoneNote = ""; drawZoneDraft(); };
 $("zone-cancel").onclick = () => closeZoneEditor(false);
-$("zone-done").onclick = () => { if (!(state.zoneDraft?.points || []).length || state.zoneDraft.points.length >= 3) closeZoneEditor(true); };
+$("zone-done").onclick = () => { const points = state.zoneDraft?.points || [];
+  if (!points.length || (points.length >= 3 && !zoneCrosses(points))) closeZoneEditor(true); };
 
 $("rule-form").onsubmit = async (event) => {
   event.preventDefault();
@@ -2913,6 +3423,8 @@ function showLargeCandidate(candidate) {
   const image = document.createElement("img");
   image.src = candidate.image_url;
   image.alt = "Static stored image";
+  image.title = "Tap for full screen";
+  image.onclick = () => document.fullscreenElement ? document.exitFullscreen() : box.requestFullscreen?.().catch(() => {});
   image.onerror = () => missingCrop(box, "Image missing or expired");
   box.append(image);
 }
@@ -2923,32 +3435,9 @@ function selectCandidate(index) {
   $("candidate-list").querySelectorAll("button").forEach((item, n) => item.setAttribute("aria-pressed", String(n === index)));
   showLargeCandidate(candidate);
 }
-function stopReplay() {
-  clearInterval(state.replayTimer); state.replayTimer = null; $("drawer-play").textContent = "Play";
-}
-function toggleReplay() {
-  if (state.replayTimer) return stopReplay();
-  if (state.drawerCandidates.length < 2) return;
-  $("drawer-play").textContent = "Pause";
-  state.replayTimer = setInterval(() => selectCandidate((state.drawerCandidateIndex + 1) % state.drawerCandidates.length), 420);
-}
-function askAboutDrawerObject() {
-  const track = state.drawerTrack;
-  if (!track) return;
-  openAssistant().then(() => {
-    const when = evidenceTime(track.last_observed_utc);
-    $("search-camera").value = track.stream_id || "all";
-    $("assistant-mode").value = "auto";
-    $("ask-text").value = `What can you tell me about ${track.class_label} track #${track.track_id || "live"} on ${cameraName(track.stream_id)} around ${when}? Use only this camera/object context.`;
-    updateSearchAvailability(); updateAssistantCameraCue(); updateQuestionFilters();
-  });
-}
-$("drawer-play").onclick = toggleReplay;
-$("drawer-ask").onclick = askAboutDrawerObject;
 
 async function openDrawer(track) {
   holdList();
-  stopReplay();
   state.drawerTrack = track;
   state.selectedTrackKey = trackKey(track);
   document.querySelectorAll(".track-card").forEach((card) => {
@@ -2971,7 +3460,6 @@ async function openDrawer(track) {
     if (state.drawerTrack !== track) return;
     const candidates = (result.candidates || []).slice().sort((a, b) => String(a.observed_at_utc).localeCompare(String(b.observed_at_utc)) || (a.candidate_number || 0) - (b.candidate_number || 0));
     state.drawerCandidates = candidates; state.drawerCandidateIndex = 0;
-    $("drawer-play").hidden = candidates.length < 2;
     showLargeCandidate(candidates[0]);
     if (!candidates.length) {
       missingCrop($("large-crop"), "No stored image");
@@ -2995,7 +3483,7 @@ async function openDrawer(track) {
       }
       button.setAttribute("aria-pressed", String(candidate === candidates[0]));
       const index = candidates.indexOf(candidate);
-      button.onclick = () => { stopReplay(); selectCandidate(index); };
+      button.onclick = () => selectCandidate(index);
       $("candidate-list").append(button);
     }
   } catch (error) {
@@ -3006,7 +3494,6 @@ async function openDrawer(track) {
 
 function closeDrawer() {
   $("drawer").classList.remove("open");
-  stopReplay();
   state.drawerTrack = null; state.drawerCandidates = [];
   for (const child of $("tracks-panel").children) child.inert = false;
   updateListState();
@@ -3051,6 +3538,7 @@ window.visualViewport?.addEventListener("resize", sizeAssistant);
 async function openAssistant() {
   closeMission(false);
   closeRules(false);
+  closeCameras(false);
   $("assistant-panel").classList.add("open");
   sizeAssistant();
   $("open-assistant").setAttribute("aria-expanded", "true");
@@ -3104,6 +3592,45 @@ function updateSearchAvailability() {
 
 let conversationId = crypto.randomUUID();
 let assistantRequestVersion = 0;
+let assistantAbort = null;
+async function cancelQuestion() {
+  ++assistantRequestVersion; voice.version++;
+  assistantAbort?.abort(); assistantAbort = null;
+  stopPlayback();
+  $('voice-cancel').disabled = true;
+  try { state.speech=await postApi('/api/voice/cancel', {}, {signal:AbortSignal.timeout(5000)}); }
+  catch (_) { state.audioOn=false; renderAudioToggle(); }
+  finally {
+    state.assistantBusy=false;
+    $('voice-cancel').disabled=false;
+    $('ask-text').disabled=$('ask-submit').disabled=false;
+    $('edit-question').disabled=false;
+    $('search-fields').inert=false;
+    $('assistant-progress').textContent='';
+    $('assistant-warnings').textContent='Question cancelled. Any text above is incomplete.';
+    voiceStatus('Question cancelled. The model may finish the old answer first, so the next one can be slower.');
+    updateAssistantPaging();
+  }
+}
+$('voice-enable-audio').onclick=()=>$('audio-toggle').click();
+$('edit-question').onclick=()=>{
+  if(state.assistantBusy) return;
+  const payload=state.assistantContext?.payload;
+  $('ask-text').value=payload?.text || '';
+  const camera=payload?.selected_stream;
+  $('search-camera').value=[...$('search-camera').options].some(o=>o.value===camera) ? camera : 'all';
+  $('assistant-mode').value=payload?.mode || 'auto';
+  updateAssistantCameraCue();
+  updateQuestionFilters(); $('ask-text').focus();
+};
+$('replay-answer').onclick=async()=>{
+  if(state.assistantBusy || voice.turn) return;
+  if(!state.audioOn) { $('audio-toggle').click(); voiceStatus('Audio enabled. Tap Replay answer to hear it.'); return; }
+  const text=state.assistantAnswer?.spoken_text || state.assistantAnswer?.answer_text;
+  if(!text) return;
+  try { await postApi('/api/speech/replay',{text}); }
+  catch(error) { voiceStatus('Could not replay: '+error.message); }
+};
 let followLatest = true;
 function scrollChat(force = false) {
   if (force) followLatest = true;
@@ -3235,6 +3762,7 @@ function updateAssistantPaging() {
 
 function renderAssistant(answer) {
   state.assistantAnswer = answer;
+  $('replay-answer').hidden = !answer.answer_text;
   $("assistant-panel").classList.remove("welcome");
   renderAnswerActions(answer);
   $("assistant-panel").classList.toggle("has-results", Boolean(answer.query));
@@ -3358,7 +3886,10 @@ async function submitAssistant(payload, label = null) {
   $("assistant-panel").classList.remove("welcome");
   $("answer-actions").replaceChildren();
   const requestVersion = ++assistantRequestVersion;
+  const controller = assistantAbort = new AbortController();
+  $('replay-answer').hidden=true;
   payload = {...payload, conversation_id: conversationId};
+  delete payload.speak;
   if (state.audioOn && payload.text) payload.speak = true;
   if (!payload.page_token) {
     archiveAssistantTurn();
@@ -3372,8 +3903,11 @@ async function submitAssistant(payload, label = null) {
   const context = state.assistantContext;
   const scope = context?.payload.selected_stream;
   const scopeLabel = scope ? state.streams.find(s => s.stream_id === scope)?.display_name || scope : "All cameras";
-  $("assistant-submitted").textContent = `${context?.text || "History"} · ${scopeLabel}`;
+  $("assistant-submitted").textContent = `${context?.payload.text ? "You asked: " : ""}${context?.text || "History"} · ${scopeLabel}`;
+  $('edit-question').hidden=!context?.payload.text;
+  $('edit-question').disabled=true;
   state.assistantBusy = true;
+  voiceStatus('Answering…');
   $("conversation-note").textContent = "Waiting for answer · scope: " + scopeLabel;
   $("assistant-previous").disabled = true;
   $("search-fields").inert = true;
@@ -3394,7 +3928,7 @@ async function submitAssistant(payload, label = null) {
   try {
     const response = await fetch("/api/ask", {method: "POST",
       headers: {"content-type": "application/json", accept: "application/x-ndjson"},
-      body: JSON.stringify(payload)});
+      body: JSON.stringify(payload), signal:controller.signal});
     if (requestVersion !== assistantRequestVersion) return;
     if (!response.ok) {
       const body = await response.json();
@@ -3432,7 +3966,12 @@ async function submitAssistant(payload, label = null) {
     }
   } catch (error) {
     if (requestVersion !== assistantRequestVersion) return;
-    if (!received) $("assistant-answer").textContent = "I couldn’t complete that answer.";
+    if (!received && !$("assistant-answer").textContent.trim()) $("assistant-answer").textContent = "I couldn’t complete that answer.";
+    if (!received) {
+      $("assistant-scope").textContent = "Incomplete answer";
+      const retry=document.createElement('button'); retry.type='button'; retry.className='quiet-button'; retry.textContent='Retry question';
+      retry.onclick=()=>submitAssistant({...payload}); $('answer-actions').replaceChildren(retry);
+    }
     $("conversation-note").textContent = "Your question is saved below. You can edit it and try again.";
     $("assistant-warnings").textContent = error.message;
     $("assistant-editor-error").textContent = "Request failed. Your inputs are unchanged. Retry when ready.";
@@ -3443,6 +3982,10 @@ async function submitAssistant(payload, label = null) {
     updateQuestionFilters();
     $("assistant-progress").textContent = "";
     state.assistantBusy = false;
+    assistantAbort=null;
+    $('edit-question').disabled=false;
+    voiceStatus(received ? 'Answer received.' : 'Answer incomplete. Retry or edit your question.');
+    if(received) renderSpeech();
     $("ask-submit").disabled = false;
     $("search-fields").inert = false;
     $("ask-text").disabled = false;
@@ -3459,7 +4002,10 @@ $("assistant-reset").onclick = async () => {
   const previousId = conversationId;
   conversationId = crypto.randomUUID();
   ++assistantRequestVersion;
+  assistantAbort?.abort(); assistantAbort=null;
+  $('edit-question').hidden=$('replay-answer').hidden=true;
   state.assistantBusy = false;
+  voiceStatus('Ready when you are.');
   state.assistantAnswer = state.assistantContext = null;
   state.assistantToken = state.assistantPrevious = null;
   state.assistantPages.clear();
@@ -3567,12 +4113,18 @@ async function refreshState() {
   const version = ++state.requestVersion;
   const streams = await api("/api/streams");
   if (version !== state.requestVersion) return;
+  const cameraSet = (list) => JSON.stringify(list.map((s) => [s.stream_id, s.display_name]));
+  const camerasChanged = state.streams.length > 0 && cameraSet(state.streams) !== cameraSet(streams);
   state.streams = streams;
   if (!state.selected) {
     const remembered = storeGet("operator.selectedCamera");
     state.selected = remembered === "all" || streams.some((stream) => stream.stream_id === remembered) ? remembered : (streams[0] ? streams[0].stream_id : "all");
   }
-  if (state.selected !== "all" && !streams.some((stream) => stream.stream_id === state.selected)) state.selected = streams[0] ? streams[0].stream_id : "all";
+  if (state.selected !== "all" && !streams.some((stream) => stream.stream_id === state.selected)) {
+    // The camera being watched was turned off or removed: move off its video.
+    const fallback = streams[0] ? streams[0].stream_id : "all";
+    if (camerasChanged) { detachWhep(); selectCamera(fallback, true); } else state.selected = fallback;
+  } else if (camerasChanged && state.selected === "all") renderCameraGrid();
   const [alerts, telemetry, ...trackData] = await Promise.all([
     api("/api/alerts"),
     api("/api/metrics"),
@@ -3597,6 +4149,7 @@ async function refreshState() {
   renderAlerts();
   renderTelemetry();
   showAwaySummary();
+  if (!state.cameraRegistry) api("/api/cameras").then((data) => { state.cameraRegistry ||= data; renderCamerasToggle(); }).catch(() => {});
 }
 
 function connectEvents() {
@@ -3623,6 +4176,11 @@ function connectEvents() {
     const data = JSON.parse(event.data);
     const stream = state.streams.find((item) => item.stream_id === data.stream_id);
     if (stream) stream.feed = data.feed;
+    // A camera added elsewhere (another console, or this one): pick it up once.
+    else if (!state.cameraRefreshPending) {
+      state.cameraRefreshPending = true;
+      refreshState().catch(() => {}).finally(() => { state.cameraRefreshPending = false; });
+    }
     renderCameras();
   });
   events.addEventListener("track", (event) => {

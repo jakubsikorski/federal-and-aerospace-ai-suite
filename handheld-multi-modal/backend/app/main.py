@@ -22,7 +22,7 @@ from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import alerts as alerting, history, pipelines, reset
+from . import alerts as alerting, cameras, history, pipelines, reset
 from .speech import Arbiter, complete_answer_sentences, early_head
 from .voice import MAX_AUDIO_BYTES, silent_wav, validate_audio, transcribe
 from .assistant import (
@@ -59,6 +59,7 @@ from .core import (
 )
 
 log = logging.getLogger("backend")
+REPLAY_MAX_CHARS = 1500
 
 
 class EarlyAnswerSpeech:
@@ -89,7 +90,8 @@ class EarlyAnswerSpeech:
 
     def cancel(self) -> None:
         self.buffer = ""
-        self.arbiter.cancel(group="answer", reason="cancelled")
+        if self.generation is not None:
+            self.arbiter.cancel(group="answer", generation=self.generation, reason="cancelled")
 
     def _say(self, text: str) -> None:
         if not text:
@@ -254,8 +256,13 @@ async def lifespan(app: FastAPI):
     conn = connect(cfg["db_path"])
     migrate(conn)
     sync_streams(conn, cfg["streams"])
+    cameras.enforce_budget(conn, cfg["max_streams"])
     app.state.cfg = cfg
     app.state.db = conn
+    # backend.yaml's camera list, kept for its descriptive extras; the live
+    # list below is the registry (config cameras plus console-added ones).
+    cfg["config_streams"] = [dict(s) for s in cfg["streams"]]
+    cameras.refresh(app.state)
     app.state.services = Services(cfg["services"], cfg["timeout_seconds"])
     app.state.telemetry = Telemetry(app.state.services, cfg["telemetry_host"])
     app.state.placement = Placement(app.state.services, cfg)
@@ -277,11 +284,16 @@ async def lifespan(app: FastAPI):
         on_corpus_change=app.state.assistant.reset_context,
     )
     app.state.assistant.mission = app.state.mission
+    app.state.assistant.models = lambda: app.state.placement.snapshot({}, {})
     warm_chatqna_once(app.state.services, float(cfg.get("assistant_chat_timeout_seconds", 60)))
 
     def synthesize(text: str) -> bytes:
         # Stock JSON mode: the WAV arrives as audio_base64 and is handed to the
         # browser as-is inside the speech state, so no clip endpoint is needed.
+        # SpeechT5 can run on past an unpunctuated mid-sentence chunk (measured:
+        # "... radiation and" gave 6.7 s instead of 3.1 s); a comma ends it cleanly.
+        if text and text[-1] not in ".,;:!?…":
+            text += ","
         body = {"input": text, "response_format": "json"}
         if cfg.get("tts_voice"):
             body["voice"] = cfg["tts_voice"]
@@ -341,7 +353,17 @@ async def lifespan(app: FastAPI):
 
     def supervise():
         grace = cfg["feed_stale_seconds"]
-        while not stopping.wait(cfg["supervise_seconds"]):
+        while True:
+            # A camera change sets `wake` so it takes effect now, not a pass later.
+            pipelines.wake.wait(cfg["supervise_seconds"])
+            pipelines.wake.clear()
+            if stopping.is_set():
+                break
+            try:
+                # MediaMTX forgets runtime pull paths when it restarts.
+                cameras.ensure_pull_paths(conn, cfg, app.state.services.client)
+            except Exception:
+                log.exception("camera source check failed")
             try:
                 now = time.monotonic()
                 # A camera is only replaced once it has been silent past the
@@ -374,6 +396,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         stopping.set()
+        pipelines.wake.set()
         supervisor.join()
         try:
             pipelines.stop_owned(
@@ -571,6 +594,51 @@ def create_app() -> FastAPI:
             return envelope(incident)
         return await asyncio.to_thread(apply)
 
+    # -- camera registry (runtime cameras, D53) ---------------------------------
+    def _camera_view(request: Request) -> dict:
+        with read_connection(request) as conn:
+            return cameras.view(conn, request.app.state.cfg, request.app.state.ingest.snapshot())
+
+    async def _camera_change(request: Request, change, status: int = 200):
+        def run():
+            try:
+                result = change()
+            except cameras.CameraError as exc:
+                return JSONResponse(status_code=exc.status, content=envelope(error={
+                    "code": exc.code, "message": str(exc)}))
+            data = _camera_view(request)
+            if result:
+                data["stream_id"] = result
+            return JSONResponse(status_code=status, content=envelope(data))
+        return await asyncio.to_thread(run)
+
+    async def _json_body(request: Request):
+        try:
+            return await request.json()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return None
+
+    @app.get("/api/cameras")
+    def camera_list(request: Request):
+        return envelope(_camera_view(request))
+
+    @app.post("/api/cameras")
+    async def camera_add(request: Request):
+        body = await _json_body(request)
+        return await _camera_change(
+            request, lambda: cameras.add(request.app.state, body), status=201)
+
+    @app.patch("/api/cameras/{stream_id}")
+    async def camera_update(request: Request, stream_id: str):
+        body = await _json_body(request)
+        return await _camera_change(
+            request, lambda: cameras.update(request.app.state, stream_id, body))
+
+    @app.delete("/api/cameras/{stream_id}")
+    async def camera_remove(request: Request, stream_id: str, confirm: str = ""):
+        return await _camera_change(
+            request, lambda: cameras.remove(request.app.state, stream_id, confirm))
+
     # -- rules (Phase 8) -------------------------------------------------------
     def _rule_error(exc: Exception) -> JSONResponse:
         return JSONResponse(status_code=422, content=envelope(error={
@@ -672,6 +740,34 @@ def create_app() -> FastAPI:
     async def stop_speech(request: Request):
         request.app.state.arbiter.stop_speaking()
         return envelope(request.app.state.arbiter.snapshot())
+
+    @app.post("/api/speech/replay")
+    async def replay_answer(request: Request):
+        try:
+            body = await request.json()
+        except json.JSONDecodeError:
+            body = None
+        if (not isinstance(body, dict) or set(body) != {"text"}
+                or not isinstance(body["text"], str) or not body["text"].strip()
+                or len(body["text"]) > 8000):
+            raise HTTPException(422, "Provide answer text (1–8000 characters).")
+        # Bound TTS occupancy: replay reads about the first minute of the answer.
+        text = body["text"].strip()
+        if len(text) > REPLAY_MAX_CHARS:
+            cut = text[:REPLAY_MAX_CHARS]
+            end = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "))
+            text = cut[:end + 1] if end > 0 else cut
+        arbiter = request.app.state.arbiter
+        with arbiter.cond:
+            if arbiter.talk_held:
+                raise HTTPException(409, "Finish recording before replaying an answer.")
+            if arbiter.answer_hold is not None:
+                raise HTTPException(409, "An answer is still in progress.")
+            arbiter.cancel_answer()
+            item = arbiter.say_answer(text, arbiter.answer_generation)
+        if item is None:
+            raise HTTPException(422, "This answer has nothing to speak.")
+        return envelope({"speech_id": item["id"]})
 
     @app.post("/api/voice/transcribe")
     async def voice_transcribe(request: Request, speak: bool = False):
