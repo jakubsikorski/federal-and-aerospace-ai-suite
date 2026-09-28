@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import shlex
@@ -33,7 +34,9 @@ class Placement:
                 for name in ("EMBEDDING", "RERANKER")]
         if service in ("tts", "audio_analyzer"):
             model = body["models"]["tts" if service == "tts" else "asr"]
-            return model["name"], model["device"], []
+            # make TTS_DEVICE overrides the file through the stock environment variable.
+            device = (os.environ.get("TTS_DEVICE") if service == "tts" else None) or model["device"]
+            return model["name"], device, []
         from .pipelines import PIPELINE
         definition = next(p for p in body["config"]["pipelines"] if p["name"] == PIPELINE.split("/")[-1])
         pipeline = definition["pipeline"]

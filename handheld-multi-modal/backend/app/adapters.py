@@ -12,6 +12,7 @@ stacks a second generation on a busy GPU.
 from __future__ import annotations
 
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -85,10 +86,11 @@ class Services:
         return "health ok", body
 
     def tts(self) -> tuple[str, dict | None]:
-        """/v1/model-info proves both provenance-approved model and CPU placement (D52)."""
+        """/v1/model-info proves both provenance-approved model and the selected placement (D56)."""
         body = self._get("tts", "/v1/model-info").json()
-        if body.get("device") != "CPU":
-            raise RuntimeError(f"TTS device is {body.get('device')!r}, expected CPU")
+        expected = os.environ.get("TTS_DEVICE") or "CPU"
+        if body.get("device") != expected:
+            raise RuntimeError(f"TTS device is {body.get('device')!r}, expected {expected}")
         return f"{body.get('model')} on {body.get('device')}", {
             "model": body.get("model"),
             "device": body.get("device"),

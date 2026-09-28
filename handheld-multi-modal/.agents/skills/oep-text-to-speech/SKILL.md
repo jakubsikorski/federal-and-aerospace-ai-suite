@@ -1,6 +1,6 @@
 ---
 name: oep-text-to-speech
-description: Use when resolving provenance-compliant stock OEP TTS configuration (CPU placement, D52), synthesis API, and model ownership; deployed as SpeechT5 (owner-approved).
+description: Use when resolving provenance-compliant stock OEP TTS configuration (CPU default, GPU switch, D56), synthesis API, and model ownership; deployed as SpeechT5 (owner-approved).
 ---
 
 # OEP Text To Speech

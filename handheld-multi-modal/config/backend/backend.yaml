@@ -4,8 +4,14 @@
 # plus an RTSP publisher; no MediaMTX, proxy or UI configuration changes.
 # `annotated_path` and `source_uri` are derived from `stream_id` unless set.
 #
-# ponytail: static camera list. A registration API only becomes worthwhile when
-# cameras arrive at runtime, which is not a demo requirement.
+# These are *deployment* cameras, re-applied on every start. The operator can
+# also add cameras at runtime in the console's Cameras panel (D53); those live
+# only in SQLite, and deployment cameras there can be renamed but not turned
+# off or removed. Enabled cameras of both kinds share max_streams.
+#
+# camera_source_allow (core.py default: the three RFC 1918 ranges) lists the
+# CIDRs and exact hostnames a console-added network camera may use. Loopback,
+# link-local, multicast and unspecified addresses are always refused.
 
 # Operator deployment: three cameras, each with an independent DLSPS pipeline.
 # The stock MQTT publisher and REST WebRTC destination use bounded queues
@@ -113,7 +119,7 @@ pipeline_start_poll_seconds: 2.0
 # sessions of the pipeline it replaces, so a window near that turns the
 # supervisor into a restart loop that never lets a camera finish starting.
 feed_stale_seconds: 90.0
-# Mirrors takeover_seconds in config/dlsps/crops/*.json.
+# Mirrors takeover_seconds in config/dlsps/crops/template.json.
 takeover_seconds: 30.0
 timeout_seconds: 5.0
 log_level: INFO
@@ -134,7 +140,7 @@ speech_ack_text: "Checking."
 # Talk press wakes TTS and Whisper at most this often (idle devices were 4-9 s slower).
 voice_warm_interval_seconds: 20.0
 # Optional stock voice name from GET /v1/model-info; unset uses the service default.
-# tts_voice: Ryan
+tts_voice: Miles
 # Optional JSONL arbiter trace for evidence; unset keeps only the in-memory ring.
 # arbiter_trace_path: /data/arbiter_trace.jsonl
 

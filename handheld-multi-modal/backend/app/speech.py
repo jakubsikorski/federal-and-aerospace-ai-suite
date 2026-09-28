@@ -1,8 +1,8 @@
 """Audio arbiter (design section 16.4): the only producer of TTS requests.
 
-One utterance at a time. Backend decides what is "current"; the UI only plays
-whatever the arbiter reports and stops when that changes, so two clips can never
-be scheduled to overlap. An utterance is "spoken" only when a browser reports
+One utterance at a time. Backend decides what is "current"; the UI plays what
+the arbiter reports, preloads the ready next answer chunk and starts it the
+moment its own clip ends, so one tab never overlaps or cuts its own speech. An utterance is "spoken" only when a browser reports
 that playback ended (`ack`). Without that report the slot ends after the WAV's
 own duration plus a margin and is recorded as "unconfirmed", never as heard.
 """
@@ -46,10 +46,19 @@ ANSWER_CHUNK_WORDS = 12
 MIN_TAIL_WORDS = 4
 # The first chunk of an answer is short so the operator hears words sooner:
 # synthesis cost grows with length and the LLM needs fewer tokens to reach it.
-FIRST_CHUNK_WORDS = 6
+FIRST_CHUNK_WORDS = 7
 _ABBREVIATIONS = {
     "mr.", "mrs.", "ms.", "dr.", "prof.", "sr.", "jr.", "st.",
     "e.g.", "i.e.", "etc.", "vs.", "u.s.", "u.k.",
+}
+
+
+_LEANING_WORDS = {
+    "a", "an", "the", "and", "or", "but", "nor", "of", "to", "in", "on", "at", "by",
+    "for", "with", "from", "as", "into", "than", "that", "which", "who", "is", "are",
+    "was", "were", "be", "its", "their", "his", "her", "our", "your", "my", "this",
+    "these", "those", "such", "very", "more", "most", "can", "will", "would", "could",
+    "should", "may", "might", "not", "no", "so", "if", "when", "while", "because", "due",
 }
 
 
@@ -149,7 +158,12 @@ def _head_end(words: list[str]) -> int | None:
     for i in range(FIRST_CHUNK_WORDS - 1, 2, -1):
         if words[i].endswith((",", ";", ":")):
             return i + 1
-    return FIRST_CHUNK_WORDS
+    # Never end the head on a word that leans on the next one ("due to the |
+    # scattering"): SpeechT5 swallows it and the join sounds clipped.
+    end = FIRST_CHUNK_WORDS
+    while end > 4 and words[end - 1].lower() in _LEANING_WORDS:
+        end -= 1
+    return end
 
 
 def short_head(chunks: list[str]) -> list[str]:
@@ -383,14 +397,14 @@ class Arbiter:
             self.cond.notify_all()
 
     def cancel(self, *, rule_id: str | None = None, group: str | None = None,
-               reason: str = "cancelled") -> int:
+               generation: int | None = None, reason: str = "cancelled") -> int:
         """Withdraw speech for a rule or incident the operator silenced.
 
         Queued items are dropped, an item being synthesized is discarded when
         synthesis returns, and the current one stops (the UI stops on change).
         """
         def hit(item):
-            return item is not None and (
+            return item is not None and (generation is None or item.get("answer_generation") == generation) and (
                 (rule_id is not None and item.get("rule_id") == rule_id)
                 or (group is not None and item.get("group") == group))
         if rule_id is None and group is None:
@@ -413,10 +427,15 @@ class Arbiter:
         if event not in PLAYBACK_EVENTS:
             raise ValueError("event must be one of " + ", ".join(PLAYBACK_EVENTS))
         with self.cond:
-            if self.current is None or self.current["id"] != speech_id:
+            # The browser starts a preloaded next answer chunk the moment the
+            # current one ends, a little before the arbiter promotes it.
+            candidates = [self.current, (self.current or {}).get("prefetched_next"),
+                          *(i for i in self.queue if i["kind"] == "answer")]
+            item = next((i for i in candidates if i is not None and i["id"] == speech_id), None)
+            if item is None or item.get("cancelled"):
                 return False
-            self.current.setdefault("acks", []).append(event)
-            self._event("playback_" + event, self.current)
+            item.setdefault("acks", []).append(event)
+            self._event("playback_" + event, item)
             self.cond.notify_all()
             return True
 
@@ -459,10 +478,22 @@ class Arbiter:
                 } | {"cached": current.get("cached", False),
                      "audio_base64": (current.get("audio_base64")
                                       if current.get("mode") == "audio" else None)},
+                "next": self._ready_next(current),
                 "queued": [{"id": i["id"], "kind": i["kind"], "text": i["text"]}
                            for i in sorted(self.queue, key=lambda i: (i["priority"], i["seq"]))],
             }
 
+
+    @staticmethod
+    def _ready_next(current: dict | None) -> dict | None:
+        """The synthesized next answer chunk, so the browser can play it gaplessly."""
+        item = (current or {}).get("prefetched_next")
+        if (item is None or current.get("mode") != "audio" or not item.get("prefetch_done")
+                or item.get("cancelled") or not item.get("wav")):
+            return None
+        item.setdefault("audio_base64", base64.b64encode(item["wav"]).decode("ascii"))
+        return {"id": item["id"], "kind": item["kind"], "text": item["text"],
+                "duration_s": item.get("duration_s"), "audio_base64": item["audio_base64"]}
 
     def outcome(self, ref: str) -> str | None:
         with self.cond:
@@ -544,6 +575,10 @@ class Arbiter:
                     tail = tail["prefetched_next"]
                 tail.setdefault("remaining", []).extend(chunks)
                 self._event("answer_extended", tail)
+                # Text streamed in while this chunk plays: synthesize the next
+                # one now, not after playback ends.
+                if tail is self.current:
+                    self._prefetch_next(tail)
                 self.cond.notify_all()
                 return item
         return None
@@ -637,6 +672,8 @@ class Arbiter:
                     next_item["cancelled"] = item["cancelled"]
                 if next_item.get("cancelled"):
                     self._finish(next_item, next_item["cancelled"])
+                else:
+                    self._event("prefetched", next_item)
                 self.cond.notify_all()
         threading.Thread(target=run, name="audio-prefetch", daemon=True).start()
 
