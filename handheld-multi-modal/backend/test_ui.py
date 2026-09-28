@@ -988,7 +988,8 @@ def main():
               const styles = getComputedStyle(document.documentElement);
               return ["--text", "--muted", "--accent"].every(name => {
                 const text = luminance(styles.getPropertyValue(name).trim());
-                return ["#20252c", "#292f38", "#35485e"].every(bg => (text+.05)/(luminance(bg)+.05) >= 4.5);
+                const surfaces = ["--bg", "--surface", "--panel", "--panel2", "--selected"].map(v => styles.getPropertyValue(v).trim());
+                return [...surfaces, "#384e62", "#5b492a"].every(bg => (text+.05)/(luminance(bg)+.05) >= 4.5);
               });
             })()''')
             if args.screenshots:

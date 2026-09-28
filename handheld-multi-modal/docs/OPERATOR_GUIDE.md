@@ -3,6 +3,11 @@
 Open `https://<device>:8443` and accept the self-signed certificate.
 Red numbers in the pictures match the numbered lists below.
 
+The console is one fixed landscape screen: live camera and alerts on the left,
+evidence and the assistant on the right, resources below. It uses a dark navy
+theme with teal for primary actions (Talk, Ask, selected camera), amber for
+alerts and warnings, and red only for a recording Talk button or failures.
+
 ![Operator UI](images/operator-ui.jpg)
 
 ## Top bar
@@ -13,14 +18,18 @@ Red numbers in the pictures match the numbered lists below.
    restored on the next visit. **All cameras** shows the live grid (below).
    A yellow badge counts open alerts. With many cameras the tab strip scrolls
    sideways; a fade on the right means more tabs.
-2. **Mission** — mission documents and brief (see [Mission](#mission)).
-3. **Manage alerts** — alert rules (see [Rules](#rules)).
-4. **Audio off / Audio on** — tap once so the browser may play spoken
-   alerts. Speech is silent until you do.
-5. **Clock** — local time; "live updates" means the UI is connected.
+2. **Talk** — ask a question by voice (see
+   [Voice questions](#voice-questions-and-spoken-answers)). While listening it
+   turns red and reads **Send question**.
+3. **Mission** — mission documents and brief (see [Mission](#mission)).
+4. **Manage alerts** — alert rules (see [Rules](#rules)).
+5. **Audio off / Audio on** — tap once so the browser may play spoken
+   alerts and answers. Amber means off; green means on. Speech is silent
+   until you tap it. **Stop speaking** appears beside it while speech plays.
+6. **Clock** — local time; "live updates" means the UI is connected.
    **Connection lost · retrying** means data may be stale until it reconnects.
-6. **Models & devices** — each model with its device and status. Click one
-   for details.
+7. **Models & devices** — each model with its device and status (Vision on
+   NPU, LLM and Transcription on GPU, Speech on CPU). Click one for details.
 
 ![Model details](images/guide-model-details.jpg)
 
@@ -33,14 +42,15 @@ Red numbers in the pictures match the numbered lists below.
 
 1. **Tile** — one camera, up to four per page. Tap to open that camera.
    Tiles with open alerts glow.
-2. **‹ / ›** — next or previous four cameras.
+2. **‹ / ›** — next or previous four cameras (shown only with more than four).
 
 ## Live camera and alerts
 
 ![Live camera and alerts](images/guide-video-alerts.jpg)
 
 New alerts update camera badges, highlights and a notification. Tap **Alerts**
-to open the list. Incoming alerts do not automatically expand it or resize video.
+(the amber bar under the video) to open the list. Incoming alerts do not
+automatically expand it or resize video.
 
 1. Annotated video of the selected camera (boxes on detected objects). The
    small badge shows estimated video delay when available.
@@ -130,10 +140,10 @@ not. General answers never describe what is on camera.
 1. Open **Manage alerts**. Choose **Appears** or **Stays too long**.
 2. Check **Camera** (defaults to the camera being viewed) and **Watch for**.
    **Anything detected** includes all object types detected by the configured pipeline.
-3. For **Stays too long**, choose 10 seconds, 30 seconds, 1 minute or a custom duration.
+3. **Stays for** (only for **Stays too long**) — 10 seconds, 30 seconds, 1 minute or a custom duration.
 4. **Area** defaults to the whole camera view. Choose **Draw an area** to limit it.
 5. **More options** contains confidence, active hours and speech settings.
-6. Read the plain-language preview, then **Create alert**.
+6. Read the plain-language preview above it, then **Create alert**.
 7. Existing alerts show their conditions. **Edit**, **Turn off / Turn on** or **Delete**
    are available beside each. Editing finishes with **Save changes**.
 
@@ -176,20 +186,38 @@ vehicles walk; an object counts by where its feet touch the ground.
 
 ## Voice questions and spoken answers
 
-Tap **🎙 Talk** in the top bar from any console view. It opens Assistant and
+![Listening](images/guide-voice-listening.jpg)
+
+1. **Send question** — the Talk button while listening (red); tap to send.
+2. **Status** — Listening, Transcribing, or what went wrong.
+3. **Cancel** — discard the recording.
+
+![Spoken answer](images/guide-voice-answer.jpg)
+
+1. **Answer** — full text, always shown.
+2. **Speech line** — what is being spoken now, or text only if speech is
+   unavailable.
+3. **Stop speaking** — silence the rest of the answer; the text stays.
+
+Tap **Talk** in the top bar from any console view. It opens Assistant and
 starts recording after microphone permission is granted. Tap **Send question**
 when finished; holding the button is not required.
 Use trusted HTTPS. **Listening** means the browser microphone is active. Capture
 ends when you tap Send question, after 15 seconds, or after a pause following speech. **Cancel**
-or Escape discards the voice request. The microphone closes when capture ends.
+or Escape discards the voice request, even while it is transcribing: you will not hear
+"Checking." or an answer for it. Queued alert announcements are kept. The microphone
+closes when capture ends.
 
 **Transcribing** is followed by the recognized question and the normal answer
 progress. Voice uses the same camera scope and answer mode as typing. If capture
 or transcription fails, type your question; no camera settings are changed.
 
-With **Audio on**, answers play as short sentences (long sentences split into
+With **Audio on**, you hear "Checking." as soon as your question is recognized,
+then the answer starts within a few seconds. Answers play as short sentences (long sentences split into
 bounded clauses). The complete text stays visible. **Stop speaking** cancels the
 remaining speech without deleting the answer. Tapping Talk interrupts
-playback immediately. Audio off, synthesis errors or browser playback restrictions
+playback immediately. Your answer is spoken first: alert announcements that
+arrive while you ask or listen wait until the answer finishes, while the alert
+itself appears on screen at once. Audio off, synthesis errors or browser playback restrictions
 leave the text available. Tablet microphone and autoplay behavior still require
 verification on the target browser; see Phase 9 evidence.
