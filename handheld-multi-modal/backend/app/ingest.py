@@ -106,6 +106,8 @@ class Ingest:
         self.lock = threading.Lock()
         self.known = {s["stream_id"] for s in cfg["streams"] if s.get("enabled", True)}
         self.started_at = time.monotonic()
+        # Cameras added after startup get their own "starting" grace period.
+        self.known_since: dict[str, float] = {}
         # Section 6.2/6.4/8.1. Held as attributes rather than module constants so
         # a deployment can retune them without a code change.
         self.gap = float(cfg.get("absence_split_seconds", INTERVAL_GAP_SECONDS))
@@ -628,7 +630,8 @@ class Ingest:
                 for stream_id in self.known:
                     seen = self.last_frame.get(stream_id)
                     if seen is None:
-                        self._set_health(stream_id, False, self.initial_feed_reason(now), wall)
+                        self._set_health(stream_id, False,
+                                         self.initial_feed_reason(now, stream_id), wall)
                     elif now - seen > SIGNAL_TIMEOUT_SECONDS:
                         self._set_health(stream_id, False, "no_signal", wall)
                 self._flush_intervals()
@@ -753,6 +756,43 @@ class Ingest:
             self.last_observed.pop(stream_id, None)
             self.health.pop(stream_id, None)
 
+    def set_known(self, stream_ids) -> None:
+        """Camera registry changed at runtime (cameras.refresh).
+
+        A camera that leaves closes its open tracks and feed-health interval,
+        exactly as a shutdown would, so nothing it saw is reported as current.
+        A camera that joins adopts its recorded identity and starts a fresh
+        grace period. The set is replaced, never mutated, because other
+        threads iterate it without the lock.
+        """
+        wanted = set(stream_ids)
+        with self.lock:
+            self._flush_intervals()
+            now, wall = time.monotonic(), time.time()
+            for stream_id in self.known - wanted:
+                self._close_tracks(stream_id, "camera_disabled")
+                for store in (self.open_intervals, self.tentative, self.parked):
+                    for key in [k for k in store if k[0] == stream_id]:
+                        store.pop(key, None)
+                for key in [k for k in self.active if k[0] == stream_id]:
+                    entry = self.active.pop(key)
+                    if self.alerts is not None and entry.get("track_id") is not None:
+                        self.alerts.drop_track(entry["track_id"])
+                self.conn.execute("UPDATE feed_health SET ended_utc = ? "
+                                  "WHERE stream_id = ? AND ended_utc IS NULL",
+                                  (_utc(wall), stream_id))
+                for store in (self.health, self.last_frame, self.known_since):
+                    store.pop(stream_id, None)
+            for stream_id in wanted - self.known:
+                row = self.conn.execute("SELECT tracking_session_id, history_generation "
+                                        "FROM streams WHERE stream_id = ?", (stream_id,)).fetchone()
+                if row is not None and row["tracking_session_id"]:
+                    self.identity[stream_id] = (row["tracking_session_id"],
+                                                row["history_generation"] or "")
+                self.known_since[stream_id] = now
+            self.known = wanted
+            self.conn.commit()
+
     # -- reads -------------------------------------------------------------
     def live_tracks(self, stream_id: str, cutoff: float) -> list[dict]:
         """Active tracks seen since `cutoff` (epoch), for the section 6.3 merge.
@@ -788,8 +828,9 @@ class Ingest:
         with self.lock:
             return dict(self.counters)
 
-    def initial_feed_reason(self, now: float) -> str:
-        return ("starting" if now - self.started_at < float(
+    def initial_feed_reason(self, now: float, stream_id: str | None = None) -> str:
+        since = self.known_since.get(stream_id, self.started_at)
+        return ("starting" if now - since < float(
             self.cfg.get("pipeline_start_timeout_seconds", 180)) else "no_signal_yet")
 
     def snapshot(self) -> dict[str, dict]:

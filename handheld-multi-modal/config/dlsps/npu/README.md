@@ -38,7 +38,7 @@ curl -X POST http://127.0.0.1:8080/pipelines/user_defined_pipelines/handheld_npu
       }
     },
     "parameters": {
-      "crop-config": "{\"config\": \"/opt/handheld-crops-config/cam1.json\"}",
+      "crop-config": "{\"config\": \"/opt/handheld-crops-config/template.json\", \"stream_id\": \"cam1\"}",
       "model_instance": "inst_cam1_0a1b2c3d"
     }
   }'

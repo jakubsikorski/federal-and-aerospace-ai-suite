@@ -162,3 +162,11 @@ CREATE TABLE IF NOT EXISTS attribute_samples (
 CREATE INDEX IF NOT EXISTS ix_attributes_track_time
     ON attribute_samples(track_id, started_utc, ended_utc);
 CREATE INDEX IF NOT EXISTS ix_attributes_time ON attribute_samples(ended_utc);
+
+-- Console camera changes (add, rename, enable, disable, remove), for audit.
+CREATE TABLE IF NOT EXISTS camera_audit (
+  audit_id   INTEGER PRIMARY KEY,
+  at_utc     TEXT NOT NULL,
+  action     TEXT NOT NULL,
+  stream_id  TEXT NOT NULL,
+  detail     TEXT);

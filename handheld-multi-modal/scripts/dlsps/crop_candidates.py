@@ -68,8 +68,15 @@ class Settings:
     mqtt_topic: str = "detections/snips"
 
     @classmethod
-    def load(cls, path=None):
+    def load(cls, path=None, stream_id=None):
         values = json.loads(Path(path).read_text()) if path else {}
+        if stream_id is not None:
+            # One shared template for every camera: the camera id arrives with
+            # the pipeline request and names its own store under output_dir.
+            if not isinstance(stream_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", stream_id):
+                raise ValueError("stream_id must be 1..64 safe identifier characters")
+            values["stream_id"] = stream_id
+            values["output_dir"] = str(Path(values.get("output_dir") or cls.output_dir) / stream_id)
         settings = cls(**values)  # Unknown keys fail at startup, never silently ignored.
         for name, value in asdict(settings).items():
             default = getattr(cls(), name)
@@ -616,9 +623,9 @@ class Store:
 
 
 class CropCandidates:
-    def __init__(self, config=None, predicted_confidence=None):
+    def __init__(self, config=None, predicted_confidence=None, stream_id=None):
         import cv2  # Missing runtime dependency must fail visibly at startup.
-        self.c = Settings.load(config)
+        self.c = Settings.load(config, stream_id)
         # Backend passes 1.0 only for a short-term (predicting) tracker, whose
         # predicted boxes carry exactly that value; otherwise every score counts.
         if predicted_confidence is not None and (
@@ -982,6 +989,19 @@ if __name__ == "__main__":
         scratch = Path.cwd() / ".crop-self-check"
         scratch.mkdir(exist_ok=True)
         tempfile.tempdir = str(scratch)
+        # Template config: the request's stream_id picks the camera's own store.
+        template = Path(__file__).resolve().parents[2] / "config/dlsps/crops/template.json"
+        loaded = Settings.load(template, "cam7")
+        assert loaded.stream_id == "cam7", loaded.stream_id
+        assert loaded.output_dir == "/opt/handheld-crops-output/cam7", loaded.output_dir
+        for bad in ("../cam1", "", "cam 1", 7):
+            try:
+                Settings.load(template, bad)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError(f"unsafe stream_id accepted: {bad!r}")
+
         with tempfile.TemporaryDirectory() as tmp:
             base = Settings(output_dir=tmp, takeover_seconds=30.0)
             live = Store(base)

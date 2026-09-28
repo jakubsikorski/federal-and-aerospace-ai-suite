@@ -123,6 +123,8 @@ def validate_detector_profile(metadata_path: str, profile_path: str,
 
 # Every camera needs its own crop store: the producer holds an exclusive flock
 # on <output_dir>/.lock, so a shared directory would fail the second pipeline.
+# One template serves every camera; the request's stream_id names the store
+# (<output_dir>/<stream_id>), so a camera added at runtime needs no new file.
 CROP_CONFIG_DIR = "/opt/handheld-crops-config"
 
 # States in which an instance still holds real resources: its source connection,
@@ -147,6 +149,9 @@ _accepted_at: dict[str, float] = {}
 _cleaned_terminal: set[str] = set()
 _lifecycle_lock = threading.RLock()
 shutdown = threading.Event()
+# Set by a camera change so the supervisor reconciles now, not up to one
+# supervise_seconds later.
+wake = threading.Event()
 MAX_BACKOFF_PASSES = 32
 START_TERMINAL_STATES = frozenset({"ERROR", "ABORTED", "COMPLETED"})
 
@@ -188,7 +193,8 @@ def _request_body(stream: dict) -> dict:
             # JSON *text*, not an object: gvapython's kwarg property parses the
             # value itself and DLSPS validates the schema entry as a string.
             "crop-config": json.dumps(
-                {"config": f"{CROP_CONFIG_DIR}/{stream['stream_id']}.json"}
+                {"config": f"{CROP_CONFIG_DIR}/template.json",
+                 "stream_id": stream["stream_id"]}
                 | ({"predicted_confidence": PREDICTED_CONFIDENCE}
                    if PREDICTED_CONFIDENCE is not None else {})
             ),

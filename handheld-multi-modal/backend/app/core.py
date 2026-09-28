@@ -29,6 +29,10 @@ DEFAULTS: dict[str, Any] = {
     "crop_cleanup_script": "/opt/handheld-crops/crop_candidates.py",
     "detector_metadata_path": "/config/detector/metadata.yaml",
     "max_streams": 3,  # current operator deployment; configurable in backend.yaml
+    # Network cameras the operator may add at runtime (MediaMTX pulls them).
+    # Literal IPs inside these networks, or exact hostnames listed here.
+    # Loopback, link-local, multicast and unspecified addresses are always refused.
+    "camera_source_allow": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"],
     "streams": [
         {"stream_id": "cam1", "display_name": "Camera 1", "sort_order": 0, "enabled": True},
     ],
@@ -189,19 +193,42 @@ def migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE alert_incidents ADD COLUMN counted_from_utc TEXT")
     if "counted_after" not in incident_columns:
         conn.execute("ALTER TABLE alert_incidents ADD COLUMN counted_after INTEGER NOT NULL DEFAULT 0")
+    # Runtime camera registry: `config` rows follow backend.yaml on every start;
+    # `operator` rows were added in the console and persist here only.
+    stream_columns = {r[1] for r in conn.execute("PRAGMA table_info(streams)")}
+    for column, ddl in (("origin", "TEXT NOT NULL DEFAULT 'config'"),
+                        ("pull_url", "TEXT"),
+                        ("name_locked", "INTEGER NOT NULL DEFAULT 0"),
+                        ("created_utc", "TEXT"),
+                        ("removed_utc", "TEXT")):
+        if column not in stream_columns:
+            conn.execute(f"ALTER TABLE streams ADD COLUMN {column} {ddl}")
     conn.commit()
 
 
 def sync_streams(conn: sqlite3.Connection, streams: list[dict]) -> None:
-    """Config is the source of truth for the camera list; run state is not touched."""
+    """Config is the source of truth for config cameras; run state is not touched.
+
+    Cameras added in the console (`origin = 'operator'`) are never changed here,
+    and a config entry that collides with one is ignored with a warning. An
+    operator rename of a config camera (`name_locked`) survives restarts.
+    """
     for stream in streams:
+        taken = conn.execute("SELECT origin FROM streams WHERE stream_id = ?",
+                             (stream["stream_id"],)).fetchone()
+        if taken is not None and taken["origin"] != "config":
+            log.warning("config camera %s ignored: the id belongs to a console-added camera",
+                        stream["stream_id"])
+            continue
         conn.execute(
             """INSERT INTO streams (stream_id, display_name, source_uri, annotated_path,
-                                    enabled, sort_order)
+                                    enabled, sort_order, origin)
                VALUES (:stream_id, :display_name, :source_uri, :annotated_path,
-                       :enabled, :sort_order)
+                       :enabled, :sort_order, 'config')
                ON CONFLICT(stream_id) DO UPDATE SET
-                 display_name=excluded.display_name, source_uri=excluded.source_uri,
+                 display_name=CASE WHEN streams.name_locked THEN streams.display_name
+                                   ELSE excluded.display_name END,
+                 source_uri=excluded.source_uri,
                  annotated_path=excluded.annotated_path, enabled=excluded.enabled,
                  sort_order=excluded.sort_order""",
             {**stream, "enabled": int(stream.get("enabled", True))},
@@ -213,7 +240,8 @@ def sync_streams(conn: sqlite3.Connection, streams: list[dict]) -> None:
     configured = [s["stream_id"] for s in streams]
     holes = ",".join("?" * len(configured)) or "''"
     retired = conn.execute(
-        f"UPDATE streams SET enabled = 0 WHERE enabled = 1 AND stream_id NOT IN ({holes})",
+        f"UPDATE streams SET enabled = 0 WHERE enabled = 1 AND origin = 'config' "
+        f"AND stream_id NOT IN ({holes})",
         configured).rowcount
     if retired:
         log.warning("%d camera(s) removed from config and disabled; history retained", retired)

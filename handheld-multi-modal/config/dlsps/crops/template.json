@@ -1,6 +1,5 @@
 {
-  "stream_id": "cam4",
-  "output_dir": "/opt/handheld-crops-output/cam4",
+  "output_dir": "/opt/handheld-crops-output",
   "padding": 0.25,
   "aspect_ratio": 1.3333333333333333,
   "confirm_seconds": 0.25,
