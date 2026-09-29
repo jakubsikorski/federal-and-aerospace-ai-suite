@@ -126,8 +126,12 @@
   #rule-trigger label:has(:checked) { border-color: var(--accent); background: var(--selected); color: var(--text); }
   #rule-area, #rule-advanced, #rule-preview { grid-column: 1 / -1; }
   #rule-area button { min-height: 44px; margin-top: 6px; }
-  #rule-advanced summary { min-height: 44px; padding: 10px 0; cursor: pointer; }
-  #rule-advanced > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  #rule-advanced summary { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 10px; cursor: pointer; list-style: none; font-weight: 600; }
+  #rule-advanced summary::-webkit-details-marker { display: none; }
+  #rule-advanced summary::after { content: "▾"; margin-left: auto; font-size: 16px; }
+  #rule-advanced[open] summary::after { content: "▴"; }
+  #rule-advanced summary small { font-weight: 400; color: var(--muted); font-size: 12px; }
+  #rule-advanced > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 0 10px 10px; }
   #rule-preview { margin: 0; color: var(--muted); font-size: 13px; }
   #rule-submit { min-height: 44px; }
   #rule-list { margin: 0; padding: 0; list-style: none; }
@@ -573,6 +577,7 @@
   #rule-trigger label { background: var(--surface); border-color: var(--control); }
   #rule-trigger label:has(:checked) { background: var(--selected); box-shadow: inset 0 0 0 1px var(--accent); }
   #rule-area { padding: 8px 10px; border: 1px solid #46627f; border-radius: 9px; background: #152d46; }
+  #rule-advanced { border: 1px solid #46627f; border-radius: 9px; background: #152d46; }
   #rule-preview { padding: 8px 10px; background: #1d4c56; border-left: 3px solid var(--accent); border-radius: 0 7px 7px 0; color: #d9f5f2; }
   #rule-list li { padding: 10px 0; }
   #rule-list strong { font-weight: 600; }
@@ -672,7 +677,7 @@
           <button id="rule-draw-zone" class="quiet-button" type="button">Draw an area</button>
           <button id="rule-remove-zone" class="quiet-button" type="button" hidden>Remove area</button>
         </div>
-        <details id="rule-advanced"><summary>More options</summary><div>
+        <details id="rule-advanced"><summary>More options <small>Confidence, repeat, active hours, speech</small></summary><div>
           <label>Minimum confidence<input id="rule-confidence" type="number" min="0" max="1" step="0.05" placeholder="Any confidence"></label>
           <label title="An open alert is announced again only when the object is seen after this many seconds without a sighting. After Acknowledge, the next sighting is announced at once.">Repeat after quiet period (s)<input id="rule-cooldown" type="number" min="5" max="3600" step="1" value="30"></label>
           <label>Active from<input id="rule-active-start" type="time"></label>
