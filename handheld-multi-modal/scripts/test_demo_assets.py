@@ -119,7 +119,7 @@ def main():
         # Dry runs must never run the recursive downloader or create assets.
         dry_root = root / 'dry-run'
         dry_run = subprocess.run(
-            ['make', '-n', '-C', str(assets.REPO), 'demo', f'ASSET_ROOT={dry_root}'],
+            ['make', '-n', '-C', str(assets.REPO), 'demo-up', f'ASSET_ROOT={dry_root}'],
             check=True, capture_output=True, text=True).stdout
         assert not dry_root.exists()
         assert '--profile assets stop' in dry_run
