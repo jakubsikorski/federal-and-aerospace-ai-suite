@@ -40,7 +40,7 @@ Historical YOLO11s result: ~23fps sustained via `gvafpscounter` in container log
 
 - MQTT: use documented `appsink name=destination` + top-level
   `mqtt_publisher` config block. Raw `gvametapublish` element + REST
-  `destination.metadata.host` field is broken in this rc3 image (see
+  `destination.metadata.host` field is broken in this 2026.2.0 image (see
   `docs/application/video-contracts.md`).
 - Historical YOLO11s only: `Model quantization runtime (2025.0.0)
   != current runtime (2026.2.0)` was cosmetic. No equivalent YOLO26s warning is currently recorded.

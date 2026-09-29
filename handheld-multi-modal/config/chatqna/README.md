@@ -45,7 +45,7 @@ knowledge, mission corpus left intact) alongside
 `scripts/smoke/08_chatqna_rag.sh` (document-grounded answers unaffected).
 
 Deployment: `compose/handheld-multi-modal.yaml` service `chatqna`
-(`intel/chatqna:core_gpu_2026.2.0-rc2`, pinned by digest). `handheld-multi-modal.yaml`
+(`intel/chatqna:core_gpu_2026.2.0`, pinned by digest). `handheld-multi-modal.yaml`
 is the single entry point: a build agent (or any fresh environment with no
 existing container) runs `docker compose -f compose/handheld-multi-modal.yaml
 up -d chatqna` and gets a clean, reproducible deployment — no other setup

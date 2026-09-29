@@ -1,8 +1,9 @@
 # Metrics Manager: PASS (CPU/RAM/GPU/NPU/temp confirmed on this Lunar Lake host)
 
-Pinned image `intel/metrics-manager:2026.1.0`
-(digest `sha256:ca11ac8d33d79ad8f2912883f980bdf075df4e44867011d60a3c024b650357ee`,
-built 2026-06-16). Deployed via `compose/handheld-multi-modal.yaml` (`metrics`
+Pinned image `intel/metrics-manager:2026.2.0`
+(digest `sha256:95721fba4300c9778a0d6b133602f19a331ac3d3b0578510269ae19350a8465e`,
+2026-09-29; the smoke evidence below was recorded on the earlier 2026.1.0 image
+and re-run in `../../docs/application/evidence/release-2026.2.0-final/image-update-2026-09-29.txt`). Deployed via `compose/handheld-multi-modal.yaml` (`metrics`
 service), using upstream source's own `compose.yaml` defaults
 (`microservices/metrics-manager`, edge-ai-libraries commit `3b44c78`, dated
 2026-09-01): `privileged: true`, `pid: host`, `apparmor:unconfined`,
@@ -26,7 +27,7 @@ METRICS_URL=http://127.0.0.1:9090 METRICS_TELEGRAF_URL=http://127.0.0.1:9273 \
 Full session captured in `docs/application/evidence/metrics/smoke.log`. Confirmed
 on this Lunar Lake host:
 
-- `GET :9090/health` → `{"status":"healthy","version":"2026.1.0",...}`.
+- `GET :9090/health` → `{"status":"healthy","version":"2026.1.0",...}` (2026.2.0 reports the same).
 - `scripts/smoke/13_metrics.sh` PASS: two fresh, advancing CPU/RAM samples
   (`cpu_usage_user/system/idle`, `mem_used_percent`, `mem_available_percent`,
   `mem_total`, `mem_used`).

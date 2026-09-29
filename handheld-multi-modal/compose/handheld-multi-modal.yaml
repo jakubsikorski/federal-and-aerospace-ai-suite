@@ -42,7 +42,7 @@ x-gpu-healthcheck: &gpu-healthcheck
 # See docs/application/video-contracts.md and docs/design/APPLICATION_DESIGN.md.
 services:
   model-downloader:
-    image: intel/model-download:2026.2.0-rc2@sha256:8894c3d624e949e79d54557b834a11a90bc3673a98de820a0297f3328b91cc95
+    image: intel/model-download:2026.2.0@sha256:8894c3d624e949e79d54557b834a11a90bc3673a98de820a0297f3328b91cc95
     profiles: [assets]
     command: ["--plugins", "ultralytics"]
     restart: "no"
@@ -102,7 +102,7 @@ services:
       - ../config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
     networks: [handheld]
   dlsps:
-    image: intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24-rc3
+    image: intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24@sha256:b6a59e2dcab7f05364afd5b9e97b12b88cda84337d2c2999587716c50b9cca65
     restart: "no"
     depends_on: [mediamtx, mqtt]
     security_opt:
@@ -153,7 +153,7 @@ services:
       - ../data/dlsps/crops:/opt/handheld-crops-output
     networks: [handheld]
   metrics:
-    image: intel/metrics-manager:2026.1.0
+    image: intel/metrics-manager:2026.2.0@sha256:95721fba4300c9778a0d6b133602f19a331ac3d3b0578510269ae19350a8465e
     container_name: handheld-multi-modal-metrics
     restart: "no"
     # Stock upstream compose.yaml defaults (microservices/metrics-manager,
@@ -196,7 +196,7 @@ services:
       - ../config/metrics/telegraf.conf:/etc/telegraf/telegraf.conf:ro
     networks: [handheld]
   alert-agent:
-    image: intel/alert-agent-service:2026.2.0-rc3
+    image: intel/alert-agent-service:2026.2.0@sha256:4d9426486d00062e0805245b2d27e1107a014296eae65d38fa29318a5284880b
     container_name: handheld-multi-modal-alert-agent
     restart: "no"
     depends_on: [mqtt]
@@ -224,7 +224,7 @@ services:
       - ../config/alert-agent/resources:/app/resources:ro
     networks: [handheld]
   audio-analyzer:
-    image: intel/audio-analyzer:2026.2.0-rc3
+    image: intel/audio-analyzer:2026.2.0@sha256:b2c5cacb2073e89ecc07af211169e8c705f673bcb6980d503fff54a7e25581f1
     container_name: handheld-multi-modal-audio-analyzer
     restart: "no"
     # Hardcoded to match the image's baked-in app user and the ownership of
@@ -262,7 +262,7 @@ services:
   # Microsoft product, not PRC, and approved deploying it. See
   # config/tts/README.md for the full record of both decisions.
   tts:
-    image: intel/text-to-speech:2026.2.0-rc3
+    image: intel/text-to-speech:2026.2.0@sha256:81c265d7039f96a979999fa2e1188f01e9995ce18f1ec0c171e2eaa6d337a54e
     container_name: handheld-multi-modal-tts
     restart: "no"
     # Hardcoded to match the image's baked-in app user and the ownership of
@@ -304,7 +304,7 @@ services:
   # reused as-is; profile/build/UI/nginx machinery is dropped since this
   # the application only needs the running backend, not upstream's dev workflow).
   chatqna:
-    image: intel/chatqna:core_gpu_2026.2.0-rc2@sha256:1c893ef30f6e278957812c02d605903382fdc9f8b337c9ef77e82acd21a000d3
+    image: intel/chatqna:core_gpu_2026.2.0@sha256:1c893ef30f6e278957812c02d605903382fdc9f8b337c9ef77e82acd21a000d3
     container_name: handheld-multi-modal-chatqna-core-gpu
     restart: "no"
     group_add:

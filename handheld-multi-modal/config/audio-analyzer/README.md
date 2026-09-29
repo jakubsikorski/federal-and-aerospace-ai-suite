@@ -2,7 +2,7 @@
 
 Status: **PASS** on this Lunar Lake host (Intel Core Ultra 9 288V), 2026-09-10.
 
-Image `intel/audio-analyzer:2026.2.0-rc3`
+Image `intel/audio-analyzer:2026.2.0`
 (`sha256:b2c5cacb2073e89ecc07af211169e8c705f673bcb6980d503fff54a7e25581f1`),
 source `microservices/audio-analyzer/` (edge-ai-libraries).
 

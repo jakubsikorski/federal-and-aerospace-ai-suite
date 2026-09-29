@@ -1,6 +1,6 @@
 # Alert Agent: PASS (rule-based dispatch, real on this host)
 
-Pinned image `intel/alert-agent-service:2026.2.0-rc3`
+Pinned image `intel/alert-agent-service:2026.2.0`
 (digest `sha256:4d9426486d00062e0805245b2d27e1107a014296eae65d38fa29318a5284880b`).
 Deployed via `compose/handheld-multi-modal.yaml` (`alert-agent` service) w/
 `AGENT_MODE=false` (rule/action-dispatch only, no ADK/LLM in critical

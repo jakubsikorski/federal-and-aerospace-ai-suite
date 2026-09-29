@@ -19,15 +19,16 @@ entirely on the device, built from unmodified Open Edge Platform
 - **Alerts** — operator rules (e.g. "person on Camera 1") dispatched through
   the stock Alert Agent and spoken via SpeechT5 TTS on the CPU
   (`make speech-device TTS_DEVICE=GPU` moves it to the GPU).
-- **Voice (next phase)** — Whisper-medium transcription runs on the GPU;
-  microphone input in the UI is not built yet.
+- **Voice** — push-to-talk questions (**Talk**) transcribed by Whisper-medium
+  on the GPU; answers and alerts are spoken.
 - **Resources** — live CPU, memory, GPU, NPU and package power telemetry.
 
 ## Quick start
 
 Requirements: an Intel GPU/NPU host (`/dev/dri/renderD128`,
 `/dev/accel/accel0`), Docker Compose 2.24.4+, GNU Make, Python 3.11+, curl
-and OpenSSL. The first start downloads several GB of models.
+and OpenSSL. The first start downloads several GB of models and needs internet
+access; later starts and restarts run without internet.
 
 ```sh
 make demo-up        # demo: pinned sample videos as looping cameras
@@ -35,8 +36,40 @@ make up             # or: your own cameras, published to rtsp://127.0.0.1:8554/c
 ```
 
 Open `https://<device-address>:8443/` after trusting `config/tls/server.crt`.
-Run `make` for the full command list (status, stop, restart, clean-up, tests).
+Run `make` for the full command list (status, stop, clean-up, tests); run
+`make demo-up` (or `make up`) again to restart.
 `make demo-mission` loads the example mission packet from `examples/`.
+
+## Services
+
+**Open Edge Platform services, reused unmodified** (`release-2026.2.0`
+images, pinned in `compose/handheld-multi-modal.yaml`):
+
+| Service | Image | Role here |
+|---|---|---|
+| DL Streamer Pipeline Server | `intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24` | YOLO26s INT8 detection (NPU) and tracking per camera, annotated WebRTC, MQTT observations, evidence crops |
+| Chat Question-and-Answer Core | `intel/chatqna:core_gpu_2026.2.0` | Mission documents and general answers: `Intel/neural-chat-7b-v3-3` (GPU), `granite-embedding-125m-english`, `ms-marco-electra-base` reranker |
+| Audio Analyzer | `intel/audio-analyzer:2026.2.0` | Speech-to-text, Whisper-medium FP16 on the GPU |
+| Text To Speech | `intel/text-to-speech:2026.2.0` | Spoken alerts and answers, SpeechT5 (CPU default, GPU option) |
+| Alert Agent | `intel/alert-agent-service:2026.2.0` | Alert dispatch in rule mode (no LLM in the alert path) |
+| Metrics Manager | `intel/metrics-manager:2026.2.0` | CPU, memory, GPU, NPU and power telemetry |
+| Model Download | `intel/model-download:2026.2.0` | Prepares the YOLO26s INT8 OpenVINO IR (first start only) |
+
+**Third-party open-source services** (pinned upstream images):
+
+| Service | Image | Role here |
+|---|---|---|
+| MediaMTX | `bluenviron/mediamtx:1.11.3` | RTSP camera input, WHIP/WHEP WebRTC relay to the browser |
+| Coturn | `coturn/coturn:4.18.0` | TURN relay for WebRTC only |
+| Eclipse Mosquitto | `eclipse-mosquitto:2.0.22` | MQTT broker between DLSPS and the Backend |
+| nginx | `nginx:1.27-alpine` | TLS reverse proxy (`https://<device>:8443`) |
+| FFmpeg | `jrottenberg/ffmpeg:6.1-ubuntu2404` | Demo only: loops the sample videos as RTSP cameras |
+
+**Built for this application** (`backend/`): the application Backend
+(`handheld/backend:dev`, FastAPI) and the browser UI it serves. They own
+cameras, rules, alert incidents, evidence history, speech arbitration and
+telemetry aggregation, and call the services above only through their stock
+APIs. Details and versions: [COMPONENTS.md](COMPONENTS.md).
 
 ## Architecture
 

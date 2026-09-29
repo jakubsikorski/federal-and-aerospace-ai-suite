@@ -109,7 +109,7 @@ def sample():
 try:
     health = json.loads(get(base, "/health"))
     if health.get("status") != "healthy" or health.get("version") != "2026.1.0":
-        raise ValueError("expected healthy service reporting source-selected version 2026.1.0")
+        raise ValueError("expected healthy service reporting the version 2026.1.0 that the pinned 2026.2.0 image reports")
     first = sample()
     print(json.dumps({"sample": 1, "scope": "cpu_ram_only", "metrics": first}), flush=True)
     time.sleep(3)

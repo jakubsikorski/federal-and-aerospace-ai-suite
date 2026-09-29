@@ -2,7 +2,7 @@
 
 Status: **PASS** on this Lunar Lake host (Intel Core Ultra 9 288V), 2026-09-10.
 
-Image `intel/text-to-speech:2026.2.0-rc3`
+Image `intel/text-to-speech:2026.2.0`
 (`sha256:81c265d7039f96a979999fa2e1188f01e9995ce18f1ec0c171e2eaa6d337a54e`),
 source `microservices/text-to-speech/`.
 
@@ -19,7 +19,7 @@ Two candidates fully investigated:
    its own source (`utils/ensure_parler.py`) requires — confirmed via
    direct deploy attempt crashing w/ `RuntimeError: parler-tts is
    not installed`, and via `docker run --rm --entrypoint sh
-   intel/text-to-speech:2026.2.0-rc3 -c "python3 -c 'import parler_tts'"`
+   intel/text-to-speech:2026.2.0 -c "python3 -c 'import parler_tts'"`
    failing w/ `ModuleNotFoundError`. Not fixed by patching stock
    image (out of scope).
 

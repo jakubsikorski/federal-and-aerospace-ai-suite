@@ -118,7 +118,7 @@ class Services:
     def metrics(self) -> tuple[str, dict | None]:
         """Ask for real samples: an empty result means the collectors are not working.
 
-        Must be /api/v1/metrics/latest. On this pinned 2026.1.0 image the query
+        Must be /api/v1/metrics/latest. On the 2026.1.0 image the query
         endpoints /api/v1/metrics and /api/v1/metrics/names return
         {"metrics":[],"count":0} unconditionally - with no filter, with a limit
         and with a valid ?name= - while /latest returns 24 live series. Probed
