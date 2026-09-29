@@ -102,6 +102,18 @@ class EarlyAnswerSpeech:
         self.sent = self.sent or item is not None
 
 
+def answer_speech_text(answer: dict):
+    """Text to read aloud. Recording-coverage warnings stay on screen only."""
+    text = answer.get("spoken_text") or answer.get("answer_text")
+    warnings = (answer.get("query") or {}).get("warnings") or []
+    if isinstance(text, str) and warnings:
+        for warning in warnings:
+            if warning.get("message"):
+                text = text.replace(" " + warning["message"], "")
+        answer["spoken_text"] = text
+    return text
+
+
 @contextmanager
 def read_connection(request: Request):
     """Give each concurrent API read its own SQLite connection."""
@@ -958,7 +970,7 @@ def create_app() -> FastAPI:
                 if speech_generation is not None:
                     arbiter.end_answer(speech_generation)
         def spoken(answer, early_speech):
-            text = answer.get("spoken_text") or answer.get("answer_text")
+            text = answer_speech_text(answer)
             if body.get("speak") is True and isinstance(text, str) and text.strip():
                 if early_speech is not None:
                     early_speech.finish()

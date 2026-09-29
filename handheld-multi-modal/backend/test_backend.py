@@ -1694,6 +1694,14 @@ def test_history_ux_regressions():
     from app.assistant import Assistant, _history_answer
     truth = {"total": 7, "class_counts": {"person": 7}, "warnings": []}
     assert _history_answer(truth) == "Found 7 person tracks in the requested window."
+    from app.main import answer_speech_text
+    gap = {"total": 1, "class_counts": {"dog": 1}, "warnings": [
+        {"message": "cam1: recording coverage is incomplete for 4 seconds in this window."},
+        {"message": "cam2: recording coverage is incomplete for 14 seconds in this window."}]}
+    shown = {"answer_text": "Note. " + _history_answer(gap), "query": gap}
+    assert answer_speech_text(shown) == "Note. Found 1 dog track in the requested window."
+    assert "cam2: recording coverage" in shown["answer_text"] and shown["spoken_text"] == "Note. Found 1 dog track in the requested window."
+    assert answer_speech_text({"answer_text": "Hello."}) == "Hello."
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
