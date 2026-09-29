@@ -389,7 +389,7 @@ def main():
                     break
                 time.sleep(.05)
             assert RULE_REQUESTS[-1] == ('POST', '/api/rules', {'class_label': 'person', 'stream_id': 'cam2',
-                'min_confidence': 0.6, 'cooldown_seconds': 60, 'dwell_seconds': None, 'active_hours': None, 'zone': None, 'speak': True}), RULE_REQUESTS
+                'min_confidence': 0.6, 'cooldown_seconds': 30, 'dwell_seconds': None, 'active_hours': None, 'zone': None, 'speak': True}), RULE_REQUESTS
             click('#rule-list li:first-child button:nth-of-type(2)')
             for _ in range(100):
                 if RULE_REQUESTS[-1][0] == 'PATCH':

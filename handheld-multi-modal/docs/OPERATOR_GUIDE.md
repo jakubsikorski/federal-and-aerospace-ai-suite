@@ -245,6 +245,9 @@ check that panel for the exact device.
 3. **Stays for** (only for **Stays too long**) — 10 seconds, 30 seconds, 1 minute or a custom duration.
 4. **Area** defaults to the whole camera view. Choose **Draw an area** to limit it.
 5. **More options** contains confidence, active hours and speech settings.
+   **Repeat after quiet period** (default 30 s, 5–3600 s) sets
+   how long an object must be out of sight before a new sighting announces an
+   open alert again. After **Acknowledge**, the next sighting is announced at once.
 6. Read the plain-language preview above it, then **Create alert**.
 7. Existing alerts show their conditions. **Edit**, **Turn off / Turn on** or **Delete**
    are available beside each. Editing finishes with **Save changes**.

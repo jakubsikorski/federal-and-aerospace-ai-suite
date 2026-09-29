@@ -674,7 +674,7 @@
         </div>
         <details id="rule-advanced"><summary>More options</summary><div>
           <label>Minimum confidence<input id="rule-confidence" type="number" min="0" max="1" step="0.05" placeholder="Any confidence"></label>
-          <label>Speech cooldown (seconds)<input id="rule-cooldown" type="number" min="5" max="3600" step="1" value="60"></label>
+          <label title="An open alert is announced again only when the object is seen after this many seconds without a sighting. After Acknowledge, the next sighting is announced at once.">Repeat after quiet period (s)<input id="rule-cooldown" type="number" min="5" max="3600" step="1" value="30"></label>
           <label>Active from<input id="rule-active-start" type="time"></label>
           <label>Active to<input id="rule-active-end" type="time"></label>
           <label class="rule-speak"><input id="rule-speak" type="checkbox" checked> Announce by speech</label>
@@ -2576,7 +2576,25 @@ function stopPlayback() {
   state.nextUp = null;
 }
 
+// HDMI and some other outputs sleep when idle and drop the start of the next
+// sound (an alert's object name). While Audio is on, a silent stream keeps the
+// output awake so speech is heard from its first word.
+function keepOutputAwake(on) {
+  if (!on) { state.outputKeepAlive?.close?.().catch(() => {}); state.outputKeepAlive = null; return; }
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx || typeof AudioCtx !== "function") return;
+  if (!state.outputKeepAlive) {
+    try {
+      const ctx = new AudioCtx(), silence = ctx.createConstantSource();
+      silence.offset.value = 0; silence.connect(ctx.destination); silence.start();
+      state.outputKeepAlive = ctx;
+    } catch (_) { return; }
+  }
+  state.outputKeepAlive.resume?.().catch(() => {});
+}
+
 function renderAudioToggle() {
+  keepOutputAwake(state.audioOn);
   const toggle = $("audio-toggle");
   $("voice-enable-audio").hidden = state.audioOn;
   $("voice-hint").hidden = state.audioOn && !voice.turn;
@@ -3075,7 +3093,7 @@ function stopEditingRule() {
   $("rule-active-start").value = $("rule-active-end").value = "";
   $("rule-class").value = "";
   $("rule-confidence").value = "";
-  $("rule-cooldown").value = 60;
+  $("rule-cooldown").value = 30;
   $("rule-speak").checked = true;
   $("rule-dwell").value = 30;
   $("rule-duration-choice").value = "30";

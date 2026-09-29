@@ -47,7 +47,7 @@ def _row(row: sqlite3.Row) -> dict:
     return {
         "rule_id": row["rule_id"], "name": row["name"], "class_label": row["class_label"],
         "stream_id": row["stream_id"], "min_confidence": row["min_confidence"],
-        "enabled": bool(row["enabled"]), "cooldown_seconds": spec.get("cooldown_seconds", 60),
+        "enabled": bool(row["enabled"]), "cooldown_seconds": spec.get("cooldown_seconds", 30),
         "speak": spec.get("speak", True),
         "dwell_seconds": spec.get("dwell_seconds"),
         "active_hours": spec.get("active_hours"),
@@ -194,7 +194,7 @@ class Alerts:
         if not isinstance(body, dict) or set(body) - allowed:
             raise RuleError("unknown rule field")
         rule = {**(current or {"stream_id": None, "min_confidence": None,
-                               "cooldown_seconds": 60, "speak": True, "enabled": True,
+                               "cooldown_seconds": 30, "speak": True, "enabled": True,
                                "dwell_seconds": None, "active_hours": None,
                                "zone": None, "class_label": None}), **body}
         label = rule.get("class_label")
@@ -412,7 +412,7 @@ class Alerts:
                    FROM alert_incidents WHERE state='acknowledged'""").fetchall()
             closed = 0
             for row in rows:
-                if now - _epoch(row["last_match_utc"]) < cooldowns.get(row["rule_id"], 60):
+                if now - _epoch(row["last_match_utc"]) < cooldowns.get(row["rule_id"], 30):
                     continue
                 if row["snoozed_until_utc"] and _epoch(row["snoozed_until_utc"]) > now:
                     continue
@@ -733,7 +733,7 @@ class Alerts:
             "tools": self.tools,
             "dedup": {"enabled": True, "strategy": "field_hash",
                       "fields": ["metadata.track_id"],
-                      "window_seconds": int(spec.get("cooldown_seconds", 60)),
+                      "window_seconds": int(spec.get("cooldown_seconds", 30)),
                       "on_missing": "skip"},
             "metadata": metadata,
         }, "original_payload": metadata}
