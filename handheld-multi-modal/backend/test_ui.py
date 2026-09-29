@@ -703,7 +703,8 @@ def main():
                 if (row.querySelector('.incident-actions').firstElementChild !== ack || Math.abs(ack.getBoundingClientRect().height - view.getBoundingClientRect().height) > 1
                     || getComputedStyle(ack).borderTopColor === getComputedStyle(view).borderTopColor) return "ack must be first, same size, distinct border";
                 if (getComputedStyle(meta).whiteSpace === "nowrap" || main.getBoundingClientRect().width < 220) return "alert text target too narrow";
-                if (innerWidth >= 1280 && row.getBoundingClientRect().height > 60) return "alert row wraps: " + row.getBoundingClientRect().height;
+                const actions = row.querySelector('.incident-actions').getBoundingClientRect(), mainBox = main.getBoundingClientRect();
+                if (innerWidth >= 1280 && (actions.top >= mainBox.bottom - 1 || main.scrollHeight > main.clientHeight + 1)) return "alert row wraps or overflows: " + JSON.stringify([actions.top, mainBox.bottom, main.scrollHeight, main.clientHeight]);
                 if (document.querySelector("header").getBoundingClientRect().height > 64 || !document.querySelector('.camera[data-alerts]')) return "alert badge grows header";
                 main.click(); await new Promise(r=>setTimeout(r,80));
                 if (state.selected !== "cam2" || !$('tracks-panel').classList.contains('alert-view')) return "alert main did not view incident";
@@ -1085,12 +1086,25 @@ def main():
                     return true;
                   } finally {banner.className = savedClass; banner.textContent = savedText;}
                 })()''')
-            for width, height in [(1280, 714), (1024, 682), (1280, 600), (1024, 540)]:
+            for width, height in [(1280, 800), (1280, 714), (1024, 682), (1280, 600), (1024, 540)]:
                 request('POST', base + '/window/rect', {'width': width, 'height': height})
                 chrome = js('return outerHeight - innerHeight')
                 request('POST', base + '/window/rect', {'width': width, 'height': height + chrome})
                 time.sleep(.2)
                 check('state.resource = "gpu"; renderTelemetry(); true')
+                # Overlay panels stay inside the viewport and keep their title/Close
+                # visible when their body scrolls (1280x800 is the test display).
+                check('''(() => {
+                  const bad = [];
+                  for (const [id, open, close] of [["cameras-panel", "cameras-toggle", "close-cameras"], ["rules-panel", "rules-toggle", "close-rules"], ["mission-panel", "mission-toggle", "close-mission"]]) {
+                    $(open).click();
+                    const panel = $(id); panel.scrollTop = panel.scrollHeight;
+                    const box = panel.getBoundingClientRect(), head = panel.querySelector(".panel-head").getBoundingClientRect();
+                    if (box.top < 0 || box.bottom > innerHeight + 1 || box.right > innerWidth + 1 || Math.abs(head.top - box.top) > 2) bad.push([id, box.toJSON(), head.toJSON()]);
+                    $(close).click();
+                  }
+                  return bad.length ? bad : true;
+                })()''')
                 for expanded in (False, True):
                     check(f'''(() => {{
                       if ($("workspace").classList.contains("resources-expanded") !== {str(expanded).lower()}) $("expand-telemetry").click();
@@ -1661,7 +1675,7 @@ def main():
                 (args.screenshots / 'operator-welcome.png').write_bytes(base64.b64decode(request('GET', base + '/screenshot')))
                 js('return window.eval(' + json.dumps('state.assistantContext={text:"What can you do?",payload:{}}; renderAssistant({intent:"application_help",answer_text:"I can search recorded tracks, answer mission questions and explain general topics. I cannot see the live video.",errors:[]}); archiveAssistantTurn(); state.assistantContext={text:"Why is the sky blue?",payload:{}}; $("assistant-mode").value="general"; renderAssistant({intent:"general_chat",answer_text:"Air scatters blue sunlight more strongly than red light, so the daytime sky looks blue.",conversation:{turns:1},errors:[]});') + ')')
                 (args.screenshots / 'conversation.png').write_bytes(base64.b64decode(request('GET', base + '/screenshot')))
-            print('PASS: cameras panel add/limit/remove, WHEP recovery/backoff/cleanup/switch races, compact in-panel search without mode tabs, alphabetical types, session/custom ranges, question correction, images-only results, fixed Search/paging controls, typed history overlay/paging, stable evidence/focus/scroll, pending updates, reconnect pause/All, diagnostics, chart axes/gaps, stale readings, drawer, native video fullscreen, model placement/detail/failure states, filter failure recovery, repeated crop retry, 200px minimum video at 1280/1024 widths and 714/682/600/540 heights')
+            print('PASS: cameras panel add/limit/remove, WHEP recovery/backoff/cleanup/switch races, compact in-panel search without mode tabs, alphabetical types, session/custom ranges, question correction, images-only results, fixed Search/paging controls, typed history overlay/paging, stable evidence/focus/scroll, pending updates, reconnect pause/All, diagnostics, chart axes/gaps, stale readings, drawer, native video fullscreen, model placement/detail/failure states, filter failure recovery, repeated crop retry, 200px minimum video and in-view overlay panels at 1280x800 and 1280/1024 widths with 714/682/600/540 heights')
         finally:
             if session:
                 request('DELETE', f'/session/{session}')

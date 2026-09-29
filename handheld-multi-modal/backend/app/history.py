@@ -339,6 +339,18 @@ def incidents(conn: sqlite3.Connection, *, limit: int = 20) -> list[dict]:
                       observation_count, peak_confidence, confidence_freshness, closure_reason
                FROM tracks WHERE track_id = ?""", (row["last_track_id"],)).fetchone()
         snip, snip_state = _snip(conn, row["last_track_id"]) if track else (None, "none")
+        shown = snip
+        if snip is None:
+            # A new sighting has no crop yet: keep showing the alert's latest image
+            # (incident level only; the track keeps its own truthful state).
+            imaged = conn.execute(
+                """SELECT m.track_id FROM rule_matches m WHERE m.incident_id = ?
+                   AND m.track_id != ? AND EXISTS (SELECT 1 FROM candidates c
+                       WHERE c.track_id = m.track_id AND c.image_state = 'present')
+                   ORDER BY m.matched_utc DESC, m.rowid DESC LIMIT 1""",
+                (row["incident_id"], row["last_track_id"])).fetchone()
+            if imaged:
+                shown = _snip(conn, imaged["track_id"])[0]
         snoozed = row["state"] == "acknowledged" and (row["snoozed_until_utc"] or "") > now
         result.append({
             "incident_id": row["incident_id"], "rule_id": row["rule_id"],
@@ -354,7 +366,7 @@ def incidents(conn: sqlite3.Connection, *, limit: int = 20) -> list[dict]:
             "closed_utc": row["closed_utc"], "closure": row["closure"],
             "head_match_id": row["head_match_id"], "dispatch_state": row["dispatch_state"],
             "attempts": row["attempts"], "last_error": row["last_error"],
-            "snip_url": snip,
+            "snip_url": shown,
             "track": _track_payload(track, state_source="history", snip=snip,
                                     snip_state=snip_state) if track else None,
         })

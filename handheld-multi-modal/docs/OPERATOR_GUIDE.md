@@ -7,6 +7,8 @@ The console is one fixed landscape screen: live camera and alerts on the left,
 evidence and the assistant on the right, resources below. It uses a dark navy
 theme with teal for primary actions (Talk, Ask, selected camera), amber for
 alerts and warnings, and red only for a recording Talk button or failures.
+The reference display is 1280×800: everything fits without page scrolling,
+and the layout grows with larger screens.
 
 ![Operator UI](images/operator-ui.jpg)
 
@@ -25,7 +27,9 @@ alerts and warnings, and red only for a recording Talk button or failures.
 4. **Manage alerts** — alert rules (see [Rules](#rules)).
 5. **Audio off / Audio on** — tap once so the browser may play spoken
    alerts and answers. Amber means off; green means on. Speech is silent
-   until you tap it. **Stop audio** appears beside it while speech plays.
+   until you tap it. Turning it on announces alerts that still need
+   attention (for example, ones that fired while it was off). **Stop audio**
+   appears beside it while speech plays.
 6. **Clock** — local time; "live updates" means the UI is connected.
    **Connection lost · retrying** means data may be stale until it reconnects.
 7. **Models & devices** — each model with its device and status (Vision on
@@ -137,7 +141,11 @@ automatically expand it or resize video.
    small badge shows estimated video delay when available.
 2. **Fullscreen** — enlarge the video.
 3. **Alert** — object, camera, sightings, first–last time, state. Tap the
-   picture or text to show the objects that raised it in Evidence.
+   picture or text to show the objects that raised it in Evidence. The small
+   ⏱ time under the picture is how many seconds after the detector first saw
+   the object the whole alert arrived (on screen, voice and picture). Hover
+   or long-press it for each step. Alerts from before a Backend restart have
+   no time. Video delay is the separate badge on the video.
 4. **Acknowledge** — "I've seen it". First button, amber border. A new
    sighting reopens the alert.
 5. **View** — same as tapping the alert.

@@ -3073,6 +3073,62 @@ def test_tracks_shorter_than_three_observations_are_never_stored_shown_or_alerte
         alerts.close()
 
 
+def test_alert_latency_stages_and_alerted_crop_is_committed_and_pushed_at_once():
+    from app.main import _latency
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ing = _ingest(tmp, cameras=("cam1",), min_track_observations=3)
+        db = str(Path(tmp) / "ingest.db")
+        alerts = _alerts(ing, db, _SaidArbiter(), streams=("cam1",))
+        alerts.create(ing.conn, {"class_label": "person"})
+        now = time.time()
+        _observe(ing, "cam1", 1, count=3, start=now)
+        match_id, record = next(iter(alerts.latency.items()))
+        assert record["detected_at"] == now and record["qualified_at"] == now + 0.2, record
+        assert record["matched_at"] >= now and alerts.version == 1, (record, alerts.version)
+
+        other = connect(db)
+        visible = lambda: other.execute("SELECT count(*) FROM candidates").fetchone()[0]
+        _observe(ing, "cam1", 2, count=3, label="car", start=now + 0.3)
+        _send(ing, _crop("cam1", 2, "b" * 32, observed_at=now + 0.3))
+        assert visible() == 0 and alerts.version == 1, "unalerted crops wait for the batch commit"
+        _send(ing, _crop("cam1", 1, "c" * 32, observed_at=now + 0.3))
+        assert visible() == 2 and alerts.version == 2, (visible(), alerts.version)
+        other.close()
+
+        speech = {"playing": now + 0.5, "playback_started": now + 0.7}
+        state = types.SimpleNamespace(alerts=alerts, ingest=ing,
+                                      arbiter=types.SimpleNamespace(timing=lambda ref: speech))
+        latency = _latency(state, match_id)
+        assert latency["detected_at"] == now, latency
+        seconds = latency["seconds"]
+        assert seconds["qualified"] == 0.2 and seconds["voice_ready"] == 0.5, seconds
+        assert seconds["voice_started"] == 0.7 and 0 <= seconds["image_ready"] < 5, seconds
+        assert _latency(state, "unknown") is None and _latency(state, None) is None
+        # A grouped sighting's crop keeps the alert's first image time, and one
+        # whose crop came before its match makes a new alert's image available at once.
+        _observe(ing, "cam1", 3, count=3, start=now + 1)
+        _send(ing, _crop("cam1", 3, "d" * 32, observed_at=now + 1.2))
+        assert _latency(state, match_id)["seconds"]["image_ready"] == seconds["image_ready"]
+        from app import history
+        _observe(ing, "cam1", 4, count=3, start=now + 1.5)
+        ing.conn.commit()
+        incident = next(i for i in history.incidents(ing.conn) if i["head_match_id"] == match_id)
+        assert incident["track"]["track_id"] == 4 and incident["track"]["snip_state"] == "none", incident
+        assert incident["track"]["snip_url"] is None, "the track never claims another track's image"
+        assert "/api/tracks/3/snip" in (incident["snip_url"] or ""), "new sighting without a crop keeps the last image"
+        assert alerts.act(incident["incident_id"], "acknowledge")
+        _observe(ing, "cam1", 5, count=3, start=now + 1.8)
+        reopened = next(r for r in alerts.latency.values() if r["detected_at"] == now + 1.8)
+        assert reopened["image_at"] >= reopened["matched_at"], "a reopened alert shows the earlier image"
+        alerts.create(ing.conn, {"class_label": "car"})
+        _observe(ing, "cam1", 2, start=now + 2, label="car")
+        car = next(m for m, r in alerts.latency.items() if r["detected_at"] == now + 0.3)
+        assert alerts.latency[car]["image_at"] >= alerts.latency[car]["matched_at"]
+        ing.conn.close()
+        alerts.close()
+
+
 def test_alert_incidents_group_matches_and_follow_operator_actions():
     from app import history
     from app.alerts import RuleError
@@ -3188,6 +3244,11 @@ def test_alert_incidents_group_matches_and_follow_operator_actions():
         assert said.said[-1][:2] == ("alert", "person on Camera 2.") \
             and said.said[-1][2] == {"bypass_alert_floor": True}, said.said[-1]
         assert alerts.speak_test(ing.conn, "unknown") is None
+        # Audio turned on later: the alerts still open are announced once.
+        open_now = [i for i in history.incidents(ing.conn) if i["state"] == "open"]
+        assert alerts.speak_open(ing.conn)["id"] and said.said[-1][2] == {"bypass_alert_floor": True}
+        expected = "person on Camera 2." if len(open_now) == 1 else f"{len(open_now)} alerts need attention: "
+        assert said.said[-1][1].startswith(expected), (said.said[-1], open_now)
         # Remove drops the incident; matches stay and the next sighting opens a new one.
         matches = ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0]
         assert alerts.remove(live["incident_id"]) and not alerts.remove(live["incident_id"])
@@ -3200,6 +3261,8 @@ def test_alert_incidents_group_matches_and_follow_operator_actions():
         alerts.update(ing.conn, rule["rule_id"], {"enabled": False})
         assert said.cancelled[-1] == {"rule_id": rule["rule_id"]}
         assert all(i["state"] == "closed" for i in history.incidents(ing.conn))
+        heard = len(said.said)
+        assert alerts.speak_open(ing.conn) is None and len(said.said) == heard, "nothing open, nothing said"
         ing.conn.close()
         alerts.close()
 
@@ -3590,6 +3653,12 @@ def test_phase8_manual_speak_skips_floor_without_overlap_and_auto_alerts_wait():
         time.sleep(0.2)
         assert arbiter.snapshot()["current"] is None, "automatic alert skipped the floor"
         _wait_current(arbiter, "auto", timeout=2.0)
+        before = time.time()
+        assert arbiter.ack(arbiter.snapshot()["current"]["id"], "started")
+        timing = arbiter.timing("first")
+        assert timing["queued"] <= timing["playing"] <= timing["playback_ended"], timing
+        assert arbiter.timing("auto")["playback_started"] >= before
+        assert arbiter.timing("never") == {}
     finally:
         arbiter.close()
 
@@ -4260,7 +4329,7 @@ def test_live_and_rule_work_leave_event_loop_responsive():
             app.state.ingest = types.SimpleNamespace(snapshot=lambda: {})
             app.state.telemetry = types.SimpleNamespace(snapshot=lambda: {"metrics": []})
             app.state.alerts = types.SimpleNamespace(create=operation, update=operation,
-                act=lambda *a: bool(operation(*a)), confirmed=set())
+                act=lambda *a: bool(operation(*a)), confirmed=set(), latency={}, version=0)
             app.state.arbiter = types.SimpleNamespace(snapshot=lambda: {"version": 1})
             async def receive():
                 await asyncio.sleep(60)

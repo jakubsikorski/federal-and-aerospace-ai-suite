@@ -188,6 +188,7 @@ def migrate(conn: sqlite3.Connection) -> None:
     conn.executescript((Path(__file__).parent / "schema.sql").read_text())
     if "incident_id" not in {r[1] for r in conn.execute("PRAGMA table_info(rule_matches)")}:
         conn.execute("ALTER TABLE rule_matches ADD COLUMN incident_id TEXT")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_match_incident ON rule_matches (incident_id, matched_utc)")
     incident_columns = {r[1] for r in conn.execute("PRAGMA table_info(alert_incidents)")}
     if "counted_from_utc" not in incident_columns:
         conn.execute("ALTER TABLE alert_incidents ADD COLUMN counted_from_utc TEXT")

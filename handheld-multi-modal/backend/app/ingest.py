@@ -143,6 +143,9 @@ class Ingest:
         # before the observation that creates its track, so the row is parked
         # with track_id NULL and attached later. Bounded by age alone.
         self.parked: dict[tuple, float] = {}
+        # Scoped identity -> wall time a crop arrived before its track was
+        # admitted; moved onto the track entry for the alert latency readout.
+        self.first_crop: dict[tuple, float] = {}
         # Cameras mid-clear (section 9.2 step 2). Their messages are discarded
         # so a drain cannot repopulate the history being deleted.
         self.draining: set[str] = set()
@@ -338,7 +341,10 @@ class Ingest:
                     "stream_id": stream_id, "tracker_id": tracker_id, "class_label": label,
                     "first_observed_utc": first_stamp, "observation_count": 0,
                     "peak_confidence": confidence, "confidence_freshness": FRESHNESS,
+                    "first_at": first_at,
                 }
+                if key in self.first_crop:
+                    entry["first_crop_at"] = self.first_crop.pop(key)
             entry["last_observed_utc"] = stamp
             entry["last_at"] = observed_at
             entry["observation_count"] += count
@@ -437,6 +443,18 @@ class Ingest:
             self.counters["crop_duplicate"] += 1
             return
         self.counters["crop_ingested"] += 1
+        entry = self.active.get(key)
+        if entry is not None:
+            entry.setdefault("first_crop_at", time.time())
+        else:
+            self.first_crop.setdefault(key, time.time())
+            while len(self.first_crop) > 5000:
+                self.first_crop.pop(next(iter(self.first_crop)))
+        if self.alerts is not None and row["track_id"] is not None and self.alerts.crop_arrived(row["track_id"]):
+            # An alerted track's image is shown at once, not after the batched commit.
+            # Commit before announcing, so the pushed alert already sees the crop.
+            self.conn.commit()
+            self.alerts.version += 1
         if row["track_id"] is None:
             # No track yet. Park by scoped identity and attach when it appears.
             self.parked.setdefault(key, time.monotonic() + self.pending_ttl)

@@ -534,6 +534,7 @@ def create_app() -> FastAPI:
             return envelope({"alerts": _alerts(request.app.state, conn, limit),
                              "incidents": _incidents(request.app.state, conn),
                              "incident_counts": history.incident_counts(conn),
+                             "server_time": time.time(),
                              **request.app.state.alerts.status()})
 
     @app.post("/api/alerts/{match_id}/retry")
@@ -553,6 +554,13 @@ def create_app() -> FastAPI:
             return JSONResponse(status_code=404, content=envelope(error={
                 "code": "not_found", "message": "Unknown alert."}))
         return envelope({"incident_id": incident_id, "tracks": tracks})
+
+    @app.post("/api/incidents/speak-open")
+    def incidents_speak_open(request: Request):
+        with read_connection(request) as conn:
+            item = request.app.state.alerts.speak_open(conn)
+        return envelope({"speech_id": item["id"] if item else None,
+                         "text": item["text"] if item else None})
 
     @app.post("/api/incidents/{incident_id}/speak")
     def incident_speak(request: Request, incident_id: str):
@@ -1055,18 +1063,22 @@ def create_app() -> FastAPI:
             last_speech = None
             while not pipelines.shutdown.is_set() and not await request.is_disconnected():
                 state = request.app.state
+                alert_version = state.alerts.version
                 # SQLite, ingest locks and JSON encoding must not stall other
                 # requests or playback acknowledgements on the event loop.
                 batch = await asyncio.to_thread(
                     _live_events, request, class_labels, has_image, prioritize)
                 for event in batch:
                     yield event
-                # Speech still refreshes at 5 Hz, independently of the 1 Hz data.
+                # Speech and new alerts refresh at 5 Hz, independently of the 1 Hz data.
                 for _ in range(5):
                     speech = state.arbiter.snapshot()
                     if speech["version"] != last_speech:
                         last_speech = speech["version"]
                         yield _event("speech", {"stream_id": None, **speech})
+                    if state.alerts.version != alert_version:
+                        alert_version = state.alerts.version
+                        yield await asyncio.to_thread(_alert_event, request)
                     await asyncio.sleep(0.2)
 
         return StreamingResponse(events(), media_type="text/event-stream", headers={
@@ -1197,13 +1209,23 @@ def _live_events(request: Request, class_labels: tuple[str, ...],
                     limit=50, class_labels=class_labels, has_image=has_image,
                     prioritize=prioritize),
             }))
-        batch.append(_event("alert", {
-            "stream_id": None, "alerts": _alerts(state, conn, 50),
-            "incidents": _incidents(state, conn),
-            "incident_counts": history.incident_counts(conn),
-        }))
+        batch.append(_alert_payload(state, conn))
     batch.append(_event("telemetry", {"stream_id": None, **state.telemetry.snapshot()}))
     return batch
+
+
+def _alert_payload(state, conn: sqlite3.Connection) -> str:
+    return _event("alert", {
+        "stream_id": None, "alerts": _alerts(state, conn, 50),
+        "incidents": _incidents(state, conn),
+        "incident_counts": history.incident_counts(conn),
+        "server_time": time.time(),
+    })
+
+
+def _alert_event(request: Request) -> str:
+    with read_connection(request) as conn:
+        return _alert_payload(request.app.state, conn)
 
 
 def _alerts(state, conn: sqlite3.Connection, limit: int) -> list[dict]:
@@ -1211,16 +1233,37 @@ def _alerts(state, conn: sqlite3.Connection, limit: int) -> list[dict]:
     rows = history.alerts(conn, limit=limit)
     for row in rows:
         row["speech"] = state.arbiter.outcome(row["match_id"])
+        row["latency"] = _latency(state, row["match_id"])
         row["agent_observed"] = row["match_id"] in state.alerts.confirmed
         row["undelivered"] = (row["dispatch_state"] == "failed"
                               and row["attempts"] >= alerting.MAX_ATTEMPTS)
     return rows
 
 
+def _latency(state, match_id: str | None) -> dict | None:
+    """Seconds from the track's first detection to each alert stage (process-local)."""
+    base = state.alerts.latency.get(match_id) if match_id else None
+    if not base or base.get("detected_at") is None:
+        return None
+    speech = state.arbiter.timing(match_id)
+    stamps = {
+        "qualified": base.get("qualified_at"),
+        "matched": base.get("matched_at"),
+        "delivered": base.get("delivered_at"),
+        "voice_ready": speech.get("playing"),
+        "voice_started": speech.get("playback_started"),
+        "image_ready": base.get("image_at"),
+    }
+    detected = base["detected_at"]
+    return {"detected_at": detected,
+            "seconds": {name: round(at - detected, 2) for name, at in stamps.items() if at is not None}}
+
+
 def _incidents(state, conn: sqlite3.Connection, limit: int = 50) -> list[dict]:
     rows = history.incidents(conn, limit=limit)
     for row in rows:
         row["speech"] = state.arbiter.outcome(row["head_match_id"])
+        row["latency"] = _latency(state, row["head_match_id"])
         row["undelivered"] = (row["dispatch_state"] == "failed"
                               and (row["attempts"] or 0) >= alerting.MAX_ATTEMPTS)
     return rows

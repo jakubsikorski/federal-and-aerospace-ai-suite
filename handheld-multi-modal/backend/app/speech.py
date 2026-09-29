@@ -249,6 +249,8 @@ class Arbiter:
         self.rule_spoken: dict[str, float] = {}
         # ref (e.g. match_id) -> latest event, so the alert feed can say what happened.
         self.outcomes: OrderedDict[str, str] = OrderedDict()
+        # ref -> {event: first wall-clock time}, for the alert latency readout.
+        self.timings: OrderedDict[str, dict] = OrderedDict()
         self.trace: deque = deque(maxlen=500)
         self.tts_ok: bool | None = None
         self.last: dict | None = None
@@ -495,6 +497,10 @@ class Arbiter:
         return {"id": item["id"], "kind": item["kind"], "text": item["text"],
                 "duration_s": item.get("duration_s"), "audio_base64": item["audio_base64"]}
 
+    def timing(self, ref: str) -> dict:
+        with self.cond:
+            return dict(self.timings.get(ref) or {})
+
     def outcome(self, ref: str) -> str | None:
         with self.cond:
             return self.outcomes.get(ref)
@@ -520,6 +526,9 @@ class Arbiter:
             entry.update({k: item.get(k) for k in ("id", "kind", "priority", "ref", "rule_id")})
             entry["text"] = item.get("text")
             if item.get("ref"):
+                self.timings.setdefault(item["ref"], {}).setdefault(event, time.time())
+                while len(self.timings) > 500:
+                    self.timings.popitem(last=False)
                 self.outcomes[item["ref"]] = event
                 self.outcomes.move_to_end(item["ref"])
                 while len(self.outcomes) > 500:

@@ -157,6 +157,13 @@ class Alerts:
         self.events = {"connected": False, "received": 0, "confirmed": 0,
                        "reconnects": 0, "last_event_utc": None, "last_error": None}
         self.confirmed: dict[str, str] = {}
+        # match_id -> wall-clock stage times, process-local, for the latency readout.
+        self.latency: dict[str, dict] = {}
+        # Bumped when an operator-visible alert fact changes, so the live
+        # stream pushes it at once instead of on the next 1 s data tick.
+        self.version = 0
+        # Alerted track_id -> head match_id of its incident (latency and crop push).
+        self.alert_tracks: dict[int, str] = {}
         self.inside: dict[tuple[str, int], bool] = {}
         self.dwell: dict[tuple[str, int], dict] = {}
         self.threads: list[threading.Thread] = []
@@ -371,6 +378,22 @@ class Alerts:
             return None
         return self.arbiter.say("alert", self.announcement(dict(row)), bypass_alert_floor=True)
 
+    def speak_open(self, conn: sqlite3.Connection) -> dict | None:
+        """Announce alerts still needing attention (e.g. when Audio is turned on)."""
+        rows = conn.execute(
+            """SELECT class_label, stream_id FROM alert_incidents WHERE state='open'
+               ORDER BY last_match_utc DESC, opened_utc DESC""").fetchall()
+        if not rows or self.arbiter is None:
+            return None
+        names = [self.announcement(dict(r)).rstrip(".") for r in rows[:3]]
+        if len(rows) == 1:
+            text = names[0] + "."
+        else:
+            more = len(rows) - len(names)
+            text = (f"{len(rows)} alerts need attention: " + ", ".join(names)
+                    + (f", and {more} more." if more else "."))
+        return self.arbiter.say("alert", text, bypass_alert_floor=True)
+
     def close_quiet(self, now: float | None = None) -> int:
         """Handled incidents close after a quiet cooldown (and after any snooze).
 
@@ -577,12 +600,29 @@ class Alerts:
                 (match_id, rule["rule_id"], track_id, _utc())).rowcount
             if not inserted:
                 continue  # already matched in an earlier process: never replayed
+            self.latency[match_id] = {"detected_at": entry.get("first_at"),
+                                      "qualified_at": entry.get("last_at"), "matched_at": time.time()}
+            while len(self.latency) > 500:
+                self.latency.pop(next(iter(self.latency)))
             incident_id, notify, reopened = self._attach(conn, rule, entry, track_id, match_id)
+            head = match_id if notify else conn.execute(
+                "SELECT head_match_id FROM alert_incidents WHERE incident_id=?",
+                (incident_id,)).fetchone()[0]
+            self.alert_tracks[track_id] = head
+            while len(self.alert_tracks) > 2000:
+                self.alert_tracks.pop(next(iter(self.alert_tracks)))
+            if entry.get("first_crop_at") is not None or conn.execute(
+                    """SELECT 1 FROM rule_matches m JOIN candidates c ON c.track_id = m.track_id
+                       WHERE m.incident_id = ? AND c.image_state = 'present' LIMIT 1""",
+                    (incident_id,)).fetchone():
+                # A reopened alert already shows an earlier sighting's image.
+                self.crop_arrived(track_id)
             # Only the match that opens (or re-announces) an incident is sent to
             # the Alert Agent and spoken; the rest are recorded as grouped.
             conn.execute("UPDATE rule_matches SET incident_id=?, dispatch_state=? WHERE match_id=?",
                          (incident_id, "pending" if notify else "grouped", match_id))
             conn.commit()
+            self.version += 1
             log.info("rule %s matched track %s on %s (incident %s%s)", rule["rule_id"], track_id,
                      entry["stream_id"], incident_id, "" if notify else ", grouped")
             if not notify:
@@ -595,6 +635,16 @@ class Alerts:
                                  rule_id=rule["rule_id"],
                                  cooldown=0.0 if reopened else rule["cooldown_seconds"],
                                  group=incident_id)
+
+    def crop_arrived(self, track_id: int) -> bool:
+        """First image for an alert: record when it became available. True if alerted."""
+        head = self.alert_tracks.get(track_id)
+        if head is None:
+            return False
+        record = self.latency.get(head)
+        if record is not None and "image_at" not in record:
+            record["image_at"] = time.time()
+        return True  # the caller bumps `version` once the crop is committed
 
     def announcement(self, entry: dict) -> str:
         text = entry["class_label"]
@@ -711,6 +761,9 @@ class Alerts:
         self.writer(lambda c: c.execute(
             "UPDATE rule_matches SET dispatch_state=?, last_error=? WHERE match_id=?",
             (state, error, row["match_id"])))
+        if state == "delivered" and row["match_id"] in self.latency:
+            self.latency[row["match_id"]].setdefault("delivered_at", time.time())
+        self.version += 1
         record = {"ts": _utc(), "match_id": row["match_id"], "rule_id": row["rule_id"],
                   "track_id": row["track_id"], "stream_id": row["stream_id"],
                   "attempt": attempts, "state": state, "error": error,

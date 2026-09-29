@@ -50,6 +50,8 @@
   #cameras-toggle[aria-expanded="true"] { border-style: solid; border-color: var(--accent); background: var(--selected); }
   #cameras-panel { position: fixed; top: 58px; left: 12px; width: min(480px, calc(100vw - 24px)); max-height: calc(100dvh - 72px); z-index: 11; overflow: auto; box-shadow: 0 12px 30px #0008; }
   #cameras-panel .panel-head button { margin-left: auto; }
+  /* Overlay panels scroll their body; the title and Close stay in view on short screens. */
+  #rules-panel > .panel-head, #cameras-panel > .panel-head, #mission-panel > .panel-head { position: sticky; top: 0; z-index: 3; background: var(--panel); }
   #cameras-body { display: grid; gap: 12px; padding: 12px 14px 14px; }
   #cameras-body .camera-intro { margin: 0; color: #c3d3e0; line-height: 1.4; }
   #camera-capacity { display: flex; align-items: center; gap: 10px; }
@@ -241,7 +243,7 @@
   #alerts[data-attention] summary { color: var(--warn); font-weight: 600; }
   #alert-list { margin: 0; padding: 0 12px 4px; list-style: none; max-height: 150px; overflow: auto; }
   #alert-list li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 4px 0; font-size: 12px; border-top: 1px solid var(--line); }
-  #alert-list .incident-main { flex: 1 1 220px; min-width: 220px; min-height: 48px; display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; align-items: center; padding: 4px; border: 1px solid transparent; border-radius: 8px; background: transparent; text-align: left; }
+  #alert-list .incident-main { flex: 1 1 220px; min-width: 220px; min-height: 48px; height: auto; display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; align-items: center; padding: 4px; border: 1px solid transparent; border-radius: 8px; background: transparent; text-align: left; }
   #alert-list .incident-main:hover { border-color: var(--accent); }
   #alert-list li:first-child { border-top: 0; }
   #alert-list .incident-thumb { width: 56px; height: 40px; border-radius: 4px; object-fit: cover; background: #0e192a; display: block; }
@@ -253,6 +255,9 @@
   #alert-list [data-incident="closed"] { opacity: .65; }
   #alert-list [data-incident="closed"] .incident-state { color: var(--muted); }
   #alert-list .incident-meta { color: var(--muted); white-space: normal; overflow-wrap: anywhere; }
+  #alert-list .incident-side { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  #alert-list .incident-latency { color: var(--muted); font-size: 11px; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #alert-list .incident-latency::before { content: "\23F1\FE0E "; }
   #alert-list .incident-actions { flex: 0 1 auto; display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 6px; align-items: center; align-self: center; }
   #alert-list .incident-actions select { height: 32px; min-height: 32px; width: auto; font-size: 12px; padding: 0 4px; }
   .camera[data-alerts]::after { content: attr(data-alerts); position: absolute; top: 3px; right: 3px; min-width: 16px; padding: 0 4px; border-radius: 9px; background: var(--warn); color: #0e192a; font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; }
@@ -478,6 +483,15 @@
   #assistant-page-label { flex: 1; text-align: center; font-size: 12px; }
   #drawer.from-assistant { z-index: 9; }
 
+  /* 1280x800-class screens: share rows so the conversation keeps its height. */
+  @media (max-height: 860px) {
+    #ask-form { flex-flow: row wrap; }
+    #ask-form > * { flex: 1 1 100%; }
+    #ask-form > #voice-controls:not(:has(:not([hidden]):not(:empty))) { display: none; }
+    #ask-form > #voice-controls, #ask-form > #voice-hint { flex: 0 1 auto; display: flex; align-items: center; gap: 8px; }
+    #assistant-result-head:has(#replay-answer:not([hidden])) #answer-actions { display: inline-flex; vertical-align: middle; margin: 4px 0 4px 6px; }
+    #replay-answer:not([hidden]) { display: inline-block; vertical-align: middle; }
+  }
   @media (max-height: 650px) {
     #assistant-panel.open #ask-form { max-height: calc(100% - 100px); }
     #drawer.from-assistant { position: fixed; inset: var(--compact-top, 64px) 12px 12px; z-index: 13; }
@@ -1757,7 +1771,8 @@ function trackCard(track) {
   title.textContent = titleCase(track.class_label) + " track";
   const meta = document.createElement("span");
   meta.className = "track-seen";
-  meta.textContent = "Last seen " + evidenceTime(track.last_observed_utc);
+  meta.textContent = evidenceTime(track.last_observed_utc);
+  meta.title = "Last seen";
   const id = document.createElement("span"); id.className = "track-id"; id.textContent = track.track_id ? "#" + track.track_id : "live";
   const images = document.createElement("span"); images.className = "track-images";
   images.textContent = (track.candidate_count || 0) + (track.candidate_count === 1 ? " image" : " images");
@@ -1813,7 +1828,7 @@ function renderTracks(force = false) {
     if (!card) card = trackCard(track);
     else {
       card.onclick = () => openDrawer(track);
-      card.querySelector(".track-seen").textContent = "Last seen " + evidenceTime(track.last_observed_utc);
+      card.querySelector(".track-seen").textContent = evidenceTime(track.last_observed_utc);
       card.querySelector(".track-id").textContent = track.track_id ? "#" + track.track_id : "live";
       card.querySelector(".track-images").textContent = (track.candidate_count || 0) + (track.candidate_count === 1 ? " image" : " images");
       const imageKey = JSON.stringify([track.snip_url, track.snip_state]);
@@ -1967,6 +1982,73 @@ function announceIncidents() {
   state.toastTimer = setTimeout(() => { toast.hidden = true; }, 8000);
 }
 
+// Browser-side alert timing on the Backend clock (server_time corrects for a
+// tablet clock that differs from the device), for the latency line.
+state.alertTimes = new Map();
+// Server clock offset from a timed round trip (NTP style), keeping the fastest
+// recent sample. Deriving it from the alert payload itself would hide the
+// payload's own delivery delay.
+async function syncServerClock() {
+  const sent = Date.now();
+  try {
+    const response = await fetch("/api/alerts?limit=1", {cache: "no-store", headers: {accept: "application/json"}});
+    const serverTime = (await response.json())?.data?.server_time;
+    const received = Date.now();
+    if (typeof serverTime !== "number") return;
+    const samples = state.clockSamples = [...(state.clockSamples || []), {rtt: received - sent, offset: serverTime * 1000 - (sent + received) / 2}].slice(-5);
+    state.serverOffset = samples.reduce((best, sample) => sample.rtt < best.rtt ? sample : best).offset;
+  } catch (_) { /* keep the previous estimate */ }
+}
+
+function noteAlertTimes(serverTime) {
+  // Until the first round trip completes, fall back to the payload's clock.
+  if (state.serverOffset == null && typeof serverTime === "number") state.fallbackOffset = serverTime * 1000 - Date.now();
+  const now = () => (Date.now() + (state.serverOffset ?? state.fallbackOffset ?? 0)) / 1000;
+  for (const incident of state.incidents) {
+    const id = incident.head_match_id;
+    if (!incident.latency || !id) continue;
+    let times = state.alertTimes.get(id);
+    if (!times) {
+      // Alerts already raised before this page loaded were not seen arrive.
+      state.alertTimes.set(id, times = state.alertTimesPrimed ? {shown: now()} : {imageLoading: true});
+      while (state.alertTimes.size > 200) state.alertTimes.delete(state.alertTimes.keys().next().value);
+    }
+    if (incident.snip_url && !times.imageLoading) {
+      // Preload even while the tray is closed, so the time is when the image could be seen.
+      times.imageLoading = true;
+      const image = new Image();
+      image.onload = () => { times.image = now(); renderAlerts(); };
+      image.src = incident.snip_url;
+    }
+  }
+  state.alertTimesPrimed = true;
+}
+
+function latencyLine(incident) {
+  const latency = incident.latency;
+  if (!latency) return null;
+  const seconds = latency.seconds || {};
+  const times = state.alertTimes.get(incident.head_match_id) || {};
+  const since = (at) => at == null ? null : Math.max(0, at - latency.detected_at);
+  const format = (value) => value.toFixed(1) + " s";
+  const detail = [
+    ["Rule matched", seconds.matched], ["Sent to Alert Agent", seconds.delivered],
+    ["Alert shown in this browser", since(times.shown)], ["Voice audio ready", seconds.voice_ready],
+    ["Voice started playing", seconds.voice_started], ["Evidence image saved", seconds.image_ready],
+    ["Evidence image shown", since(times.image)],
+  ].filter(([, value]) => value != null);
+  if (!detail.length) return null;
+  // One number: when the last part of the alert (screen, voice, image) arrived.
+  const chip = document.createElement("span");
+  chip.className = "incident-latency";
+  chip.textContent = format(Math.max(...detail.map(([, value]) => value)));
+  chip.title = "Seconds after the detector first saw this object\n"
+    + detail.map(([name, value]) => name + ": " + format(value)).join("\n")
+    + "\nLive video has its own delay, shown on the video.";
+  chip.setAttribute("aria-label", "Alert latency " + chip.textContent);
+  return chip;
+}
+
 const ALERTS_COLLAPSED = 8;
 $("alert-more").onclick = () => {
   state.alertsExpanded = !state.alertsExpanded;
@@ -1995,7 +2077,8 @@ function renderAlerts() {
   }
   // The live track payload changes every tick; only operator-visible fields rebuild the list.
   const shown = state.alertsExpanded ? incidents : incidents.slice(0, ALERTS_COLLAPSED);
-  const signature = JSON.stringify([state.alertsExpanded, state.audioOn, state.incidentCounts, shown.map(({track, ...visible}) => visible)]);
+  const signature = JSON.stringify([state.alertsExpanded, state.audioOn, state.incidentCounts,
+    shown.map(({track, ...visible}) => [visible, latencyLine(visible)?.textContent])]);
   if (list.dataset.signature === signature) return;
   // Rebuilding would close a More menu the operator is using; catch up once it loses focus.
   if (document.activeElement?.tagName === "SELECT" && list.contains(document.activeElement)) {
@@ -2036,7 +2119,8 @@ function renderAlerts() {
     return;
   }
   for (const [index, incident] of shown.entries()) {
-    const rowSignature = JSON.stringify([state.audioOn, {...incident, track: undefined}]);
+    const latency = latencyLine(incident);
+    const rowSignature = JSON.stringify([state.audioOn, {...incident, track: undefined}, latency?.textContent]);
     const old = existing.get(incident.incident_id);
     if (old?.dataset.signature === rowSignature) {
       if (list.children[index] !== old) list.insertBefore(old, list.children[index] || null);
@@ -2150,7 +2234,12 @@ function renderAlerts() {
       };
       actions.append(more);
     }
-    main.append(thumb, copy);
+    if (latency) {
+      const side = document.createElement("span");
+      side.className = "incident-side";
+      side.append(thumb, latency);
+      main.append(side, copy);
+    } else main.append(thumb, copy);
     item.append(main, actions);
     if (old) old.replaceWith(item);
     if (list.children[index] !== item) list.insertBefore(item, list.children[index] || null);
@@ -2506,7 +2595,12 @@ $("audio-toggle").onclick = () => {
     // A user gesture unlocks playback; a silent clip proves it before speech arrives.
     const url = URL.createObjectURL(pcmWav([new Float32Array(320)], 16000));
     const unlock = new Audio(url);
-    unlock.play().catch(() => {
+    unlock.play().then(() => {
+      // Alerts that fired while Audio was off were never heard: announce what is still open.
+      if (state.audioOn && (state.incidents || []).some((incident) => incident.state === "open")) {
+        postApi("/api/incidents/speak-open", {}).catch(() => {});
+      }
+    }, () => {
       state.audioOn = false; renderAudioToggle();
       voiceStatus("Browser could not enable audio. Check sound permissions and tap Audio on again.");
     }).finally(() => URL.revokeObjectURL(url));
@@ -3817,7 +3911,8 @@ function renderAssistant(answer) {
   }
   for (const track of visible) {
     const card = trackCard(track);
-    card.querySelector(".track-seen").textContent = "Seen in range " + evidenceTime(track.matched_last_utc || track.last_observed_utc);
+    card.querySelector(".track-seen").textContent = evidenceTime(track.matched_last_utc || track.last_observed_utc);
+    card.querySelector(".track-seen").title = "Last seen in the selected time range";
     if (!card.querySelector(".camera-name")) {
       const camera = document.createElement("span"); camera.className = "camera-name";
       camera.textContent = cameraName(track.stream_id); card.querySelector(".track-copy").append(camera);
@@ -4136,6 +4231,7 @@ async function refreshState() {
   if (version !== state.requestVersion) return;
   state.alerts = alerts.alerts || [];
   state.incidents = alerts.incidents || [];
+  noteAlertTimes(alerts.server_time);
   state.incidentCounts = alerts.incident_counts || null;
   state.telemetry = telemetry;
   rememberTelemetry(telemetry);
@@ -4195,6 +4291,7 @@ function connectEvents() {
     const data = JSON.parse(event.data);
     state.alerts = data.alerts || [];
     state.incidents = data.incidents || [];
+    noteAlertTimes(data.server_time);
     state.incidentCounts = data.incident_counts || null;
     renderAlerts();
   });
@@ -4322,6 +4419,8 @@ window.addEventListener("resize", () => {
 });
 // Re-evaluate freshness even when the event stream stops delivering samples.
 setInterval(() => { renderTelemetry(); renderPresence(); }, 1000);
+syncServerClock();
+setInterval(syncServerClock, 60000);
 
 refreshState().then(async () => {
   await loadAssistantOptions();
