@@ -33,7 +33,7 @@ space := $(empty) $(empty)
 CAMERA_IDS := $(foreach i,$(shell seq 1 $(CAMERAS) 2>/dev/null),cam$(i))
 ANNOTATED_IDS := $(patsubst cam%,annotated%,$(CAMERA_IDS))
 
-.PHONY: help prereq demo-prereq up demo-up demo demo-mission status stop restart demo-restart \
+.PHONY: help prereq demo-prereq up demo-up demo-mission status stop \
   pipelines-restart down clean clean-demo clean-history clean-all \
   demo-stop demo-down demo-status demo-pipelines-restart \
   preflight setup tls asset-permissions model-downloader-up \
@@ -56,7 +56,7 @@ help:
 	@echo 'Operate'
 	@echo '  make status           Services and camera feed health'
 	@echo '  make stop             Stop every service; nothing is deleted'
-	@echo '  make restart          stop + up          (demo: make demo-restart)'
+	@echo '  make up / demo-up     Also restarts a running application (make stop first for a full restart)'
 	@echo '  make pipelines-restart  Restart Backend and DLSPS; language models stay loaded'
 	@echo '  make speech-device TTS_DEVICE=GPU  Move speech (SpeechT5) to GPU; CPU moves it back'
 	@echo '  make down             Remove containers; keep models, history and TLS'
@@ -72,7 +72,7 @@ help:
 	@echo
 	@echo 'Options: CAMERAS=1..3 (default 2)  TTS_DEVICE=CPU|GPU (default CPU)'
 	@echo '         HOST_IP=<LAN address>  ASSET_ROOT=<path>'
-	@echo 'The first start downloads several GB of models and can take up to an hour.'
+	@echo 'The first start downloads several GB of models (internet, up to an hour); later starts run offline.'
 
 # Only this small polling helper is shared between startup checks.
 define readiness
@@ -268,17 +268,34 @@ trap 'code=$$?; trap - ERR; printf "startup failed; stopping the application\n" 
 $(COMPOSE) stop backend dlsps chatqna cam1 cam2 cam3 cam4
 # Stock conversion skips any existing directory, even an interrupted export.
 # Preserve partial output before retrying with the unmodified stock backend.
-$(COMPOSE) run --rm --no-deps --entrypoint python3 \
+# Stock Chat Q&A calls snapshot_download on every start; without internet each
+# model waits ~2 min before falling back to the cache. Once every model is
+# cached and exported, start it with the standard HF_HUB_OFFLINE switch.
+chat_cache=$$($(COMPOSE) run --rm --no-deps --entrypoint python3 \
   -v "$(CURDIR)/scripts:/handheld/scripts:ro" \
   -v "$(CURDIR)/config/model-download:/handheld/config/model-download:ro" \
   -v "$(CURDIR)/config/dlsps/detector-profile.json:/handheld/config/dlsps/detector-profile.json:ro" \
-  -e PYTHONPATH=/handheld/scripts chatqna -c 'import pathlib,yaml; from demo_assets import repair_chat_cache; models=yaml.safe_load(pathlib.Path("/tmp/model_config/config.yaml").read_text())["model_settings"]; repair_chat_cache(pathlib.Path("/tmp/model_cache"), [models[role + "_MODEL_ID"] for role in ("LLM", "EMBEDDING", "RERANKER")])'
+  -e PYTHONPATH=/handheld/scripts chatqna -c 'import pathlib,yaml; from demo_assets import repair_chat_cache, chat_cache_ready; cache=pathlib.Path("/tmp/model_cache"); models=yaml.safe_load(pathlib.Path("/tmp/model_config/config.yaml").read_text())["model_settings"]; ids=[models[role + "_MODEL_ID"] for role in ("LLM", "EMBEDDING", "RERANKER")]; repair_chat_cache(cache, ids); print("cached" if chat_cache_ready(cache, ids) else "download")' | tail -n 1)
+export CHATQNA_HF_HUB_OFFLINE=$$([[ $$chat_cache == cached ]] && echo 1 || echo 0)
+printf 'Chat Q&A models: %s\n' "$$([[ $$chat_cache == cached ]] && echo 'cached; no internet needed' || echo 'downloading on this start; internet required')"
 $(COMPOSE) up -d coturn mediamtx mqtt metrics dlsps alert-agent chatqna audio-analyzer tts
 wait_for "MediaMTX" curl -fsS --max-time 3 http://127.0.0.1:9997/v3/paths/list
 wait_for "DLSPS" curl -fsS --max-time 3 http://127.0.0.1:8080/pipelines
 wait_for "Metrics Manager" curl -fsS --max-time 3 http://127.0.0.1:9090/health
 $(if $(DEMO_FEEDS),$(start_demo_cameras))
-$(COMPOSE) up -d --build --no-deps backend
+# BuildKit checks the registry for the base image even when it is cached, so an
+# offline rebuild fails. The existing image is used only if it was built from
+# the same sources; any other build failure stops the start.
+export BACKEND_SOURCE_HASH=$$(cd backend && find . -type f ! -path '*/__pycache__/*' -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -c1-16)
+if ! $(COMPOSE) build backend; then
+  built=$$(docker image inspect -f '{{index .Config.Labels "handheld.source"}}' handheld/backend:dev 2>/dev/null || true)
+  if [[ $$built != "$$BACKEND_SOURCE_HASH" ]]; then
+    echo 'Backend image build failed and no image built from the current sources exists' >&2
+    false
+  fi
+  echo 'Backend image build failed (no internet?); the existing image matches the current sources, using it' >&2
+fi
+$(COMPOSE) up -d --no-deps backend
 $(COMPOSE) up -d --no-deps proxy
 wait_for "Backend through TLS proxy" curl -skfsS --max-time 5 https://127.0.0.1:8443/api/streams
 $(if $(DEMO_FEEDS),$(wait_demo_video))
@@ -301,8 +318,6 @@ up: prereq setup
 demo-up: DEMO_FEEDS := yes
 demo-up: demo-prereq setup
 	@$(start_application)
-
-demo: demo-up
 
 # Optional: upload the committed example packet. Never part of demo-up; the
 # operator can instead upload it, or a real document, in the Mission panel.
@@ -330,14 +345,7 @@ status demo-status:
 stop demo-stop:
 	$(COMPOSE) --profile assets stop
 
-restart: stop up
-
-demo-restart: stop demo-up
-
-.PHONY: speech-restart speech-device
-speech-restart:
-	$(COMPOSE) restart tts
-
+.PHONY: speech-device
 # Move SpeechT5 between GPU and CPU without restarting cameras or the LLM.
 speech-device: preflight setup
 	@$(readiness)

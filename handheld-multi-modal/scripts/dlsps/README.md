@@ -10,7 +10,7 @@ These are application-owned callbacks for the stock `gvapython` element. They do
 
 ## Placement and dependencies
 
-Use the pinned `intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24-rc3` image and existing YOLO26s IR. Python, gstgva, NumPy, OpenCV and Paho are present in that image. No pip installation is required.
+Use the pinned `intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24` image and existing YOLO26s IR. Python, gstgva, NumPy, OpenCV and Paho are present in that image. No pip installation is required.
 
 Mount this directory read-only at `/opt/handheld-crops`, and give the producer a dedicated writable output directory. Add the script directory to Python's existing search path; **preserve the image's existing PYTHONPATH**, including its GStreamer overrides. Replacing it can break gstgva/GstAnalytics imports.
 
@@ -172,7 +172,7 @@ remains. Image quality, sampling budgets and first-snapshot priority are unchang
 `test_crops.py` covers repeated retained-callback takeovers with and without
 MQTT, and takeover during frame mapping and JPEG encoding. Run the mounted
 script with `docker exec handheld-multi-modal-dlsps-1 python3 /opt/handheld-crops/test_crops.py`.
-Apply script updates to existing pipelines with `make demo-restart`, using the
+Apply script updates to existing pipelines with `make demo-up`, using the
 deployment's existing `ASSET_ROOT`.
 
 From the repo root (temporary container copy, no service config changes):

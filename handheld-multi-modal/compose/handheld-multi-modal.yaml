@@ -319,6 +319,8 @@ services:
       # snapshot_download and Optimum must share the mounted cache.
       HF_HUB_CACHE: /tmp/model_cache
       HUGGINGFACE_HUB_CACHE: /tmp/model_cache # pinned Optimum uses the legacy name
+      # Make sets 1 once every model is cached and exported, so restarts need no internet.
+      HF_HUB_OFFLINE: "${CHATQNA_HF_HUB_OFFLINE:-0}"
       <<: *proxy-env-real
     volumes:
       - ../data/chatqna/model_cache:/tmp/model_cache
@@ -330,7 +332,12 @@ services:
     networks: [handheld]
   # --- application services (Phase 1, docs/design/APPLICATION_DESIGN.md) ---
   backend:
-    build: ../backend
+    build:
+      context: ../backend
+      # Lets an offline start reuse the existing image only if it was built
+      # from these exact sources (see start_application in the Makefile).
+      labels:
+        handheld.source: "${BACKEND_SOURCE_HASH:-unknown}"
     image: handheld/backend:dev
     # Allow bounded HTTP calls and verified pipeline cleanup before SIGKILL.
     stop_grace_period: 120s

@@ -106,6 +106,16 @@ def main():
         backup = next(partial.parent.glob('*.incomplete-*'))
         assert (backup / 'tokenizer.json').read_text() == 'partial tokenizer'
         assert (complete / 'openvino_model.bin').read_text() == 'complete fixture'
+        # Offline start needs every export plus the Hub snapshot that ref points to.
+        embed = ['ibm-granite/granite-embedding-125m-english']
+        assert not assets.chat_cache_ready(chat, embed)
+        repo = chat / 'models--ibm-granite--granite-embedding-125m-english'
+        (repo / 'refs').mkdir(parents=True)
+        (repo / 'refs/main').write_text('abc123\n')
+        assert not assets.chat_cache_ready(chat, embed)
+        (repo / 'snapshots/abc123').mkdir(parents=True)
+        assert assets.chat_cache_ready(chat, embed)
+        assert not assets.chat_cache_ready(chat, embed + ['Intel/neural-chat-7b-v3-3'])
         # Dry runs must never run the recursive downloader or create assets.
         dry_root = root / 'dry-run'
         dry_run = subprocess.run(

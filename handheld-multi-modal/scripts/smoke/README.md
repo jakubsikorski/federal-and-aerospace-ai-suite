@@ -91,7 +91,7 @@ health plus `/annotated1` and `/annotated2`, and leaves the stack running.
 If ignored assets live outside the checkout, pass their repository root
 explicitly, for example `make demo-up CAMERAS=2 ASSET_ROOT=/path/to/assets`.
 Use `make demo-status` to inspect it, `make demo-stop` to stop Backend/DLSPS,
-`make demo-restart` to restart, or `make demo-down` to remove containers.
+`make demo-up` again to restart, or `make demo-down` to remove containers.
 See [device setup](../../docs/application/application-operations.md) for a new host.
 
 The publisher definitions remain in `compose/cameras.yaml`. Prefer this target

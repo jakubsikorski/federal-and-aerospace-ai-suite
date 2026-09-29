@@ -228,6 +228,18 @@ def repair_chat_cache(directory, models):
             print("Preserved incomplete export:", backup)
 
 
+def chat_cache_ready(directory, models):
+    """True when every model has its OpenVINO export and a resolvable Hub snapshot."""
+    for model in models:
+        if not (directory / model / "openvino_model.xml").is_file():
+            return False
+        repo = directory / ("models--" + model.replace("/", "--"))
+        ref = repo / "refs/main"
+        if not ref.is_file() or not (repo / "snapshots" / ref.read_text().strip()).is_dir():
+            return False
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["check-model", "model", "video", "mission"])
