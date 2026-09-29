@@ -5,7 +5,7 @@ analytics, evidence search, mission documents, alerts and speech. It runs
 entirely on the device, built from unmodified Open Edge Platform
 `release-2026.2.0` components plus an application Backend and browser UI.
 
-![Operator UI: live camera with detection boxes, object tracks with evidence images, an alert, model placement and resource telemetry](docs/images/operator-ui.jpg)
+![Operator UI: live camera with detection boxes, object tracks with evidence images, open alerts, model placement and resource telemetry](docs/images/operator-ui.jpg)
 
 ## What it does
 
@@ -88,7 +88,7 @@ The Backend never sits in the video path and never edits pipelines at runtime.
 |---|---|
 | Using the UI (operator guide) | [docs/OPERATOR_GUIDE.md](docs/OPERATOR_GUIDE.md) |
 | Deployment and service reference | [docs/application/application-operations.md](docs/application/application-operations.md) |
-| Current status and evidence | [STATUS.md](STATUS.md), [docs/application/evidence/](docs/application/evidence/) |
+| Current status | [STATUS.md](STATUS.md) |
 | Components and pinned versions | [COMPONENTS.md](COMPONENTS.md), [MANIFEST.yaml](MANIFEST.yaml) |
 | Model provenance | [MODEL_PROVENANCE.md](MODEL_PROVENANCE.md) |
 | Design | [docs/design/APPLICATION_DESIGN.md](docs/design/APPLICATION_DESIGN.md) |
