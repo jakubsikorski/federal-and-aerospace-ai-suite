@@ -12,6 +12,35 @@ and the layout grows with larger screens.
 
 ![Operator UI](images/operator-ui.jpg)
 
+## Contents
+
+- [Top bar](#top-bar)
+  - [Model details](#model-details)
+- [All cameras](#all-cameras)
+- [Adding and removing cameras](#adding-and-removing-cameras)
+  - [Adding a camera](#adding-a-camera)
+  - [Network camera](#network-camera)
+  - [Publisher camera address](#publisher-camera-address)
+  - [Editing and removing](#editing-and-removing)
+- [Live camera and alerts](#live-camera-and-alerts)
+  - [Viewing an alert](#viewing-an-alert)
+- [Evidence](#evidence)
+  - [While you were away](#while-you-were-away)
+  - [Evidence details](#evidence-details)
+- [Ask (assistant)](#ask-assistant)
+  - [How the assistant answers](#how-the-assistant-answers)
+- [Mission](#mission)
+- [Rules](#rules)
+  - [Creating an alert](#creating-an-alert)
+  - [How rules match](#how-rules-match)
+  - [Drawing a zone](#drawing-a-zone)
+- [Resources](#resources)
+- [Voice questions and spoken answers](#voice-questions-and-spoken-answers)
+  - [Listening](#listening)
+  - [Spoken answers](#spoken-answers)
+  - [How voice works](#how-voice-works)
+  - [Recovering a question](#recovering-a-question)
+
 ## Top bar
 
 ![Top bar](images/guide-top-bar.jpg)
@@ -35,6 +64,8 @@ and the layout grows with larger screens.
 7. **Models & devices** — each model with its device and status (Vision on
    NPU, LLM and Transcription on GPU, Speech on CPU). Click one for details.
    Transcription uses whisper-medium with FP16 weights; Speech uses the voice Miles.
+
+### Model details
 
 ![Model details](images/guide-model-details.jpg)
 
@@ -76,6 +107,8 @@ and the layout grows with larger screens.
    connects to.
 4. **Add camera** — or **Cancel** to close the form.
 
+### Network camera
+
 For a network camera, enter its address:
 
 ![Network camera](images/guide-camera-network.jpg)
@@ -84,6 +117,8 @@ For a network camera, enter its address:
 2. **Note** — the allowed networks. Addresses outside them, or with a user
    name or password, are refused; an administrator sets those cameras up in
    MediaMTX instead.
+
+### Publisher camera address
 
 After adding a **publisher** camera, the panel shows where to send its video:
 
@@ -156,6 +191,8 @@ automatically expand it or resize video.
 Speech labels: **spoken**, **not played (Audio off)**, **not spoken
 (cooldown)**, **text only (speech unavailable)**.
 
+### Viewing an alert
+
 After **View** the Evidence panel shows only that alert:
 
 ![Alert view](images/guide-alert-view.jpg)
@@ -179,9 +216,13 @@ After **View** the Evidence panel shows only that alert:
 7. **Object card / row** — click to open its images.
 8. **Ask** — open the assistant.
 
+### While you were away
+
 A **While you were away** card appears after returning from five or more
 minutes away. It summarizes at least the new alerts and track counts visible
 through the existing history APIs; tap **View** to jump into them.
+
+### Evidence details
 
 ![Evidence details](images/guide-drawer.jpg)
 
@@ -205,6 +246,8 @@ through the existing history APIs; tap **View** to jump into them.
 8. **Explain a topic** — general conversation.
 9. **New conversation** — forget earlier questions.
 10. **Back** — close the assistant.
+
+### How the assistant answers
 
 General chat remembers the last few exchanges; camera and mission answers do
 not. General answers never describe what is on camera.
@@ -237,6 +280,8 @@ check that panel for the exact device.
 
 ## Rules
 
+### Creating an alert
+
 ![Rules](images/guide-rules.jpg)
 
 1. Open **Manage alerts**. Choose **Appears** or **Stays too long**.
@@ -251,6 +296,8 @@ check that panel for the exact device.
 6. Read the plain-language preview above it, then **Create alert**.
 7. Existing alerts show their conditions. **Edit**, **Turn off / Turn on** or **Delete**
    are available beside each. Editing finishes with **Save changes**.
+
+### How rules match
 
 Switching to **Appears** removes the dwell requirement. **Remove area** returns to
 whole-view monitoring after saving. Each object's dwell timer is independent;
@@ -292,14 +339,17 @@ vehicles walk; an object counts by where its feet touch the ground.
 3. **Expand** — larger chart.
 4. **Details** — raw readings.
 
-
 ## Voice questions and spoken answers
+
+### Listening
 
 ![Listening](images/guide-voice-listening.jpg)
 
 1. **Send question** — the Talk button while listening (red); tap to send.
 2. **Status** — Listening, Transcribing, or what went wrong.
 3. **Cancel** — discard the recording.
+
+### Spoken answers
 
 ![Spoken answer](images/guide-voice-answer.jpg)
 
@@ -309,6 +359,8 @@ vehicles walk; an object counts by where its feet touch the ground.
    speech:**) means it is not audible yet. The spoken sentence follows in
    italics. Text only if speech is unavailable.
 3. **Stop audio** — silence the rest of the answer; the text stays.
+
+### How voice works
 
 Tap **Talk** in the top bar from any console view. It opens Assistant and
 starts recording after microphone permission is granted. Tap **Send question**
@@ -335,7 +387,7 @@ playback immediately. Your answer is spoken first: alert announcements that
 arrive while you ask or listen wait until the answer finishes, while the alert
 itself appears on screen at once. Audio off, synthesis errors or browser playback restrictions
 leave the text available. Tablet microphone and autoplay behavior still require
-verification on the target browser; see Phase 9 evidence.
+verification on the target browser.
 
 ### Recovering a question
 
