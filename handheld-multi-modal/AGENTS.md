@@ -18,6 +18,8 @@ Read `STATUS.md`, `MANIFEST.yaml`, `COMPONENTS.md`,
   registries/models may work without creds; never persist tokens or assume
   auth required before trying public access.
 - Save component logs + actual outputs under `docs/application/evidence/`.
+  That directory is git-ignored (owner direction 2026-09-29): evidence stays
+  on the device; older files remain in Git history only.
   JSON parsing, port open, device node exists, or env var says `GPU`/`NPU`
   ≠ smoke pass.
 - Official skills copied under `.agents/skills/` w/ `skills-lock.json`.
@@ -92,7 +94,8 @@ repo-specific overrides belong in local skills + this contract.
 Prioritize repeatability across devices. Keep application setup, start, stop,
 restart, and readiness checks in the root Makefile; do not add custom scripts
 just to launch pipelines. Backend owns pipeline REST lifecycle. Use
-`make demo-up`, `demo-stop`, `demo-restart`, and `demo-down`; document asset
+`make demo-up` (also restarts), `demo-stop`, and `demo-down`; keep the
+target list small (owner, 2026-09-29); document asset
 prerequisites and detect device groups/network addresses instead of hardcoding
 this host. Stop DLSPS with the application to release stuck instances.
 Keep model/device UI concise: status, model, device, host; distinguish configured
