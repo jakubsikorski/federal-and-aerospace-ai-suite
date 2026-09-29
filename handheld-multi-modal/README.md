@@ -5,7 +5,7 @@ analytics, evidence search, mission documents, alerts and speech. It runs
 entirely on the device, built from unmodified Open Edge Platform
 `release-2026.2.0` components plus an application Backend and browser UI.
 
-![Operator UI: live annotated camera, detected object tracks with evidence images, model placement and resource telemetry](docs/images/operator-ui.jpg)
+![Operator UI: live camera with detection boxes, object tracks with evidence images, an alert, model placement and resource telemetry](docs/images/operator-ui.jpg)
 
 ## What it does
 
@@ -47,13 +47,13 @@ images, pinned in `compose/handheld-multi-modal.yaml`):
 
 | Service | Image | Role here |
 |---|---|---|
-| DL Streamer Pipeline Server | `intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24` | YOLO26s INT8 detection (NPU) and tracking per camera, annotated WebRTC, MQTT observations, evidence crops |
-| Chat Question-and-Answer Core | `intel/chatqna:core_gpu_2026.2.0` | Mission documents and general answers: `Intel/neural-chat-7b-v3-3` (GPU), `granite-embedding-125m-english`, `ms-marco-electra-base` reranker |
-| Audio Analyzer | `intel/audio-analyzer:2026.2.0` | Speech-to-text, Whisper-medium FP16 on the GPU |
-| Text To Speech | `intel/text-to-speech:2026.2.0` | Spoken alerts and answers, SpeechT5 (CPU default, GPU option) |
-| Alert Agent | `intel/alert-agent-service:2026.2.0` | Alert dispatch in rule mode (no LLM in the alert path) |
-| Metrics Manager | `intel/metrics-manager:2026.2.0` | CPU, memory, GPU, NPU and power telemetry |
-| Model Download | `intel/model-download:2026.2.0` | Prepares the YOLO26s INT8 OpenVINO IR (first start only) |
+| [DL Streamer Pipeline Server](https://github.com/open-edge-platform/edge-ai-libraries/tree/release-2026.2.0/microservices/dlstreamer-pipeline-server) | `intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24` | YOLO26s INT8 detection (NPU) and tracking per camera, annotated WebRTC, MQTT observations, evidence crops |
+| [Chat Question-and-Answer Core](https://github.com/open-edge-platform/edge-ai-libraries/tree/release-2026.2.0/sample-applications/chat-question-and-answer-core) | `intel/chatqna:core_gpu_2026.2.0` | Mission documents and general answers: `Intel/neural-chat-7b-v3-3` (GPU), `granite-embedding-125m-english`, `ms-marco-electra-base` reranker |
+| [Audio Analyzer](https://github.com/open-edge-platform/edge-ai-libraries/tree/release-2026.2.0/microservices/audio-analyzer) | `intel/audio-analyzer:2026.2.0` | Speech-to-text, Whisper-medium FP16 on the GPU |
+| [Text To Speech](https://github.com/open-edge-platform/edge-ai-libraries/tree/release-2026.2.0/microservices/text-to-speech) | `intel/text-to-speech:2026.2.0` | Spoken alerts and answers, SpeechT5 (CPU default, GPU option) |
+| [Alert Agent](https://github.com/open-edge-platform/edge-ai-libraries/tree/release-2026.2.0/microservices/alert-agent-service) | `intel/alert-agent-service:2026.2.0` | Alert dispatch in rule mode (no LLM in the alert path) |
+| [Metrics Manager](https://github.com/open-edge-platform/edge-ai-libraries/tree/release-2026.2.0/microservices/metrics-manager) | `intel/metrics-manager:2026.2.0` | CPU, memory, GPU, NPU and power telemetry |
+| [Model Download](https://github.com/open-edge-platform/edge-ai-libraries/tree/release-2026.2.0/microservices/model-download) | `intel/model-download:2026.2.0` | Prepares the YOLO26s INT8 OpenVINO IR (first start only) |
 
 **Third-party open-source services** (pinned upstream images):
 
