@@ -39,6 +39,8 @@ Open `https://<device-address>:8443/` after trusting `config/tls/server.crt`.
 Run `make` for the full command list (status, stop, clean-up, tests); run
 `make demo-up` (or `make up`) again to restart.
 `make demo-mission` loads the example mission packet from `examples/`.
+`examples/realsense-rtsp.sh` publishes an Intel RealSense colour stream to a
+camera added as **Publisher on this device** (see the script header).
 
 ## Services
 
