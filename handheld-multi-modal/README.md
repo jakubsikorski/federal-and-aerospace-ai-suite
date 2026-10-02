@@ -45,6 +45,10 @@ Run `make` for the full command list (status, stop, clean-up, tests); run
 `examples/realsense-rtsp.sh` publishes an Intel RealSense colour stream to a
 camera added as **Publisher on this device** (see the script header).
 
+On the handheld, run the browser full screen (F11 or kiosk mode) at
+1280×800. Touch-target and fit requirements are in
+[docs/design/HANDHELD_TOUCH_REQUIREMENTS.md](docs/design/HANDHELD_TOUCH_REQUIREMENTS.md).
+
 ## Services
 
 **Open Edge Platform services, reused unmodified** (`release-2026.2.0`

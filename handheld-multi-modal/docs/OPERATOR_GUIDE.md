@@ -7,8 +7,13 @@ The console is one fixed landscape screen: live camera and alerts on the left,
 evidence and the assistant on the right, resources below. It uses a dark navy
 theme with teal for primary actions (Talk, Ask, selected camera), amber for
 alerts and warnings, and red only for a recording Talk button or failures.
-The reference display is 1280×800: everything fits without page scrolling,
-and the layout grows with larger screens.
+The reference display is a 1280×800 handheld touch screen: everything fits
+without page scrolling, and the layout grows with larger screens. Main
+actions (Talk, Mission, Manage alerts, Audio, camera tabs, Acknowledge, View,
+Speak, Send) are 48 px tall and every other button at least 44 px, so they
+are easy to press by finger. Tapping a drop-down opens a list of large rows
+next to it; tap a row to choose it, or tap outside to keep the current value. Run the browser full screen (F11 or
+kiosk mode) on the handheld.
 
 ![Operator UI](images/operator-ui.jpg)
 
@@ -169,8 +174,10 @@ update. Every change is written to an audit log on the device.
 
 Tap **Cameras** in the top bar to add, rename, turn off or remove cameras
 (see above). New alerts update camera badges, highlights and a notification. Tap **Alerts**
-(the amber bar under the video) to open the list. Incoming alerts do not
-automatically expand it or resize video.
+(the amber bar under the video) to open the list; it opens over the lower
+part of the video and scrolls inside, so Resources stays in place. Tap
+**Alerts** again to close it. Incoming alerts do not automatically expand it
+or resize video.
 
 1. Annotated video of the selected camera (boxes on detected objects). The
    small badge shows estimated video delay when available.
