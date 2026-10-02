@@ -267,6 +267,23 @@ endef
 speech_warm := curl -fsS --max-time 300 -o /dev/null -H 'Content-Type: application/json' \
   -d '{"input":"Ready.","response_format":"wav"}' http://127.0.0.1:8012/v1/audio/speech
 
+# The Backend image is labelled with a hash of backend/, so an older checkout's
+# image is never reused after the sources change. BuildKit asks the registry for
+# the base image even when it is cached, so without internet the stale image is
+# updated in place from backend/Dockerfile.offline (same Python and packages,
+# new application code); a changed requirements.txt still needs internet.
+define build_backend
+export BACKEND_SOURCE_HASH=$$(cd backend && find . -type f ! -path '*/__pycache__/*' -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -c1-16)
+built=$$(docker image inspect -f '{{index .Config.Labels "handheld.source"}}' handheld/backend:dev 2>/dev/null || true)
+if [[ $$built == "$$BACKEND_SOURCE_HASH" ]]; then
+  echo 'Backend image matches the current sources'
+elif ! $(COMPOSE) build backend; then
+  [[ -n $$built ]] || { echo 'Backend image build failed and no Backend image exists yet; the first start needs internet' >&2; false; }
+  echo 'Backend image build failed (no internet?); updating the existing image with the current sources offline' >&2
+  docker build -q -f backend/Dockerfile.offline --label "handheld.source=$$BACKEND_SOURCE_HASH" -t handheld/backend:dev backend >/dev/null
+fi
+endef
+
 # Shared by up and demo-up; DEMO_FEEDS adds the looping camera publishers.
 define start_application
 $(readiness)
@@ -290,18 +307,7 @@ wait_for "MediaMTX" curl -fsS --max-time 3 http://127.0.0.1:9997/v3/paths/list
 wait_for "DLSPS" curl -fsS --max-time 3 http://127.0.0.1:8080/pipelines
 wait_for "Metrics Manager" curl -fsS --max-time 3 http://127.0.0.1:9090/health
 $(if $(DEMO_FEEDS),$(start_demo_cameras))
-# BuildKit checks the registry for the base image even when it is cached, so an
-# offline rebuild fails. The existing image is used only if it was built from
-# the same sources; any other build failure stops the start.
-export BACKEND_SOURCE_HASH=$$(cd backend && find . -type f ! -path '*/__pycache__/*' -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -c1-16)
-if ! $(COMPOSE) build backend; then
-  built=$$(docker image inspect -f '{{index .Config.Labels "handheld.source"}}' handheld/backend:dev 2>/dev/null || true)
-  if [[ $$built != "$$BACKEND_SOURCE_HASH" ]]; then
-    echo 'Backend image build failed and no image built from the current sources exists' >&2
-    false
-  fi
-  echo 'Backend image build failed (no internet?); the existing image matches the current sources, using it' >&2
-fi
+$(build_backend)
 $(COMPOSE) up -d --no-deps backend
 $(COMPOSE) up -d --no-deps proxy
 wait_for "Backend through TLS proxy" curl -skfsS --max-time 5 https://127.0.0.1:8443/api/streams
@@ -356,6 +362,7 @@ stop demo-stop:
 # Move SpeechT5 between GPU and CPU without restarting cameras or the LLM.
 speech-device: preflight setup
 	@$(readiness)
+	$(build_backend)
 	$(COMPOSE) up -d --no-deps tts backend
 	WAIT_SECONDS=$(AI_WAIT_SECONDS) wait_for "SpeechT5 $(TTS_DEVICE) service" json_ready http://127.0.0.1:8012/v1/model-info device $(TTS_DEVICE)
 	WAIT_SECONDS=$(AI_WAIT_SECONDS) wait_for "SpeechT5 first synthesis" $(speech_warm)
@@ -366,6 +373,7 @@ speech-device: preflight setup
 # DLSPS must restart with Backend: a failed publisher can retain crop locks.
 pipelines-restart demo-pipelines-restart:
 	@$(readiness)
+	$(build_backend)
 	$(COMPOSE) stop backend dlsps
 	$(COMPOSE) up -d --no-deps dlsps
 	wait_for "DLSPS" curl -fsS --max-time 5 http://127.0.0.1:8080/pipelines

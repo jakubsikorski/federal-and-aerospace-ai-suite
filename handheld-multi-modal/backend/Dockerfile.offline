@@ -1,0 +1,11 @@
+# Offline rebuild used by the Makefile when the normal build cannot reach the
+# registry or package index. The previous Backend image already holds Python and
+# the pinned requirements, so only the application code is replaced.
+ARG PREVIOUS=handheld/backend:dev
+FROM ${PREVIOUS}
+COPY requirements.txt /tmp/requirements.txt
+RUN cmp -s /tmp/requirements.txt requirements.txt \
+ || { echo 'backend/requirements.txt changed; connect to the internet once to rebuild the Backend' >&2; exit 1; }
+RUN rm -rf app test_backend.py /tmp/requirements.txt
+COPY app ./app
+COPY test_backend.py .

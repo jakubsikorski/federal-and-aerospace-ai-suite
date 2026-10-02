@@ -28,7 +28,8 @@ entirely on the device, built from unmodified Open Edge Platform
 Requirements: an Intel GPU/NPU host (`/dev/dri/renderD128`,
 `/dev/accel/accel0`), Docker Compose 2.24.4+, GNU Make, Python 3.11+, curl
 and OpenSSL. The first start downloads several GB of models and needs internet
-access; later starts and restarts run without internet.
+access; later starts and restarts run without internet. Each start rebuilds
+the Backend image when `backend/` changed (for example after `git pull`).
 
 ```sh
 make demo-up        # demo: pinned sample videos as looping cameras
