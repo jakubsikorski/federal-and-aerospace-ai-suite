@@ -36,7 +36,7 @@ CAMERA_REQUESTS = []
 
 def camera_view(**extra):
     enabled = sum(c['enabled'] for c in CAMERAS)
-    return dict(cameras=CAMERAS, max_streams=3, enabled_count=enabled,
+    return dict(cameras=CAMERAS, enabled_count=enabled,
                 allowed_sources=['192.168.0.0/16'], **extra)
 
 
@@ -57,14 +57,6 @@ class Fixture(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(length) or b'null')
         CAMERA_REQUESTS.append((self.command, self.path, body))
         if self.command == 'POST':
-            if sum(c['enabled'] for c in CAMERAS) >= 3:
-                payload = json.dumps({'data': None, 'error': {'code': 'camera_limit', 'message': '3 of 3 cameras are already on.'}}).encode()
-                self.send_response(409)
-                self.send_header('Content-Type', 'application/json')
-                self.send_header('Content-Length', str(len(payload)))
-                self.end_headers()
-                self.wfile.write(payload)
-                return
             sid = f'cam{10 + len(CAMERA_REQUESTS)}'
             CAMERAS.append(dict(stream_id=sid, display_name=body['display_name'], enabled=True, origin='operator',
                                 running=False, feed={'ok': None, 'reason': 'starting'},
@@ -1563,11 +1555,11 @@ def main():
               })()`).then(done).catch(error=>done(String(error)));
             """)
             assert recovery is True, recovery
-            # Cameras panel: add a publisher camera, hit the limit, remove behind a confirm.
+            # Cameras panel: add a publisher camera (no camera limit), remove behind a confirm.
             js("closeAssistant(false); closeDrawer();")
             click('#cameras-toggle')
             for _ in range(100):
-                if js("return document.getElementById('camera-count').textContent.startsWith('2 of 3')"):
+                if js("return document.getElementById('camera-count').textContent === '2 cameras on'"):
                     break
                 time.sleep(.05)
             cams = js('return window.eval(' + json.dumps('''(() => {
@@ -1580,7 +1572,7 @@ def main():
               const addHidden = $("camera-add").hidden && !$("camera-add-open").hidden;
               $("camera-add-open").click();
               const addShown = !$("camera-add").hidden && $("camera-add-open").hidden
-                && $("cameras-toggle-count").textContent === state.streams.length + " of 3 on · manage";
+                && $("cameras-toggle-count").textContent === state.streams.length + " on · manage";
               $("camera-add-submit").click();
               const empty = $("camera-status").textContent === "Give the camera a name.";
               const pullHidden = $("camera-url-label").hidden;
@@ -1601,8 +1593,7 @@ def main():
             added = CAMERAS[-1]['stream_id']
             assert CAMERA_REQUESTS[-1] == ('POST', '/api/cameras', {'display_name': 'Dock', 'source': {'kind': 'publish'}}), CAMERA_REQUESTS
             limit = js('return window.eval(' + json.dumps('''(() => {
-              const full = $("camera-add-open").disabled && $("camera-add").hidden && !$("camera-full-note").hidden
-                && $("camera-full-note").textContent.includes("Turn a camera off") && $("camera-count").textContent.includes("3 of 3");
+              const more = !$("camera-add-open").disabled && $("camera-count").textContent === "3 cameras on";
               $("camera-list").querySelector('li[data-stream="ADDED"] .camera-edit-toggle').click();
               const item = $("camera-list").querySelector('li[data-stream="ADDED"]');
               const editing = !!item.querySelector(".camera-edit") && item.textContent.includes("rtsp://127.0.0.1:8554/ADDED");
@@ -1610,11 +1601,11 @@ def main():
               const again = $("camera-list").querySelector('li[data-stream="ADDED"]');
               const asks = again.textContent.includes("Recorded history and alerts stay") && again.querySelectorAll(".camera-remove button").length === 2;
               again.querySelector(".camera-remove .danger").click();
-              return {full, editing, asks};
+              return {more, editing, asks};
             })()'''.replace('ADDED', added)) + ')')
             assert all(limit.values()), limit
             for _ in range(100):
-                if js("return document.getElementById('camera-count').textContent.startsWith('2 of 3')"):
+                if js("return document.getElementById('camera-count').textContent === '2 cameras on'"):
                     break
                 time.sleep(.05)
             assert CAMERA_REQUESTS[-1][:2] == ('DELETE', f'/api/cameras/{added}?confirm={added}'), CAMERA_REQUESTS

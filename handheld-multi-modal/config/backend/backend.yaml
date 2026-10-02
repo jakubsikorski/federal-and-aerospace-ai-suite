@@ -7,16 +7,16 @@
 # These are *deployment* cameras, re-applied on every start. The operator can
 # also add cameras at runtime in the console's Cameras panel (D53); those live
 # only in SQLite, and deployment cameras there can be renamed but not turned
-# off or removed. Enabled cameras of both kinds share max_streams.
+# off or removed. There is no camera limit; each enabled camera runs its own
+# DLSPS pipeline, so the device's capacity is the practical limit.
 #
 # camera_source_allow (core.py default: the three RFC 1918 ranges) lists the
 # CIDRs and exact hostnames a console-added network camera may use. Loopback,
 # link-local, multicast and unspecified addresses are always refused.
 
-# Operator deployment: three cameras, each with an independent DLSPS pipeline.
-# The stock MQTT publisher and REST WebRTC destination use bounded queues
-# to keep observations current instead of retaining a multi-second backlog.
-max_streams: 3
+# Each camera gets an independent DLSPS pipeline. The stock MQTT publisher and
+# REST WebRTC destination use bounded queues to keep observations current
+# instead of retaining a multi-second backlog.
 # Optional per-camera description: real location, coverage, blind spots, live/replay.
 # Omit unknown details; the assistant reports unconfigured coverage honestly.
 streams:
@@ -27,10 +27,6 @@ streams:
   - stream_id: cam2
     display_name: Camera 2
     sort_order: 1
-    enabled: true
-  - stream_id: cam3
-    display_name: Camera 3
-    sort_order: 2
     enabled: true
 
 rtsp_base: rtsp://mediamtx:8554

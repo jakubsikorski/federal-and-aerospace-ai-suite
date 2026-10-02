@@ -268,7 +268,6 @@ async def lifespan(app: FastAPI):
     conn = connect(cfg["db_path"])
     migrate(conn)
     sync_streams(conn, cfg["streams"])
-    cameras.enforce_budget(conn, cfg["max_streams"])
     app.state.cfg = cfg
     app.state.db = conn
     # backend.yaml's camera list, kept for its descriptive extras; the live

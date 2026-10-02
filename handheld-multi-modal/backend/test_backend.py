@@ -2,7 +2,7 @@
 """Self-check for Backend logic that can fail silently. Run: python3 backend/test_backend.py
 
 Deliberately framework-free and offline: it covers config derivation, the
-max_streams guard, schema migration, stream sync and observation demultiplexing.
+schema migration, stream sync and observation demultiplexing.
 Service adapters and the pipeline lifecycle are not mocked here - they are proven
 against the real pinned containers via /api/health and the Phase 2 evidence,
 which are the only assertions that actually mean anything for them.
@@ -99,20 +99,6 @@ def test_loading_config_twice_does_not_edit_defaults():
     second = load_config(fh.name)
     assert second["streams"][0]["source_uri"] == "rtsp://mediamtx:8554/cam1", (
         "the first call leaked its derived values into DEFAULTS")
-
-
-def test_max_streams_guard():
-    cams = "\n".join(
-        f"  - {{stream_id: cam{i}, display_name: C{i}, sort_order: {i}}}" for i in range(1, 7)
-    )
-    with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as fh:
-        fh.write(f"max_streams: 4\nstreams:\n{cams}\n")
-    try:
-        load_config(fh.name)
-    except ValueError as exc:
-        assert "max_streams" in str(exc)
-    else:
-        raise AssertionError("6 cameras with max_streams=4 must be refused")
 
 
 def test_migrate_is_idempotent_and_sync_preserves_run_state():
@@ -4454,7 +4440,7 @@ def _camera_state(tmp, config=("cam1", "cam2")):
     ing = _ingest(tmp, cameras=config)
     db = str(Path(tmp) / "ingest.db")
     mediamtx = FakeMediaMtx()
-    cfg = {"db_path": db, "max_streams": 3, "rtsp_base": "rtsp://mediamtx:8554",
+    cfg = {"db_path": db, "rtsp_base": "rtsp://mediamtx:8554",
            "services": {"mediamtx": "http://mediamtx:9997"},
            "camera_source_allow": ["192.168.0.0/16", "cam.example"],
            "streams": [{"stream_id": c, "display_name": c, "description": "yard"} for c in config]}
@@ -4511,7 +4497,7 @@ def test_config_cameras_keep_operator_rows_and_locked_names():
         conn.close()
 
 
-def test_camera_add_rename_toggle_remove_and_limits():
+def test_camera_add_rename_toggle_remove():
     from app import cameras, pipelines
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -4526,10 +4512,6 @@ def test_camera_add_rename_toggle_remove_and_limits():
         assert "cam3" in state.ingest.known and "cam3" in state.alerts.enabled_streams
         assert [s["stream_id"] for s in state.cfg["streams"]] == ["cam1", "cam2", "cam3"]
         assert state.cfg["streams"][0]["description"] == "yard"  # config extras kept
-        # At the measured limit: refused, nothing written, nothing sent to MediaMTX.
-        full = _camera_error(lambda: cameras.add(state, {"display_name": "Roof",
-            "source": {"kind": "pull", "url": "rtsp://192.168.1.9/s"}}))
-        assert full.status == 409 and full.code == "camera_limit" and not mediamtx.calls
         for body in ({"display_name": "BACK DOOR", "source": {"kind": "publish"}},):
             cameras.update(state, "cam3", {"enabled": False})
             assert _camera_error(lambda: cameras.add(state, body)).code == "name_taken"
@@ -4552,9 +4534,10 @@ def test_camera_add_rename_toggle_remove_and_limits():
         assert cam4 == "cam4" and mediamtx.paths["cam4"] == {
             "source": "rtsp://192.168.1.9/s", "sourceOnDemand": False, "rtspTransport": "tcp"}
         assert _camera_error(lambda: cameras.add(state, {"display_name": "Dup",
-            "source": {"kind": "pull", "url": "rtsp://192.168.1.9/s"}})).code == "camera_limit"
-        # Re-enable at the limit is refused; rename is always allowed.
-        assert _camera_error(lambda: cameras.update(state, "cam3", {"enabled": True})).code == "camera_limit"
+            "source": {"kind": "pull", "url": "rtsp://192.168.1.9/s"}})).code == "source_taken"
+        # No camera limit: a fourth camera turns on; the device capacity is the limit.
+        cameras.update(state, "cam3", {"enabled": True})
+        assert cameras.view(conn, state.cfg, {})["enabled_count"] == 4
         cameras.update(state, "cam1", {"display_name": "Gate"})
         assert state.alerts.names["cam1"] == "Gate"
         assert conn.execute("SELECT name_locked FROM streams WHERE stream_id='cam1'").fetchone()[0] == 1
@@ -4575,17 +4558,18 @@ def test_camera_add_rename_toggle_remove_and_limits():
         # Removed ids are never reused; a removed name is free again.
         assert cameras.add(state, {"display_name": "Back door", "source": {"kind": "publish"}}) == "cam5"
         actions = [r[0] for r in conn.execute("SELECT action FROM camera_audit ORDER BY audit_id")]
-        assert actions == ["added", "disabled", "added", "add_failed", "added", "renamed", "disabled", "removed", "added"], actions
+        assert actions == ["added", "disabled", "added", "add_failed", "added", "enabled", "renamed", "disabled",
+                           "removed", "added"], actions
         view = cameras.view(conn, state.cfg, {})
         assert [c["stream_id"] for c in view["cameras"]] == ["cam1", "cam2", "cam4", "cam5"]
-        assert view["enabled_count"] == 3 and view["max_streams"] == 3
+        assert view["enabled_count"] == 3 and "max_streams" not in view
         assert view["cameras"][3]["source"]["publish_url"] == "rtsp://127.0.0.1:8554/cam5"
         assert view["cameras"][2]["feed"]["reason"] == "off"
         state.alerts.close()
         state.ingest.conn.close()
 
 
-def test_camera_budget_and_pull_path_restore():
+def test_off_config_camera_hidden_and_pull_path_restore():
     from app import cameras
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -4600,13 +4584,13 @@ def test_camera_budget_and_pull_path_restore():
         calls = len(mediamtx.calls)
         cameras.ensure_pull_paths(conn, state.cfg, state.services.client)
         assert len(mediamtx.calls) == calls + 1  # steady state: one list, no writes
-        # The deployment grew to 2 config cameras: newest console camera turns off.
+        # A deployment camera that is off (not selected by make CAMERAS, or dropped
+        # from backend.yaml) cannot be turned on in the console: not listed, and
+        # its name stays free.
         conn.execute("INSERT INTO streams (stream_id, display_name, source_uri, annotated_path,"
-                     " enabled, origin) VALUES ('cam9','cfg','u','a',1,'config')")
-        assert cameras.enforce_budget(conn, 3) == ["cam3"]
-        assert cameras.enforce_budget(conn, 3) == []
-        assert conn.execute("SELECT action FROM camera_audit ORDER BY audit_id DESC").fetchone()[0] \
-            == "disabled_over_budget"
+                     " enabled, origin) VALUES ('cam9','Camera 9','u','a',0,'config')")
+        assert "cam9" not in [c["stream_id"] for c in cameras.view(conn, state.cfg, {})["cameras"]]
+        assert cameras.add(state, {"display_name": "Camera 9", "source": {"kind": "publish"}}) == "cam4"
         state.alerts.close()
         state.ingest.conn.close()
 
@@ -4680,14 +4664,14 @@ def test_camera_api_envelopes():
                 added = await client.post("/api/cameras", json={"display_name": "Dock",
                                                                 "source": {"kind": "publish"}})
                 assert added.status_code == 201 and added.json()["data"]["stream_id"] == "cam3"
-                full = await client.post("/api/cameras", json={"display_name": "Yard",
+                more = await client.post("/api/cameras", json={"display_name": "Yard",
                                                                "source": {"kind": "publish"}})
-                assert full.status_code == 409 and full.json()["error"]["code"] == "camera_limit"
+                assert more.status_code == 201 and more.json()["data"]["stream_id"] == "cam4"
                 assert (await client.post("/api/cameras", content="{")).status_code == 422
                 renamed = await client.patch("/api/cameras/cam3", json={"display_name": "Dock 2"})
                 assert renamed.status_code == 200
                 gone = await client.delete("/api/cameras/cam3?confirm=cam3")
-                assert gone.status_code == 200 and gone.json()["data"]["enabled_count"] == 2
+                assert gone.status_code == 200 and gone.json()["data"]["enabled_count"] == 3
                 assert (await client.delete("/api/cameras/cam3?confirm=cam3")).status_code == 404
         asyncio.run(check())
         state.alerts.close()

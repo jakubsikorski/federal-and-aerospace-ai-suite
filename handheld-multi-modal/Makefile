@@ -70,7 +70,7 @@ help:
 	@echo
 	@echo 'Checks: make test | test-ui | test-assets | test-phase5 (needs demo-up)'
 	@echo
-	@echo 'Options: CAMERAS=1..3 (default 2)  TTS_DEVICE=CPU|GPU (default CPU)'
+	@echo 'Options: CAMERAS=1..2 (default 2)  TTS_DEVICE=CPU|GPU (default CPU)'
 	@echo '         HOST_IP=<LAN address>  ASSET_ROOT=<path>'
 	@echo 'The first start downloads several GB of models (internet, up to an hour); later starts run offline.'
 
@@ -154,7 +154,7 @@ preflight:
 	command -v curl >/dev/null || fail "curl is required"
 	command -v python3 >/dev/null || fail "python3 is required"
 	command -v openssl >/dev/null || fail "openssl is required"
-	[[ $$CAMERAS =~ ^[1-3]$$ ]] || fail "CAMERAS must be between 1 and 3"
+	[[ $$CAMERAS =~ ^[1-2]$$ ]] || fail "CAMERAS must be 1 or 2; add more cameras in the console"
 	[[ $$TTS_DEVICE =~ ^(CPU|GPU)$$ ]] || fail "TTS_DEVICE must be CPU or GPU"
 	[[ -e /dev/dri/renderD128 ]] || fail "/dev/dri/renderD128 (Intel GPU driver) is required"
 	[[ -e /dev/accel/accel0 ]] || fail "/dev/accel/accel0 (Intel NPU driver) is required"
@@ -211,23 +211,18 @@ prereq: preflight asset-permissions
 demo-prereq: prereq
 	@python3 scripts/demo_assets.py video
 	video="$$ASSET_ROOT/data/dlsps/demo-video"
-	# Every pinned source becomes MPEG-TS for the camera publishers. classroom.avi
-	# is only remuxed. The mp4 clips have 4-10 s keyframe gaps, so each
-	# -stream_loop wrap left the hardware decoder without references and smeared
+	# The mp4 clips become MPEG-TS for the camera publishers. classroom.avi is not
+	# published; it backs the stock DLSPS sample path used by the smoke tests.
+	# The clips have 4-10 s keyframe gaps, so each -stream_loop wrap left the hardware decoder without references and smeared
 	# macroblocks into crops until the next keyframe. They are re-encoded once
 	# here: keyframe every second, no B-frames, same resolution, at most 30 fps.
 	# Detection runs on every frame (zero-term tracking); a 60 fps source outran
 	# the detector and its pipeline ended every ~90 s. The .max30 name keeps an
 	# older full-rate cache from being reused.
-	for source in classroom.avi person-bicycle-car-detection.mp4 pexels-34622113.mp4; do
-	  stem="$${source%.*}"
-	  if [[ $$source == *.avi ]]; then
-	    codec=(-c copy)
-	  else
-	    stem="$$stem.max30"
-	    codec=(-c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -bf 0 -sc_threshold 0 \
-	           -fpsmax 30 -force_key_frames 'expr:gte(t,n_forced*1)')
-	  fi
+	for source in person-bicycle-car-detection.mp4 pexels-34622113.mp4; do
+	  stem="$${source%.*}.max30"
+	  codec=(-c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -bf 0 -sc_threshold 0 \
+	         -fpsmax 30 -force_key_frames 'expr:gte(t,n_forced*1)')
 	  [[ -f "$$video/$$stem.ts" ]] && continue
 	  docker run --rm --user "$$(id -u):$$(id -g)" -v "$$video:/video" jrottenberg/ffmpeg:6.1-ubuntu2404 \
 	    -hide_banner -loglevel warning -y -fflags +genpts -i "/video/$$source" \
@@ -277,7 +272,7 @@ define start_application
 $(readiness)
 $(COMPOSE) config --quiet
 trap 'code=$$?; trap - ERR; printf "startup failed; stopping the application\n" >&2; $(COMPOSE) --profile assets stop || true; exit "$$code"' ERR
-$(COMPOSE) stop backend dlsps chatqna cam1 cam2 cam3 cam4
+$(COMPOSE) stop backend dlsps chatqna cam1 cam2
 # Stock conversion skips any existing directory, even an interrupted export.
 # Preserve partial output before retrying with the unmodified stock backend.
 # Stock Chat Q&A calls snapshot_download on every start; without internet each
@@ -389,7 +384,7 @@ clean: down
 	rm -f "$$ASSET_ROOT/config/devices.yaml" "$$ASSET_ROOT/config/mediamtx.yml"
 
 clean-demo:
-	$(COMPOSE) rm -sf cam1 cam2 cam3 cam4
+	$(COMPOSE) rm -sf cam1 cam2
 	$(as_root) 'rm -rf /assets/data/dlsps/demo-video'
 	$(ASSET_COMPOSE) down --remove-orphans
 

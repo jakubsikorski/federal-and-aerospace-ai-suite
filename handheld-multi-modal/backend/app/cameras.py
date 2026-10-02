@@ -105,7 +105,10 @@ def _audit(db: sqlite3.Connection, action: str, stream_id: str, detail: dict | N
 
 
 def listed(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    # A deployment camera that is off (not selected by `make CAMERAS`, or dropped
+    # from backend.yaml) cannot be turned on here, so it is not offered at all.
     return conn.execute("SELECT * FROM streams WHERE removed_utc IS NULL "
+                        "AND (enabled = 1 OR origin = 'operator') "
                         "ORDER BY sort_order, stream_id").fetchall()
 
 
@@ -115,21 +118,6 @@ def next_stream_id(conn: sqlite3.Connection) -> str:
             if (m := STREAM_ID.fullmatch(sid))}
     number = next(n for n in range(1, 10000) if n not in used)
     return f"cam{number}"
-
-
-def enforce_budget(conn: sqlite3.Connection, max_streams: int) -> list[str]:
-    """At startup: turn off the newest console cameras above max_streams."""
-    enabled = conn.execute("SELECT stream_id, origin FROM streams WHERE enabled = 1 "
-                           "AND removed_utc IS NULL ORDER BY origin = 'operator', "
-                           "created_utc DESC, rowid DESC").fetchall()
-    over = [row["stream_id"] for row in enabled if row["origin"] == "operator"][
-        :max(0, len(enabled) - max_streams)]
-    for stream_id in over:
-        conn.execute("UPDATE streams SET enabled = 0 WHERE stream_id = ?", (stream_id,))
-        _audit(conn, "disabled_over_budget", stream_id, {"max_streams": max_streams})
-        log.warning("camera %s turned off: more than max_streams=%d enabled", stream_id, max_streams)
-    conn.commit()
-    return over
 
 
 def refresh(state) -> list[dict]:
@@ -230,7 +218,7 @@ def view(conn: sqlite3.Connection, cfg: dict, feeds: dict) -> dict:
             if row["enabled"] else {"ok": None, "reason": "off"},
         })
     enabled = sum(1 for row in rows if row["enabled"])
-    return {"cameras": cameras, "max_streams": cfg["max_streams"], "enabled_count": enabled,
+    return {"cameras": cameras, "enabled_count": enabled,
             "allowed_sources": list(cfg.get("camera_source_allow") or [])}
 
 
@@ -244,15 +232,6 @@ def _unique_name(conn, name: str, stream_id: str | None = None) -> None:
     for row in listed(conn):
         if row["stream_id"] != stream_id and row["display_name"].casefold() == name.casefold():
             raise CameraError(f"A camera is already named {row['display_name']}.", 409, "name_taken")
-
-
-def _admit(conn, cfg: dict) -> None:
-    enabled = conn.execute("SELECT count(*) FROM streams WHERE enabled = 1 "
-                           "AND removed_utc IS NULL").fetchone()[0]
-    if enabled >= cfg["max_streams"]:
-        raise CameraError(
-            f"{enabled} of {cfg['max_streams']} cameras are already on, the measured limit "
-            "for this device. Turn one off first.", 409, "camera_limit")
 
 
 def _row(conn, stream_id: str) -> sqlite3.Row:
@@ -275,7 +254,6 @@ def add(state, body) -> str:
            if source["kind"] == "pull" else None)
     with _lock:
         def insert(db):
-            _admit(db, cfg)
             _unique_name(db, name)
             if url and db.execute("SELECT 1 FROM streams WHERE pull_url = ? AND removed_utc IS NULL",
                                   (url,)).fetchone():
@@ -330,8 +308,6 @@ def update(state, stream_id: str, body) -> None:
                            (name, stream_id))
                 _audit(db, "renamed", stream_id, {"display_name": name})
             if enabled is not None and enabled != bool(row["enabled"]):
-                if enabled:
-                    _admit(db, cfg)
                 db.execute("UPDATE streams SET enabled = ? WHERE stream_id = ?", (int(enabled), stream_id))
                 _audit(db, "enabled" if enabled else "disabled", stream_id)
             return row

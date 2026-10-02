@@ -84,21 +84,20 @@ Run the complete Phase 4 demo with one target:
 make demo-up CAMERAS=2
 ```
 
-This validates pinned local assets, creates TLS when absent, produces the
-PTS-remuxed `classroom.ts` when needed, starts the Phase 4 service subset in
+This validates pinned local assets, creates TLS when absent, prepares the
+re-encoded demo clips when needed, starts the Phase 4 service subset in
 dependency order, launches `/cam1` and `/cam2`, waits for Backend MQTT feed
 health plus `/annotated1` and `/annotated2`, and leaves the stack running.
 If ignored assets live outside the checkout, pass their repository root
 explicitly, for example `make demo-up CAMERAS=2 ASSET_ROOT=/path/to/assets`.
-Use `make demo-status` to inspect it, `make demo-stop` to stop Backend/DLSPS,
+Use `make demo-status` to inspect it, `make demo-stop` to stop every service,
 `make demo-up` again to restart, or `make demo-down` to remove containers.
 See [device setup](../../docs/application/application-operations.md) for a new host.
 
 The publisher definitions remain in `compose/cameras.yaml`. Prefer this target
 over a hand-run `ffmpeg`: a manual publisher dies with its shell and silently
-breaks every later video test. The target uses the PTS-remuxed
-`data/dlsps/demo-video/classroom.ts`, not the `.avi`; the latter has broken PTS
-and costs ~132% extra CPU.
+breaks every later video test. If you publish `classroom.avi` by hand, remux it
+with `-fflags +genpts` first; its broken PTS cost ~132% extra CPU.
 
 Then start the DLSPS pipeline pushing native WebRTC to `/annotatedN` (see
 `config/dlsps/npu/README.md`, or just start the Backend, which owns pipeline

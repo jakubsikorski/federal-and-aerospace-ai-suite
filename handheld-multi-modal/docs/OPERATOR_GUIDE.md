@@ -85,16 +85,16 @@ and the layout grows with larger screens.
 ![Manage cameras](images/guide-cameras.jpg)
 
 1. **Cameras** — in the top bar, right after the camera tabs. It shows how
-   many cameras are on (for example "2 of 3 on"). Tap it to open **Manage
+   many cameras are on (for example "2 on"). Tap it to open **Manage
    cameras**.
-2. **Count** — cameras on out of the limit measured for this device (3); one
-   bar per slot.
+2. **Count** — how many cameras are on (for example "2 cameras on").
 3. **State** — **Live**, **Starting**, **No frames received**, **Signal
    lost** or **Off**. **Deployment** marks cameras set by the deployment.
 4. **View** — show that camera's video and close the panel.
 5. **Edit** — rename, turn off or remove the camera.
-6. **+ Add camera** — opens the add form. When all slots are in use it is
-   disabled and an amber note says to turn a camera off or remove one first.
+6. **+ Add camera** — opens the add form. There is no fixed camera limit; each
+   camera that is on adds processor load, so check the device metrics after
+   adding one.
 
 ### Adding a camera
 

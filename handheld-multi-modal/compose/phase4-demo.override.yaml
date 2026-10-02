@@ -31,6 +31,3 @@ services:
   cam2:
     volumes:
       - ${ASSET_ROOT:?set ASSET_ROOT}/data/dlsps/demo-video:/video:ro
-  cam3:
-    volumes:
-      - ${ASSET_ROOT:?set ASSET_ROOT}/data/dlsps/demo-video:/video:ro

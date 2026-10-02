@@ -22,8 +22,8 @@ past sessions. A pipeline restart starts a new tracking session.
 
 ## Adding and removing cameras
 The Cameras button in the top bar, right after the camera tabs, opens Manage cameras.
-It adds, renames, turns off or removes a camera while the system runs, up to the
-measured limit of 3 cameras on. Each row shows the camera state (Live, Starting, Off)
+It adds, renames, turns off or removes a camera while the system runs. There is no
+fixed camera limit; each camera that is on adds processor load. Each row shows the camera state (Live, Starting, Off)
 with View and Edit. A new camera is either a publisher on this device or a network
 camera by rtsp:// address on an allowed network; addresses with a user name or
 password are refused and belong in MediaMTX. After adding a publisher camera, a card

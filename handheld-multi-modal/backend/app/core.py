@@ -28,7 +28,6 @@ DEFAULTS: dict[str, Any] = {
     "crop_dir": "/crops",
     "crop_cleanup_script": "/opt/handheld-crops/crop_candidates.py",
     "detector_metadata_path": "/config/detector/metadata.yaml",
-    "max_streams": 3,  # current operator deployment; configurable in backend.yaml
     # Network cameras the operator may add at runtime (MediaMTX pulls them).
     # Literal IPs inside these networks, or exact hostnames listed here.
     # Loopback, link-local, multicast and unspecified addresses are always refused.
@@ -124,11 +123,6 @@ def load_config(path: str | None = None) -> dict[str, Any]:
     for stream in cfg["streams"]:
         stream.setdefault("annotated_path", "annotated" + stream["stream_id"].removeprefix("cam"))
         stream.setdefault("source_uri", f"{cfg['rtsp_base']}/{stream['stream_id']}")
-    if len(cfg["streams"]) > cfg["max_streams"]:
-        raise ValueError(
-            f"{len(cfg['streams'])} cameras configured but max_streams is {cfg['max_streams']}; "
-            "raise max_streams only with a measurement behind it (design section 3.4)"
-        )
     return cfg
 
 

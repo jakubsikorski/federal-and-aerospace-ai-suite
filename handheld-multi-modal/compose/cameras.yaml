@@ -12,11 +12,11 @@
 # per-camera pipeline cost (design 3.4) attributable to DLSPS, not to the
 # simulator. -re paces at real time; -stream_loop -1 loops forever.
 #
-# Sources (pinned in scripts/demo_assets.py, remuxed to .ts by make demo-prereq):
+# Sources (pinned in scripts/demo_assets.py, re-encoded to .ts by make demo-prereq):
 #   cam1  person-bicycle-car-detection.max30.ts  intel-iot-devkit sample, 768x432 12 fps
 #   cam2  pexels-34622113.max30.ts  Pexels 34622113, 59.94 fps source capped to 30 fps
-#   cam3+ classroom.ts        PTS-repaired remux of the OEP classroom.avi, 30 fps,
-#                             whose broken timestamps otherwise cost ~132% CPU.
+#
+# Add more cameras in the console's Cameras panel (or `make up` with your own).
 
 name: handheld-multi-modal
 
@@ -43,17 +43,3 @@ services:
               "-re", "-stream_loop", "-1", "-i", "/video/pexels-34622113.max30.ts",
               "-map", "0:v:0", "-c", "copy",
               "-f", "rtsp", "-rtsp_transport", "tcp", "rtsp://127.0.0.1:8554/cam2"]
-  cam3:
-    <<: *camera
-    container_name: handheld-demo-cam3
-    command: ["-nostdin", "-hide_banner", "-loglevel", "warning",
-              "-re", "-stream_loop", "-1", "-i", "/video/classroom.ts",
-              "-map", "0:v:0", "-c", "copy",
-              "-f", "rtsp", "-rtsp_transport", "tcp", "rtsp://127.0.0.1:8554/cam3"]
-  cam4:
-    <<: *camera
-    container_name: handheld-demo-cam4
-    command: ["-nostdin", "-hide_banner", "-loglevel", "warning",
-              "-re", "-stream_loop", "-1", "-i", "/video/classroom.ts",
-              "-map", "0:v:0", "-c", "copy",
-              "-f", "rtsp", "-rtsp_transport", "tcp", "rtsp://127.0.0.1:8554/cam4"]

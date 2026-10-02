@@ -56,9 +56,6 @@
   #cameras-body .camera-intro { margin: 0; color: #c3d3e0; line-height: 1.4; }
   #camera-capacity { display: flex; align-items: center; gap: 10px; }
   #camera-count { margin: 0; font-weight: 600; }
-  #camera-slots { display: flex; gap: 4px; }
-  #camera-slots i { width: 22px; height: 8px; border-radius: 4px; background: #2c4256; }
-  #camera-slots i.on { background: var(--accent); }
   #camera-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
   #camera-list > li { border: 1px solid #2c4256; border-radius: 8px; padding: 10px 12px; display: grid; gap: 10px; background: #0f1d2e; }
   #camera-list > li.editing { border-color: var(--accent); }
@@ -95,7 +92,6 @@
   #camera-added .camera-actions { display: flex; gap: 8px; flex-wrap: wrap; }
   @media (max-width: 1366px) { header .brand { display: none; } }
   @media (max-width: 1100px) { #cameras-toggle small { display: none; } #cameras-toggle { min-width: 0; } }
-  #camera-full-note { margin: 0; padding: 10px 12px; border-radius: 8px; border: 1px solid #a28b5f; background: #363629; color: #f4d49e; }
   #camera-add { display: grid; gap: 12px; border: 1px solid var(--accent); border-radius: 8px; padding: 12px; background: #0f1d2e; }
   #camera-add > strong { font-size: 16px; }
   #camera-add fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; }
@@ -696,12 +692,12 @@
     <div class="panel-head"><h2 id="cameras-title">Manage cameras</h2><button id="close-cameras" class="quiet-button" type="button">Close</button></div>
     <div id="cameras-body">
       <p class="camera-intro">Every camera that is on gets live video, object detection and alerts.
-        Changes apply right away; no restart is needed.</p>
-      <div id="camera-capacity"><p id="camera-count" role="status"></p><span id="camera-slots" aria-hidden="true"></span></div>
+        Changes apply right away; no restart is needed. Each camera adds processor load,
+        so watch the device metrics when adding more.</p>
+      <div id="camera-capacity"><p id="camera-count" role="status"></p></div>
       <div id="camera-status" role="status" aria-live="polite"></div>
       <ul id="camera-list" aria-label="Cameras"></ul>
       <div id="camera-added" role="status" hidden></div>
-      <p id="camera-full-note" hidden></p>
       <button id="camera-add-open" class="quiet-button primary-action" type="button" aria-controls="camera-add" aria-expanded="false">+ Add camera</button>
       <form id="camera-add" novalidate hidden>
         <strong>Add a camera</strong>
@@ -2796,18 +2792,13 @@ function cameraNotice(text, tone = "", address = null) {
   if (address) status.append(cameraAddress(address));
 }
 function renderCamerasToggle() {
-  const max = state.cameraRegistry?.max_streams;
-  $("cameras-toggle-count").textContent = max ? `${state.streams.length} of ${max} on · manage` : "Add or remove";
+  $("cameras-toggle-count").textContent = state.cameraRegistry ? `${state.streams.length} on · manage` : "Add or remove";
 }
 function renderCameraRegistry() {
-  const data = state.cameraRegistry || {cameras: [], max_streams: 0, enabled_count: 0};
-  const full = data.enabled_count >= data.max_streams;
+  const data = state.cameraRegistry || {cameras: [], enabled_count: 0};
   renderCamerasToggle();
-  $("camera-count").textContent = data.max_streams
-    ? `${data.enabled_count} of ${data.max_streams} cameras on` + (full ? " · limit reached" : "")
-    : "Cameras unavailable";
-  $("camera-slots").replaceChildren(...Array.from({length: data.max_streams}, (_, i) => {
-    const slot = document.createElement("i"); if (i < data.enabled_count) slot.className = "on"; return slot; }));
+  $("camera-count").textContent = state.cameraRegistry
+    ? `${data.enabled_count} camera${data.enabled_count === 1 ? "" : "s"} on` : "Cameras unavailable";
   const list = $("camera-list");
   list.replaceChildren();
   for (const camera of data.cameras) {
@@ -2842,24 +2833,18 @@ function renderCameraRegistry() {
       if (opened) { opened.querySelector("input")?.focus(); opened.scrollIntoView({block: "nearest"}); } };
     row.append(edit);
     item.append(row);
-    if (editing) item.append(cameraEditor(camera, full));
+    if (editing) item.append(cameraEditor(camera));
     list.append(item);
   }
   const pull = document.querySelector('input[name="camera-source"]:checked').value === "pull";
   $("camera-url-label").hidden = !pull;
-  const note = $("camera-full-note");
-  note.hidden = !(full && data.max_streams) || !$("camera-added").hidden;
-  note.textContent = `All ${data.max_streams} camera slots are in use. Turn a camera off or remove one before adding another.`;
   renderCameraAdded(data);
-  if (full) state.cameraAdding = false;
   $("camera-add").hidden = !state.cameraAdding;
   $("camera-add-open").hidden = !!state.cameraAdding || !$("camera-added").hidden;
-  $("camera-add-open").disabled = full || state.cameraBusy;
+  $("camera-add-open").disabled = state.cameraBusy;
   $("camera-add-open").setAttribute("aria-expanded", String(!!state.cameraAdding));
-  $("camera-add-submit").disabled = full || state.cameraBusy;
-  $("camera-add-note").textContent = full
-    ? `Turn a camera off or remove one before adding another (limit ${data.max_streams}).`
-    : pull ? "Allowed networks: " + (data.allowed_sources || []).join(", ") + ". Cameras that need a user name or password are set up by an administrator in MediaMTX, not here."
+  $("camera-add-submit").disabled = state.cameraBusy;
+  $("camera-add-note").textContent = pull ? "Allowed networks: " + (data.allowed_sources || []).join(", ") + ". Cameras that need a user name or password are set up by an administrator in MediaMTX, not here."
     : "After adding, you get the address to send H.264 RTSP video to. Video and detection start once it arrives.";
 }
 function renderCameraAdded(data) {
@@ -2903,7 +2888,7 @@ function watchCameraAdded() {
     });
   }, 3000);
 }
-function cameraEditor(camera, full) {
+function cameraEditor(camera) {
   const panel = document.createElement("div"); panel.className = "camera-edit";
   const form = document.createElement("form");
   const label = document.createElement("label"); label.textContent = "Name";
@@ -2929,10 +2914,8 @@ function cameraEditor(camera, full) {
   const actions = document.createElement("div"); actions.className = "camera-actions";
   const toggle = document.createElement("button"); toggle.type = "button"; toggle.className = "quiet-button";
   toggle.textContent = camera.enabled ? "Turn off" : "Turn on";
-  toggle.disabled = !camera.enabled && full;
   const hint = document.createElement("span"); hint.className = "camera-note";
-  hint.textContent = toggle.disabled ? "All slots in use. Turn another camera off first."
-    : camera.enabled ? "Stops video and detection. History is kept." : "Starts video and detection again.";
+  hint.textContent = camera.enabled ? "Stops video and detection. History is kept." : "Starts video and detection again.";
   toggle.onclick = () => cameraAction(() => cameraMutation("/api/cameras/" + camera.stream_id, "PATCH", {enabled: !camera.enabled}),
     camera.display_name + (camera.enabled ? " turned off. Its history is kept." : " turned on. Video starts once the source is live."));
   actions.append(toggle, hint);
