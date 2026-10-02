@@ -532,10 +532,16 @@ def main():
               const noBadge = document.querySelector('.camera[data-stream="cam1"]').dataset.alerts === undefined;
               const summary = $("alert-summary").textContent;
               const firstToast = $("alert-toast").hidden;
+              const wasOpen = $("alerts").open; $("alerts").open = false;
               state.incidents = [{...state.incidents[0], head_match_id: "m9", match_count: 5}, ...state.incidents.slice(1)];
               renderAlerts();
-              const toast = !$("alert-toast").hidden && $("alert-toast").textContent.includes("Person · Camera 2");
+              const shown = !$("alert-toast").hidden && $("alert-toast").textContent.includes("Person · Camera 2");
               $("alert-toast").hidden = true;
+              $("alerts").open = true;
+              state.incidents = [{...state.incidents[0], head_match_id: "m10"}, ...state.incidents.slice(1)];
+              renderAlerts();
+              const toast = shown && $("alert-toast").hidden;
+              $("alerts").open = wasOpen;
               state.speech = {current: null, talk_held: false, queued: [], last: {outcome: "text_only", text: "person on Camera 2."}};
               renderSpeech();
               const textOnly = $("speech-line").textContent.startsWith("Text only");

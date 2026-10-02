@@ -262,7 +262,7 @@
   #alert-list .incident-actions select { height: 32px; min-height: 32px; width: auto; font-size: 12px; padding: 0 4px; }
   .camera[data-alerts]::after { content: attr(data-alerts); position: absolute; top: 3px; right: 3px; min-width: 16px; padding: 0 4px; border-radius: 9px; background: var(--warn); color: #0e192a; font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; }
   .camera[data-alerts] { padding-right: 30px; }
-  #alert-toast { position: fixed; right: 16px; bottom: 16px; z-index: 50; max-width: 360px; padding: 10px 14px; border: 1px solid var(--warn); border-radius: 8px; background: #3e3527; color: var(--text); font-size: 13px; text-align: left; cursor: pointer; box-shadow: 0 4px 16px #0008; }
+  #alert-toast { position: fixed; left: 16px; bottom: 16px; z-index: 50; max-width: 360px; padding: 10px 14px; border: 1px solid var(--warn); border-radius: 8px; background: #3e3527; color: var(--text); font-size: 13px; text-align: left; cursor: pointer; box-shadow: 0 4px 16px #0008; }
   #alert-toast[hidden] { display: none; }
   #alert-list .dispatch { font-weight: 600; }
   #alert-list .dispatch[data-state="undelivered"], #alert-list .dispatch[data-state="retrying"] { color: var(--warn); }
@@ -2036,10 +2036,9 @@ function announceIncidents() {
   const fresh = first ? [] : open.filter((incident) => !state.announced.has(incident.head_match_id));
   state.announced = heads;
   const toast = $("alert-toast");
-  if (!fresh.length) {
-    if (!open.length) toast.hidden = true;
-    return;
-  }
+  if (!open.length) toast.hidden = true;
+  // An expanded Alerts list already shows the new row; a toast there would cover its buttons.
+  if (!fresh.length || $("alerts").open) return;
   const incident = fresh[0];
   toast.textContent = incidentTitle(incident) + " · " + incident.rule_name + " — select to view";
   toast.onclick = () => { toast.hidden = true; viewIncident(incident); };
