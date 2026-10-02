@@ -57,8 +57,8 @@ and the layout grows with larger screens.
 5. **Audio off / Audio on** — tap once so the browser may play spoken
    alerts and answers. Amber means off; green means on. Speech is silent
    until you tap it. Turning it on announces alerts that still need
-   attention (for example, ones that fired while it was off). **Stop audio**
-   appears beside it while speech plays.
+   attention (for example, ones that fired while it was off). Tapping
+   **Audio on** turns it off and silences any speech that is playing.
 6. **Clock** — local time; "live updates" means the UI is connected.
    **Connection lost · retrying** means data may be stale until it reconnects.
 7. **Models & devices** — each model with its device and status (Vision on
@@ -363,7 +363,7 @@ vehicles walk; an object counts by where its feet touch the ground.
    marks audio playing; an amber tag (**Preparing speech:**, **Starting
    speech:**) means it is not audible yet. The spoken sentence follows in
    italics. Text only if speech is unavailable.
-3. **Stop audio** — silence the rest of the answer; the text stays.
+3. **Audio on → off** — silences the rest of the answer; the text stays.
 
 ### How voice works
 
@@ -386,7 +386,7 @@ then the answer starts within a few seconds. Answers are spoken by the voice
 part starts before the model has finished writing. Each part plays to its end,
 then the next starts without a gap once ready. If several tabs or devices
 have Audio on, each plays the answer at its own pace. Close extra tabs to hear
-it once. The complete text stays visible. **Stop audio** cancels the
+it once. The complete text stays visible. Turning **Audio off** cancels the
 remaining speech without deleting the answer. Tapping Talk interrupts
 playback immediately. Your answer is spoken first: alert announcements that
 arrive while you ask or listen wait until the answer finishes, while the alert
@@ -416,6 +416,6 @@ verification on the target browser.
 4. **Replies as text · Enable audio** — shown when Audio is off; enable audio
    before Replay.
 
-**Stop audio** silences speech while the text request keeps running. Failed
+Turning **Audio off** silences speech while the text request keeps running. Failed
 playback stays visible. While recording, a hint shows the 1.5-second silence
 auto-send and 15-second limit.

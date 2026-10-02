@@ -160,7 +160,7 @@ The recognized question uses the same camera scope, answer mode, conversation
 and routing as typing. Transcribing and answering have visible progress. If the
 microphone or transcription is unavailable, type the question instead.
 Audio on enables spoken replies. Answers play in short sequential sentences or
-clauses, with the full text visible. Stop audio cancels the current speech and
+clauses, with the full text visible. Turning Audio off cancels the current speech and
 its remaining chunks; Talk immediately interrupts playback. Speech already
 being synthesized may finish on the service, but cancelled audio is not played.
 With audio on, "Checking." plays as soon as a spoken question is recognized, and the
@@ -170,7 +170,7 @@ is announced right after. Alerts still appear on screen immediately.
 Voice recovery controls: **Cancel question** abandons a running question and stops
 its answer speech; the stock inference service may still finish its in-flight work,
 so the next answer can be slower.
-**Stop audio** silences speech while leaving the text request running. Finish or
+Turning **Audio off** silences speech while leaving the text request running. Finish or
 cancel a running question before starting another with Talk. **Edit and resend**
 restores the recognized question and its original camera scope for correction.
 **Replay answer** reads the completed answer again without asking the model again;

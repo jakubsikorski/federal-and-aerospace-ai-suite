@@ -609,8 +609,7 @@
     <button id="voice-talk" type="button" class="quiet-button primary-action" aria-pressed="false" aria-controls="assistant-panel" title="Tap to start a voice question; tap again to send">Talk</button>
     <button id="mission-toggle" class="quiet-button primary-action" type="button" aria-controls="mission-panel" aria-expanded="false">Mission</button>
     <button id="rules-toggle" class="quiet-button primary-action" type="button" aria-controls="rules-panel" aria-expanded="false">Manage alerts</button>
-    <button id="stop-speaking" class="quiet-button" type="button" hidden>Stop audio</button>
-    <button id="audio-toggle" class="quiet-button primary-action" type="button" aria-pressed="false" data-state="off" title="Browsers play speech only after a tap">Audio off</button>
+    <button id="audio-toggle" class="quiet-button primary-action" type="button" aria-pressed="false" data-state="off" title="Tap to hear spoken alerts and answers; tap again to silence speech at once">Audio off</button>
     <div class="top-status">
       <div class="clock-status"><time id="operator-clock" aria-label="Current local time"></time><div id="connection">connecting</div></div>
       <div id="operator-date"></div>
@@ -2353,7 +2352,6 @@ async function stopSpeaking() {
   } catch (_) { voiceStatus('Could not stop server speech. Audio is off.'); state.audioOn = false; renderAudioToggle(); }
   finally { voice.blocked = false; renderSpeech(); }
 }
-$('stop-speaking').onclick = stopSpeaking;
 function pcmWav(parts, rate) {
   const count = parts.reduce((n, a) => n + a.length, 0), samples = new Float32Array(count);
   let offset = 0;
@@ -2665,7 +2663,6 @@ function renderAudioToggle() {
   const toggle = $("audio-toggle");
   $("voice-enable-audio").hidden = state.audioOn;
   $("voice-hint").hidden = state.audioOn && !voice.turn;
-  $("stop-speaking").hidden = !state.audioOn;
   toggle.textContent = state.audioOn ? "Audio on" : "Audio off";
   toggle.dataset.state = state.audioOn ? "on" : "off";
   toggle.setAttribute("aria-pressed", String(state.audioOn));
