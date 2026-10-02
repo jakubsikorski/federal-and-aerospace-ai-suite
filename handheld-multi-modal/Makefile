@@ -273,15 +273,24 @@ speech_warm := curl -fsS --max-time 300 -o /dev/null -H 'Content-Type: applicati
 # updated in place from backend/Dockerfile.offline (same Python and packages,
 # new application code); a changed requirements.txt still needs internet.
 define build_backend
+backend_stale=
 export BACKEND_SOURCE_HASH=$$(cd backend && find . -type f ! -path '*/__pycache__/*' -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -c1-16)
 built=$$(docker image inspect -f '{{index .Config.Labels "handheld.source"}}' handheld/backend:dev 2>/dev/null || true)
 if [[ $$built == "$$BACKEND_SOURCE_HASH" ]]; then
   echo 'Backend image matches the current sources'
 elif ! $(COMPOSE) build backend; then
   [[ -n $$built ]] || { echo 'Backend image build failed and no Backend image exists yet; the first start needs internet' >&2; false; }
-  echo 'Backend image build failed (no internet?); updating the existing image with the current sources offline' >&2
-  docker build -q -f backend/Dockerfile.offline --label "handheld.source=$$BACKEND_SOURCE_HASH" -t handheld/backend:dev backend >/dev/null
+  backend_stale=yes
+  $(backend_stale_warning)
 fi
+endef
+
+define backend_stale_warning
+printf '\n%s\n%s\n%s\n%s\n\n' \
+  '!!! WARNING: the Backend is NOT the current version !!!' \
+  'backend/ changed (for example after git pull) but the rebuild failed (no internet?).' \
+  'Starting with the previously built Backend instead; new Backend changes are missing.' \
+  'Run the same make command again once online to update it.' >&2
 endef
 
 # Shared by up and demo-up; DEMO_FEEDS adds the looping camera publishers.
@@ -322,6 +331,7 @@ dashboard=$$(curl -skfsS --max-time 5 https://127.0.0.1:8443/)
 [[ $$dashboard == *'id="pause-updates"'* ]]
 trap - ERR
 printf '\nApplication ready: https://%s:8443/  (trust config/tls/server.crt on the tablet)\n' "$(COTURN_EXTERNAL_IP)"
+if [[ -n $$backend_stale ]]; then $(backend_stale_warning); fi
 $(if $(DEMO_FEEDS),printf 'Demo cameras live: $(CAMERA_IDS)\n',printf 'Waiting for cameras: publish H.264 RTSP to rtsp://127.0.0.1:8554/$(firstword $(CAMERA_IDS)) ... $(lastword $(CAMERA_IDS)); check with make status\n')
 endef
 
