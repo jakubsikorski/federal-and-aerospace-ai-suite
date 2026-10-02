@@ -79,15 +79,21 @@ define readiness
 wait_for() {
   local description=$$1
   shift
-  local deadline=$$((SECONDS + WAIT_SECONDS))
+  local start=$$SECONDS deadline=$$((SECONDS + WAIT_SECONDS)) next=$$((SECONDS + 30)) error=""
   while ((SECONDS < deadline)); do
-    if "$$@" >/dev/null 2>&1; then
+    if error=$$("$$@" 2>&1 >/dev/null); then
       printf 'ready: %s\n' "$$description"
       return 0
     fi
+    # Never wait silently: show progress and the latest failure every 30 s.
+    if ((SECONDS >= next)); then
+      printf 'waiting for %s (%ss of %ss): %s\n' "$$description" $$((SECONDS - start)) \
+        "$$WAIT_SECONDS" "$${error##*$$'\n'}" >&2
+      next=$$((SECONDS + 30))
+    fi
     sleep 2
   done
-  echo "Timed out waiting for $$description" >&2; return 1
+  echo "Timed out waiting for $$description: $${error##*$$'\n'}" >&2; return 1
 }
 
 paths_ready() {
@@ -152,6 +158,12 @@ preflight:
 	[[ $$TTS_DEVICE =~ ^(CPU|GPU)$$ ]] || fail "TTS_DEVICE must be CPU or GPU"
 	[[ -e /dev/dri/renderD128 ]] || fail "/dev/dri/renderD128 (Intel GPU driver) is required"
 	[[ -e /dev/accel/accel0 ]] || fail "/dev/accel/accel0 (Intel NPU driver) is required"
+	# Startup checks call services on 127.0.0.1 with curl. If the proxy settings
+	# send those calls to the proxy, nothing local is ever reached.
+	if [[ -n "$${http_proxy:-}$${HTTP_PROXY:-}$${https_proxy:-}$${HTTPS_PROXY:-}" ]]; then
+	  code=0; curl -s -o /dev/null --max-time 5 http://127.0.0.1:9/ || code=$$?
+	  [[ $$code == 7 ]] || fail "requests to 127.0.0.1 go through the proxy; add localhost,127.0.0.1 to no_proxy and NO_PROXY"
+	fi
 
 # Containers can leave host bind mounts root-owned after an interrupted run.
 # Repair only assets Make owns, plus the data/ and data/dlsps/ parents that a
