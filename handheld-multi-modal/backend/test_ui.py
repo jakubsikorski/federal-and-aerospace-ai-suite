@@ -853,6 +853,20 @@ def main():
             def check(script):
                 result = js('return window.eval(' + json.dumps(script) + ')')
                 assert result is True, result
+            # Tapping a select opens the in-page touch list (48 px rows, on screen) instead of the tiny native popup.
+            click('#track-mode')
+            check('''(() => {
+              const picker = $("select-picker"), box = picker.getBoundingClientRect(), rows = [...picker.querySelectorAll("#select-picker-list button")];
+              return (picker.open && $("select-picker-title").textContent === "View" && rows.length === 3
+                && rows.every(row => row.getBoundingClientRect().height >= 48) && rows[0].getAttribute("aria-selected") === "true"
+                && box.top >= 0 && box.bottom <= innerHeight + 1 && box.left >= 0 && box.right <= innerWidth + 1)
+                || {open: picker.open, box: box.toJSON(), rows: rows.length};
+            })()''')
+            click('#select-picker-list button:nth-child(2)')
+            check('''(() => (!$("select-picker").open && $("track-mode").value === "history" && state.filter.mode === "history"
+              && document.activeElement === $("track-mode")) || [$("select-picker").open, $("track-mode").value, state.filter.mode])()''')
+            check('$("track-mode").value = "current"; $("track-mode").dispatchEvent(new Event("change")); true')
+            time.sleep(1)
             check('''(() => {
               const button = document.querySelector('[data-model="chatqna"]'); button.click();
               const before = button;
@@ -1156,8 +1170,8 @@ def main():
                         && history.top >= evidenceHead.top && history.bottom <= evidenceHead.bottom
                         && !$("track-count") && $("track-title").textContent === "Evidence"
                         && getComputedStyle($("open-assistant")).backgroundColor !== getComputedStyle($("toggle-diagnostics")).backgroundColor
-                        && [...document.querySelectorAll(".quiet-button:not(#ask-submit):not(#use-viewed-camera):not(#toggle-history-filters):not(.primary-action):not(#grid-prev):not(#grid-next):not(#drawer-ask):not(#zone-toolbar *):not(#cameras-panel *)")].every(button => parseFloat(getComputedStyle(button).borderTopWidth) >= 1 && getComputedStyle(button).height === "32px" && getComputedStyle(button).fontSize === "13px")
-                        && ["mission-toggle","rules-toggle","audio-toggle","open-assistant"].every(id => $(id).getBoundingClientRect().height === 40 && getComputedStyle($(id)).fontSize === "15px")
+                        && [...document.querySelectorAll(".quiet-button:not(#ask-submit):not(#use-viewed-camera):not(#toggle-history-filters):not(.primary-action):not(#grid-prev):not(#grid-next):not(#drawer-ask):not(#zone-toolbar *):not(#cameras-panel *)")].every(button => parseFloat(getComputedStyle(button).borderTopWidth) >= 1 && parseFloat(getComputedStyle(button).height) >= 44 && getComputedStyle(button).fontSize === "14px")
+                        && ["mission-toggle","rules-toggle","audio-toggle","open-assistant"].every(id => $(id).getBoundingClientRect().height === 48 && getComputedStyle($(id)).fontSize === "15px")
                         && parseFloat(getComputedStyle(document.querySelector(".track-seen")).fontSize) >= 15
                         && document.body.scrollWidth === innerWidth && document.body.scrollHeight === innerHeight
                         && $("video-wrap").getBoundingClientRect().height >= 200
@@ -1229,7 +1243,7 @@ def main():
                     && paging.bottom <= panel.bottom + 1
                     && $("assistant-results").clientHeight >= 80
                     && ["search-camera","search-class","search-period"].every(id => $(id).getBoundingClientRect().height >= 48)
-                    && ["close-assistant","assistant-previous","assistant-next"].every(id => $(id).getBoundingClientRect().height === 32) && $("ask-submit").getBoundingClientRect().height >= 48;
+                    && ["close-assistant","assistant-previous","assistant-next"].every(id => $(id).getBoundingClientRect().height >= 44) && $("ask-submit").getBoundingClientRect().height >= 48;
                   const header=document.querySelector("header").getBoundingClientRect();
                   const contextVisible=!overlay || (panel.top>=header.bottom && $("close-assistant").textContent==="Back to camera");
                   $("mission-toggle").click();
