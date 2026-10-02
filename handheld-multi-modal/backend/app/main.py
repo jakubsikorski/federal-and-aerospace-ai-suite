@@ -508,14 +508,14 @@ def create_app() -> FastAPI:
             return envelope(history.current(conn, state.ingest, state.cfg, stream_id))
 
     @app.get("/api/streams/{stream_id}/tracks")
-    def tracks(request: Request, stream_id: str, limit: int = 50,
+    def tracks(request: Request, stream_id: str, limit: int = 50, offset: int = 0,
                since_utc: str | None = None, classes: str | None = None,
                has_image: bool = False, prioritize: bool = True):
         _known(request, stream_id)
         state = request.app.state
         with read_connection(request) as conn:
             return envelope(history.recent(conn, state.ingest, state.cfg, stream_id,
-                                           limit=limit, since_utc=since_utc,
+                                           limit=limit, offset=offset, since_utc=since_utc,
                                            class_labels=track_classes(classes),
                                            has_image=has_image, prioritize=prioritize))
 

@@ -9,6 +9,7 @@ Choose Camera 1, Camera 2 or another configured camera in the top bar for live
 video. All cameras gives an evidence overview; choose one camera to watch video.
 Fullscreen enlarges video. Lost video connections retry automatically; the video
 panel shows reconnection status. Switching cameras cancels the previous retry.
+History evidence shows 50 tracks per page; Older and Newer below the list page through the rest.
 Open an evidence card for its image and track details. Crops are selected snapshots,
 not full recordings. One track is not necessarily one unique person. Tracking IDs
 cannot identify people or link identities across cameras. Missing detections or

@@ -350,6 +350,9 @@
   .subtotal { font-size: 12px; }
   #track-scroll { min-height: 0; overflow: auto; padding: 10px; scrollbar-color: var(--line) transparent; overflow-anchor: none; }
   .track-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  #track-pager { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+  #track-pager span { color: var(--muted); font-size: 13px; text-align: center; }
+  #track-pager button { min-height: 44px; }
   .track-card { min-width: 0; padding: 0; overflow: hidden; text-align: left; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); }
   .track-card:hover, .candidate:hover { border-color: var(--accent); }
   .track-card[aria-current="true"], .candidate[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: -2px; }
@@ -794,7 +797,13 @@
         <button id="view-toggle" class="quiet-button" type="button" aria-pressed="false">Compact</button>
         <button id="pause-updates" class="quiet-button" type="button" aria-pressed="false">Pause</button>
       </div>
-      <div id="track-scroll"><div class="track-grid"></div></div>
+      <div id="track-scroll"><div class="track-grid"></div>
+        <nav id="track-pager" aria-label="Evidence pages" hidden>
+          <button id="track-newer" class="quiet-button" type="button">‹ Newer</button>
+          <span id="track-page" role="status"></span>
+          <button id="track-older" class="quiet-button" type="button">Older ›</button>
+        </nav>
+      </div>
 
       <aside id="assistant-panel" aria-label="Assistant">
         <div id="assistant-head">
@@ -899,6 +908,8 @@ const state = {
   telemetry: null, history: new Map(), whep: null, events: null,
   whepSerial: 0, whepFailures: 0, whepLeaving: false,
   filter: {mode: "current", classLabel: "", hasImage: false},
+  // History paging: page 0 is the live list; older pages are fetched snapshots.
+  historyPage: 0, pageData: {}, pageVersion: 0,
   paused: false, held: false, pending: false, drawerTrack: null, selectedTrackKey: null,
   resource: "cpu", trackSignature: "", requestVersion: 0,
   models: [], selectedModel: null, modelsUnavailable: false,
@@ -1541,6 +1552,7 @@ function selectCamera(streamId, firstLoad = false) {
   if (!firstLoad && compactAssistant()) closeAssistant(false);
   if (state.drawerTrack) closeDrawer();
   state.selected = streamId;
+  resetHistoryPage();
   if (!firstLoad) storeSet("operator.selectedCamera", streamId);
   updateAssistantCameraCue();
   state.held = false;
@@ -1604,9 +1616,14 @@ function filterTrack(track) {
     && (!state.filter.hasImage || Boolean(track.snip_url));
 }
 
+const HISTORY_PAGE_SIZE = 50;
+function historySource() {
+  return state.historyPage ? state.pageData : state.recent;
+}
+
 function visibleTracks() {
   if (state.alertView) return state.alertView.tracks;
-  const source = state.filter.mode === "current" ? state.current : state.recent;
+  const source = state.filter.mode === "current" ? state.current : historySource();
   return selectedStreams().flatMap((stream) =>
     ((source[stream.stream_id] || {}).tracks || []).filter(filterTrack).map((track, index) => ({
       ...track, stream_id: stream.stream_id, liveIndex: index
@@ -1667,7 +1684,7 @@ function renderSubtotals() {
   const box = $("subtotals");
   box.replaceChildren();
   if (state.selected !== "all") return;
-  const source = state.filter.mode === "current" ? state.current : state.recent;
+  const source = state.filter.mode === "current" ? state.current : historySource();
   for (const stream of selectedStreams()) {
     const tracks = ((source[stream.stream_id] || {}).tracks || []).filter(filterTrack);
     const item = document.createElement("span");
@@ -1711,12 +1728,12 @@ function renderTrackSummary(tracks) {
   if (state.alertView) return renderAlertView();
   const camera = state.selected === "all" ? "All cameras" : cameraName(state.selected);
   const type = state.filter.classLabel ? titleCase(state.filter.classLabel) + " tracks" : "Object tracks";
-  const results = selectedStreams().map((stream) => state.recent[stream.stream_id] || {});
+  const results = selectedStreams().map((stream) => historySource()[stream.stream_id] || {});
   const matched = results.reduce((sum, result) => sum + Number(result.matched_count || 0), 0);
   const history = state.filter.mode === "history";
   $("scope-copy").textContent = [camera, history ? "History · current session" : "Current",
     type, history ? tracks.length + " of " + matched + " shown" : tracks.length + " observed",
-    results.some((r) => r.truncated) && history ? "More results available" : "",
+    history && state.historyPage ? "Page " + (state.historyPage + 1) : "",
     state.filter.prioritize !== false && !state.filter.classLabel && state.priorityClasses.length
       ? "Priority: " + state.priorityClasses.map(titleCase).join(", ") + " · newest within group" : "Newest first"].filter(Boolean).join(" · ");
 }
@@ -1787,8 +1804,9 @@ function trackCard(track) {
 }
 
 function updateListState() {
-  $("list-state").dataset.state = state.paused ? "paused" : state.held ? "held" : "live";
-  $("list-state").textContent = state.paused ? "Paused · snapshot"
+  const older = state.historyPage && state.filter.mode === "history" && !state.alertView;
+  $("list-state").dataset.state = older || state.paused ? "paused" : state.held ? "held" : "live";
+  $("list-state").textContent = older ? "Older page" : state.paused ? "Paused · snapshot"
     : state.held ? "Held for inspection · snapshot" : "Live list";
   $("apply-updates").disabled = !state.pending || Boolean(state.drawerTrack);
   $("pause-updates").setAttribute("aria-pressed", String(state.paused));
@@ -1854,8 +1872,56 @@ function renderTracks(force = false) {
     const empty = document.createElement("div"); empty.className = "empty";
     empty.textContent = "No tracks match these filters."; grid.append(empty);
   }
+  renderTrackPager();
   updateListState();
 }
+
+function renderTrackPager() {
+  const results = selectedStreams().map((stream) => historySource()[stream.stream_id] || {});
+  // Each camera is paged separately; the busiest camera sets the page count.
+  const most = Math.max(0, ...results.map((result) => Number(result.matched_count || 0)));
+  const pages = Math.max(1, Math.ceil(most / HISTORY_PAGE_SIZE));
+  const page = state.historyPage;
+  $("track-pager").hidden = state.filter.mode !== "history" || Boolean(state.alertView) || pages < 2 && !page;
+  if ($("track-pager").hidden) return;
+  const first = page * HISTORY_PAGE_SIZE + 1, last = Math.min(most, (page + 1) * HISTORY_PAGE_SIZE);
+  $("track-page").textContent = state.pageError || ("Page " + (page + 1) + " of " + pages + " · "
+    + (selectedStreams().length > 1 ? "tracks " + first + "–" + last + " per camera" : "tracks " + first + "–" + last + " of " + most));
+  $("track-newer").disabled = !page || state.pageLoading;
+  $("track-older").disabled = page + 1 >= pages || state.pageLoading;
+}
+
+async function showHistoryPage(page) {
+  const version = ++state.pageVersion;
+  state.pageError = null;
+  if (page <= 0) {
+    state.historyPage = 0; state.pageData = {}; state.held = false;
+  } else {
+    state.pageLoading = true; renderTrackPager();
+    try {
+      const query = historyQuery() + "&offset=" + page * HISTORY_PAGE_SIZE;
+      const streams = selectedStreams();
+      const results = await Promise.all(streams.map((stream) => api("/api/streams/" + stream.stream_id + "/tracks?" + query)));
+      if (version !== state.pageVersion) return;
+      state.pageData = Object.fromEntries(streams.map((stream, index) => [stream.stream_id, results[index]]));
+      state.historyPage = page;
+    } catch (error) {
+      if (version !== state.pageVersion) return;
+      state.pageError = "Page failed to load. Try again.";
+    } finally {
+      if (version === state.pageVersion) state.pageLoading = false;
+    }
+  }
+  $("track-scroll").scrollTop = 0;
+  renderTracks(true);
+}
+
+function resetHistoryPage() {
+  state.pageVersion++;
+  state.historyPage = 0; state.pageData = {}; state.pageError = null; state.pageLoading = false;
+}
+$("track-newer").onclick = () => showHistoryPage(state.historyPage - 1);
+$("track-older").onclick = () => showHistoryPage(state.historyPage + 1);
 
 const INCIDENT_STATES = {open: "Needs attention", acknowledged: "Acknowledged", snoozed: "Snoozed", closed: "Closed"};
 const CLOSURES = {dismissed: "dismissed", false_alarm: "false alarm", quiet: "quiet", rule_disabled: "rule disabled", rule_deleted: "rule deleted"};
@@ -4187,7 +4253,7 @@ $("assistant-previous").onclick = () => {
 
 function historyQuery(includeLimit = true) {
   const query = new URLSearchParams();
-  if (includeLimit) query.set("limit", "50");
+  if (includeLimit) query.set("limit", String(HISTORY_PAGE_SIZE));
   query.set("prioritize", String(state.filter.prioritize !== false));
   if (state.filter.classLabel) query.set("classes", state.filter.classLabel);
   if (state.filter.hasImage) query.set("has_image", "true");
@@ -4323,6 +4389,7 @@ $("track-mode").onchange = (event) => {
   changeFilters();
 };
 async function changeFilters() {
+  resetHistoryPage();
   state.events?.close();
   state.events = null;
   state.filter.classLabel = $("class-filter").value;

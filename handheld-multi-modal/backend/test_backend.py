@@ -474,7 +474,7 @@ def test_history_filters_before_limit_and_reports_scope():
         assert answer["matched_count"] == 5 and answer["truncated"] is True, answer
         assert answer["class_counts"] == {"chair": 55, "person": 5}, answer
         assert answer["scope"] == {
-            "kind": "tracking_session", "since_utc": None, "limit": 3,
+            "kind": "tracking_session", "since_utc": None, "limit": 3, "offset": 0,
             "priority_classes": []}, answer
 
         with_image = history.recent(
@@ -2740,6 +2740,17 @@ def test_priority_classes_survive_the_evidence_limit():
         # Recency alone buries the person: that is what the priority order fixes.
         unset = history.recent(conn, None, cfg, "cam1", limit=5, prioritize=False)
         assert "person" not in [track["class_label"] for track in unset["tracks"]]
+
+        # Paging: consecutive offsets continue the same order without gaps or repeats.
+        seen = []
+        for offset in range(0, result["matched_count"] + 5, 5):
+            page = history.recent(conn, None, cfg, "cam1", limit=5, offset=offset)
+            assert page["scope"]["offset"] == offset
+            assert page["truncated"] == (offset + 5 < result["matched_count"])
+            seen += [track["track_id"] for track in page["tracks"]]
+        everything = history.recent(conn, None, cfg, "cam1", limit=200)
+        assert seen == [track["track_id"] for track in everything["tracks"]], seen
+        assert history.recent(conn, None, cfg, "cam1", limit=5, offset=-3)["scope"]["offset"] == 0
         conn.close()
 
 

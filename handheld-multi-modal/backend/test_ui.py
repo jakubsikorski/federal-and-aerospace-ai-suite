@@ -944,6 +944,45 @@ def main():
               })()` ).then(done);
             ''')
             assert result is True, result
+            # History beyond one page: Older/Newer pager pages each camera by offset and resets on filter change.
+            result = async_js('''const done = arguments[arguments.length - 1];
+              window.eval(`(async () => {
+                const original = api, saved = state.recent.cam1, offsets = [];
+                const all = Array.from({length: 120}, (_, i) => ({track_id: 1000 + i, stream_id: "cam1", class_label: "person",
+                  first_observed_utc: new Date(Date.now() - i * 1000).toISOString(), last_observed_utc: new Date(Date.now() - i * 1000).toISOString(),
+                  candidate_count: 0, snip_url: null, snip_state: "none"}));
+                const page = (offset) => ({tracks: all.slice(offset, offset + 50), matched_count: 120, truncated: offset + 50 < 120,
+                  class_counts: {person: 120}, scope: {offset}});
+                api = async (path) => { const offset = Number(new URL(path, location.href).searchParams.get("offset") || 0); offsets.push(offset); return page(offset); };
+                try {
+                  state.paused = false; state.held = false; state.recent.cam1 = page(0); renderTracks(true);
+                  const first = () => document.querySelector(".track-card")?.dataset.trackKey;
+                  if ($("track-pager").hidden) return "pager hidden with 120 tracks";
+                  if (!$("track-page").textContent.startsWith("Page 1 of 3") || !$("track-newer").disabled || $("track-older").disabled) return "page 1 state: " + $("track-page").textContent;
+                  $("track-older").click(); await new Promise((r) => setTimeout(r, 50));
+                  if (state.historyPage !== 1 || first() !== "cam1:1050" || offsets.at(-1) !== 50) return "older page not loaded: " + first();
+                  if ($("track-newer").disabled || !$("list-state").textContent.includes("Older page")) return "page 2 state";
+                  state.recent.cam1 = page(0); state.recent.cam1.tracks[0] = {...all[0], track_id: 9999}; renderTracks(true);
+                  if (first() !== "cam1:1050") return "live update replaced older page";
+                  await showHistoryPage(2);
+                  if (first() !== "cam1:1100" || !$("track-older").disabled || !$("track-page").textContent.includes("101–120 of 120")) return "last page: " + $("track-page").textContent;
+                  $("track-newer").click(); await new Promise((r) => setTimeout(r, 50));
+                  if (state.historyPage !== 1) return "newer did not step back one page";
+                  $("track-newer").click(); await new Promise((r) => setTimeout(r, 50));
+                  if (state.historyPage !== 0 || first() !== "cam1:9999") return "newer did not return to live page: " + state.historyPage + " " + first();
+                  await showHistoryPage(1);
+                  state.recent.cam1 = page(0); await changeFilters();
+                  if (state.historyPage !== 0 || Object.keys(state.pageData).length) return "filter change kept older page";
+                  $("track-mode").value = "current"; state.filter.mode = "current"; renderTracks(true);
+                  if (!$("track-pager").hidden) return "pager shown in current view";
+                  return true;
+                } finally {
+                  api = original; state.recent.cam1 = saved;
+                  $("track-mode").value = "history"; state.filter.mode = "history"; await changeFilters();
+                }
+              })()` ).then(done);
+            ''')
+            assert result is True, result
             # Back off failed crop URLs, then retry even when the track data is unchanged.
             check('''(() => {
               state.paused = false; state.held = false; renderTracks(true);
@@ -1666,7 +1705,7 @@ def main():
                 (args.screenshots / 'operator-welcome.png').write_bytes(base64.b64decode(request('GET', base + '/screenshot')))
                 js('return window.eval(' + json.dumps('state.assistantContext={text:"What can you do?",payload:{}}; renderAssistant({intent:"application_help",answer_text:"I can search recorded tracks, answer mission questions and explain general topics. I cannot see the live video.",errors:[]}); archiveAssistantTurn(); state.assistantContext={text:"Why is the sky blue?",payload:{}}; $("assistant-mode").value="general"; renderAssistant({intent:"general_chat",answer_text:"Air scatters blue sunlight more strongly than red light, so the daytime sky looks blue.",conversation:{turns:1},errors:[]});') + ')')
                 (args.screenshots / 'conversation.png').write_bytes(base64.b64decode(request('GET', base + '/screenshot')))
-            print('PASS: cameras panel add/limit/remove, WHEP recovery/backoff/cleanup/switch races, compact in-panel search without mode tabs, alphabetical types, session/custom ranges, question correction, images-only results, fixed Search/paging controls, typed history overlay/paging, stable evidence/focus/scroll, pending updates, reconnect pause/All, diagnostics, chart axes/gaps, stale readings, drawer, native video fullscreen, model placement/detail/failure states, filter failure recovery, repeated crop retry, 200px minimum video and in-view overlay panels at 1280x800 and 1280/1024 widths with 714/682/600/540 heights')
+            print('PASS: cameras panel add/remove (no limit), WHEP recovery/backoff/cleanup/switch races, compact in-panel search without mode tabs, alphabetical types, session/custom ranges, question correction, images-only results, fixed Search/paging controls, typed history overlay/paging, evidence Older/Newer pages, stable evidence/focus/scroll, pending updates, reconnect pause/All, diagnostics, chart axes/gaps, stale readings, drawer, native video fullscreen, model placement/detail/failure states, filter failure recovery, repeated crop retry, 200px minimum video and in-view overlay panels at 1280x800 and 1280/1024 widths with 714/682/600/540 heights')
         finally:
             if session:
                 request('DELETE', f'/session/{session}')

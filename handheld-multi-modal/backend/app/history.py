@@ -160,7 +160,7 @@ def _snip(conn: sqlite3.Connection, track_id: int) -> tuple[str | None, str]:
 
 
 def recent(conn: sqlite3.Connection, ingest, cfg: dict, stream_id: str,
-           *, limit: int = 50, since_utc: str | None = None,
+           *, limit: int = 50, offset: int = 0, since_utc: str | None = None,
            class_labels: tuple[str, ...] = (), has_image: bool = False,
            prioritize: bool = True) -> dict:
     """Closed and open tracks for the history strip, newest first.
@@ -169,9 +169,10 @@ def recent(conn: sqlite3.Connection, ingest, cfg: dict, stream_id: str,
     health: it is history, and history stays true after the feed dies.
     """
     limit = max(1, min(int(limit), 200))
+    offset = max(0, int(offset))
     identity = _identity(conn, stream_id, ingest)
     filters = {"classes": list(class_labels), "has_image": bool(has_image)}
-    scope = {"kind": "tracking_session", "since_utc": since_utc, "limit": limit}
+    scope = {"kind": "tracking_session", "since_utc": since_utc, "limit": limit, "offset": offset}
     if identity is None:
         return {
             "stream_id": stream_id, "tracks": [], "truncated": False,
@@ -224,8 +225,8 @@ def recent(conn: sqlite3.Connection, ingest, cfg: dict, stream_id: str,
         filtered_args).fetchone()["n"]
     rows = conn.execute(
         f"""SELECT t.* FROM tracks t WHERE {filtered_where}
-            ORDER BY {priority_order}t.last_observed_utc DESC, t.track_id DESC LIMIT ?""",
-        [*filtered_args, *priority_args, limit + 1]).fetchall()
+            ORDER BY {priority_order}t.last_observed_utc DESC, t.track_id DESC LIMIT ? OFFSET ?""",
+        [*filtered_args, *priority_args, limit + 1, offset]).fetchall()
     truncated = len(rows) > limit
     rows = rows[:limit]
 
