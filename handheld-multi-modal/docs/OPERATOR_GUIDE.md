@@ -215,11 +215,10 @@ After **View** the Evidence panel shows only that alert:
    arrived meanwhile.
 7. **Object card / row** — click to open its images.
 8. **Ask** — open the assistant.
-
-History lists show 50 tracks per page. When there are more, **‹ Newer** and
-**Older ›** appear below the list. With All cameras, each page holds the next
-50 tracks of every camera. Older pages are snapshots; page 1 stays live.
-Changing camera, view or filters returns to page 1.
+9. **‹ Newer / Older ›** — History lists show 50 tracks per page; these
+   buttons appear below the list when there are more. With All cameras, each
+   page holds the next 50 tracks of every camera. Older pages are snapshots;
+   page 1 stays live. Changing camera, view or filters returns to page 1.
 
 ### While you were away
 
