@@ -32,7 +32,7 @@ Service owns export of `openai/whisper-medium` to
 `models/openvino/whisper-medium` (confirmed via a real first-run
 `optimum-cli export openvino` this session; required a real corporate
 `http(s)_proxy` for the outbound HF download). Immutable model revision is
-not yet pinned (see `docs/application/IMPROVEMENT_PLAN.md`).
+not yet pinned.
 
 **Container port 8010; host-mapped port is 8011** (`127.0.0.1:8011:8010` in
 Compose) — use the host port from outside the container:

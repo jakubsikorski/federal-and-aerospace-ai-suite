@@ -11,8 +11,7 @@ Use official `dlsps-user` and `dlstreamer-coding-agent` skills for stock APIs.
 Repository-specific source findings + live evidence: `docs/application/video-contracts.md`.
 **Runtime-verified**: all three variants (CPU/GPU/NPU) deployed and smoke-tested
 against real running containers, not source-only anymore (see `STATUS.md`
-and `scripts/smoke/{02,03,04,05}_*.sh`, hardened 2026-09-10 — see
-`docs/application/IMPROVEMENT_PLAN.md`).
+and `scripts/smoke/{02,03,04,05}_*.sh`, hardened 2026-09-10).
 
 Config locations: `config/dlsps/{cpu,gpu,npu}/config.json`, selected at
 deployment time via `DLSPS_CONFIG_VARIANT` in `compose/handheld-multi-modal.yaml`

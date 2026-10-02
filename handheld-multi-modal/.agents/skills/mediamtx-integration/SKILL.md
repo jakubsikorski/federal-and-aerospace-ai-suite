@@ -18,8 +18,7 @@ Host RTSP TCP 8554; WHEP HTTP 8889; ICE UDP 8189; API TCP 9997.
 Containers use `mediamtx:8554`; host uses loopback.
 
 **Runtime-verified** (`bash scripts/smoke/01_mediamtx.sh`, hardened
-2026-09-10, live PASS with 79 real decoded `video/x-raw` WHEP frames — see
-`docs/application/IMPROVEMENT_PLAN.md`):
+2026-09-10, live PASS with 79 real decoded `video/x-raw` WHEP frames):
 
 ```sh
 docker compose -f compose/handheld-multi-modal.yaml up -d mediamtx
