@@ -3815,16 +3815,20 @@ $('replay-answer').onclick=async()=>{
   catch(error) { voiceStatus('Could not replay: '+error.message); }
 };
 let followLatest = true;
-function scrollChat(force = false) {
-  if (force) followLatest = true;
+function showJumpLatest() {
   $("jump-latest").hidden = followLatest;
   $("jump-latest").style.bottom = ($("ask-form").offsetHeight + $("assistant-paging").offsetHeight + 12) + "px";
+}
+function scrollChat(force = false) {
+  if (force) followLatest = true;
+  showJumpLatest();
   if (followLatest) $("assistant-output").scrollTop = $("assistant-output").scrollHeight;
 }
+// Only record the reader's position here; snapping back from a scroll event fights smooth wheel scrolling.
 $("assistant-output").addEventListener("scroll", () => {
   const view = $("assistant-output");
   followLatest = view.scrollHeight - view.clientHeight - view.scrollTop < 40;
-  scrollChat();
+  showJumpLatest();
 });
 $("jump-latest").onclick = () => scrollChat(true);
 function updateAssistantCameraCue() {

@@ -1255,6 +1255,33 @@ def main():
                     check('renderChart(); true')
                     data = request('GET', base + '/screenshot')
                     (args.screenshots / f'fixture-{width}x{height}.png').write_bytes(base64.b64decode(data))
+            # Small upward wheel steps (smooth scrolling) must not snap the conversation back to the latest reply.
+            result = async_js(r'''const done = arguments[arguments.length - 1];
+              window.eval(`(async () => {
+                await openAssistant(); await $("assistant-reset").onclick();
+                const frame = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+                const view = $("assistant-output"), turns = [];
+                $("assistant-panel").classList.remove("welcome");
+                for (let i = 0; i < 5; i++) {
+                  const turn = document.createElement("div"); turn.className = "chat-turn";
+                  turn.innerHTML = "<p class=chat-question>Question</p><p>" + "Answer text. ".repeat(60) + "</p>";
+                  $("assistant-transcript").append(turn); turns.push(turn);
+                }
+                scrollChat(true); await frame();
+                const bottom = view.scrollTop;
+                view.scrollTop = bottom - 20; await frame();
+                view.scrollTop = bottom - 40; await frame();
+                const held = view.scrollTop === bottom - 40;
+                view.scrollTop = bottom - 300; await frame();
+                $("assistant-answer").textContent += " more"; scrollChat(); await frame();
+                const stays = view.scrollTop === bottom - 300 && !$("jump-latest").hidden;
+                $("jump-latest").click(); await frame();
+                const follows = view.scrollHeight - view.clientHeight - view.scrollTop < 2 && $("jump-latest").hidden;
+                turns.forEach(turn => turn.remove()); $("assistant-answer").textContent = "";
+                await $("assistant-reset").onclick(); closeAssistant(false);
+                return (bottom > 300 && held && stays && follows) || {bottom, held, stays, follows};
+              })()`).then(done, error => done(String(error)));''')
+            assert result is True, result
             result = async_js(r'''const done = arguments[arguments.length - 1];
               window.eval(`(async () => {
                 await openAssistant(); await $("assistant-reset").onclick();
