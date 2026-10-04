@@ -15,11 +15,12 @@ x-proxy-env-blocked: &proxy-env-blocked
 x-proxy-env-real: &proxy-env-real
   # Real proxy needed here (unlike locally-scoped services) — first-run
   # model export must reach huggingface.co over the internet.
-  http_proxy: "${http_proxy:-}"
-  https_proxy: "${https_proxy:-}"
+  # Lowercase first, then uppercase, so either shell convention works.
+  http_proxy: "${http_proxy:-${HTTP_PROXY:-}}"
+  https_proxy: "${https_proxy:-${HTTPS_PROXY:-}}"
   no_proxy: "localhost,127.0.0.1"
-  HTTP_PROXY: "${http_proxy:-}"
-  HTTPS_PROXY: "${https_proxy:-}"
+  HTTP_PROXY: "${http_proxy:-${HTTP_PROXY:-}}"
+  HTTPS_PROXY: "${https_proxy:-${HTTPS_PROXY:-}}"
   NO_PROXY: "localhost,127.0.0.1"
 x-gpu-healthcheck: &gpu-healthcheck
   # Model warmup on GPU can take a while; stock generous health-check.

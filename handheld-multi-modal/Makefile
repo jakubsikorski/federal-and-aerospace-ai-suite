@@ -74,26 +74,78 @@ help:
 	@echo '         HOST_IP=<LAN address>  ASSET_ROOT=<path>'
 	@echo 'The first start downloads several GB of models (internet, up to an hour); later starts run offline.'
 
+# Shown while waiting for services that download on their first start.
+SETUP_NOTE := The stock Model Download installs its Python packages from PyPI on every start (about 2-5 min with internet).
+MODEL_NOTE := The first start downloads several GB of models; later starts use the cache.
+NET_HINT := If it keeps waiting or stops, the container probably has no internet: export http_proxy and https_proxy (or HTTP_PROXY and HTTPS_PROXY) in this shell before make, keep localhost,127.0.0.1 in no_proxy. Proxy settings of the Docker daemon or ~/.docker/config.json are not passed to these containers.
+
 # Only this small polling helper is shared between startup checks.
 define readiness
+# Optional per call: WAIT_CONTAINER=<name> shows its latest log line, fails at
+# once if it stops, and prints its logs on failure; WAIT_HINT=<text> says what
+# to check when it does not become ready.
 wait_for() {
   local description=$$1
   shift
-  local start=$$SECONDS deadline=$$((SECONDS + WAIT_SECONDS)) next=$$((SECONDS + 30)) error=""
+  local container=$${WAIT_CONTAINER:-} hint=$${WAIT_HINT:-}
+  local start=$$SECONDS deadline=$$((SECONDS + WAIT_SECONDS)) next=$$((SECONDS + 30)) error="" status
   while ((SECONDS < deadline)); do
     if error=$$("$$@" 2>&1 >/dev/null); then
       printf 'ready: %s\n' "$$description"
       return 0
     fi
-    # Never wait silently: show progress and the latest failure every 30 s.
+    if [[ -n $$container ]]; then
+      status=$$(docker inspect -f '{{.State.Status}}' "$$container" 2>/dev/null || echo missing)
+      if [[ ! $$status =~ ^(created|running|restarting)$$ ]]; then
+        printf '\n%s stopped before it was ready (container %s: %s).\n' "$$description" "$$container" "$$status" >&2
+        wait_failure_details
+        return 1
+      fi
+    fi
+    # Never wait silently: say what is happening every 30 s.
     if ((SECONDS >= next)); then
-      printf 'waiting for %s (%ss of %ss): %s\n' "$$description" $$((SECONDS - start)) \
-        "$$WAIT_SECONDS" "$${error##*$$'\n'}" >&2
+      printf 'still starting %s (%s elapsed, up to %s): %s\n' "$$description" \
+        "$$(duration $$((SECONDS - start)))" "$$(duration "$$WAIT_SECONDS")" "$$(wait_reason "$$error")" >&2
+      if [[ -n $$container ]]; then
+        printf '  latest from %s: %s\n' "$$container" "$$(last_log_line "$$container")" >&2
+      fi
+      if [[ -n $$hint && $$next == $$((start + 30)) ]]; then printf '  note: %s\n' "$$hint" >&2; fi
       next=$$((SECONDS + 30))
     fi
     sleep 2
   done
-  echo "Timed out waiting for $$description: $${error##*$$'\n'}" >&2; return 1
+  printf '\n%s was not ready after %s: %s\n' "$$description" "$$(duration "$$WAIT_SECONDS")" "$$(wait_reason "$$error")" >&2
+  wait_failure_details
+  return 1
+}
+
+wait_failure_details() {
+  if [[ -n $$container ]]; then
+    printf 'Last log lines of %s:\n' "$$container" >&2
+    docker logs --tail 15 "$$container" 2>&1 | sed 's/\x1b\[[0-9;]*m//g; s/^/  /' >&2 || true
+    printf 'Full log: docker logs %s\n' "$$container" >&2
+  fi
+  if [[ -n $$hint ]]; then printf 'Hint: %s\n' "$$hint" >&2; fi
+}
+
+# Turn curl exit codes into plain words; other probes report their own text.
+wait_reason() {
+  case $$1 in
+    *'curl: (7)'*) echo 'not listening yet' ;;
+    *'curl: (52)'*|*'curl: (56)'*) echo 'container is up, service still loading' ;;
+    *'curl: (28)'*) echo 'service did not answer within 5 s' ;;
+    *'curl: (22)'*) echo 'service answered but is not ready yet' ;;
+    '') echo 'not ready yet' ;;
+    *) echo "$${1##*$$'\n'}" ;;
+  esac
+}
+
+last_log_line() {
+  docker logs --tail 30 "$$1" 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -v '^[[:space:]]*$$' | tail -n 1 | cut -c1-150 || true
+}
+
+duration() {
+  if (($$1 >= 60)); then printf '%dm %02ds' $$(($$1 / 60)) $$(($$1 % 60)); else printf '%ds' "$$1"; fi
 }
 
 paths_ready() {
@@ -192,7 +244,7 @@ model-downloader-up:
 	@$(readiness)
 	install -d -m 2775 "$$ASSET_ROOT/data/model-download"
 	$(ASSET_COMPOSE) up -d --no-deps model-downloader
-	WAIT_SECONDS=$(MODEL_WAIT_SECONDS) wait_for "Model Download (ultralytics, port 8200)" curl -fsS --max-time 5 http://127.0.0.1:8200/api/v1/health
+	WAIT_SECONDS=$(MODEL_WAIT_SECONDS) WAIT_CONTAINER=handheld-multi-modal-model-downloader-1 WAIT_HINT="$(SETUP_NOTE) $(NET_HINT)" wait_for "Model Download (ultralytics, port 8200)" curl -fsS --max-time 5 http://127.0.0.1:8200/api/v1/health
 
 # These prerequisites are deliberately sequential, including under make -j.
 .NOTPARALLEL:
@@ -312,21 +364,21 @@ chat_cache=$$($(COMPOSE) run --rm --no-deps --entrypoint python3 \
 export CHATQNA_HF_HUB_OFFLINE=$$([[ $$chat_cache == cached ]] && echo 1 || echo 0)
 printf 'Chat Q&A models: %s\n' "$$([[ $$chat_cache == cached ]] && echo 'cached; no internet needed' || echo 'downloading on this start; internet required')"
 $(COMPOSE) up -d coturn mediamtx mqtt metrics dlsps alert-agent chatqna audio-analyzer tts
-wait_for "MediaMTX" curl -fsS --max-time 3 http://127.0.0.1:9997/v3/paths/list
-wait_for "DLSPS" curl -fsS --max-time 3 http://127.0.0.1:8080/pipelines
-wait_for "Metrics Manager" curl -fsS --max-time 3 http://127.0.0.1:9090/health
+WAIT_CONTAINER=handheld-multi-modal-mediamtx-1 wait_for "MediaMTX" curl -fsS --max-time 3 http://127.0.0.1:9997/v3/paths/list
+WAIT_CONTAINER=handheld-multi-modal-dlsps-1 wait_for "DLSPS" curl -fsS --max-time 3 http://127.0.0.1:8080/pipelines
+WAIT_CONTAINER=handheld-multi-modal-metrics wait_for "Metrics Manager" curl -fsS --max-time 3 http://127.0.0.1:9090/health
 $(if $(DEMO_FEEDS),$(start_demo_cameras))
 $(build_backend)
 $(COMPOSE) up -d --no-deps backend
 $(COMPOSE) up -d --no-deps proxy
-wait_for "Backend through TLS proxy" curl -skfsS --max-time 5 https://127.0.0.1:8443/api/streams
+WAIT_CONTAINER=handheld-multi-modal-backend wait_for "Backend through TLS proxy" curl -skfsS --max-time 5 https://127.0.0.1:8443/api/streams
 $(if $(DEMO_FEEDS),$(wait_demo_video))
 wait_for "Backend telemetry" telemetry_ready
-WAIT_SECONDS=$(AI_WAIT_SECONDS) wait_for "Chat Q&A neural-chat model" json_ready http://127.0.0.1:8888/model llm_model Intel/neural-chat-7b-v3-3
-WAIT_SECONDS=$(AI_WAIT_SECONDS) wait_for "Whisper GPU service" json_ready http://127.0.0.1:8011/health status ok
-WAIT_SECONDS=$(AI_WAIT_SECONDS) wait_for "SpeechT5 $(TTS_DEVICE) service" json_ready http://127.0.0.1:8012/v1/model-info device $(TTS_DEVICE)
+WAIT_SECONDS=$(AI_WAIT_SECONDS) WAIT_CONTAINER=handheld-multi-modal-chatqna-core-gpu WAIT_HINT="$(MODEL_NOTE) $(NET_HINT)" wait_for "Chat Q&A neural-chat model" json_ready http://127.0.0.1:8888/model llm_model Intel/neural-chat-7b-v3-3
+WAIT_SECONDS=$(AI_WAIT_SECONDS) WAIT_CONTAINER=handheld-multi-modal-audio-analyzer WAIT_HINT="$(MODEL_NOTE) $(NET_HINT)" wait_for "Whisper GPU service" json_ready http://127.0.0.1:8011/health status ok
+WAIT_SECONDS=$(AI_WAIT_SECONDS) WAIT_CONTAINER=handheld-multi-modal-tts WAIT_HINT="$(MODEL_NOTE) $(NET_HINT)" wait_for "SpeechT5 $(TTS_DEVICE) service" json_ready http://127.0.0.1:8012/v1/model-info device $(TTS_DEVICE)
 WAIT_SECONDS=$(AI_WAIT_SECONDS) wait_for "SpeechT5 first synthesis" $(speech_warm)
-wait_for "Alert Agent" curl -fsS --max-time 5 http://127.0.0.1:8010/api/v1/health
+WAIT_CONTAINER=handheld-multi-modal-alert-agent wait_for "Alert Agent" curl -fsS --max-time 5 http://127.0.0.1:8010/api/v1/health
 dashboard=$$(curl -skfsS --max-time 5 https://127.0.0.1:8443/)
 [[ $$dashboard == *'id="pause-updates"'* ]]
 trap - ERR
@@ -374,10 +426,10 @@ speech-device: preflight setup
 	@$(readiness)
 	$(build_backend)
 	$(COMPOSE) up -d --no-deps tts backend
-	WAIT_SECONDS=$(AI_WAIT_SECONDS) wait_for "SpeechT5 $(TTS_DEVICE) service" json_ready http://127.0.0.1:8012/v1/model-info device $(TTS_DEVICE)
+	WAIT_SECONDS=$(AI_WAIT_SECONDS) WAIT_CONTAINER=handheld-multi-modal-tts WAIT_HINT="$(MODEL_NOTE) $(NET_HINT)" wait_for "SpeechT5 $(TTS_DEVICE) service" json_ready http://127.0.0.1:8012/v1/model-info device $(TTS_DEVICE)
 	WAIT_SECONDS=$(AI_WAIT_SECONDS) wait_for "SpeechT5 first synthesis" $(speech_warm)
 	$(COMPOSE) restart proxy
-	wait_for "Backend through TLS proxy" curl -skfsS --max-time 5 https://127.0.0.1:8443/api/streams
+	WAIT_CONTAINER=handheld-multi-modal-backend wait_for "Backend through TLS proxy" curl -skfsS --max-time 5 https://127.0.0.1:8443/api/streams
 	printf 'Speech now runs on the %s\n' "$(TTS_DEVICE)"
 
 # DLSPS must restart with Backend: a failed publisher can retain crop locks.
@@ -386,9 +438,9 @@ pipelines-restart demo-pipelines-restart:
 	$(build_backend)
 	$(COMPOSE) stop backend dlsps
 	$(COMPOSE) up -d --no-deps dlsps
-	wait_for "DLSPS" curl -fsS --max-time 5 http://127.0.0.1:8080/pipelines
+	WAIT_CONTAINER=handheld-multi-modal-dlsps-1 wait_for "DLSPS" curl -fsS --max-time 5 http://127.0.0.1:8080/pipelines
 	$(COMPOSE) up -d --no-deps backend
-	wait_for "Backend through TLS proxy" curl -skfsS --max-time 5 https://127.0.0.1:8443/api/streams
+	WAIT_CONTAINER=handheld-multi-modal-backend wait_for "Backend through TLS proxy" curl -skfsS --max-time 5 https://127.0.0.1:8443/api/streams
 	if [[ -n $$($(COMPOSE) ps -q --status running cam1) ]]; then
 	  $(wait_demo_video)
 	fi
