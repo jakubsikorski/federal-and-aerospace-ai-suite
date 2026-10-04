@@ -74,7 +74,9 @@ mission material. Application capabilities do not establish mission facts.
 Resources shows CPU, memory, GPU/NPU and power telemetry when available. Details
 shows component readings; Expand enlarges the chart. Stale or unavailable readings
 are not zero. Models & devices shows model, device and host information; configured
-placement is different from service-reported execution. This guide cannot establish
+placement is different from service-reported execution. Starting means a model
+service has not answered since the application started; it may still be loading or
+downloading its model (the first start can take up to an hour). This guide cannot establish
 current health, resource readings or what a camera is observing.
 DL Streamer detects/tracks objects and creates crops; MediaMTX carries video directly
 to the browser. Backend stores observations and serves evidence and queries; it does

@@ -69,6 +69,11 @@ class QueueFull(AssistantError):
     pass
 
 
+# Connection refused: usually still loading or downloading, so say so instead of "failed".
+LLM_NOT_ANSWERING = ("The language model is not answering yet. It may still be starting or "
+                     "downloading its model; try again in a few minutes.")
+
+
 class ServiceUnavailable(AssistantError):
     pass
 
@@ -1205,7 +1210,7 @@ class Assistant:
                 break
             except httpx.ConnectError as exc:
                 if attempt:
-                    raise ServiceUnavailable("Chat Q&A connection failed") from exc
+                    raise ServiceUnavailable(LLM_NOT_ANSWERING) from exc
             except httpx.TimeoutException as exc:
                 raise ServiceUnavailable("Chat Q&A timed out; generation was not retried") from exc
             except httpx.HTTPError as exc:
@@ -1270,6 +1275,8 @@ class Assistant:
                 consume(pending[:-2])
         except httpx.TimeoutException as exc:
             raise ServiceUnavailable("Chat Q&A timed out; generation was not retried") from exc
+        except httpx.ConnectError as exc:
+            raise ServiceUnavailable(LLM_NOT_ANSWERING) from exc
         except httpx.HTTPError as exc:
             raise ServiceUnavailable("Chat Q&A streaming request failed; not retried") from exc
         if not answer.strip():

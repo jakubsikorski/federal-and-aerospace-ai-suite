@@ -22,6 +22,9 @@ class Placement:
         self.lock = threading.Lock()
         self.cached = None
         self.expires = 0.0
+        # Services that answered since Backend start; until then an unreachable
+        # service is reported as starting (loading or downloading), not offline.
+        self.seen = set()
 
     def _configured(self, service):
         filename = "dlsps.json" if service == "dlsps" else service.replace("_", "-") + ".yaml"
@@ -97,11 +100,17 @@ class Placement:
             row["note"] += ("Device reported by the service; not per-request execution proof."
                             if row["runtime_device"] else "Device is configured only; this API does not report the execution device.")
         except httpx.HTTPError:
-            row["status"] = "unavailable"
-            row["note"] += "Service unreachable or returned an HTTP error. Configured placement is retained."
+            if service in self.seen:
+                row["status"] = "unavailable"
+                row["note"] += "Service unreachable or returned an HTTP error. Configured placement is retained."
+            else:
+                row["status"] = "starting"
+                row["note"] += "Not answering yet. It may still be starting or downloading its model; the first start can take up to an hour. Configured placement is retained."
         except (ValueError, KeyError, TypeError, AttributeError, RuntimeError):
             row["status"] = "unknown"
             row["note"] += "Service response does not establish readiness or placement."
+        else:
+            self.seen.add(service)
         row["checked_utc"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         return row
 

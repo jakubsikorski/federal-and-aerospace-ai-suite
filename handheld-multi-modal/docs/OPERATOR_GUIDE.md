@@ -75,7 +75,10 @@ kiosk mode) on the handheld.
 ![Model details](images/guide-model-details.jpg)
 
 1. Clicked model (click again to close).
-2. Status, model, device and host. **Close** hides it.
+2. Status, model, device and host. **Close** hides it. **Starting** means the
+   service has not answered yet since the application started; it may still be
+   loading or downloading its model (the first start can take up to an hour).
+   Questions asked meanwhile say the model isn't ready yet; try again later.
 
 ## All cameras
 

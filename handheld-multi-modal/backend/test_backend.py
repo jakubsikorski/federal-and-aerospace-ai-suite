@@ -974,6 +974,13 @@ def test_model_placement_separates_configuration_runtime_and_availability():
         services.client.close()
         services.client = httpx.Client(transport=httpx.MockTransport(handle))
         placement = Placement(services, {}, tmp)
+        replies["/model"] = None
+        early = placement.snapshot({}, {})["models"][1]
+        assert early["status"] == "starting", "never-reached service may still be downloading"
+        assert "downloading" in early["note"]
+        replies["/model"] = {"llm_model": "Intel/neural-chat-7b-v3-3"}
+        placement.expires = 0
+        calls.clear()
         result = placement.snapshot({"cam1": "owned"}, {"cam1": {"ok": True}})
         rows = {m["id"]: m for m in result["models"]}
         assert rows["dlsps"]["status"] == "ready"
@@ -1945,6 +1952,17 @@ def test_mission_phase6_failure_matrix():
         queue_brief = service._queue_brief
         service._queue_brief = lambda: None
 
+        # Refused connections read as "starting" (model still loading or
+        # downloading), and the next status poll recovers without operator action.
+        handler = stock.handler
+        def refusing(request):
+            raise httpx.ConnectError("refused", request=request)
+        services.client._transport = httpx.MockTransport(refusing)
+        waiting = service.status()
+        assert waiting["mode"] == "starting" and "downloading" in waiting["detail"], waiting
+        services.client._transport = httpx.MockTransport(handler)
+        assert service.status()["mode"] == "ready"
+
         # Same digest under two names has one retained file; deleting either
         # source must not break recovery of the other.
         content = _pdf_bytes()
@@ -2677,7 +2695,7 @@ def test_brief_fields_are_generated_one_grounded_question_at_a_time():
 
 
 def test_brief_failures_are_named_for_the_operator():
-    from app.assistant import ServiceUnavailable
+    from app.assistant import LLM_NOT_ANSWERING, ServiceUnavailable
     from app.mission import MissionError, MissionUnavailable, brief_failure_message
 
     try:
@@ -2693,6 +2711,7 @@ def test_brief_failures_are_named_for_the_operator():
         TimeoutError(): "Brief generation timed out.",
         ServiceUnavailable("Chat Q&A connection failed"):
             "The language service is not responding.",
+        ServiceUnavailable(LLM_NOT_ANSWERING): LLM_NOT_ANSWERING,
         RuntimeError("worker exploded"): "Brief generation failed unexpectedly.",
     }
     for exc, expected in cases.items():

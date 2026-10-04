@@ -1190,6 +1190,7 @@ function renderModels() {
   $("model-device").textContent = (reported ? model.runtime_device : model?.configured_device) || "Unknown";
   $("model-host").textContent = model?.host || "Unknown";
   $("model-note").textContent = status === "unavailable" ? "Service offline. Showing configured model and device."
+    : status === "starting" ? "Not answering yet. It may still be starting or downloading its model; the first start can take up to an hour."
     : status === "unknown" ? "Live status unavailable. Showing last known configuration."
     : status === "mismatch" ? "Service settings differ from the deployment."
     : reported ? "Device reported by the service." : "Configured device; runtime device is not reported.";
@@ -4108,7 +4109,7 @@ async function submitAssistant(payload, label = null) {
   $("assistant-scope").textContent = "";
   $("assistant-warnings").textContent = "";
   $("assistant-answer").textContent = "";
-  let stage = "Sending question…", received = false;
+  let stage = "Sending question…", received = false, starting = false;
   const started = Date.now();
   const progress = () => { if (requestVersion !== assistantRequestVersion) return; $("assistant-progress").textContent = `${stage} ${Math.floor((Date.now() - started) / 1000)}s`; };
   progress();
@@ -4154,15 +4155,19 @@ async function submitAssistant(payload, label = null) {
     }
   } catch (error) {
     if (requestVersion !== assistantRequestVersion) return;
-    if (!received && !$("assistant-answer").textContent.trim()) $("assistant-answer").textContent = "I couldn’t complete that answer.";
+    // Connection refused right after start: the model is usually still loading or downloading.
+    starting = error.message.includes("not answering yet");
+    if (!received && !$("assistant-answer").textContent.trim()) $("assistant-answer").textContent =
+      starting ? "The language model isn’t ready yet." : "I couldn’t complete that answer.";
     if (!received) {
-      $("assistant-scope").textContent = "Incomplete answer";
+      $("assistant-scope").textContent = starting ? "Model starting" : "Incomplete answer";
       const retry=document.createElement('button'); retry.type='button'; retry.className='quiet-button'; retry.textContent='Retry question';
       retry.onclick=()=>submitAssistant({...payload}); $('answer-actions').replaceChildren(retry);
     }
     $("conversation-note").textContent = "Your question is saved below. You can edit it and try again.";
     $("assistant-warnings").textContent = error.message;
-    $("assistant-editor-error").textContent = "Request failed. Your inputs are unchanged. Retry when ready.";
+    $("assistant-editor-error").textContent = starting ? "Your inputs are unchanged. Try again in a few minutes."
+      : "Request failed. Your inputs are unchanged. Retry when ready.";
   } finally {
     clearInterval(timer);
     if (requestVersion !== assistantRequestVersion) return;
@@ -4172,7 +4177,8 @@ async function submitAssistant(payload, label = null) {
     state.assistantBusy = false;
     assistantAbort=null;
     $('edit-question').disabled=false;
-    voiceStatus(received ? 'Answer received.' : 'Answer incomplete. Retry or edit your question.');
+    voiceStatus(received ? 'Answer received.' : starting ? 'Model still starting. Try again in a few minutes.'
+      : 'Answer incomplete. Retry or edit your question.');
     if(received) renderSpeech();
     $("ask-submit").disabled = false;
     $("search-fields").inert = false;

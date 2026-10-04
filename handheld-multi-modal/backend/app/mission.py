@@ -70,6 +70,14 @@ class MissionUnavailable(MissionError):
     pass
 
 
+class MissionStarting(MissionUnavailable):
+    """Chat Q&A refuses connections: usually still loading or downloading."""
+
+
+def _mode_for(exc: Exception) -> str:
+    return "starting" if isinstance(exc, MissionStarting) else "degraded"
+
+
 class MissionValidationError(MissionError):
     pass
 
@@ -84,6 +92,8 @@ def brief_failure_message(exc: BaseException) -> str:
     if isinstance(exc, MissionError):
         return str(exc)
     text = str(exc).lower()
+    if "not answering yet" in text:
+        return str(exc)
     if isinstance(exc, TimeoutError) or "timed out" in text:
         return "Brief generation timed out."
     if any(word in text for word in ("connection", "unavailable", "request failed", "invalid json")):
@@ -282,6 +292,9 @@ class MissionService:
                 self.services.urls["chatqna"] + "/documents", timeout=self.timeout)
             response.raise_for_status()
             body = response.json()
+        except httpx.TransportError as exc:
+            raise MissionStarting("Waiting for Chat Q&A. It may still be starting or downloading its "
+                                  "models; mission documents are checked again automatically.") from exc
         except (httpx.HTTPError, ValueError) as exc:
             raise MissionUnavailable("Mission service is unavailable; corpus state cannot be verified.") from exc
         metadata = body.get("metadata") if isinstance(body, dict) else None
@@ -458,10 +471,10 @@ class MissionService:
                     conn.execute(
                         "UPDATE mission_sources SET status = 'failed' WHERE status = 'reingesting'")
                     conn.commit()
-                    self._set_mode("degraded", message)
+                    self._set_mode(_mode_for(exc), message)
             except Exception:
                 log.exception("mission reconciliation could not record its own failure")
-                self._set_mode("degraded", message)
+                self._set_mode(_mode_for(exc), message)
 
     def status(self) -> dict:
         needs_brief = False
@@ -471,7 +484,7 @@ class MissionService:
                 remote = self._documents()
             except MissionUnavailable as exc:
                 remote = None
-                self._set_mode("degraded", str(exc))
+                self._set_mode(_mode_for(exc), str(exc))
             else:
                 missing = [source for source in sources if source["filename"] not in remote]
                 if missing:
