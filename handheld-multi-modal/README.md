@@ -32,11 +32,6 @@ access; later starts and restarts run without internet. Each start rebuilds
 the Backend image when `backend/` changed (for example after `git pull`);
 without internet it warns that the Backend is not the current version and
 starts the previous one.
-Behind a proxy, export `http_proxy` and `https_proxy` (or the uppercase
-names) in the shell that runs `make`, with `localhost,127.0.0.1` in
-`no_proxy`. The containers that download take their proxy from that shell, not
-from the Docker daemon or `~/.docker/config.json`. While waiting, `make` shows
-each service's latest log line every 30 s.
 
 ```sh
 make demo-up        # demo: pinned sample videos as looping cameras
