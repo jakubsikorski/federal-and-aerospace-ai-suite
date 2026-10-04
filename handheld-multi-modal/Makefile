@@ -77,7 +77,6 @@ help:
 # Shown while waiting for services that download on their first start.
 SETUP_NOTE := The stock Model Download installs its Python packages from PyPI on every start (about 2-5 min with internet).
 MODEL_NOTE := The first start downloads several GB of models; later starts use the cache.
-NET_HINT := If it keeps waiting or stops, the container probably has no internet: export http_proxy and https_proxy (or HTTP_PROXY and HTTPS_PROXY) in this shell before make, keep localhost,127.0.0.1 in no_proxy. Proxy settings of the Docker daemon or ~/.docker/config.json are not passed to these containers.
 
 # Only this small polling helper is shared between startup checks.
 define readiness
@@ -244,7 +243,7 @@ model-downloader-up:
 	@$(readiness)
 	install -d -m 2775 "$$ASSET_ROOT/data/model-download"
 	$(ASSET_COMPOSE) up -d --no-deps model-downloader
-	WAIT_SECONDS=$(MODEL_WAIT_SECONDS) WAIT_CONTAINER=handheld-multi-modal-model-downloader-1 WAIT_HINT="$(SETUP_NOTE) $(NET_HINT)" wait_for "Model Download (ultralytics, port 8200)" curl -fsS --max-time 5 http://127.0.0.1:8200/api/v1/health
+	WAIT_SECONDS=$(MODEL_WAIT_SECONDS) WAIT_CONTAINER=handheld-multi-modal-model-downloader-1 WAIT_HINT="$(SETUP_NOTE)" wait_for "Model Download (ultralytics, port 8200)" curl -fsS --max-time 5 http://127.0.0.1:8200/api/v1/health
 
 # These prerequisites are deliberately sequential, including under make -j.
 .NOTPARALLEL:
@@ -374,9 +373,9 @@ $(COMPOSE) up -d --no-deps proxy
 WAIT_CONTAINER=handheld-multi-modal-backend wait_for "Backend through TLS proxy" curl -skfsS --max-time 5 https://127.0.0.1:8443/api/streams
 $(if $(DEMO_FEEDS),$(wait_demo_video))
 wait_for "Backend telemetry" telemetry_ready
-WAIT_SECONDS=$(AI_WAIT_SECONDS) WAIT_CONTAINER=handheld-multi-modal-chatqna-core-gpu WAIT_HINT="$(MODEL_NOTE) $(NET_HINT)" wait_for "Chat Q&A neural-chat model" json_ready http://127.0.0.1:8888/model llm_model Intel/neural-chat-7b-v3-3
-WAIT_SECONDS=$(AI_WAIT_SECONDS) WAIT_CONTAINER=handheld-multi-modal-audio-analyzer WAIT_HINT="$(MODEL_NOTE) $(NET_HINT)" wait_for "Whisper GPU service" json_ready http://127.0.0.1:8011/health status ok
-WAIT_SECONDS=$(AI_WAIT_SECONDS) WAIT_CONTAINER=handheld-multi-modal-tts WAIT_HINT="$(MODEL_NOTE) $(NET_HINT)" wait_for "SpeechT5 $(TTS_DEVICE) service" json_ready http://127.0.0.1:8012/v1/model-info device $(TTS_DEVICE)
+WAIT_SECONDS=$(AI_WAIT_SECONDS) WAIT_CONTAINER=handheld-multi-modal-chatqna-core-gpu WAIT_HINT="$(MODEL_NOTE)" wait_for "Chat Q&A neural-chat model" json_ready http://127.0.0.1:8888/model llm_model Intel/neural-chat-7b-v3-3
+WAIT_SECONDS=$(AI_WAIT_SECONDS) WAIT_CONTAINER=handheld-multi-modal-audio-analyzer WAIT_HINT="$(MODEL_NOTE)" wait_for "Whisper GPU service" json_ready http://127.0.0.1:8011/health status ok
+WAIT_SECONDS=$(AI_WAIT_SECONDS) WAIT_CONTAINER=handheld-multi-modal-tts WAIT_HINT="$(MODEL_NOTE)" wait_for "SpeechT5 $(TTS_DEVICE) service" json_ready http://127.0.0.1:8012/v1/model-info device $(TTS_DEVICE)
 WAIT_SECONDS=$(AI_WAIT_SECONDS) wait_for "SpeechT5 first synthesis" $(speech_warm)
 WAIT_CONTAINER=handheld-multi-modal-alert-agent wait_for "Alert Agent" curl -fsS --max-time 5 http://127.0.0.1:8010/api/v1/health
 dashboard=$$(curl -skfsS --max-time 5 https://127.0.0.1:8443/)
@@ -426,7 +425,7 @@ speech-device: preflight setup
 	@$(readiness)
 	$(build_backend)
 	$(COMPOSE) up -d --no-deps tts backend
-	WAIT_SECONDS=$(AI_WAIT_SECONDS) WAIT_CONTAINER=handheld-multi-modal-tts WAIT_HINT="$(MODEL_NOTE) $(NET_HINT)" wait_for "SpeechT5 $(TTS_DEVICE) service" json_ready http://127.0.0.1:8012/v1/model-info device $(TTS_DEVICE)
+	WAIT_SECONDS=$(AI_WAIT_SECONDS) WAIT_CONTAINER=handheld-multi-modal-tts WAIT_HINT="$(MODEL_NOTE)" wait_for "SpeechT5 $(TTS_DEVICE) service" json_ready http://127.0.0.1:8012/v1/model-info device $(TTS_DEVICE)
 	WAIT_SECONDS=$(AI_WAIT_SECONDS) wait_for "SpeechT5 first synthesis" $(speech_warm)
 	$(COMPOSE) restart proxy
 	WAIT_CONTAINER=handheld-multi-modal-backend wait_for "Backend through TLS proxy" curl -skfsS --max-time 5 https://127.0.0.1:8443/api/streams
