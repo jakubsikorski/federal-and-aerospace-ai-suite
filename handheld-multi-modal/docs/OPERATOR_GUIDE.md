@@ -278,8 +278,9 @@ through the existing history APIs; tap **View** to jump into them.
 
 1. Type a question.
 2. **Send**.
-3. **Camera scope** — which camera's records; **Use Camera N** picks the one
-   on screen.
+3. **Camera scope** — which camera's records. Follows the camera on screen
+   (grid = **All cameras**), for typed and voice questions; pick another to
+   override until you switch cameras.
 4. **Answer mode** — **Ask anything** (records, mission or general) or
    **General chat** (no camera records).
 5. **History filters** — object type and time range.

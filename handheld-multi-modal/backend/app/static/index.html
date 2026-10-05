@@ -1600,7 +1600,7 @@ function selectCamera(streamId, firstLoad = false) {
   state.selected = streamId;
   resetHistoryPage();
   if (!firstLoad) storeSet("operator.selectedCamera", streamId);
-  updateAssistantCameraCue();
+  syncSearchCamera(true);
   state.held = false;
   $("track-scroll").scrollTop = 0;
   renderCameras();
@@ -3808,9 +3808,8 @@ async function openAssistant() {
   sizeAssistant();
   $("open-assistant").setAttribute("aria-expanded", "true");
   searchBackgroundInert(true);
-  if (!$("search-camera").options.length) {
-    $("search-camera").replaceChildren(new Option("All cameras", "all"), ...state.streams.map(s => new Option(s.display_name, s.stream_id)));
-    $("search-camera").value = "all";
+  if (!$("search-date").value) {
+    syncSearchCamera();
     const end = new Date(), start = new Date(end - 600000);
     $("search-date").value = localDateValue(start); $("search-end-date").value = localDateValue(end);
     $("search-start").value = start.toTimeString().slice(0, 5); $("search-end").value = end.toTimeString().slice(0, 5);
@@ -3913,6 +3912,21 @@ $("assistant-output").addEventListener("scroll", () => {
   showJumpLatest();
 });
 $("jump-latest").onclick = () => scrollChat(true);
+// Camera scope follows the camera on screen (grid = All cameras), so typed and
+// voice questions search what the operator is looking at. A manual pick in the
+// panel applies until the next camera switch.
+function syncSearchCamera(follow = false) {
+  const select = $("search-camera"), ids = JSON.stringify(state.streams.map(s => [s.stream_id, s.display_name]));
+  const keep = select.value;
+  if (select.dataset.cameras !== ids) {
+    select.replaceChildren(new Option("All cameras", "all"), ...state.streams.map(s => new Option(s.display_name, s.stream_id)));
+    select.dataset.cameras = ids;
+    follow = follow || !keep;
+  }
+  const want = follow ? state.selected : keep;
+  select.value = [...select.options].some(o => o.value === want) ? want : "all";
+  updateAssistantCameraCue();
+}
 function updateAssistantCameraCue() {
   $("ask-text").placeholder = $("assistant-mode").value === "general" ? "What would you like explained?" : "Ask a question…";
   const scope = $("search-camera").value || "all";
@@ -4391,6 +4405,7 @@ async function refreshState() {
   const cameraSet = (list) => JSON.stringify(list.map((s) => [s.stream_id, s.display_name]));
   const camerasChanged = state.streams.length > 0 && cameraSet(state.streams) !== cameraSet(streams);
   state.streams = streams;
+  if (camerasChanged) syncSearchCamera();
   if (!state.selected) {
     const remembered = storeGet("operator.selectedCamera");
     state.selected = remembered === "all" || streams.some((stream) => stream.stream_id === remembered) ? remembered : (streams[0] ? streams[0].stream_id : "all");

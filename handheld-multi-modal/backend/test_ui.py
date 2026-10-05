@@ -801,7 +801,12 @@ def main():
               window.eval(`(async () => {
                 if (state.filter.mode !== "current" || $("track-mode").value !== "current") return "wrong default view";
                 await openAssistant();
-                if ($("search-camera").value !== "all") return "search must default to all cameras";
+                if ($("search-camera").value !== "cam1") return "scope must follow the on-screen camera";
+                $("search-camera").value = "cam2";
+                selectCamera("all"); if ($("search-camera").value !== "all") return "grid must scope all cameras";
+                selectCamera("cam2"); if ($("search-camera").value !== "cam2") return "switch must rescope";
+                selectCamera("cam1"); await openAssistant();
+                if ($("search-camera").value !== "cam1") return "reopening lost the scope";
                 if ([...$("search-class").options].map(o => o.value).join(",") !== ",car,chair,person") return "unsorted types";
                 if ($("filter-fields").hidden || $("ask-submit").textContent !== "Send") return "wrong initial flow";
                 $("ask-text").value = "How does RTSP work?"; updateQuestionFilters();

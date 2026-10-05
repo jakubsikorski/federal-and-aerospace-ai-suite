@@ -40,8 +40,8 @@ cannot add or remove cameras.
 Open Assistant beside the live video. On short screens it opens a focused chat
 view: camera status stays in the top bar, and Back to camera returns to video.
 The Find shortcut searches the configured priority object type (person by default)
-in the last ten minutes. History offers priority-first or newest-first ordering. Camera scope is independent of the video selection:
-choose a camera or All cameras, or press Use Camera N to adopt the on-screen camera.
+in the last ten minutes. History offers priority-first or newest-first ordering. Camera scope follows the video selection:
+the camera on screen, or All cameras on the grid. You can pick another until you switch cameras.
 History filters select object type and time when the question is empty. For a typed
 search, name the object and time window: "Show person tracks in the last ten minutes."
 Compare Camera N repeats a result's exact time window on another camera.
@@ -151,9 +151,10 @@ or describe live conditions. Open Mission to see its sources and freshness; use
 Re-ingest to retry a failed generation.
 
 ## Search camera scope
-The camera shown in live video and the camera selected for Assistant searches are
-independent. Use Camera scope to choose one camera or All cameras. Use Camera N
-adopts the on-screen camera explicitly. Compare Camera N searches another camera
+Typed and voice questions search the camera shown in live video, or All cameras
+when the grid is shown. Camera scope shows this choice; picking another camera there
+applies until the next camera switch, and Use Camera N returns to the on-screen camera.
+A camera named in the question overrides it. Compare Camera N searches another camera
 over the exact time window of the current result.
 
 ## New conversation control
