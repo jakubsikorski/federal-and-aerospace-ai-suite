@@ -291,8 +291,17 @@ through the existing history APIs; tap **View** to jump into them.
 
 ### How the assistant answers
 
-General chat remembers the last few exchanges; camera and mission answers do
-not. General answers never describe what is on camera.
+General chat remembers the last few exchanges and mission answers the last
+three; camera answers do not. General answers never describe what is on camera.
+
+Ask how the application itself works ("what runs on the NPU?", "how does video
+reach my screen?") and the Assistant answers from a verified description of
+the build: components, models, devices and APIs, plus live model placement.
+It keeps that description in
+[`backend/app/operator-guide.md`](../backend/app/operator-guide.md) under
+"How this application is built". The language model decides whether a question
+is about the application; no question list is coded. It is a 7B model, so
+check details against the **Architecture** page.
 
 The Assistant never asks you to rephrase. It answers with its closest search
 and says first what it assumed:

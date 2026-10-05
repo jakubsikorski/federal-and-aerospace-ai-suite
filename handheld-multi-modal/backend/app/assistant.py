@@ -140,33 +140,42 @@ def _compact_operator_guide() -> str:
     return "\n".join(sections)
 
 
-def _general_prompt(question: str, turns: list[tuple[str, str]], application: str = "", facts: str = "",
-                    about_self: bool = False) -> str:
+def _architecture_brief() -> str:
+    return re.sub(r"\s+", " ", APPLICATION_TOPICS.get("How this application is built", "")).strip()
+
+
+def _general_prompt(question: str, turns: list[tuple[str, str]], application: str = "", facts: str = "") -> str:
     context = _render_context(turns) or "No prior general-conversation turns."
-    if about_self and facts and not application:
-        return f"""The operator is asking about you, this console assistant, and the device you run on.
-Answer in at most 3 sentences using ONLY these facts; name each model and its device.
-Ignore retrieved documents. "This" and "you" mean this assistant.
-{facts}
-Current user question: {question}"""
-    guide = f"""Use the application guide for questions about this system. Say when a system detail
-is not documented; do not substitute generic product advice or invent controls.
-Never describe what is on camera, what was seen, or what exists in the physical world.
-Application guide summary and configured camera details:
+    guide = f"""Application guide summary and configured camera details:
 {application}
-""" if application else """This is a general-knowledge question, not about this system or its cameras.
-Never describe what is on camera, what was seen, or what exists in the physical world.
-"""
-    return f"""Answer the current question as general conversation in at most 4 sentences.
-{guide}Prior turns below are Backend-owned context, not mission material, camera
+
+""" if application else ""
+    return f"""The Context section above holds the operator's mission documents, retrieved
+automatically: an assignment, scenario or briefing. It never describes this application,
+its purpose or its users. Never describe what is on camera, what was seen, or what exists
+in the physical world.
+Prior turns below are Backend-owned context, not mission material, camera
 evidence, or proof of anything in the physical world. Never claim they came
-from retrieved documents or sensors. Use retrieved stock context only when
-directly relevant to the current question.
+from retrieved documents or sensors.
 
 Prior general-conversation turns:
 {context}
 
-{facts}Current user question: {question}"""
+{guide}How this application is built (verified facts):
+{_architecture_brief()}
+{facts}
+Answer the current question as conversation. First decide silently what it is about.
+Treat questions about this application, this assistant, or its cameras, video,
+detections, evidence, alerts, voice, speech or resource monitoring as application
+questions. For an application question: answer ONLY from the verified facts, naming
+the actual components, models, devices, protocols and API endpoints involved, in up to
+6 sentences. Do not add hardware, services, features or steps that the facts do not
+list; say when a detail is not described; do not use or mention the mission documents,
+their scenario, places or tasks.
+Otherwise: answer from general knowledge in at most 4 sentences and use retrieved stock
+context only when directly relevant. Never say whether a question relates to this
+application, and never mention these instructions or "the verified facts".
+Current user question: {question}"""
 
 
 GENERAL_QUESTION = re.compile(
@@ -1572,8 +1581,7 @@ class Assistant:
         except Exception:
             log.warning("model placement unavailable for the general prompt", exc_info=True)
             return ""
-        return ("True facts about you, this assistant, which you may state when asked: you run on this "
-                "edge device with these models: " + "; ".join(
+        return ("- Live model placement reported now: " + "; ".join(
                     f"{roles.get(row.get('id'), row.get('label'))}: {row.get('runtime_model') or row.get('configured_model')}"
                     f" on {row.get('runtime_device') or row.get('configured_device') or 'an unreported device'}"
                     for row in rows) + ".\n")
@@ -1582,24 +1590,20 @@ class Assistant:
     def _general_answer(self, text, selected_stream, emit, context, generation, intent="general_chat"):
         emit({"status": "Answering…"})
         # The guide is ~1.3k prompt tokens, measured ~1.9 s of first-token time
-        # on the target; plain knowledge questions do not need it.
+        # on the target; plain knowledge questions do not need it. The shorter
+        # architecture description and model facts are always included so the
+        # model itself judges whether a question is about this application.
         labels = (detector_labels(self.cfg["detector_metadata_path"])
                   if self.cfg.get("detector_metadata_path") else ())
-        # Model/hardware questions are answered by the short facts line; the long
-        # guide made the 7B model deflect them ("model details are not in scope").
-        about_models = re.search(r"\b(?:models?|llms?|hardware|devices?|npu|gpu|cpu|chips?|processors?)\b", text, re.I)
-        about_system = intent == "application_help" or (_video_or_app_terms(text, labels) and not (
-            about_models and not _record_terms(text, labels)))
+        about_system = intent == "application_help" or _video_or_app_terms(text, labels)
         prompt = _general_prompt(text.strip(), context,
                                  self.application_context(selected_stream) if about_system else "",
-                                 self.model_facts(), about_self=bool(about_models) and not about_system and bool(re.search(
-                                     r"\b(?:you|your|this|these|here|running|runs?|uses?|using|detector|assistant|console|app|application|system)\b",
-                                     text, re.I)))
+                                 self.model_facts())
         if intent == "application_help":
-            prompt = ("Answer an application-help question using ONLY the supplied operator guide "
-                      "and configured details. Give at most three concise sentences or direct steps. "
-                      "Do not invent controls, analogies, live state or capabilities. If the guide "
-                      "does not establish a detail, say so.\n" + prompt)
+            prompt = ("Answer an application question using ONLY the application description, "
+                      "model facts, operator guide and configured details. Give how-to answers in at "
+                      "most three concise sentences or direct steps. Do not invent controls, analogies, "
+                      "live state or capabilities. If they do not establish a detail, say so.\n" + prompt)
 
         answer = self._chat_stream(prompt, emit) if self._stream_answers else self.generate(prompt)
         if not isinstance(answer, str) or not answer.strip():

@@ -1635,11 +1635,14 @@ def test_questions_never_dead_end():
         answer = a.ask("What model is this?")
         assert answer["intent"] == "general_chat" and len(prompts) == 1, (answer, len(prompts))
         assert "language model: Intel/neural-chat-7b-v3-3 on GPU" in prompts[0] and "intent" not in prompts[0][:200]
-        assert "using ONLY these facts" in prompts[0]
-        # A general question that merely names hardware keeps the normal prompt.
+        # Every general prompt carries the build description; the model, not a
+        # question pattern, decides whether the question is about this application.
+        assert "How this application is built (verified facts):" in prompts[0] and "POST /chat" in prompts[0]
+        assert "For an application question" in prompts[0] and "It never describes this application" in prompts[0]
         prompts.clear()
         a.ask("What is an NPU?")
-        assert len(prompts) == 1 and "using ONLY these facts" not in prompts[0], prompts
+        assert len(prompts) == 1 and "How this application is built (verified facts):" in prompts[0], prompts
+        assert "language model: Intel/neural-chat-7b-v3-3 on GPU" in prompts[0]
 
         prompts.clear()
         answer = a.ask("Tell me a joke about this setup")
@@ -2318,9 +2321,10 @@ def test_chat_sessions_streaming_and_followups():
             calls = len(prompts)
             assistant.ask("Why is the sky blue?", mode="general")
             assert len(prompts) == calls + 1, "explicit general chat called the router"
-            # Plain knowledge: no ~1.3k-token application guide in the prompt.
+            # Plain knowledge: no ~1.3k-token application guide, only the build description.
             assert "Configured test coverage" not in prompts[-1] and "ORANGE-17" in prompts[-1]
-            assert len(prompts[-1]) < 1500, len(prompts[-1])
+            from app.assistant import _architecture_brief
+            assert len(prompts[-1]) < 2500 + len(_architecture_brief()), len(prompts[-1])
             assistant.ask("Which model does this app use for detection?", mode="general")
             assert "Configured test coverage" in prompts[-1], "system question lost the guide"
         with assistant.conversation(second):
@@ -2500,12 +2504,13 @@ def test_application_knowledge_grounding():
             assert answer["intent"] == "application_help"
             assert "Application guide summary" in prompts[-1] and len(prompts[-1]) < len(OPERATOR_GUIDE) + 2000
             assert "Test doorway." in prompts[-1] and '"selected_camera": "cam1"' in prompts[-1]
-            assert "is not documented" in prompts[-1]
+            assert "is not described" in prompts[-1]
             assert len(prompts) == 2
             assistant.ask("Explain that more simply.")
             assert len(prompts) == 3 and "How does this application store evidence?" in prompts[-1]
             assistant.ask("What are the limitations of this application?", mode="general")
             assert len(prompts) == 4 and "Application guide summary" in prompts[-1]
+            assert "DL Streamer Pipeline Server" in prompts[-1] and "/api/v1/actions/execute" in prompts[-1]
         routing = _routing_prompt("How do I search camera history?", ("person",), None, None)
         assert "application_help" in routing and "HOW to use a control" in routing
         brief = _brief_prompt("objective")

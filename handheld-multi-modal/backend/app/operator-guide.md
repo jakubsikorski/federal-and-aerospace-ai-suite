@@ -72,6 +72,44 @@ Delete removes the named mission source; Clear mission removes mission documents
 and originals, not camera records. Ask about objectives or restrictions to consult
 mission material. Application capabilities do not establish mission facts.
 
+## How this application is built
+- Everything runs on this one Intel edge device. Its Intel Core Ultra processor contains
+  the CPU, the integrated Intel Arc GPU and the Intel AI Boost NPU; there is no add-on hardware. All services except
+  the Backend are stock, unmodified Intel Open Edge Platform release-2026.2.0
+  microservices or open-source components, used only through their published APIs.
+- Backend: the only custom code (Python, FastAPI). It serves this web app, stores
+  detections in SQLite and cropped evidence images on disk (it does not record video), applies alert rules, decides what is spoken, and
+  calls the other services. It is not in the video path.
+- Video path, in order: (1) each camera sends RTSP video to MediaMTX (open-source media
+  server); (2) DL Streamer Pipeline Server reads it from MediaMTX, decodes it, detects and
+  tracks objects and draws boxes; (3) it pushes the annotated video back to MediaMTX over
+  WebRTC WHIP; (4) the browser plays it from MediaMTX over WebRTC WHEP. Coturn (open
+  source) relays WebRTC media when needed. The Backend never handles video.
+- DL Streamer Pipeline Server (Open Edge Platform): one pipeline per camera with Intel
+  GPU hardware video decode, YOLO26s OpenVINO INT8 object detection on the NPU,
+  gvatrack tracking on the CPU and box overlay. The Backend starts and stops pipelines
+  with its REST API (POST, GET and DELETE /pipelines). It publishes detections over
+  MQTT through Mosquitto (open source) and saves cropped evidence images to a shared folder.
+- Alert Agent (Open Edge Platform): the Backend sends each rule match to
+  POST /api/v1/actions/execute; it dispatches and de-duplicates alerts by rule, with
+  no language model. Text To Speech then speaks the alert.
+- Chat Q&A Core (Open Edge Platform): runs this assistant's language model,
+  Intel/neural-chat-7b-v3-3, with OpenVINO on the GPU, plus
+  granite-embedding-125m-english and ms-marco-electra-base on the CPU to retrieve
+  mission documents. The Backend calls POST /chat for answers and /documents to add or
+  remove mission documents. Chat Q&A keeps no conversation; the Backend sends recent
+  turns. For camera-history questions the model only drafts a search that the Backend
+  checks and runs read-only on SQLite; the model never sees video.
+- Audio Analyzer (Open Edge Platform): transcribes push-to-talk speech with
+  whisper-medium on the GPU through POST /v1/audio/transcriptions.
+- Text To Speech (Open Edge Platform): speaks answers and alerts with SpeechT5 on the
+  CPU through POST /v1/audio/speech.
+- Metrics Manager (Open Edge Platform): reports CPU, GPU, NPU, memory and temperature
+  through GET /api/v1/metrics/latest.
+- Model Download (Open Edge Platform): prepares the YOLO26s model during setup.
+- nginx (open source) provides HTTPS. The Architecture page in the app shows the
+  diagram, APIs and step-by-step flows.
+
 ## Resources, services and limitations
 Resources shows CPU, memory, GPU/NPU and power telemetry when available. Details
 shows component readings; Expand enlarges the chart. Stale or unavailable readings
