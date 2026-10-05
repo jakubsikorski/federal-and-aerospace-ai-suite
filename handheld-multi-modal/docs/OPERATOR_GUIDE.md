@@ -278,7 +278,17 @@ and says first what it assumed:
 - A camera named in the question wins over **Camera scope**.
 - A detail detections cannot check (for example a colour, when attributes are
   unavailable) → it shows all matching tracks for that time and says
-  "I can't check … — check their images."
+  "I can't check … — check their images." Colour, brand and licence-plate
+  questions about a detected object ("What colour is the bicycle?") always get
+  "This application does not detect colour…" with the matching tracks; the
+  language model is not asked to guess.
+- Mission questions accept short follow-ups ("Who receives it?", "Can they
+  stop people?"); the last three mission exchanges are used only to work out
+  what the follow-up refers to. **New conversation**, changing the mission
+  documents or ten idle minutes forget them.
+- Questions about how this application works (for example "How does person
+  detection work here?") are answered from the built-in guide, not the
+  mission documents.
 
 Questions with no camera, object or time words are answered as general
 conversation, including **What model is this?** or **What hardware are you

@@ -88,6 +88,17 @@ clear records, change rules or execute operator actions. Unknown camera coverage
 locations, model versions and hardware details must not be invented.
 
 
+## How detection works
+DL Streamer Pipeline Server decodes each camera and runs the YOLO26s detector, an
+OpenVINO INT8 model, on the Intel NPU by default with Intel hardware video decode;
+fixed GPU and CPU variants exist. Detections below 0.75 confidence are dropped. The gvatrack
+tracker follows each object across frames on the CPU and gives it a track ID.
+Detections go to the Backend over MQTT, object crops are saved as
+evidence, and the annotated video goes to the browser over WebRTC through MediaMTX.
+The detector reports only its object classes with a box and confidence. It does not
+identify people, read colours, plates or clothing, or judge what someone is doing.
+See the Architecture page for every service.
+
 ## Pause control
 Pause freezes updates to the evidence list so you can inspect it. Live video and
 camera processing continue. Press Resume to resume list updates. It does not pause

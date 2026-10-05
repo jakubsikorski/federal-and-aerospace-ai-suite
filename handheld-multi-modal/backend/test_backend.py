@@ -2515,6 +2515,32 @@ def test_application_knowledge_grounding():
         conn.close()
 
 
+def test_colour_questions_get_a_qualified_answer_with_images_and_no_model_call():
+    from app.assistant import Assistant
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        conn, _, metadata = _phase5_fixture(root)
+        prompts = []
+        def generate(prompt):
+            prompts.append(prompt)
+            return "It is a general answer."
+        a = Assistant({"db_path": str(root / "phase5.db"), "detector_metadata_path": str(metadata)},
+                      None, generate=generate)
+        with a.conversation("b" * 32):
+            car = a.ask("What is the color of the car detected in the last hour?", "cam1")
+            assert not prompts, "a colour question reached the language model"
+            assert car["intent"] == "video_history", car
+            assert car["answer_text"].startswith("This application does not detect colour"), car
+            assert car["query"]["filters"]["classes"] == ["car"] and car["query"]["total"] == 1, car
+            plate = a.ask("Read the licence plate of the car", "cam1")
+            assert plate["answer_text"].startswith("This application does not detect licence plates")
+            assert "from the last 10 minutes" in plate["answer_text"]
+            assert not prompts
+            a.ask("What colour is the sky?", mode="general")
+            assert len(prompts) == 1, "a colour question about no detected class was intercepted"
+        conn.close()
+
+
 def test_partial_clarification_offers_broader_search():
     from app.assistant import Assistant, InvalidPlan, validate_route
     with tempfile.TemporaryDirectory() as tmp:

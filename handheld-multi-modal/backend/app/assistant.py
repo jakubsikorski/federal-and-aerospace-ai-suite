@@ -46,6 +46,11 @@ UNSUPPORTED_CONCEPT_TERMS = [
     "weapons?", "uniforms?", "suspicious", "behaviou?rs?", "carrying", "ownership", "armed",
 ]
 UNSUPPORTED_CONCEPTS = r"\b(" + "|".join(UNSUPPORTED_CONCEPT_TERMS) + r")\b"
+# Appearance details the detector never records; see Assistant._appearance_answer.
+# (question pattern, spoken name, substring of a recorded field that answers it)
+APPEARANCE_NAMES = ((r"colou?r(?:s|ed)?", "colour", "colo"), (r"brands?", "brand", "brand"),
+                    (r"(?:licen[cs]e|number) plates?", "licence plates", "plate"))
+APPEARANCE_TERMS = re.compile(r"\b(?:" + "|".join(p for p, _, _ in APPEARANCE_NAMES) + r")\b", re.I)
 INTENTS = frozenset({
     "clarification", "video_history", "mission_knowledge", "general_chat", "application_help", "rule_mutation", "app_control",
 })
@@ -127,7 +132,7 @@ def _render_context(turns: list[tuple[str, str]]) -> str:
 
 def _compact_operator_guide() -> str:
     sections = []
-    for title in ("Cameras and evidence", "Assistant controls", "Mission and Mission Brief",
+    for title in ("How detection works", "Cameras and evidence", "Assistant controls", "Mission and Mission Brief",
                   "Resources, services and limitations", "Broader results"):
         body = re.sub(r"\s+", " ", APPLICATION_TOPICS.get(title, "")).strip()
         if body:
@@ -1507,6 +1512,36 @@ class Assistant:
         answer["assumption"] = note
         return self.remember_result(answer)
 
+    def _appearance_answer(self, text, labels, window, selected_stream, noted, emit):
+        """Colour, brand or plate of a detected object: say it is not detected, show the images.
+
+        The detector records classes only, so the language model could only guess
+        ("the bicycle is red"). Unless the pipeline records a matching field, the
+        answer is the matching tracks with a fixed qualification and no model call.
+        """
+        match = APPEARANCE_TERMS.search(text)
+        if not match or re.search(r"\b(?:rules?|alerts?)\b", text, re.I):
+            return None
+        classes = coarse_plan(text, labels, DEFAULT_WINDOW)["classes"]
+        if not classes:
+            return None
+        named = coarse_plan(text, labels, window)  # None when no time was given
+        window = named["window"] if named else None
+        quality, field = next((name, field) for pattern, name, field in APPEARANCE_NAMES
+                              if re.fullmatch(pattern, match[0], re.I))
+        stream = selected_stream or _mentioned_stream(text)
+        catalog = attribute_catalog(self.cfg["db_path"], stream,
+                                    _utc(datetime.now(UTC) - self.retention), classes=classes)
+        if any(field in row["name"].lower() for row in catalog):
+            return None  # a recorded field can answer it: let the planner filter on it
+        self._begin_intent("video_history")
+        subject = " and ".join(classes)
+        when = "for that time" if window else "from the last 10 minutes"
+        return self._best_effort(
+            {"window": window or DEFAULT_WINDOW, "classes": classes, "attributes": []}, stream,
+            noted(f"This application does not detect {quality}, so I can't tell you that. "
+                  f"Here are the {subject} tracks {when}; check their images."), emit)
+
     def _application_answer(self, question, answer):
         _, generation = self._begin_intent("general_chat")
         context = self._remember_general(question, answer, generation)
@@ -1741,6 +1776,9 @@ class Assistant:
             return self._best_effort({"window": DEFAULT_WINDOW, "classes": None, "attributes": []},
                                      selected_stream, noted(NO_TIME_NOTE), emit)
         labels = detector_labels(self.cfg["detector_metadata_path"])
+        appearance = self._appearance_answer(text, labels, requested_window, selected_stream, noted, emit)
+        if appearance:
+            return appearance
         direct = simple_plan(text, labels, requested_window)
         if direct is not None:
             self._begin_intent("video_history")
