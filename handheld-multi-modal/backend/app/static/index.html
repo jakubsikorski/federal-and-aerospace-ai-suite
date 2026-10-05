@@ -167,6 +167,7 @@
   #mission-panel .panel-head button { margin-left: auto; }
   #mission-body { padding: 12px; display: grid; gap: 12px; }
   #mission-status { margin: 0; color: var(--muted); }
+  #mission-upload-help { margin: 0; color: var(--muted); font-size: 13px; }
   #mission-status[data-mode="ready"] { color: var(--good); }
   #mission-status[data-mode="degraded"], #mission-status[data-mode="failed"] { color: var(--warn); }
   #mission-upload, #mission-question { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
@@ -670,6 +671,7 @@
         <input id="mission-file" type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" aria-label="Mission PDF or DOCX">
         <button class="quiet-button" type="submit">Upload</button>
       </form>
+      <p id="mission-upload-help">PDF or Word (.docx). Only text is read; images and scanned pages are not.</p>
       <ul id="mission-sources" aria-label="Mission source inventory"></ul>
       <div id="mission-actions">
         <button id="mission-reingest" class="quiet-button" type="button">Re-ingest</button>
@@ -998,6 +1000,10 @@ function renderMission() {
   const status = $("mission-status");
   status.dataset.mode = mission.mode || "unknown";
   status.textContent = [titleCase(mission.mode || "unavailable"), mission.detail].filter(Boolean).join(" · ");
+  const limits = mission.limits;
+  $("mission-upload-help").textContent = (limits
+    ? `${limits.accepted_types}, up to ${limits.max_upload_mb} MB and ${limits.max_pdf_pages} PDF pages. `
+    : "PDF or Word (.docx). ") + "Only text is read; images and scanned pages are not.";
   $("mission-citation-note").textContent = mission.citation_notice
     || "Answer-level citations are unavailable from this stock interface.";
   const list = $("mission-sources");
@@ -1097,7 +1103,7 @@ $("mission-upload").onsubmit = async (event) => {
   event.preventDefault();
   const file = $("mission-file").files[0];
   if (!file) {
-    $("mission-answer").textContent = "Choose one PDF or DOCX document.";
+    $("mission-answer").textContent = "Choose one PDF or Word (.docx) document.";
     return;
   }
   const form = new FormData();

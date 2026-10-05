@@ -62,6 +62,13 @@ mission_sources_dir: /data/mission_sources
 # here and polls the only supported stock document inventory after ingestion.
 mission_ingest_timeout_seconds: 60.0
 mission_ingest_poll_seconds: 0.25
+# Mission upload limits (whole numbers). Allowed ranges: upload 1-100 MB,
+# PDF 1-2000 pages, DOCX 1-500 MB uncompressed; other values stop startup.
+# Stock Chat Q&A embeds each upload synchronously on the CPU, so raise
+# mission_ingest_timeout_seconds with larger limits. Restart with make demo-up.
+mission_max_upload_mb: 25
+mission_max_pdf_pages: 200
+mission_max_docx_uncompressed_mb: 50
 crop_dir: /crops
 crop_cleanup_script: /opt/handheld-crops/crop_candidates.py
 detector_metadata_path: /config/detector/metadata.yaml

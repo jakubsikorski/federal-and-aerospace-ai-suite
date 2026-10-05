@@ -42,14 +42,20 @@ def _is_brief_prompt(prompt):
     return any(question in prompt for question in BRIEF_QUESTIONS.values())
 
 
-def _pdf_bytes(page_count=1, escaped_page_name=False):
+def _pdf_bytes(page_count=1, escaped_page_name=False, text="Mission text"):
     page_type = b"/Pa#67e" if escaped_page_name else b"/Page"
+    font, content = page_count + 3, page_count + 4
+    stream = f"BT /F1 12 Tf 10 10 Td ({text}) Tj ET".encode() if text else b""
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
         b"<< /Type /Pages /Kids [" + b" ".join(
             f"{index} 0 R".encode() for index in range(3, page_count + 3)
         ) + f"] /Count {page_count} >>".encode(),
-    ] + [b"<< /Type " + page_type + b" /Parent 2 0 R /MediaBox [0 0 1 1] >>"] * page_count
+    ] + [b"<< /Type " + page_type + b" /Parent 2 0 R /MediaBox [0 0 200 50]"
+         + f" /Resources << /Font << /F1 {font} 0 R >> >> /Contents {content} 0 R >>".encode()] * page_count + [
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        f"<< /Length {len(stream)} >>\nstream\n".encode() + stream + b"\nendstream",
+    ]
     output, offsets = bytearray(b"%PDF-1.7\n"), []
     for index, body in enumerate(objects, 1):
         offsets.append(len(output))
@@ -1892,13 +1898,55 @@ def test_mission_lifecycle_retains_reconciles_and_discloses_citation_limits():
         services.client.close()
 
 
+def test_mission_upload_limits_are_configurable_and_types_are_named():
+    from app.mission import NO_TEXT, MissionService, MissionValidationError, upload_limits, validate_upload
+
+    def rejected(name, content, limits=None):
+        try:
+            validate_upload(name, content, limits)
+        except MissionValidationError as exc:
+            return str(exc)
+        return None
+
+    assert upload_limits({}) == {"max_upload_mb": 25, "max_pdf_pages": 200, "max_docx_uncompressed_mb": 50}
+    for bad in (0, 5000, True, "10", 2.5):
+        try:
+            upload_limits({"mission_max_pdf_pages": bad})
+        except ValueError as exc:
+            assert "mission_max_pdf_pages" in str(exc)
+        else:
+            raise AssertionError(f"out-of-range page limit accepted: {bad!r}")
+    small = upload_limits({"mission_max_pdf_pages": 5, "mission_max_upload_mb": 1})
+    assert rejected("five.pdf", _pdf_bytes(5), small) is None
+    assert rejected("six.pdf", _pdf_bytes(6), small) == "Mission PDFs may contain at most 5 pages; this one has 6."
+    assert rejected("six.pdf", _pdf_bytes(6)) is None, "default limit changed"
+    assert rejected("big.pdf", _pdf_bytes(1) + b" " * (1024 * 1024), small) == "Mission documents must be 1 MB or smaller."
+
+    message = rejected("photo.jpg", b"\xff\xd8")
+    assert "PDF or Word (.docx)" in message and "Images" in message, message
+    assert rejected("scan.pdf", _pdf_bytes(3, text="")) == NO_TEXT
+
+    def docx(body):
+        archive = BytesIO()
+        with zipfile.ZipFile(archive, "w") as doc:
+            doc.writestr("[Content_Types].xml", "x")
+            doc.writestr("word/document.xml", body)
+        return archive.getvalue()
+    assert rejected("scan.docx", docx('<w:body><w:p><w:r><w:drawing/></w:r></w:p></w:body>')) == NO_TEXT
+    assert rejected("brief.docx", docx('<w:body><w:p><w:r><w:t xml:space="preserve">Hold</w:t></w:r></w:p></w:body>')) is None
+
+    with tempfile.TemporaryDirectory() as tmp:
+        service = MissionService({"db_path": str(Path(tmp) / "m.db"), "mission_sources_dir": tmp,
+                                  "mission_max_pdf_pages": 400}, None)
+        assert service.limits["max_pdf_pages"] == 400
+
+
 def test_mission_phase6_failure_matrix():
     """Regression coverage for lifecycle serialization, corpus truth and bounded uploads."""
     from app.assistant import Assistant, ServiceUnavailable
     from app.mission import (
         BRIEF_FIELDS,
         MAX_DOCX_ENTRIES,
-        MAX_PDF_PAGES,
         MissionService,
         MissionUnavailable,
         MissionValidationError,
@@ -2059,7 +2107,7 @@ def test_mission_phase6_failure_matrix():
         services.client.close()
 
     # Structural bounds run before retention/forwarding.
-    pages = _pdf_bytes(MAX_PDF_PAGES + 1, escaped_page_name=True)
+    pages = _pdf_bytes(201, escaped_page_name=True)
     try:
         validate_upload("many-pages.pdf", pages)
     except MissionValidationError as exc:
@@ -2094,7 +2142,7 @@ def test_mission_phase6_failure_matrix():
             )
             conn.commit()
             conn.close()
-            mission = types.SimpleNamespace(answer=lambda text, generate=None: {
+            mission = types.SimpleNamespace(answer=lambda text, generate=None, turns=(): {
                 "intent": "mission_knowledge", "answer_text": text, "errors": []})
             assistant = Assistant(
                 {"assistant_queue_depth": 1, "detector_metadata_path": metadata.name,
@@ -2118,7 +2166,7 @@ def test_mission_phase6_failure_matrix():
                 "What is the mission assignment for camera 1?", "cam2"
             )["intent"] == "mission_knowledge"
             assistant.mission = types.SimpleNamespace(
-                answer=lambda text, generate=None: (_ for _ in ()).throw(
+                answer=lambda text, generate=None, turns=(): (_ for _ in ()).throw(
                     MissionUnavailable("No mission documents are ready.")))
             try:
                 assistant.ask("What weapons are prohibited during the mission today?")
@@ -2337,7 +2385,7 @@ def test_mission_answers_emit_streaming_deltas():
     def handler(request):
         return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=Stream())
     class Mission:
-        def answer(self, question, *, generate=None):
+        def answer(self, question, *, generate=None, turns=()):
             text = generate("mission prompt")
             return {"intent": "mission_knowledge", "answer_text": text, "spoken_text": None,
                     "source_inventory": [], "answer_citations_available": False,
@@ -2352,6 +2400,77 @@ def test_mission_answers_emit_streaming_deltas():
     assert result["answer_text"] == "Mission answer."
     assert "".join(e["delta"] for e in events if "delta" in e) == "Mission answer."
     client.close()
+
+
+def test_mission_follow_up_questions_carry_earlier_mission_turns():
+    from app.assistant import Assistant
+    from app.mission import MISSION_UNAVAILABLE_ANSWER, _mission_prompt
+    replies = {"When is the report due?": "The report is due at 18:00.",
+               "Who receives it?": "The duty officer receives it.",
+               "Is there a radio schedule?": MISSION_UNAVAILABLE_ANSWER}
+    seen = []
+
+    class Mission:
+        def loaded(self):
+            return True
+
+        def vocabulary(self):
+            return {"radio"}
+
+        def answer(self, question, *, generate=None, turns=()):
+            seen.append((question, list(turns)))
+            return {"intent": "mission_knowledge", "answer_text": replies[question], "errors": []}
+
+    with tempfile.NamedTemporaryFile("w", suffix=".yaml") as metadata:
+        metadata.write("names:\n  0: person\n  1: dog\n")
+        metadata.flush()
+        assistant = Assistant({"assistant_queue_depth": 1, "detector_metadata_path": metadata.name},
+                              None, generate=lambda _: "unused", mission=Mission())
+        assistant.ask("When is the report due?")
+        assistant.ask("Who receives it?")
+        assert seen[0] == ("When is the report due?", []), seen
+        assert seen[1] == ("Who receives it?", [("When is the report due?", "The report is due at 18:00.")]), seen
+        # A new question carries no earlier turns: they would steer stock retrieval.
+        # An unanswered question is not remembered.
+        assistant.ask("Is there a radio schedule?")
+        assert seen[2][1] == [], seen
+        assert len(assistant._conversation_state().mission_turns) == 2
+        # Follow-ups that name a camera, recording words, or a class without a
+        # pronoun are left to the router; a pronoun keeps them with the mission.
+        assert assistant._mission_route("What about the dog?", None) is None
+        assert assistant._mission_route("And on camera 2?", None) is None
+        assert assistant._mission_route("Were they seen today?", None) is None
+        assert assistant._mission_route("And why is that?", None) == "followup"
+        assert assistant._mission_route("Can they stop people?", None) == "followup"
+        # New conversation (and a corpus change, which calls reset_context) forgets them.
+        assistant.reset_context()
+        assert assistant._mission_route("And why is that?", None) is None
+        assistant.ask("When is the report due?")
+        assert seen[-1][1] == []
+    prompt = _mission_prompt("Who receives it?", [("When is the report due?", "Due at 18:00.")])
+    assert prompt.startswith("Who receives it?\n") and "Earlier question: When is the report due?" in prompt
+    assert "never as a source of facts" in prompt
+    assert "Earlier question" not in _mission_prompt("Who receives it?")
+
+
+def test_explain_mode_app_questions_use_the_guide_not_mission_documents():
+    from app.assistant import Assistant
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        conn, _, metadata = _phase5_fixture(root)
+        prompts = []
+        def generate(prompt):
+            prompts.append(prompt)
+            return "YOLO26s on the NPU detects people; gvatrack tracks them."
+        assistant = Assistant({"db_path": str(root / "phase5.db"),
+            "detector_metadata_path": str(metadata), "streams": [
+                {"stream_id": "cam1", "display_name": "Entrance"}]}, None, generate=generate)
+        with assistant.conversation("e" * 32):
+            assistant.ask("How is person detection working with Intel silicon?", mode="general")
+        prompt = prompts[-1]
+        assert "How detection works: " in prompt and "YOLO26s" in prompt and "NPU" in prompt
+        assert "do not use or mention the mission documents" in prompt
+        assert "does not identify people, read colours" in prompt
 
 
 def test_application_knowledge_grounding():

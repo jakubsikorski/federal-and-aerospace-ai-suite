@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
-from typing import Callable, Iterator
+from typing import Callable, Iterator, Sequence
 
 import httpx
 from pypdf import PdfReader
@@ -50,12 +50,18 @@ BRIEF_QUESTIONS = {
     "risks": "What risks or hazards does the mission identify?",
 }
 MAX_FILENAME = 128
-MAX_UPLOAD_BYTES = 25 * 1024 * 1024
-MAX_PDF_PAGES = 200
 MAX_PDF_OBJECTS = 100_000
 MAX_DOCX_ENTRIES = 2_000
 MAX_DOCX_ENTRY_BYTES = 20 * 1024 * 1024
-MAX_DOCX_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
+# Operator-tunable in backend.yaml: (default, lowest, highest). The highest
+# values keep one upload within the stock service's synchronous ingest and the
+# Backend's request memory; raise mission_ingest_timeout_seconds with them.
+UPLOAD_LIMITS = {
+    "mission_max_upload_mb": (25, 1, 100),
+    "mission_max_pdf_pages": (200, 1, 2000),
+    "mission_max_docx_uncompressed_mb": (50, 1, 500),
+}
+ACCEPTED_TYPES = "PDF or Word (.docx)"
 MAX_DOCX_COMPRESSION_RATIO = 1_000
 _FILENAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._-]{0,127}$")
 _SHA256 = re.compile(r"^[a-f0-9]{64}$")
@@ -107,35 +113,72 @@ def _utc() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def upload_limits(cfg: dict | None = None) -> dict:
+    """Configured upload limits; out-of-range values stop startup rather than being clamped."""
+    cfg = cfg or {}
+    limits = {}
+    for key, (default, lowest, highest) in UPLOAD_LIMITS.items():
+        value = cfg.get(key, default)
+        if isinstance(value, bool) or not isinstance(value, int) or not lowest <= value <= highest:
+            raise ValueError(f"{key} must be a whole number from {lowest} to {highest}")
+        limits[key.removeprefix("mission_")] = value
+    return limits
+
+
+def _has_text_pdf(reader) -> bool:
+    for page in reader.pages:
+        try:
+            if page.extract_text().strip():
+                return True
+        except Exception:  # an unreadable page is not proof the rest is empty
+            continue
+    return False
+
+
+def _has_text_docx(archive) -> bool:
+    body = archive.read("word/document.xml")
+    return bool(re.search(rb"<w:t(?:\s[^>]*)?>[^<]*\S", body))
+
+
 def _safe_filename(value: object) -> str:
     if not isinstance(value, str) or not _FILENAME.fullmatch(value):
         raise MissionValidationError(
             "Document names must be 1-128 characters using letters, numbers, spaces, dot, dash or underscore.")
     suffix = Path(value).suffix.lower()
     if suffix not in {".pdf", ".docx"}:
-        raise MissionValidationError("Only PDF and DOCX mission documents are supported.")
+        raise MissionValidationError(
+            f"Only {ACCEPTED_TYPES} mission documents are supported. Images and other file types are not read.")
     return value
 
 
-def validate_upload(filename: object, content: object) -> tuple[str, bytes, str]:
+NO_TEXT = ("This document has no readable text. Scanned pages and images are not read; "
+           "upload a PDF or Word file with selectable text.")
+
+
+def validate_upload(filename: object, content: object, limits: dict | None = None) -> tuple[str, bytes, str]:
     """Accept only bounded, proven document formats before retaining anything."""
+    limits = limits or upload_limits()
     name = _safe_filename(filename)
     if not isinstance(content, bytes) or not content:
         raise MissionValidationError("The document is empty.")
-    if len(content) > MAX_UPLOAD_BYTES:
-        raise MissionValidationError("Mission documents must be 25 MiB or smaller.")
+    if len(content) > limits["max_upload_mb"] * 1024 * 1024:
+        raise MissionValidationError(f"Mission documents must be {limits['max_upload_mb']} MB or smaller.")
     suffix = Path(name).suffix.lower()
     if suffix == ".pdf":
         if not content.startswith(b"%PDF-"):
             raise MissionValidationError("The uploaded PDF has an invalid signature.")
         try:
-            page_count = len(PdfReader(BytesIO(content), strict=True).pages)
+            reader = PdfReader(BytesIO(content), strict=True)
+            page_count = len(reader.pages)
         except (PdfReadError, ValueError, OverflowError) as exc:
             raise MissionValidationError("The uploaded PDF has an invalid structure.") from exc
-        if page_count > MAX_PDF_PAGES:
-            raise MissionValidationError(f"Mission PDFs may contain at most {MAX_PDF_PAGES} pages.")
+        if page_count > limits["max_pdf_pages"]:
+            raise MissionValidationError(
+                f"Mission PDFs may contain at most {limits['max_pdf_pages']} pages; this one has {page_count}.")
         if len(_PDF_OBJECT.findall(content)) > MAX_PDF_OBJECTS:
             raise MissionValidationError("Mission PDF structure exceeds the object limit.")
+        if not _has_text_pdf(reader):
+            raise MissionValidationError(NO_TEXT)
     else:
         try:
             with zipfile.ZipFile(BytesIO(content)) as archive:
@@ -149,7 +192,7 @@ def validate_upload(filename: object, content: object) -> tuple[str, bytes, str]
                             or entry.file_size > MAX_DOCX_ENTRY_BYTES):
                         raise MissionValidationError("Mission DOCX contains an unsafe archive entry.")
                     total_size += entry.file_size
-                    if total_size > MAX_DOCX_UNCOMPRESSED_BYTES:
+                    if total_size > limits["max_docx_uncompressed_mb"] * 1024 * 1024:
                         raise MissionValidationError("Mission DOCX exceeds the decompressed-size limit.")
                     if (entry.file_size and not entry.compress_size) or (
                             entry.compress_size and entry.file_size / entry.compress_size
@@ -158,6 +201,8 @@ def validate_upload(filename: object, content: object) -> tuple[str, bytes, str]
                 names = {entry.filename for entry in entries}
                 if "[Content_Types].xml" not in names or "word/document.xml" not in names:
                     raise MissionValidationError("The uploaded DOCX has an invalid structure.")
+                if not _has_text_docx(archive):
+                    raise MissionValidationError(NO_TEXT)
         except zipfile.BadZipFile as exc:
             raise MissionValidationError("The uploaded DOCX has an invalid signature.") from exc
     return name, content, hashlib.sha256(content).hexdigest()
@@ -183,14 +228,19 @@ or any commentary outside the sentence."""
 MISSION_UNAVAILABLE_ANSWER = "That information is not available in the mission material."
 
 
-def _mission_prompt(question: str) -> str:
+def _mission_prompt(question: str, turns: Sequence[tuple[str, str]] = ()) -> str:
     # Stock /chat retrieves with the whole prompt and keeps only two chunks, so
     # the question leads (as in _brief_prompt). Leading with instructions pulled
-    # the wrong chunks and the model said the packet has no objective.
+    # the wrong chunks and the model said the packet has no objective. Stock
+    # /chat is stateless, so a follow-up carries the earlier mission questions
+    # (which also steer retrieval) and answers, only to resolve what it refers to.
+    earlier = "".join(f"\nEarlier question: {q}\nEarlier answer: {a}" for q, a in turns)
+    follow = (f"\nThis may be a follow-up; use the earlier mission questions below only to work out what "
+              f"the current question refers to, never as a source of facts.{earlier}") if earlier else ""
     return f"""{question}
 Answer only from the mission documents in the retrieved context, concisely. If
 they do not establish it, reply exactly: {MISSION_UNAVAILABLE_ANSWER} Do not use general knowledge and do not invent citations
-or page numbers."""
+or page numbers.{follow}"""
 
 
 class MissionService:
@@ -211,6 +261,7 @@ class MissionService:
         self.db_path = cfg["db_path"]
         self.source_dir = Path(cfg["mission_sources_dir"])
         self.source_dir.mkdir(parents=True, exist_ok=True)
+        self.limits = upload_limits(cfg)
         self.timeout = float(cfg.get("mission_ingest_timeout_seconds", 60))
         self.poll_seconds = float(cfg.get("mission_ingest_poll_seconds", 0.25))
         self._lock = threading.RLock()
@@ -505,6 +556,7 @@ class MissionService:
                     for source in sources
                 ],
                 "stock_documents": sorted(remote) if remote is not None else None,
+                "limits": {**self.limits, "accepted_types": ACCEPTED_TYPES},
                 "answer_citations_available": False,
                 "citation_notice": (
                     "This stock interface does not provide answer-level citations. "
@@ -516,7 +568,7 @@ class MissionService:
         return result
 
     def upload(self, filename: object, content: object) -> dict:
-        filename, content, digest = validate_upload(filename, content)
+        filename, content, digest = validate_upload(filename, content, self.limits)
         needs_brief = False
         with self._lock, self._connection() as conn:
             remote = self._documents()
@@ -718,7 +770,8 @@ class MissionService:
         return {word for value in fields.values() if isinstance(value, str)
                 for word in re.findall(r"[a-z]{4,}", value.lower())}
 
-    def answer(self, question: object, *, generate: Callable[[str], str] | None = None) -> dict:
+    def answer(self, question: object, *, generate: Callable[[str], str] | None = None,
+               turns: Sequence[tuple[str, str]] = ()) -> dict:
         if not isinstance(question, str) or not question.strip() or len(question) > 500:
             raise MissionValidationError("Mission questions must contain 1 to 500 characters.")
         mode, _ = self._state()
@@ -727,7 +780,7 @@ class MissionService:
         with self._lock, self._connection() as conn:
             version = self._version(conn)
             sources = self._inventory_ready(conn)
-        answer = self._complete(_mission_prompt(question.strip()), generate)
+        answer = self._complete(_mission_prompt(question.strip(), turns), generate)
         with self._lock, self._connection() as conn:
             if self._version(conn) != version:
                 raise MissionUnavailable("Mission corpus changed while the answer was generated; ask again.")

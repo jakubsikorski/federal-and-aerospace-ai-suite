@@ -35,6 +35,8 @@ CHAT_ANSWER_MARKER = "### Assistant:\nAnswer:\n"
 APPLICATION_TOPICS = dict(re.findall(r"^## ([^\n]+)\n(.*?)(?=^## |\Z)", OPERATOR_GUIDE, re.M | re.S))
 CONTEXT_MAX_TURNS = 4
 CONTEXT_MAX_CHARS = 1200
+MISSION_MAX_TURNS = 3
+MISSION_TURN_CHARS = 400
 CONTEXT_IDLE_SECONDS = 600
 CATALOG_MAX_FIELDS = 128
 # Qualities the detector cannot establish by itself. They are answerable only
@@ -226,6 +228,14 @@ def _mentioned_stream(text: str) -> str | None:
     return "cam" + match[1] if match else None
 
 
+# Pronouns or continuations that only make sense against the previous answer.
+MISSION_PRONOUN = re.compile(r"\b(?:it|its|they|them|their|he|she|him|his|her)\b", re.I)
+MISSION_FOLLOWUP = re.compile(
+    r"^(?:and|also|so|then|but|what about|how about|why(?: not)?|how so|tell me more|more|go on|anything else)\b"
+    r"|\b(?:it|its|it's|that|this|those|these|they|them|their|he|she|him|his|her|then|one|ones|else|same|other|others)\b",
+    re.I)
+
+
 MISSION_QUESTION = re.compile(
     r"^(?:what|which|who|when|where|how|is|are|does|do|list|summari[sz]e|tell me|describe)\b"
     r".*\b(?:mission (?:documents?|material|orders?|files?)|mission's documents)\b", re.I | re.S)
@@ -279,6 +289,9 @@ def decode_route_completion(completion: str) -> object:
 @dataclass
 class Conversation:
     turns: list[tuple[str, str]] = field(default_factory=list)
+    # Mission questions and answers, kept apart from general chat so follow-ups
+    # ("and when is it due?") can be resolved without mixing the two.
+    mission_turns: list[tuple[str, str]] = field(default_factory=list)
     updated: float = field(default_factory=time.monotonic)
     last_intent: str | None = None
     generation: int = 0
@@ -1303,6 +1316,7 @@ class Assistant:
                 if state is None:
                     continue
                 state.turns.clear()
+                state.mission_turns.clear()
                 state.updated = time.monotonic()
                 state.last_intent = None
                 state.query = None
@@ -1333,7 +1347,7 @@ class Assistant:
         now = time.monotonic()
         with self._context_lock:
             state = self._conversation_state()
-            idle = state.turns and now - state.updated > CONTEXT_IDLE_SECONDS
+            idle = (state.turns or state.mission_turns) and now - state.updated > CONTEXT_IDLE_SECONDS
             video_transition = (
                 state.last_intent is not None
                 and state.last_intent != intent
@@ -1341,12 +1355,46 @@ class Assistant:
             )
             if idle or video_transition:
                 state.turns.clear()
+                state.mission_turns.clear()
                 state.updated = now
                 state.generation += 1
             state.last_intent = intent
             state.updated = now
-            turns = list(state.turns) if intent == "general_chat" else []
+            turns = (list(state.turns) if intent == "general_chat"
+                     else list(state.mission_turns) if intent == "mission_knowledge" else [])
             return turns, state.generation
+
+    def _mission_followup(self, text: str) -> bool:
+        """A short follow-up to the previous mission answer, e.g. "and when is it due?"."""
+        with self._context_lock:
+            state = self._conversation_state()
+            recent = (state.last_intent == "mission_knowledge" and state.mission_turns
+                      and time.monotonic() - state.updated <= CONTEXT_IDLE_SECONDS)
+        return bool(recent) and len(text) <= 160 and bool(MISSION_FOLLOWUP.search(text.strip()))
+
+    def _remember_mission(self, question: str, answer: dict, generation: int) -> None:
+        text = answer.get("answer_text", "")
+        # An unanswered question adds nothing to resolve a follow-up against.
+        if MISSION_UNAVAILABLE_ANSWER.rstrip(".").casefold() in text.casefold():
+            return
+        with self._context_lock:
+            state = self._conversation_state()
+            if generation != state.generation:
+                return
+            state.mission_turns = [*state.mission_turns, (question[:200], text[:MISSION_TURN_CHARS])][-MISSION_MAX_TURNS:]
+            state.updated = time.monotonic()
+
+    def _ask_mission(self, text: str, emit) -> dict:
+        # Earlier questions steer stock retrieval, so only a follow-up carries them.
+        followup = self._mission_followup(text)
+        turns, generation = self._begin_intent("mission_knowledge")
+        try:
+            answer = self.mission.answer(text, generate=self._mission_generator(emit),
+                                         turns=turns if followup else ())
+        except MissionUnavailable as exc:
+            raise ServiceUnavailable(str(exc)) from exc
+        self._remember_mission(text.strip(), answer, generation)
+        return answer
 
     def _remember_general(self, question: str, answer: str, generation: int | None = None) -> dict:
         with self._context_lock:
@@ -1544,8 +1592,14 @@ class Assistant:
         if MISSION_TERMS.search(text):
             return "terms"
         words = set(re.findall(r"[a-z]{4,}", text.lower())) - _ROUTING_STOPWORDS
-        if self.cfg.get("detector_metadata_path") and _video_or_app_terms(
-                text, detector_labels(self.cfg["detector_metadata_path"])):
+        labels = detector_labels(self.cfg["detector_metadata_path"]) if self.cfg.get("detector_metadata_path") else None
+        if self._mission_followup(text) and not re.search(r"\b(?:cam(?:era)?s?|feeds?)\b", text, re.I):
+            # Recording words were excluded above. A pronoun ("can they stop people?")
+            # refers back to the mission answer even when an object class is named.
+            stripped = re.sub(r"\b(?:here|there|this|that|it|they|them)\b", " ", text, flags=re.I)
+            if MISSION_PRONOUN.search(text) or not (labels and _video_or_app_terms(stripped, labels)):
+                return "followup"
+        if labels and _video_or_app_terms(text, labels):
             return None  # names an object class or camera: leave it to the router
         return "vocabulary" if words & self.mission.vocabulary() else None
 
@@ -1559,11 +1613,7 @@ class Assistant:
             emit({"status": "Waiting to answer…"})
             with self.single_flight:
                 emit({"status": "Reading the mission documents…"})
-                self._begin_intent("mission_knowledge")
-                try:
-                    answer = self.mission.answer(text, generate=self._mission_generator(emit))
-                except MissionUnavailable as exc:
-                    raise ServiceUnavailable(str(exc)) from exc
+                answer = self._ask_mission(text, emit)
                 # Matched only on a shared word: a general question the mission
                 # does not cover still gets a general answer.
                 if general_fallback and MISSION_UNAVAILABLE_ANSWER.rstrip(".").casefold() in answer["answer_text"].casefold():
@@ -1884,10 +1934,7 @@ class Assistant:
                         raise ServiceUnavailable("Mission knowledge is not configured.")
                     # Router owns queue + single-flight here; pass its low-level
                     # generator so a mission answer does not reacquire itself.
-                    try:
-                        return self.mission.answer(text, generate=self._mission_generator(emit))
-                    except MissionUnavailable as exc:
-                        raise ServiceUnavailable(str(exc)) from exc
+                    return self._ask_mission(text, emit)
                 if route.intent in {"general_chat", "application_help"}:
                     return self._general_answer(text, selected_stream, emit, context, context_generation, route.intent)
                 if route.intent != "video_history":

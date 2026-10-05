@@ -289,7 +289,13 @@ check that panel for the exact device.
 
 ![Mission](images/guide-mission.jpg)
 
-1. **Browse… / Upload** — add a PDF or DOCX mission document.
+1. **Browse… / Upload** — add a PDF or Word (.docx) mission document. The line
+   below shows the accepted types and limits (by default 25 MB and 200 PDF
+   pages). Only text is read: images, scanned pages and other file types are
+   not, and a document with no readable text is refused. Administrators can
+   change the limits in `config/backend/backend.yaml`
+   (`mission_max_upload_mb`, `mission_max_pdf_pages`,
+   `mission_max_docx_uncompressed_mb`).
 2. **Delete** — remove that document.
 3. **Re-ingest** — reload the documents and rebuild the brief.
 4. **Clear mission** — remove all mission documents (camera history stays).

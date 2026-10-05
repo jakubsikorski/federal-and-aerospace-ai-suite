@@ -38,7 +38,6 @@ from .assistant import (
 from .adapters import Probe, Services
 from .ingest import Ingest
 from .mission import (
-    MAX_UPLOAD_BYTES,
     MissionService,
     MissionUnavailable,
     MissionValidationError,
@@ -862,7 +861,8 @@ def create_app() -> FastAPI:
         document = files[0]
         try:
             # Read one extra byte so the service never retains an oversized upload.
-            content = await document.read(MAX_UPLOAD_BYTES + 1)
+            content = await document.read(
+                request.app.state.mission.limits["max_upload_mb"] * 1024 * 1024 + 1)
             result = await asyncio.to_thread(
                 request.app.state.mission.upload, document.filename, content)
         except MissionValidationError as exc:

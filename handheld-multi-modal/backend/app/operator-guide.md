@@ -56,7 +56,9 @@ not durable memory. Backend retains at most four recent general exchanges for te
 minutes of inactivity; changing between camera history and conversation resets it.
 
 ## Mission and Mission Brief
-Open Mission in the top bar. Upload a PDF or DOCX (one at a time, up to 25 MiB).
+Open Mission in the top bar. Upload a PDF or Word (.docx) file, one at a time; the
+panel shows the size and page limits. Only text is read: images and scanned pages are
+not, and a file with no readable text is refused.
 The application retains originals and indexes them through stock Chat Q&A.
 Mission Brief summarizes objective, times, locations, people/units, restrictions,
 resources, dependencies and risks from uploaded documents. Not specified means

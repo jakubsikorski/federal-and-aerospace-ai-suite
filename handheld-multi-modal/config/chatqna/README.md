@@ -72,6 +72,14 @@ not on any bind mount — recreating the container drops ingested documents
 and requires re-running the document-upload step (`07_chatqna_ingest.sh`)
 against the fresh container.
 
+Upload limits: stock `/documents` accepts PDF, TXT and DOCX with no size
+limit and ingests synchronously; it returns HTTP 500 ("No text data from the
+document") for image-only files. The Backend enforces its own limits before
+forwarding (`mission_max_upload_mb`, `mission_max_pdf_pages`,
+`mission_max_docx_uncompressed_mb` in `config/backend/backend.yaml`; out-of-range
+values stop Backend startup) and rejects documents with no readable text.
+When raising the limits, also raise `mission_ingest_timeout_seconds`.
+
 Known limitation: the stock backend downloads model revision `main` and does
 not read `models.lock.json` to pin/enforce a revision — the lock file records
 the approved revision for audit only, it is not consumed at runtime. No

@@ -14,8 +14,10 @@ entirely on the device, built from unmodified Open Edge Platform
 - **Evidence and history** — browse current and past tracks, filter by object
   type, and ask questions such as "how many people on camera 2 in the last
   ten minutes?".
-- **Mission** — upload PDF/DOCX orders; a Mission Brief and document-grounded
-  answers come from stock Chat Q&A (`Intel/neural-chat-7b-v3-3` on the GPU).
+- **Mission** — upload PDF/DOCX orders (text only; size and page limits set in
+  `config/backend/backend.yaml`); a Mission Brief and document-grounded
+  answers, including short follow-ups, come from stock Chat Q&A
+  (`Intel/neural-chat-7b-v3-3` on the GPU).
 - **Alerts** — operator rules (e.g. "person on Camera 1") dispatched through
   the stock Alert Agent and spoken via SpeechT5 TTS on the CPU
   (`make speech-device TTS_DEVICE=GPU` moves it to the GPU).
