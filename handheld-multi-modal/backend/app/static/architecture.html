@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Architecture — Handheld multi-modal</title>
+<style>
+  :root { color-scheme: dark; --bg: #0e1a2c; --panel: #16273c; --panel2: #1c3149; --line: #35506f;
+    --text: #edf4ff; --muted: #a9bcd3; --accent: #72e4df;
+    --video: #5fd4e8; --webrtc: #8be0b5; --mqtt: #c3a6ff; --rest: #7fb2ff; --files: #f4c779; --turn: #9fb0c4;
+    --npu: #b99bff; --gpu: #6fd0a0; --cpu: #7fb2ff;
+    --oep: #3fa0ff; --oep-fill: #0a63b8; --oss: #8a9db6; --app: #5aa7b0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: radial-gradient(ellipse at 10% -10%, #1b3e59 0, var(--bg) 60%) fixed; color: var(--text);
+    font: 15px/1.45 system-ui, "Segoe UI", sans-serif; }
+  main { max-width: 1500px; margin: 0 auto; padding: 12px 14px 32px; }
+  header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  header .titles { flex: 1 1 auto; min-width: 0; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: .2px; }
+  header p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+  h2 { font-size: 17px; margin: 26px 0 10px; }
+  a { color: var(--accent); }
+  .back { display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 18px;
+    border: 1px solid #6cbabb; border-radius: 10px; background: #1c4d5c; color: #dcfffc;
+    text-decoration: none; font-weight: 600; }
+  .scenarios { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 10px; align-items: center; }
+  .scenarios > span { color: var(--muted); font-size: 14px; margin-right: 4px; }
+  .scenarios button { min-height: 44px; padding: 0 16px; border: 1px solid var(--line); border-radius: 22px;
+    background: var(--panel); color: var(--text); font: inherit; font-size: 14px; cursor: pointer; }
+  .scenarios button[aria-pressed="true"] { background: #1c4d5c; border-color: var(--accent); color: #dcfffc; }
+  .providers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 10px 0 0; }
+  .providers button { display: flex; align-items: center; gap: 12px; min-height: 50px; padding: 5px 14px; text-align: left;
+    border: 1px solid var(--line); border-left: 6px solid; border-radius: 12px; background: var(--panel);
+    color: var(--text); font: inherit; cursor: pointer; }
+  .providers button b { font-size: 26px; line-height: 1; min-width: 22px; }
+  .providers button span { display: flex; flex-direction: column; font-size: 13px; line-height: 1.3; color: var(--muted); }
+  .providers button strong { color: var(--text); font-size: 15px; }
+  .providers .oep { border-left-color: var(--oep); } .providers .oep b { color: var(--oep); }
+  .providers .oss { border-left-color: var(--oss); } .providers .oss b { color: var(--oss); }
+  .providers .app { border-left-color: var(--app); } .providers .app b { color: var(--app); }
+  .providers button[aria-pressed="true"] { background: #1f4256; border-color: var(--accent); }
+  .ep-list { margin: 0; padding: 0; list-style: none; } .ep-list li { margin: 3px 0; }
+  .method { display: inline-block; min-width: 48px; margin-right: 6px; font: 700 11.5px ui-monospace, Menlo, monospace; color: var(--rest); }
+  .oep-name strong { display: block; font-size: 15px; } #oep-apis td:nth-child(1) { width: 17%; } #oep-apis td:nth-child(2) { width: 41%; } #oep-apis td:nth-child(3) { width: 19%; }
+  .oep-name a { font-size: 12.5px; }
+  .stage { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 14px; align-items: start; }
+  .diagram { background: linear-gradient(180deg, #12233a, #0f1d31); border: 1px solid var(--line); border-radius: 14px; padding: 2px; }
+  #arch { display: block; width: 100%; height: auto; }
+  .lane rect { fill: #ffffff05; stroke: #ffffff12; }
+  #lanes .bus { fill: var(--rest); font-size: 13px; font-weight: 700; letter-spacing: 2px; }
+  .lane text { fill: #8ea4bf; font-size: 13.5px; font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase; }
+  .node { cursor: pointer; outline: none; }
+  .node > rect.box { fill: var(--panel2); stroke: #4a6688; stroke-width: 1.5; transition: stroke .2s, fill .2s; }
+  .node.app > rect.box { fill: #1a3a4c; stroke: var(--app); }
+  .node.oep > rect.box { fill: #10335a; stroke: var(--oep); stroke-width: 2.5; }
+  .node .bar { fill: var(--oep-fill); }
+  .node.oep .t { fill: #fff; } .node.oep .ic { stroke: #fff; } .node.oep .tag { fill: #cfe6ff; }
+  .node.oep.on > rect.box { stroke: #9fd2ff; fill: #12406c; }
+  .tab rect { rx: 9; stroke-width: 1.2; }
+  .tab text { font-size: 10.5px; font-weight: 800; letter-spacing: 1px; }
+  .tab.oep rect { fill: #fff; stroke: var(--oep); } .tab.oep text { fill: var(--oep-fill); }
+  .tab.oss rect { fill: #26364b; stroke: var(--oss); } .tab.oss text { fill: #d2deec; }
+  .tab.app rect { fill: #1c4d5c; stroke: var(--app); } .tab.app text { fill: #dcfffc; }
+  .node .tag { fill: var(--muted); font-size: 14px; }
+  .node .ep { font: 12.5px ui-monospace, "SFMono-Regular", Menlo, monospace; fill: #d6e6ff; }
+  .node .ep .m { fill: var(--rest); font-weight: 700; }
+  .node.setup > rect.box { fill: #15253a; stroke-dasharray: 6 5; }
+  .node:hover > rect.box, .node:focus-visible > rect.box { stroke: var(--accent); }
+  .node.on > rect.box { stroke: var(--accent); stroke-width: 2.5; fill: #1f4256; }
+  .node .t { fill: var(--text); font-size: 18.5px; font-weight: 700; }
+  .node .s { fill: var(--muted); font-size: 15px; }
+  .node .ic { fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .chip rect { rx: 6; }
+  .chip text { font-size: 13px; font-weight: 700; }
+  .chip.npu rect { fill: #b99bff26; stroke: var(--npu); } .chip.npu text { fill: var(--npu); }
+  .chip.gpu rect { fill: #6fd0a026; stroke: var(--gpu); } .chip.gpu text { fill: var(--gpu); }
+  .chip.cpu rect { fill: #7fb2ff26; stroke: var(--cpu); } .chip.cpu text { fill: var(--cpu); }
+  .live { fill: #6d7f96; } .live.ready { fill: var(--webrtc); } .live.bad { fill: var(--files); }
+  .edge path { fill: none; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; opacity: .85; transition: opacity .2s, stroke-width .2s; }
+  .edge path.flow { stroke-dasharray: 2 12; stroke-width: 3.2; opacity: .9; animation: flow 1.1s linear infinite; }
+  .edge text { font-size: 14px; font-weight: 600; paint-order: stroke; stroke: #0f1d31; stroke-width: 5px; stroke-linejoin: round; }
+  .video path { stroke: var(--video); } .video text { fill: var(--video); }
+  .webrtc path { stroke: var(--webrtc); } .webrtc text { fill: var(--webrtc); }
+  .mqtt path { stroke: var(--mqtt); } .mqtt text { fill: var(--mqtt); }
+  .rest path { stroke: var(--rest); } .rest text { fill: var(--rest); }
+  .files path { stroke: var(--files); } .files text { fill: var(--files); }
+  .turn path { stroke: var(--turn); stroke-dasharray: 5 6; } .turn text { fill: var(--turn); }
+  .turn path.flow { stroke-dasharray: 2 12; }
+  @keyframes flow { to { stroke-dashoffset: -14; } }
+  svg.focus .edge:not(.on) { opacity: .12; }
+  svg.focus .node:not(.on) { opacity: .35; }
+  svg.focus .edge.on path:not(.flow) { stroke-width: 3.6; opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { .edge path.flow { animation: none; } }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 8px 12px 6px; font-size: 13px; color: var(--muted); }
+  .legend.origins { border-top: 1px solid var(--line); padding-top: 8px; }
+  .legend .sw { display: inline-block; width: 18px; height: 14px; border-radius: 4px; vertical-align: -2px; margin-right: 6px; border: 2px solid; }
+  .legend .sw.oep { background: var(--oep-fill); border-color: var(--oep); } .legend .sw.oss { background: var(--panel2); border-color: #4a6688; }
+  .legend .sw.app { background: #1a3a4c; border-color: var(--app); } .legend strong { color: var(--text); }
+  .legend i { display: inline-block; width: 22px; height: 0; border-top: 3px solid; vertical-align: middle; margin-right: 6px; }
+  .card { position: sticky; top: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; min-height: 300px; }
+  .card .clear { float: right; min-height: 40px; margin: -6px -6px 6px 8px; padding: 0 12px; border: 1px solid var(--line);
+    border-radius: 20px; background: var(--panel2); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+  .card .clear:hover { border-color: var(--accent); }
+  .card h3 { margin: 0 0 4px; font-size: 19px; }
+  .card .kind { color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+  .card p { margin: 8px 0; }
+  .card dl { margin: 10px 0 0; display: grid; grid-template-columns: 1fr; gap: 2px; }
+  .card dt { color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; margin-top: 8px; }
+  .card dd { margin: 0; }
+  .card ol { margin: 8px 0 0; padding-left: 22px; } .card li { margin: 6px 0; }
+  .card .hint { color: var(--muted); }
+  .card .status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+  .card .status::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
+  .card .status.ready { color: var(--webrtc); } .card .status.bad { color: var(--files); }
+  code { font: 12.5px/1.4 ui-monospace, "SFMono-Regular", Menlo, monospace; overflow-wrap: anywhere; color: #d6e6ff; }
+  .devices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .device { background: var(--panel); border: 1px solid var(--line); border-top: 4px solid; border-radius: 12px; padding: 12px 14px; }
+  .device.npu { border-top-color: var(--npu); } .device.gpu { border-top-color: var(--gpu); } .device.cpu { border-top-color: var(--cpu); }
+  .device h3 { margin: 0 0 6px; font-size: 16px; } .device ul { margin: 0; padding-left: 18px; } .device li { margin: 3px 0; }
+  details { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; margin-top: 12px; }
+  summary { min-height: 48px; display: flex; align-items: center; padding: 0 16px; cursor: pointer; font-weight: 600; }
+  .scroll { overflow-x: auto; padding: 0 12px 12px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border-bottom: 1px solid var(--line); padding: 8px; text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 700; white-space: nowrap; border: 1px solid; }
+  .badge.oep { background: var(--oep-fill); border-color: var(--oep); color: #fff; } .badge.oss { border-color: var(--oss); color: #d2deec; }
+  .badge.app { background: #1c4d5c; border-color: var(--app); color: #dcfffc; }
+  tr.on td { background: #1f4256; }
+  p.note { color: var(--muted); font-size: 14px; }
+  @media (max-width: 1100px) { .stage { grid-template-columns: 1fr; } .card { position: static; min-height: 0; } .devices, .providers { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div class="titles">
+    <h1>How this application is built</h1>
+    <p>Built on Intel Open Edge Platform <code>release-2026.2.0</code> microservices, run unmodified from their published images and used through their own APIs.</p>
+  </div>
+  <a class="back" href="/" onclick="event.preventDefault(); window.close(); setTimeout(() => location.href = '/', 200)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>Back to app</a>
+</header>
+
+<div class="providers" role="group" aria-label="Show components by origin">
+  <button type="button" class="oep" data-provider="oep"><b id="count-oep">7</b><span><strong>Open Edge Platform microservices</strong>Intel stock components and their APIs</span></button>
+  <button type="button" class="oss" data-provider="oss"><b id="count-oss">4</b><span><strong>Open-source infrastructure</strong>video relay, TURN, MQTT, TLS proxy</span></button>
+  <button type="button" class="app" data-provider="app"><b id="count-app">1</b><span><strong>Application Backend</strong>the only custom code</span></button>
+</div>
+
+<div class="scenarios" role="group" aria-label="Show a flow">
+  <span>Follow a flow:</span>
+  <button type="button" data-scenario="video">Live video</button>
+  <button type="button" data-scenario="alert">Detection → alert</button>
+  <button type="button" data-scenario="voice">Voice question</button>
+  <button type="button" data-scenario="mission">Mission question</button>
+</div>
+
+<div class="stage">
+  <div class="diagram">
+    <svg id="arch" viewBox="0 0 1240 700" role="img" aria-labelledby="arch-title">
+      <title id="arch-title">Services and data flows. Select a service or a flow for details.</title>
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker>
+      </defs>
+      <g id="lanes"></g><g id="edges"></g><g id="nodes"></g>
+    </svg>
+    <div class="legend" aria-label="Legend">
+      <span><i style="color:var(--video)"></i>RTSP video</span>
+      <span><i style="color:var(--webrtc)"></i>WebRTC (WHIP / WHEP)</span>
+      <span><i style="color:var(--turn);border-top-style:dashed"></i>TURN relay</span>
+      <span><i style="color:var(--mqtt)"></i>MQTT events</span>
+      <span><i style="color:var(--files)"></i>Evidence images (shared volume)</span>
+      <span><i style="color:var(--rest)"></i>HTTPS / REST / SSE</span>
+    </div>
+    <div class="legend origins" aria-label="Box colours">
+      <span><b class="sw oep"></b><strong>Intel Open Edge Platform</strong> microservice — blue box, endpoints called listed inside</span>
+      <span><b class="sw oss"></b>Open-source infrastructure</span>
+      <span><b class="sw app"></b>Application (custom code)</span>
+    </div>
+  </div>
+  <aside class="card" id="card" aria-live="polite"></aside>
+</div>
+
+<h2>Where each model runs</h2>
+<div class="devices">
+  <div class="device npu"><h3>NPU</h3><ul><li>YOLO26s INT8 object detection (default pipeline)</li></ul></div>
+  <div class="device gpu"><h3>GPU</h3><ul><li><code>Intel/neural-chat-7b-v3-3</code> language model</li><li><code>whisper-medium</code> speech to text</li><li>Video decode and encode (VA-API) in the NPU/GPU pipelines</li></ul></div>
+  <div class="device cpu"><h3>CPU</h3><ul><li><code>gvatrack</code> object tracking</li><li>Embeddings and reranker for document retrieval</li><li>SpeechT5 text to speech (GPU switch available)</li><li>Application Backend, brokers and relays</li></ul></div>
+</div>
+<p class="note">These are the configured defaults. The <strong>Models &amp; devices</strong>
+strip in the app shows what each service reports at run time. The Backend is never
+in the video path, does not crop images and does not reconfigure pipelines while they
+run; it owns business rules, history (SQLite), speech arbitration and telemetry aggregation.</p>
+
+<h2>Open Edge Platform APIs used</h2>
+<p class="note" style="margin-top:-4px">Every call below goes to a stock Open Edge Platform endpoint; there are no custom model
+servers or patched services. Source links point to the pinned
+<a href="https://github.com/open-edge-platform/edge-ai-libraries/tree/c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9">edge-ai-libraries</a>
+commit; documentation: <a href="https://docs.openedgeplatform.intel.com/2026.2/index.html">docs.openedgeplatform.intel.com</a>.</p>
+<div class="diagram scroll" style="padding:4px 12px 12px">
+<table id="oep-apis">
+<thead><tr><th>Component</th><th>Endpoints called</th><th>Model and device</th><th>Image</th></tr></thead>
+<tbody></tbody>
+</table>
+</div>
+
+<details>
+<summary>All services — origin, images and roles</summary>
+
+<div class="scroll">
+<table id="services">
+<thead><tr><th>Service</th><th>Origin</th><th>Role</th><th>Model and device</th><th>Image</th></tr></thead>
+<tbody>
+<tr data-service="mediamtx"><td>MediaMTX</td><td><span class="badge oss">Open source</span></td><td>Video relay: camera RTSP in, annotated WebRTC (WHIP in, WHEP out to the UI)</td><td>—</td><td><code>bluenviron/mediamtx:1.11.3</code></td></tr>
+<tr data-service="coturn"><td>Coturn</td><td><span class="badge oss">Open source</span></td><td>TURN relay for WebRTC media</td><td>—</td><td><code>coturn/coturn:4.18.0</code></td></tr>
+<tr data-service="mqtt"><td>Mosquitto</td><td><span class="badge oss">Open source</span></td><td>MQTT broker for detections and snip events; also the Alert Agent's broker</td><td>—</td><td><code>eclipse-mosquitto:2.0.22</code></td></tr>
+<tr data-service="dlsps"><td>DL Streamer Pipeline Server</td><td><span class="badge oep">Open Edge Platform</span></td><td>Decode, detect, track, annotate and crop snips for each camera</td><td>YOLO26s OpenVINO INT8 on NPU (fixed CPU/GPU alternatives); <code>gvatrack</code> on CPU; Intel hardware decode/encode</td><td><code>intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24</code></td></tr>
+<tr data-service="chatqna"><td>Chat Q&amp;A Core</td><td><span class="badge oep">Open Edge Platform</span></td><td>Language model, mission-document retrieval (RAG) and history query planning</td><td><code>Intel/neural-chat-7b-v3-3</code> on GPU; embeddings <code>ibm-granite/granite-embedding-125m-english</code> and reranker <code>cross-encoder/ms-marco-electra-base</code> on CPU</td><td><code>intel/chatqna:core_gpu_2026.2.0</code></td></tr>
+<tr data-service="audio-analyzer"><td>Audio Analyzer</td><td><span class="badge oep">Open Edge Platform</span></td><td>Speech to text for push-to-talk</td><td><code>whisper-medium</code> OpenVINO on GPU</td><td><code>intel/audio-analyzer:2026.2.0</code></td></tr>
+<tr data-service="tts"><td>Text To Speech</td><td><span class="badge oep">Open Edge Platform</span></td><td>Spoken answers and alert announcements</td><td>SpeechT5 on CPU (GPU switch available)</td><td><code>intel/text-to-speech:2026.2.0</code></td></tr>
+<tr data-service="alert-agent"><td>Alert Agent</td><td><span class="badge oep">Open Edge Platform</span></td><td>Rule-based alert action dispatch with deduplication (no LLM)</td><td>—</td><td><code>intel/alert-agent-service:2026.2.0</code></td></tr>
+<tr data-service="metrics"><td>Metrics Manager</td><td><span class="badge oep">Open Edge Platform</span></td><td>CPU, GPU, NPU, memory and temperature telemetry (system-wide)</td><td>—</td><td><code>intel/metrics-manager:2026.2.0</code></td></tr>
+<tr data-service="model-downloader"><td>Model Download</td><td><span class="badge oep">Open Edge Platform</span></td><td>Prepares the detector model during setup only</td><td>—</td><td><code>intel/model-download:2026.2.0</code></td></tr>
+<tr data-service="backend"><td>Application Backend</td><td><span class="badge app">Application</span></td><td>Rules, alerts, history, assistant routing, speech, telemetry, pipeline lifecycle; serves this UI</td><td>Uses the services above</td><td><code>handheld/backend</code> (built locally)</td></tr>
+<tr data-service="proxy"><td>nginx proxy</td><td><span class="badge oss">Open source</span></td><td>TLS for the UI, Backend API and WHEP signalling only</td><td>—</td><td><code>nginx:1.27-alpine</code></td></tr>
+</tbody>
+</table>
+</div>
+</details>
+
+<details>
+<summary>Standard interfaces used</summary>
+<div class="scroll">
+<table id="apis">
+<thead><tr><th>Interface</th><th>Between</th><th>Used for</th></tr></thead>
+<tbody>
+<tr><td>RTSP</td><td>Cameras → MediaMTX → DL Streamer</td><td>Clean camera video</td></tr>
+<tr><td>WebRTC WHIP / WHEP</td><td>DL Streamer → MediaMTX → browser</td><td>Annotated live video</td></tr>
+<tr><td>TURN</td><td>Browser ↔ Coturn ↔ MediaMTX</td><td>WebRTC media relay</td></tr>
+<tr><td>MQTT</td><td>DL Streamer → Mosquitto → Backend</td><td>Topics <code>detections/live</code> and <code>detections/snips</code></td></tr>
+<tr><td>REST <code>/pipelines</code></td><td>Backend → DL Streamer</td><td>Start, check and stop camera pipelines</td></tr>
+<tr><td>REST <code>/chat</code>, <code>/documents</code>, <code>/model</code></td><td>Backend → Chat Q&amp;A Core</td><td>Answers, mission-document upload and removal, model identity</td></tr>
+<tr><td>REST <code>/v1/audio/transcriptions</code></td><td>Backend → Audio Analyzer</td><td>Transcribe push-to-talk audio</td></tr>
+<tr><td>REST <code>/v1/audio/speech</code>, <code>/v1/model-info</code></td><td>Backend → Text To Speech</td><td>Synthesise speech, report device</td></tr>
+<tr><td>REST <code>/api/v1/actions/execute</code> + SSE <code>/api/v1/events</code></td><td>Backend ↔ Alert Agent</td><td>Dispatch alert actions, receive action events</td></tr>
+<tr><td>REST <code>/api/v1/metrics/latest</code></td><td>Backend → Metrics Manager</td><td>Hardware telemetry</td></tr>
+<tr><td>REST <code>/v3</code> control API</td><td>Backend → MediaMTX</td><td>Add and remove camera paths, read and close video sessions</td></tr>
+<tr><td>HTTPS REST + Server-Sent Events</td><td>Browser ↔ Backend</td><td>App API (<code>/api/…</code>) and live updates (<code>/api/stream</code>)</td></tr>
+</tbody>
+</table>
+</div>
+</details>
+<p class="note">Full contracts: <code>COMPONENTS.md</code> and
+<code>docs/application/*-contracts.md</code> in the repository.</p>
+</main>
+<script>
+"use strict";
+const NS = "http://www.w3.org/2000/svg";
+const ICONS = {
+  camera: "M3 8h4l2-3h6l2 3h4v12H3z M12 17a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7z",
+  relay: "M3 12h7 M14 12h7 M10 8l4 4-4 4 M3 6v12 M21 6v12",
+  chip: "M7 7h10v10H7z M9 3v4 M15 3v4 M9 17v4 M15 17v4 M3 9h4 M3 15h4 M17 9h4 M17 15h4",
+  turn: "M4 13a8 8 0 0 1 16 0 M8 13a4 4 0 0 1 8 0 M12 13v8",
+  broker: "M4 4a16 16 0 0 1 16 16 M4 10a10 10 0 0 1 10 10 M4 16a4 4 0 0 1 4 4",
+  tablet: "M6 2h12v20H6z M10 18h4",
+  shield: "M12 3l8 3v6c0 5-4 8-8 9-4-1-8-4-8-9V6z M9 12l2 2 4-4",
+  server: "M4 4h16v6H4z M4 14h16v6H4z M8 7h.01 M8 17h.01",
+  chat: "M4 5h16v11H9l-5 4z M8 9h8 M8 12h5",
+  mic: "M9 3h6v10H9z M5 11a7 7 0 0 0 14 0 M12 18v3",
+  speaker: "M4 9h4l5-4v14l-5-4H4z M16 9a4 4 0 0 1 0 6 M19 6a8 8 0 0 1 0 12",
+  bell: "M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z M10 20a2 2 0 0 0 4 0",
+  gauge: "M4 18a8 8 0 1 1 16 0 M12 18l4-6",
+  download: "M12 3v12 M7 10l5 5 5-5 M4 20h16",
+};
+const SRC = "https://github.com/open-edge-platform/edge-ai-libraries/tree/c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9/";
+const PROVIDERS = {
+  oep: {tab: "INTEL OPEN EDGE PLATFORM", name: "Open Edge Platform", title: "Open Edge Platform microservices",
+    text: "Intel stock microservices from Open Edge Platform release-2026.2.0, run from their published images without code changes. The application only configures them and calls their own APIs."},
+  oss: {tab: "OPEN SOURCE", name: "Open source", title: "Open-source infrastructure",
+    text: "Standard open-source media, messaging and web components, configured only."},
+  app: {tab: "APPLICATION", name: "Application", title: "Application Backend",
+    text: "The only custom code. It owns business rules, history, speech arbitration and telemetry aggregation, and connects the Open Edge Platform services through their stock APIs."},
+};
+// Right column (Open Edge Platform AI services) is stacked automatically; other nodes use fixed x, y, w, h.
+const RIGHT = {x: 896, y: 48, w: 318, gap: 13};
+// p = origin; t = title; tag = inline subtitle; s = lines; ep = endpoints shown in the box;
+// chips = [device, label]; live = /api/models id; apis = full interface list for the side card.
+const NODES = {
+  cameras: {x: 30, y: 62, w: 204, h: 96, icon: "camera", t: "Cameras", s: ["RTSP video,", "one stream per camera"],
+    kind: "Video source", role: "Each camera publishes plain RTSP video to MediaMTX.", apis: ["RTSP → MediaMTX"]},
+  mediamtx: {p: "oss", x: 300, y: 62, w: 200, h: 96, icon: "relay", t: "MediaMTX", s: ["video relay", "RTSP in · WebRTC out"],
+    kind: "Video relay", role: "Takes camera RTSP in, serves the clean stream to DL Streamer, receives the annotated stream over WebRTC WHIP and serves it to browsers over WHEP.",
+    image: "bluenviron/mediamtx:1.11.3", apis: ["RTSP from cameras and to DL Streamer", "WebRTC WHIP (in) and WHEP (out)",
+      "REST /v3 control API — the Backend adds and removes camera paths and reads or closes sessions"]},
+  dlsps: {p: "oep", x: 580, y: 42, w: 254, h: 150, icon: "chip", t: "DL Streamer", s: ["Pipeline Server", "detect · track · annotate · crop"],
+    ep: ["POST·GET·DELETE /pipelines"], chips: [["npu", "YOLO26s"], ["cpu", "tracker"]], live: "dlsps", kind: "Vision pipeline service",
+    role: "One pipeline per camera: hardware decode, YOLO26s detection, tracking, box overlay, cropped evidence images and MQTT events.",
+    runs: "YOLO26s OpenVINO INT8 on NPU (fixed CPU/GPU alternatives); gvatrack on CPU; Intel hardware decode/encode",
+    image: "intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24", src: "microservices/dlstreamer-pipeline-server",
+    apis: ["POST /pipelines/user_defined_pipelines/{name} — start one pipeline per camera", "GET /pipelines/status · /pipelines/{id}/status — check",
+      "DELETE /pipelines/{id} — stop", "MQTT publish detections/live, detections/snips", "WebRTC WHIP publish → MediaMTX"]},
+  coturn: {p: "oss", x: 300, y: 262, w: 200, h: 76, icon: "turn", t: "Coturn", s: ["TURN relay, media only"],
+    kind: "TURN relay", role: "Relays WebRTC media between the browser and MediaMTX when a direct path is not available. It never talks to DL Streamer.",
+    image: "coturn/coturn:4.18.0", apis: ["TURN"]},
+  mqtt: {p: "oss", x: 580, y: 262, w: 180, h: 76, icon: "broker", t: "Mosquitto", s: ["MQTT broker"],
+    kind: "MQTT broker", role: "Carries detection and evidence-image events from DL Streamer to the Backend. Also the Alert Agent's broker.",
+    image: "eclipse-mosquitto:2.0.22", apis: ["MQTT detections/live", "MQTT detections/snips"]},
+  browser: {x: 30, y: 438, w: 204, h: 160, icon: "tablet", t: "Operator UI", s: ["browser on the handheld", "live video · alerts", "evidence · history", "chat · push-to-talk"],
+    kind: "Client", role: "Plays annotated video directly from MediaMTX and talks to the Backend for everything else. It never reads the database or image files directly.",
+    apis: ["WebRTC WHEP from MediaMTX", "HTTPS REST /api/… and SSE /api/stream"]},
+  proxy: {p: "oss", x: 300, y: 470, w: 200, h: 86, icon: "shield", t: "nginx", s: ["TLS termination", "API + WHEP signalling"],
+    kind: "TLS proxy", role: "Serves the UI over HTTPS and forwards Backend API and WHEP signalling. Media itself goes over WebRTC.",
+    image: "nginx:1.27-alpine", apis: ["HTTPS"]},
+  backend: {p: "app", x: 580, y: 430, w: 254, h: 190, icon: "server", t: "Backend",
+    s: ["application logic", "• alert rules & incidents", "• history (SQLite)", "• assistant routing", "• speech arbitration", "• pipeline lifecycle"],
+    kind: "Custom service", role: "Owns business rules, history, speech arbitration and telemetry aggregation. Not in the video path; does not crop images or reconfigure running pipelines.",
+    runs: "CPU · calls the Open Edge Platform APIs on the right", image: "handheld/backend (built locally)",
+    apis: ["HTTPS REST + SSE to the browser", "MQTT subscriber", "Client of every Open Edge Platform API shown"]},
+  chatqna: {p: "oep", icon: "chat", t: "Chat Q&A Core", tag: "LLM + RAG",
+    ep: ["POST /chat", "GET·POST·DELETE /documents", "GET /model"],
+    chips: [["gpu", "neural-chat-7b"], ["cpu", "retrieval"]], live: "chatqna", kind: "Language service",
+    role: "Answers general and mission questions and retrieves passages from uploaded mission documents. Stateless: the Backend supplies earlier turns for follow-ups.",
+    runs: "Intel/neural-chat-7b-v3-3 on GPU; ibm-granite/granite-embedding-125m-english and cross-encoder/ms-marco-electra-base on CPU",
+    image: "intel/chatqna:core_gpu_2026.2.0", src: "sample-applications/chat-question-and-answer-core",
+    apis: ["POST /chat — answers (streamed to the UI)", "GET · POST · DELETE /documents — mission documents", "GET /model — model identity", "GET /health — readiness"]},
+  "audio-analyzer": {p: "oep", icon: "mic", t: "Audio Analyzer", tag: "speech → text",
+    ep: ["POST /v1/audio/transcriptions"], chips: [["gpu", "whisper-medium"]], live: "audio_analyzer", kind: "Speech-to-text service",
+    role: "Transcribes push-to-talk questions.", runs: "whisper-medium OpenVINO on GPU",
+    image: "intel/audio-analyzer:2026.2.0", src: "microservices/audio-analyzer",
+    apis: ["POST /v1/audio/transcriptions — push-to-talk audio", "GET /health — readiness"]},
+  tts: {p: "oep", icon: "speaker", t: "Text To Speech", ep: ["POST /v1/audio/speech", "GET /v1/model-info"],
+    chips: [["cpu", "SpeechT5"]], live: "tts", kind: "Speech service",
+    role: "Speaks answers and alert announcements; the Backend decides what is spoken and when.",
+    runs: "SpeechT5 on CPU (make speech-device TTS_DEVICE=GPU switches to GPU)",
+    image: "intel/text-to-speech:2026.2.0", src: "microservices/text-to-speech",
+    apis: ["POST /v1/audio/speech — speech audio", "GET /v1/model-info — model and device"]},
+  "alert-agent": {p: "oep", icon: "bell", t: "Alert Agent", tag: "no LLM", ep: ["POST /api/v1/actions/execute", "SSE /api/v1/events"],
+    kind: "Alert service", role: "Receives each new alert from the Backend and applies rule-based action dispatch with de-duplication. No language model in the alert path.",
+    image: "intel/alert-agent-service:2026.2.0", src: "microservices/alert-agent-service",
+    apis: ["POST /api/v1/actions/execute — dispatch each alert", "GET /api/v1/events (SSE) — action events", "GET /api/v1/health — readiness"]},
+  metrics: {p: "oep", icon: "gauge", t: "Metrics Manager", ep: ["GET /api/v1/metrics/latest"],
+    kind: "Telemetry service", role: "System-wide CPU, GPU, NPU, memory and temperature telemetry, aggregated by the Backend for the Resources chart.",
+    image: "intel/metrics-manager:2026.2.0", src: "microservices/metrics-manager",
+    apis: ["GET /api/v1/metrics/latest — polled telemetry"]},
+  "model-downloader": {p: "oep", icon: "download", t: "Model Download", tag: "setup only", ep: ["POST /api/v1/models/download"], setup: true,
+    kind: "Model preparation service", role: "Runs during setup (make demo-prereq) to prepare the YOLO26s detector. Language and speech services download their own models.",
+    runs: "Exports YOLO26s to OpenVINO INT8", image: "intel/model-download:2026.2.0", src: "microservices/model-download",
+    apis: ["POST /api/v1/models/download — export YOLO26s", "GET /api/v1/jobs/{id} — wait for the job"]},
+};
+// [id, class, from, to, path, label, label x, y, anchor, both ways]; Backend → right-column edges are added below.
+const EDGES = [
+  ["v1", "video", "cameras", "mediamtx", "M234 110H298", "RTSP", 266, 100],
+  ["v2", "video", "mediamtx", "dlsps", "M500 92H578", "clean RTSP", 540, 82],
+  ["w1", "webrtc", "dlsps", "mediamtx", "M580 140H502", "WHIP", 540, 162],
+  ["w2", "webrtc", "mediamtx", "browser", "M340 158V240H266V470H236", "WebRTC · WHEP", 350, 232, "start"],
+  ["t1", "turn", "coturn", "browser", "M300 300H266", "", 0, 0],
+  ["t2", "turn", "coturn", "mediamtx", "M440 262V160", "TURN", 450, 214, "start", true],
+  ["m1", "mqtt", "dlsps", "mqtt", "M660 192V260", "detections", 670, 236, "start"],
+  ["m2", "mqtt", "mqtt", "backend", "M660 338V428", "observations", 670, 372, "start"],
+  ["f1", "files", "dlsps", "backend", "M805 192V428", "evidence", 797, 400, "end"],
+  ["h1", "rest", "browser", "proxy", "M236 513H298", "HTTPS", 267, 503, "middle", true],
+  ["h2", "rest", "proxy", "backend", "M500 513H578", "REST · SSE", 539, 503, "middle", true],
+  ["r-dlsps", "rest", "backend", "dlsps", "M834 470H862V128H836", "", 0, 0],
+];
+const SCENARIOS = {
+  video: {t: "Live video", edges: ["v1", "v2", "w1", "w2", "t1", "t2"], steps: [
+    "Each camera publishes RTSP video to MediaMTX.",
+    "DL Streamer Pipeline Server pulls the clean stream, decodes it on Intel hardware, detects objects with YOLO26s on the NPU and tracks them on the CPU.",
+    "It draws the boxes and pushes the annotated video back to MediaMTX over WebRTC (WHIP).",
+    "The browser plays it over WebRTC (WHEP); Coturn relays the media when a direct path is not available.",
+    "The Backend is not in the video path; it only starts and stops pipelines with POST and DELETE /pipelines."]},
+  alert: {t: "Detection → alert", edges: ["m1", "m2", "f1", "r-alert", "r-tts", "h2", "h1"], steps: [
+    "DL Streamer publishes every tracked object on MQTT and saves a cropped evidence image to a shared volume.",
+    "The Backend checks the operator's alert rules (object type, camera, area, how long it stays) and records the incident in SQLite.",
+    "It sends the alert to the Alert Agent (POST /api/v1/actions/execute), which applies rule-based dispatch and de-duplication — no language model.",
+    "If the rule speaks, the Backend's speech arbiter calls Text To Speech (POST /v1/audio/speech).",
+    "The browser receives the alert, image and speech over SSE and shows a banner over the video."]},
+  voice: {t: "Voice question", edges: ["h1", "h2", "r-audio", "r-chat", "r-tts"], steps: [
+    "Push-to-talk records the question in the browser and sends it to the Backend.",
+    "The Backend checks the audio and calls Audio Analyzer POST /v1/audio/transcriptions (whisper-medium, GPU).",
+    "Camera and history questions are answered from the Backend's detection records; general and mission questions go to Chat Q&A POST /chat.",
+    "The answer is shown and spoken with Text To Speech POST /v1/audio/speech."]},
+  mission: {t: "Mission question", edges: ["h1", "h2", "r-chat"], steps: [
+    "The operator uploads a PDF or Word document; the Backend checks its type, size, pages and that it has readable text.",
+    "The Backend sends it to Chat Q&A POST /documents, which splits it and indexes it with the embedding model.",
+    "Each question goes to POST /chat: Chat Q&A retrieves and reranks the most relevant passages and answers with neural-chat-7b on the GPU.",
+    "Stock /chat keeps no conversation, so the Backend adds the previous mission turn for follow-up questions."]},
+};
+const svg = document.getElementById("arch"), card = document.getElementById("card");
+const el = (tag, attrs, parent, text) => {
+  const node = document.createElementNS(NS, tag);
+  for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+  if (text !== undefined) node.textContent = text;
+  if (parent) parent.append(node);
+  return node;
+};
+const splitEp = (ep) => { const i = ep.indexOf(" /"); return [ep.slice(0, i), ep.slice(i + 1)]; };
+const liveDots = {};
+let rightY = RIGHT.y;
+for (const [id, n] of Object.entries(NODES)) {
+  const auto = n.h === undefined;
+  if (auto) Object.assign(n, {x: RIGHT.x, y: rightY, w: RIGHT.w});
+  const g = el("g", {class: "node" + (n.p ? " " + n.p : "") + (n.setup ? " setup" : ""), "data-node": id,
+    tabindex: 0, role: "button", "aria-label": n.t + " — details"}, document.getElementById("nodes"));
+  const box = el("rect", {class: "box", x: n.x, y: n.y, width: n.w, height: n.h || 0, rx: 12}, g);
+  if (n.p === "oep") el("path", {class: "bar", d: `M${n.x + 1.2} ${n.y + 40}V${n.y + 12}a10.8 10.8 0 0 1 10.8 -10.8`
+    + `H${n.x + n.w - 12}a10.8 10.8 0 0 1 10.8 10.8V${n.y + 40}Z`}, g);
+  el("path", {class: "ic", d: ICONS[n.icon], transform: `translate(${n.x + 14} ${n.y + 12})`}, g);
+  const title = el("text", {class: "t", x: n.x + 46, y: n.y + 30}, g, n.t);
+  if (n.tag) el("text", {class: "tag", x: n.x + 56 + title.getComputedTextLength(), y: n.y + 30}, g, n.tag);
+  let base = n.y + 54, last = n.y + 30;
+  for (const line of n.s || []) { el("text", {class: "s", x: n.x + 16, y: base}, g, line); last = base; base += 20; }
+  for (const ep of n.ep || []) {
+    const [method, path] = splitEp(ep), t = el("text", {class: "ep", x: n.x + 16, y: base - 2}, g);
+    el("tspan", {class: "m"}, t, method + " "); el("tspan", {}, t, path);
+    last = base - 2; base += 18;
+  }
+  let cx = n.x + 16, cy = last + 10;
+  for (const [device, label] of n.chips || []) {
+    const chip = el("g", {class: "chip " + device}, g);
+    const rect = el("rect", {x: cx, y: cy, height: 25}, chip);
+    const text = el("text", {x: cx + 8, y: cy + 17.5}, chip, device.toUpperCase() + " · " + label);
+    const width = text.getComputedTextLength() + 16;
+    if (cx + width > n.x + n.w - 12 && cx > n.x + 16) {
+      cx = n.x + 16; cy += 30;
+      rect.setAttribute("x", cx); rect.setAttribute("y", cy); text.setAttribute("x", cx + 8); text.setAttribute("y", cy + 17.5);
+    }
+    rect.setAttribute("width", width);
+    cx += width + 8; last = cy + 25;
+  }
+  if (auto) { n.h = Math.round(last - n.y + (n.chips ? 12 : 16)); box.setAttribute("height", n.h); rightY += n.h + RIGHT.gap; }
+  if (n.p) {
+    const tab = el("g", {class: "tab " + n.p}, g), label = el("text", {y: n.y + 3.8}, tab, PROVIDERS[n.p].tab);
+    const tw = label.getComputedTextLength() + 18, tx = n.x + n.w - tw - 12;
+    tab.prepend(el("rect", {x: tx, y: n.y - 9, width: tw, height: 18}));
+    label.setAttribute("x", tx + 9);
+  }
+  if (n.live) liveDots[n.live] = el("circle", {class: "live", cx: n.x + n.w - 16, cy: n.y + 26, r: 6}, g);
+}
+const BUS = [834, 470, 862];
+for (const [id, key] of [["chatqna", "r-chat"], ["audio-analyzer", "r-audio"], ["tts", "r-tts"], ["alert-agent", "r-alert"], ["metrics", "r-metrics"]]) {
+  const n = NODES[id];
+  EDGES.push([key, "rest", "backend", id, `M${BUS[0]} ${BUS[1]}H${BUS[2]}V${n.y + 38}H${n.x - 2}`, "", 0, 0]);
+}
+const H = Math.max(rightY - RIGHT.gap + 18, 640);
+svg.setAttribute("viewBox", `0 0 1240 ${H}`);
+const LANES = [
+  [14, 14, 832, 204, "Video"], [14, 230, 832, 168, "Events & evidence"],
+  [14, 406, 832, H - 420, "Operator & application"], [876, 14, 350, H - 28, "Open Edge Platform AI services"],
+];
+for (const [x, y, w, h, name] of LANES) {
+  const lane = el("g", {class: "lane"}, document.getElementById("lanes"));
+  el("rect", {x, y, width: w, height: h, rx: 14}, lane);
+  el("text", {x: x + 14, y: y + 22}, lane, name);
+}
+el("text", {class: "bus", x: 0, y: 0, transform: `translate(855 ${H / 2 + 20}) rotate(-90)`, "text-anchor": "middle"}, document.getElementById("lanes"), "REST");
+for (const [id, kind, from, to, d, label, lx, ly, anchor = "middle", both] of EDGES) {
+  const g = el("g", {class: "edge " + kind, "data-edge": id, "data-from": from, "data-to": to}, document.getElementById("edges"));
+  const attrs = {d, "marker-end": "url(#arrow)"};
+  if (both) attrs["marker-start"] = "url(#arrow)";
+  if (kind === "turn" && !both) delete attrs["marker-end"];
+  el("path", attrs, g);
+  el("path", {d, class: "flow"}, g);
+  if (label) el("text", {x: lx, y: ly, "text-anchor": anchor}, g, label);
+}
+const live = {};
+const esc = (text) => String(text).replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"})[c]);
+const byProvider = (key) => Object.keys(NODES).filter((id) => NODES[id].p === key);
+for (const key of Object.keys(PROVIDERS)) document.getElementById("count-" + key).textContent = byProvider(key).length;
+const apiList = (apis) => `<ul class="ep-list">${apis.map((a) => {
+  const [call, why] = a.split(" — "), m = call.match(/^([A-Z·\s]+?)\s(\/.*)$/);
+  return `<li>${m ? `<span class="method">${esc(m[1])}</span><code>${esc(m[2])}</code>` : esc(call)}${why ? ` — ${esc(why)}` : ""}</li>`;
+}).join("")}</ul>`;
+document.querySelector("#oep-apis tbody").innerHTML = byProvider("oep").map((id) => {
+  const n = NODES[id];
+  return `<tr data-oep="${id}"><td class="oep-name"><strong>${esc(n.t === "DL Streamer" ? "DL Streamer Pipeline Server" : n.t)}</strong>`
+    + `<a href="${SRC + n.src}">${esc(n.src)}</a></td><td>${apiList(n.apis)}</td><td>${esc(n.runs || "—")}</td><td><code>${esc(n.image)}</code></td></tr>`;
+}).join("");
+function focus(nodes, edges) {
+  svg.classList.toggle("focus", !!nodes);
+  svg.querySelectorAll(".node").forEach((g) => g.classList.toggle("on", !!nodes && nodes.has(g.dataset.node)));
+  svg.querySelectorAll(".edge").forEach((g) => g.classList.toggle("on", !!edges && edges.has(g.dataset.edge)));
+  document.querySelectorAll("tr[data-service], tr[data-oep]").forEach((row) => row.classList.toggle("on",
+    !!nodes && nodes.size === 1 && nodes.has(row.dataset.service || row.dataset.oep)));
+}
+function press(attr, key) {
+  toggles.forEach((b) => b.setAttribute("aria-pressed", String(b.getAttribute(attr) === key)));
+}
+let selected = null;
+const clearButton = `<button type="button" class="clear" data-clear>✕ Clear selection</button>`;
+function showNode(id) {
+  const n = NODES[id];
+  selected = id;
+  const edges = EDGES.filter((e) => e[2] === id || e[3] === id);
+  focus(new Set([id, ...edges.flatMap((e) => [e[2], e[3]])]), new Set(edges.map((e) => e[0])));
+  press("data-none", "");
+  const state = n.live && live[n.live];
+  card.innerHTML = clearButton + `<div class="kind">${esc(n.p ? PROVIDERS[n.p].name + " · " + n.kind : n.kind)}</div>`
+    + `<h3>${esc(n.t === "DL Streamer" ? "DL Streamer Pipeline Server" : n.t)}</h3>`
+    + (state ? `<span class="status ${state.cls}">${esc(state.text)}</span>` : "")
+    + `<p>${esc(n.role)}</p><dl>`
+    + (n.apis.length ? `<dt>${n.p === "oep" ? "Stock APIs used" : "Interfaces"}</dt><dd>${apiList(n.apis)}</dd>` : "")
+    + (n.runs ? `<dt>Model and device</dt><dd>${esc(n.runs)}</dd>` : "")
+    + (n.image ? `<dt>Image</dt><dd><code>${esc(n.image)}</code></dd>` : "")
+    + (n.src ? `<dt>Source</dt><dd><a href="${SRC + n.src}">${esc(n.src)}</a></dd>` : "") + `</dl>`;
+}
+function showScenario(key) {
+  const sc = SCENARIOS[key], edges = new Set(sc.edges);
+  focus(new Set(EDGES.filter((e) => edges.has(e[0])).flatMap((e) => [e[2], e[3]])), edges);
+  press("data-scenario", key);
+  selected = null;
+  card.innerHTML = clearButton + `<div class="kind">Flow</div><h3>${esc(sc.t)}</h3><ol>${sc.steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>`;
+}
+function showProvider(key) {
+  const ids = byProvider(key), pv = PROVIDERS[key];
+  focus(new Set(ids), new Set(EDGES.filter((e) => key !== "oss" && (ids.includes(e[2]) || ids.includes(e[3])) && e[1] === "rest").map((e) => e[0])));
+  press("data-provider", key);
+  selected = null;
+  card.innerHTML = clearButton + `<div class="kind">Built from</div><h3>${ids.length} ${esc(pv.title)}</h3><p>${esc(pv.text)}</p>`
+    + `<dl>${ids.map((id) => `<dt>${esc(NODES[id].t === "DL Streamer" ? "DL Streamer Pipeline Server" : NODES[id].t)}</dt>`
+      + `<dd><code>${esc(NODES[id].image)}</code></dd>`).join("")}</dl>`;
+}
+function showIntro() {
+  selected = null;
+  focus(null, null);
+  press("data-none", "");
+  const count = (key) => byProvider(key).length;
+  card.innerHTML = `<div class="kind">Overview</div><h3>${count("oep")} Open Edge Platform microservices</h3>
+    <p>Blue boxes are stock Intel Open Edge Platform services; each shows the API endpoints this application calls.
+    ${count("oss")} open-source components carry video, TURN, MQTT and TLS. The Backend is the only custom code.</p>
+    <p class="hint">Tap a box for its role, model, device, image, source and APIs, or follow a flow above. Tap the box again, or anywhere outside it, to return here.</p>
+    <p class="hint">Dots show live status from the running services.</p>`;
+}
+const toggles = [...document.querySelectorAll("[data-scenario], [data-provider]")];
+toggles.forEach((b) => b.addEventListener("click", () => b.getAttribute("aria-pressed") === "true" ? showIntro()
+  : b.dataset.scenario ? showScenario(b.dataset.scenario) : showProvider(b.dataset.provider)));
+// A tap on a box selects it (or clears it if already selected); a tap anywhere else that is not a control clears.
+document.addEventListener("click", (event) => {
+  const node = event.target.closest(".node");
+  if (node) return selected === node.dataset.node ? showIntro() : showNode(node.dataset.node);
+  if (svg.classList.contains("focus") && !event.target.closest("#card, a, button, summary, input, select, textarea")) showIntro();
+});
+svg.addEventListener("keydown", (event) => {
+  const node = event.target.closest(".node");
+  if (node && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); selected === node.dataset.node ? showIntro() : showNode(node.dataset.node); }
+});
+document.addEventListener("keydown", (event) => { if (event.key === "Escape") showIntro(); });
+card.addEventListener("click", (event) => { if (event.target.closest("[data-clear]")) showIntro(); });
+const LABELS = {ready: "Ready", starting: "Starting", unavailable: "Unavailable", mismatch: "Different model or device"};
+async function refreshLive() {
+  try {
+    const response = await fetch("/api/models", {cache: "no-store"});
+    if (!response.ok) throw new Error(response.status);
+    for (const m of (await response.json()).data.models) {
+      const device = m.runtime_device ? m.runtime_device + " (reported)" : m.configured_device ? m.configured_device + " (configured)" : "";
+      live[m.id] = {cls: m.status === "ready" ? "ready" : ["unavailable", "mismatch"].includes(m.status) ? "bad" : "",
+        text: (LABELS[m.status] || "Status unknown") + (device ? " · " + device : "")};
+      const dot = liveDots[m.id];
+      if (dot) { dot.setAttribute("class", "live " + live[m.id].cls); dot.replaceChildren(); el("title", {}, dot, live[m.id].text); }
+    }
+  } catch (error) { /* Status dots stay grey while the Backend is unreachable. */ }
+}
+showIntro();
+refreshLive();
+setInterval(refreshLive, 15000);
+</script>
+</body>
+</html>

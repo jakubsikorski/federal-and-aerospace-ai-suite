@@ -4898,6 +4898,22 @@ def test_camera_api_envelopes():
         state.ingest.conn.close()
 
 
+def test_architecture_page_names_every_deployed_service():
+    import re
+    import yaml
+
+    repo = Path(__file__).resolve().parent.parent
+    compose = yaml.safe_load((repo / "compose/handheld-multi-modal.yaml").read_text())
+    page = (repo / "backend/app/static/architecture.html").read_text()
+    listed = set(re.findall(r'data-service="([^"]+)"', page))
+    assert listed == set(compose["services"]), (listed ^ set(compose["services"]))
+    for service in compose["services"].values():
+        image = service["image"].split("@")[0]
+        if not image.startswith("handheld/"):
+            assert image in page, image
+    assert 'href="/architecture.html"' in (repo / "backend/app/static/index.html").read_text()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

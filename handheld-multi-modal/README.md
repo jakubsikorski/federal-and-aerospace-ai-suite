@@ -84,14 +84,32 @@ APIs. Details and versions: [COMPONENTS.md](COMPONENTS.md).
 
 ## Architecture
 
-```text
-Cameras ─RTSP─> MediaMTX ─> DLSPS (YOLO26s, NPU) ─WHIP─> MediaMTX ─WebRTC─> UI
-                              ├─ MQTT observations ─> Backend
-                              └─ evidence crops ───> Backend
-Chat Q&A · Whisper · SpeechT5 · Alert Agent · Metrics ─> Backend ─HTTPS/SSE─> UI
-```
+[![Architecture: Intel Open Edge Platform microservices (blue), open-source infrastructure and the application Backend](docs/images/architecture.svg)](docs/images/architecture.svg)
+
+Blue boxes are stock Intel Open Edge Platform microservices, run unmodified;
+each lists the endpoints the Backend calls. Select the diagram to open it full
+size. The running app has an interactive version of this page (see below).
+
+| Open Edge Platform component | Endpoints called | Source |
+| --- | --- | --- |
+| DL Streamer Pipeline Server | `POST /pipelines/user_defined_pipelines/{name}`, `GET /pipelines/status`, `GET /pipelines/{id}/status`, `DELETE /pipelines/{id}` | [microservices/dlstreamer-pipeline-server](https://github.com/open-edge-platform/edge-ai-libraries/tree/c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9/microservices/dlstreamer-pipeline-server) |
+| Chat Q&A Core | `POST /chat`, `GET`/`POST`/`DELETE /documents`, `GET /model`, `GET /health` | [sample-applications/chat-question-and-answer-core](https://github.com/open-edge-platform/edge-ai-libraries/tree/c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9/sample-applications/chat-question-and-answer-core) |
+| Audio Analyzer | `POST /v1/audio/transcriptions`, `GET /health` | [microservices/audio-analyzer](https://github.com/open-edge-platform/edge-ai-libraries/tree/c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9/microservices/audio-analyzer) |
+| Text To Speech | `POST /v1/audio/speech`, `GET /v1/model-info` | [microservices/text-to-speech](https://github.com/open-edge-platform/edge-ai-libraries/tree/c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9/microservices/text-to-speech) |
+| Alert Agent | `POST /api/v1/actions/execute`, `GET /api/v1/events` (SSE), `GET /api/v1/health` | [microservices/alert-agent-service](https://github.com/open-edge-platform/edge-ai-libraries/tree/c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9/microservices/alert-agent-service) |
+| Metrics Manager | `GET /api/v1/metrics/latest` | [microservices/metrics-manager](https://github.com/open-edge-platform/edge-ai-libraries/tree/c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9/microservices/metrics-manager) |
+| Model Download (setup only) | `POST /api/v1/models/download`, `GET /api/v1/jobs/{id}` | [microservices/model-download](https://github.com/open-edge-platform/edge-ai-libraries/tree/c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9/microservices/model-download) |
+
+Open-source infrastructure: MediaMTX (video relay; the Backend also uses its
+`/v3` control API for camera paths and sessions), Coturn, Mosquitto and nginx.
 
 The Backend never sits in the video path and never edits pipelines at runtime.
+The running app serves an **Architecture** page (`/architecture.html`, linked
+from the Models & devices strip): an interactive diagram that tags each
+service as Open Edge Platform, open source or application, shows the Open Edge
+Platform API endpoints the Backend calls, live status, step-by-step flows (live
+video, detection to alert, voice and mission questions), and the models,
+devices, images and interfaces used.
 
 ## Documentation
 

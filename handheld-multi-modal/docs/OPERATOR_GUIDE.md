@@ -69,6 +69,29 @@ kiosk mode) on the handheld.
 7. **Models & devices** — each model with its device and status (Vision on
    NPU, LLM and Transcription on GPU, Speech on CPU). Click one for details.
    Transcription uses whisper-medium with FP16 weights; Speech uses the voice Miles.
+   **Architecture** at the left end opens the architecture page (below) in a new
+   tab, so live video keeps running; **Back to app** closes that tab.
+
+### Architecture page
+
+![Architecture](images/guide-architecture.jpg)
+
+A diagram of every service and how data moves between them, coloured by
+interface (RTSP, WebRTC WHIP/WHEP, TURN, MQTT, evidence images, HTTPS/REST/SSE).
+Each box is tagged by origin: **Intel Open Edge Platform** boxes have a solid
+blue title bar, are the stock Intel microservices and list the API endpoints the
+application calls; grey
+**Open source** boxes are the media, messaging and TLS infrastructure; the
+**Application** Backend is the only custom code. The three counters at the top
+highlight each group. Tap a service to highlight its connections and show its
+role, APIs, model, device, image and source; tap it again or tap anywhere
+outside the boxes (or press Escape) to return to the full view. Dots show live
+status.
+**Follow a flow** highlights a whole path step by step: live video, detection to
+alert, voice question or mission question. Below the diagram, **Where each model
+runs** groups the models by NPU, GPU and CPU, **Open Edge Platform APIs used**
+lists every endpoint called with source links, and the collapsed tables list
+every service image and interface. **Back to app** returns.
 
 ### Model details
 

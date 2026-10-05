@@ -148,6 +148,11 @@
   #away-summary button { margin-left: auto; }
   #model-strip { display: flex; align-items: center; gap: 12px; padding: 4px 16px; border-bottom: 1px solid var(--line); }
   #model-strip > strong { font-size: 13px; white-space: nowrap; }
+  #architecture-link { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; min-height: 46px; padding: 3px 14px 3px 10px; border: 1px solid #6cbabb; border-radius: 9px; background: var(--selected); color: #dcfffc; text-decoration: none; white-space: nowrap; }
+  #architecture-link:hover, #architecture-link:focus-visible { border-color: var(--accent); background: #22606f; }
+  #architecture-link svg { flex: 0 0 auto; }
+  #architecture-link strong { display: block; font-size: 13px; font-weight: 600; }
+  #architecture-link small { display: block; font-size: 11px; color: #a9e9e4; }
   #model-buttons { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; flex: 1; min-width: 0; }
   .model-button { min-height: 46px; min-width: 0; padding: 3px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); text-align: left; }
   .model-button strong { display: block; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -647,6 +652,7 @@
   </header>
 
   <section id="model-strip" aria-label="Models and devices">
+    <a id="architecture-link" href="/architecture.html" target="_blank" title="Opens in a new tab; live video keeps running"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="6" rx="1.5"/><rect x="14" y="3" width="7" height="6" rx="1.5"/><rect x="8.5" y="15" width="7" height="6" rx="1.5"/><path d="M6.5 9v3h11V9M12 12v3"/></svg><span><strong>Architecture</strong><small>Services &amp; APIs</small></span></a>
     <strong>Models &amp; devices</strong>
     <div id="model-buttons"></div>
   </section>
