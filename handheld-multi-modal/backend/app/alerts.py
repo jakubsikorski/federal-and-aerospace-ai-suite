@@ -442,8 +442,13 @@ class Alerts:
                  stamp, stamp, track_id, match_id))
             return incident_id, True, False
         if row["state"] == "open":
-            # An unhandled incident is announced again only after a quiet spell.
-            notify = now - _epoch(row["last_match_utc"]) >= rule["cooldown_seconds"]
+            # A new object on an unhandled incident is announced again once the
+            # cooldown has passed since the last announcement. Counting from the
+            # last match kept busy scenes silent: every sighting restarted it.
+            head = conn.execute("SELECT matched_utc FROM rule_matches WHERE match_id=?",
+                                (row["head_match_id"],)).fetchone()
+            announced = _epoch(head[0]) if head else _epoch(row["last_match_utc"])
+            notify = now - announced >= rule["cooldown_seconds"]
             reopen = False
         else:
             # Acknowledged means "seen so far": the next sighting needs attention
@@ -512,13 +517,13 @@ class Alerts:
         return ((x + w / 2.0) / width, (y + h) / height)
 
     def _touches_frame(self, entry: dict) -> bool:
-        if entry.get("object_touches_frame") is True:
-            return True
+        # Only a box cut by the bottom edge hides the feet the zone test uses;
+        # objects at the side or top edges still have a reliable foot point.
         rect = entry.get("detection_rect")
         height = entry.get("frame_height")
         if (not isinstance(rect, (list, tuple)) or len(rect) != 4
                 or isinstance(height, bool) or not isinstance(height, (int, float)) or height <= 0):
-            return False
+            return entry.get("object_touches_frame") is True
         try:
             return (float(rect[1]) + float(rect[3])) / float(height) >= 0.99
         except (TypeError, ValueError):

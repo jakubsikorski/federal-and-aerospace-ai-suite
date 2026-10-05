@@ -145,8 +145,11 @@ Stays too long offers 10 seconds, 30 seconds, 1 minute or a custom duration.
 Each tracked object has its own dwell timer; times from different objects never add up.
 Area defaults to the whole view. Draw an area restricts matching to a polygon on one
 camera; after three corners a new corner joins the nearest edge, and an outline that
-crosses itself cannot be saved; Remove area restores the whole view after saving. More options contains
-confidence, active hours and speech settings. Read the preview and Create alert.
+crosses itself cannot be saved; Remove area restores the whole view after saving. Any
+camera can be chosen; the area is drawn on that camera's latest frame. More options contains
+confidence, Announce again after, active hours and speech settings. Read the preview and Create alert.
+A new alert shows a banner over the video until it is viewed or acknowledged, and its area
+pulses amber on the video and on the All cameras tile.
 Existing rules can be edited, turned off/on or deleted. Save changes completes edits.
 Switch to Appears to remove dwell. Missing qualifying observations can reset dwell;
 tracking does not establish a person's identity across cameras. Chat explains these

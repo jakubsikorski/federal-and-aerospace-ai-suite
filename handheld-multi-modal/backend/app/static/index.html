@@ -214,7 +214,6 @@
   #grid-page-label[data-alert="true"] { color: var(--warn); }
   #latency-badge { position: absolute; left: 10px; top: 8px; display: none; padding: 4px 7px; border-radius: 6px; background: #2a3039e8; font-size: 12px; }
   #latency-badge.show { display: block; }
-  #zone-overlay { position: absolute; inset: 0; pointer-events: none; }
   #zone-editor { position: fixed; inset: 0; z-index: 30; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 10px; padding: 12px; background: #141920; }
   #zone-editor[hidden] { display: none; }
   #zone-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 2px 4px; }
@@ -265,8 +264,20 @@
   #alert-list .incident-actions select { height: 48px; min-height: 48px; width: auto; font-size: 12px; padding: 0 4px; }
   .camera[data-alerts]::after { content: attr(data-alerts); position: absolute; top: 3px; right: 3px; min-width: 16px; padding: 0 4px; border-radius: 9px; background: var(--warn); color: #0e192a; font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; }
   .camera[data-alerts] { padding-right: 30px; }
-  #alert-toast { position: fixed; left: 16px; bottom: 16px; z-index: 50; max-width: 360px; min-height: 44px; padding: 10px 14px; border: 1px solid var(--warn); border-radius: 8px; background: #3e3527; color: var(--text); font-size: 13px; text-align: left; cursor: pointer; box-shadow: 0 4px 16px #0008; }
+  /* Over the top of the live video (placed by placeAlertBanner); bottom-left when the video is not on screen. */
+  #alert-toast { position: fixed; left: 16px; bottom: 16px; z-index: 50; display: flex; align-items: center; gap: 6px; max-width: 560px; padding: 3px; border: 2px solid var(--warn); border-radius: 10px; background: #3e3527f2; color: var(--text); box-shadow: 0 4px 16px #0008; }
   #alert-toast[hidden] { display: none; }
+  #alert-toast button { min-height: 44px; border-radius: 8px; font-size: 14px; }
+  #alert-toast-view { flex: 1 1 auto; min-width: 0; padding: 4px 10px; border: 0; background: none; color: var(--text); font-weight: 700; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  #alert-toast-ack { flex: 0 0 auto; padding: 4px 14px; border: 1px solid var(--warn); background: var(--panel); color: var(--text); }
+  #video-wrap[data-alert="true"]::after { content: ""; position: absolute; inset: 0; border: 3px solid var(--warn); border-radius: 2px; pointer-events: none; }
+  .zone-svg { position: absolute; pointer-events: none; }
+  .zone-svg polygon { fill: rgba(153,197,245,.14); stroke: #99c5f5; stroke-width: 2px; vector-effect: non-scaling-stroke; }
+  .zone-svg polygon.alerting { fill: rgba(244,199,121,.3); stroke: var(--warn); stroke-width: 4px; }
+  @media (prefers-reduced-motion: no-preference) {
+    .zone-svg polygon.alerting, #video-wrap[data-alert="true"]::after { animation: alert-pulse 1s ease-in-out infinite alternate; }
+  }
+  @keyframes alert-pulse { from { opacity: 1; } to { opacity: .35; } }
   #alert-list .dispatch { font-weight: 600; }
   #alert-list .dispatch[data-state="undelivered"], #alert-list .dispatch[data-state="retrying"] { color: var(--warn); }
   #alert-list .dispatch[data-state="delivered"] { color: var(--good); }
@@ -695,7 +706,7 @@
         </div>
         <details id="rule-advanced"><summary>More options <small>Confidence, repeat, active hours, speech</small></summary><div>
           <label>Minimum confidence<input id="rule-confidence" type="number" min="0" max="1" step="0.05" placeholder="Any confidence"></label>
-          <label title="An open alert is announced again only when the object is seen after this many seconds without a sighting. After Acknowledge, the next sighting is announced at once.">Repeat after quiet period (s)<input id="rule-cooldown" type="number" min="5" max="3600" step="1" value="30"></label>
+          <label title="While an alert is open, a new object is announced again once this many seconds have passed since the last announcement. After Acknowledge, the next sighting is announced at once.">Announce again after (s)<input id="rule-cooldown" type="number" min="5" max="3600" step="1" value="30"></label>
           <label>Active from<input id="rule-active-start" type="time"></label>
           <label>Active to<input id="rule-active-end" type="time"></label>
           <label class="rule-speak"><input id="rule-speak" type="checkbox" checked> Announce by speech</label>
@@ -737,7 +748,7 @@
       </form>
     </div>
   </aside>
-  <button id="alert-toast" type="button" hidden></button>
+  <div id="alert-toast" role="alert" hidden><button id="alert-toast-view" type="button"></button><button id="alert-toast-ack" type="button">Acknowledge</button></div>
   <main id="workspace">
     <section id="video-panel" class="panel" aria-labelledby="video-heading">
       <div class="panel-head">
@@ -747,7 +758,7 @@
         <video id="video" autoplay muted playsinline></video>
         <div id="camera-grid" aria-label="All cameras video grid"></div>
         <div id="latency-badge"></div>
-        <svg id="zone-overlay" aria-hidden="true"></svg>
+        <svg id="zone-overlay" class="zone-svg" aria-hidden="true"></svg>
         <button id="video-fullscreen" class="quiet-button" type="button" aria-label="Enter video fullscreen" aria-pressed="false">Fullscreen</button>
         <div id="video-note" role="status">Select a camera.</div>
       </div>
@@ -1339,13 +1350,16 @@ function renderCameraGrid() {
     const video = document.createElement("video"); video.autoplay = true; video.muted = true; video.playsInline = true;
     const name = document.createElement("span"); name.textContent = stream.display_name;
     const note = document.createElement("small"); note.textContent = "Connecting…";
-    tile.append(video, name, note); tile.onclick = () => selectCamera(stream.stream_id); grid.insertBefore(tile, grid.children[index] || null);
+    const zones = document.createElementNS("http://www.w3.org/2000/svg", "svg"); zones.classList.add("zone-svg"); zones.setAttribute("aria-hidden", "true");
+    video.addEventListener("resize", renderZoneOverlay);
+    tile.append(video, zones, name, note); tile.onclick = () => selectCamera(stream.stream_id); grid.insertBefore(tile, grid.children[index] || null);
     attachGridWhep(stream, video, note);
   }
   $("grid-pager").hidden = gridPageCount() <= 1;
   $("grid-prev").disabled = state.gridPage <= 0; $("grid-next").disabled = state.gridPage >= gridPageCount() - 1;
   $("grid-page-label").textContent = total ? `${start + 1}–${Math.min(start + 4, total)} of ${total}` : "No cameras";
   markGridPages();
+  renderZoneOverlay();
 }
 async function attachGridWhep(stream, video, note, retry = false) {
   const previous = state.gridWheps.get(stream.stream_id);
@@ -1953,6 +1967,7 @@ function incidentTitle(incident) {
 
 async function viewIncident(incident) {
   incident = state.incidents.find((item) => item.incident_id === incident.incident_id) || incident;
+  state.bannerAlerts.delete(incident.incident_id); renderAlertBanner();
   closeMission(false);
   closeRules(false);
   closeCameras(false);
@@ -2050,23 +2065,53 @@ async function refreshIncidents() {
   renderAlerts();
 }
 
+// New or re-announced alerts stay in the banner until the operator views or
+// acknowledges them, or the alert stops needing attention. Alerts already open
+// when the page loads are in the Alerts list, not the banner.
+state.bannerAlerts = new Set();
 function announceIncidents() {
   const open = state.incidents.filter((incident) => incident.state === "open");
-  const heads = new Set(open.map((incident) => incident.head_match_id));
-  const first = state.announced === null;
-  const fresh = first ? [] : open.filter((incident) => !state.announced.has(incident.head_match_id));
-  state.announced = heads;
-  const toast = $("alert-toast");
-  if (!open.length) toast.hidden = true;
-  // An expanded Alerts list already shows the new row; a toast there would cover its buttons.
-  if (!fresh.length || $("alerts").open) return;
-  const incident = fresh[0];
-  toast.textContent = incidentTitle(incident) + " · " + incident.rule_name + " — select to view";
-  toast.onclick = () => { toast.hidden = true; viewIncident(incident); };
-  toast.hidden = false;
-  clearTimeout(state.toastTimer);
-  state.toastTimer = setTimeout(() => { toast.hidden = true; }, 8000);
+  const fresh = state.announced === null ? [] : open.filter((incident) => !state.announced.has(incident.head_match_id));
+  state.announced = new Set(open.map((incident) => incident.head_match_id));
+  for (const incident of fresh) state.bannerAlerts.add(incident.incident_id);
+  // A rule made on another device is unknown here until fetched; its area is drawn after.
+  const known = new Set((state.rules?.rules || []).map((rule) => rule.rule_id));
+  if (fresh.some((incident) => incident.rule_id && !known.has(incident.rule_id))) refreshRules();
+  const openIds = new Set(open.map((incident) => incident.incident_id));
+  for (const id of state.bannerAlerts) if (!openIds.has(id)) state.bannerAlerts.delete(id);
+  renderAlertBanner();
+  renderZoneOverlay();
 }
+function renderAlertBanner() {
+  const toast = $("alert-toast");
+  const waiting = state.incidents.filter((incident) => state.bannerAlerts.has(incident.incident_id));
+  toast.hidden = !waiting.length;
+  if (!waiting.length) return;
+  const incident = waiting[0], more = waiting.length - 1;
+  $("alert-toast-view").textContent = "⚠ " + incidentTitle(incident) + " · " + incident.rule_name
+    + (more ? " · +" + more + " more" : "");
+  $("alert-toast-view").title = "View this alert";
+  $("alert-toast-view").onclick = () => { state.bannerAlerts.delete(incident.incident_id); renderAlertBanner(); viewIncident(incident); };
+  $("alert-toast-ack").onclick = () => { state.bannerAlerts.delete(incident.incident_id); renderAlertBanner(); incidentAction(incident, "acknowledge"); };
+  placeAlertBanner();
+}
+// The banner is fixed outside <main> so it stays usable while the compact
+// Assistant makes the workspace inert; it is placed over the top of the video.
+const alertBannerHome = [$("alert-toast").parentElement, $("alert-toast").nextElementSibling];
+function placeAlertBanner() {
+  const toast = $("alert-toast");
+  if (toast.hidden) return;
+  const wrap = $("video-wrap"), box = wrap.getBoundingClientRect();
+  if (document.fullscreenElement === wrap) {
+    if (toast.parentElement !== wrap) wrap.append(toast);
+  } else if (toast.parentElement !== alertBannerHome[0]) alertBannerHome[0].insertBefore(toast, alertBannerHome[1]);
+  const visible = box.width >= 320 && box.height >= 120 && box.top >= 0 && box.bottom <= innerHeight
+    && document.elementFromPoint(box.left + box.width / 2, box.top + 30)?.closest("#video-wrap, #alert-toast");
+  Object.assign(toast.style, visible
+    ? {left: box.left + 8 + "px", top: box.top + 8 + "px", bottom: "auto", maxWidth: Math.min(560, box.width - 120) + "px"}
+    : {left: "", top: "", bottom: "", maxWidth: ""});
+}
+document.addEventListener("fullscreenchange", placeAlertBanner);
 
 // Browser-side alert timing on the Backend clock (server_time corrects for a
 // tablet clock that differs from the device), for the latency line.
@@ -2813,7 +2858,9 @@ $("rules-toggle").onclick = async () => {
     closeAssistant(false);
     closeCameras(false);
     await refreshRules();
-    if (!state.editingRule) {
+    // An unsaved camera choice or area survives closing the panel and
+    // switching the live camera; otherwise the form follows the live camera.
+    if (!state.editingRule && !state.ruleCameraPicked) {
       const camera = state.selected === "all" ? "" : state.selected;
       if ($("rule-camera").value !== camera) state.zoneDraft = null;
       $("rule-camera").value = camera;
@@ -3186,29 +3233,40 @@ function updateZoneSummary() {
   updateRulePreview();
   $("rule-draw-zone").disabled = !$("rule-camera").value;
 }
-$("rule-camera").addEventListener("change", () => { state.zoneDraft = null; updateZoneSummary(); });
+$("rule-camera").addEventListener("change", () => { state.zoneDraft = null; state.ruleCameraPicked = true; updateZoneSummary(); });
 
-function videoContentRect() {
-  const video = $("video"), box = $("video-wrap").getBoundingClientRect();
+// Draws a camera's rule zones over a video shown with object-fit: contain.
+// Zones whose rule has an alert needing attention are highlighted.
+function drawZones(svg, streamId, video, box) {
   const vw = video.videoWidth || 16, vh = video.videoHeight || 9, scale = Math.min(box.width / vw, box.height / vh);
   const width = vw * scale, height = vh * scale;
-  return {left:(box.width - width) / 2, top:(box.height - height) / 2, width, height};
+  const alerting = new Set(state.incidents.filter(i => i.state === "open" && i.stream_id === streamId).map(i => i.rule_id));
+  const zones = streamId ? (state.rules?.rules || []).filter(rule => rule.stream_id === streamId && rule.zone?.points?.length)
+    .map(rule => [rule.zone.points.map(p => p.join(",")).join(" "), alerting.has(rule.rule_id)]) : [];
+  Object.assign(svg.style, {left:(box.width - width) / 2 + "px", top:(box.height - height) / 2 + "px", width:width + "px", height:height + "px"});
+  // Rebuilding restarts the highlight animation, so only redraw on change.
+  const signature = JSON.stringify(zones);
+  if (svg.dataset.signature === signature) return;
+  svg.dataset.signature = signature;
+  svg.setAttribute("viewBox", "0 0 1 1"); svg.setAttribute("preserveAspectRatio", "none");
+  svg.replaceChildren(...zones.map(([points, alert]) => {
+    const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+    poly.setAttribute("points", points);
+    if (alert) poly.classList.add("alerting");
+    return poly;
+  }));
 }
 function renderZoneOverlay() {
-  const svg = $("zone-overlay"); if (!svg) return;
-  svg.replaceChildren();
-  if (state.selected === "all") return;
-  const rect = videoContentRect();
-  Object.assign(svg.style, {left:rect.left + "px", top:rect.top + "px", width:rect.width + "px", height:rect.height + "px"});
-  svg.setAttribute("viewBox", "0 0 1 1"); svg.setAttribute("preserveAspectRatio", "none");
-  for (const rule of state.rules?.rules || []) {
-    if (rule.stream_id !== state.selected || !rule.zone?.points?.length) continue;
-    const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-    poly.setAttribute("points", rule.zone.points.map(p => p.join(",")).join(" "));
-    poly.setAttribute("fill", "rgba(153,197,245,.14)"); poly.setAttribute("stroke", "#99c5f5"); poly.setAttribute("stroke-width", ".01");
-    svg.append(poly);
+  const svg = $("zone-overlay"), wrap = $("video-wrap"); if (!svg) return;
+  const single = state.selected && state.selected !== "all";
+  drawZones(svg, single ? state.selected : null, $("video"), wrap.getBoundingClientRect());
+  wrap.dataset.alert = String(!!single && state.incidents.some(i => i.state === "open" && i.stream_id === state.selected));
+  for (const tile of $("camera-grid").children) {
+    const zones = tile.querySelector(".zone-svg");
+    if (zones) drawZones(zones, tile.dataset.stream, tile.querySelector("video"), tile.getBoundingClientRect());
   }
 }
+$("video").addEventListener("resize", renderZoneOverlay);
 const ZONE_MAX = 5;
 function zoneCrosses(points) {
   const turn = (a, b, c) => Math.sign(Math.round(((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) * 1e12));
@@ -3278,20 +3336,26 @@ function zonePoint(event) {
 async function openZoneEditor() {
   const streamId = $("rule-camera").value;
   if (!streamId) { $("rules-status").textContent = "Choose one camera before drawing a zone."; return; }
-  if (state.selected !== streamId) selectCamera(streamId);
-  const video = $("video"), canvas = $("zone-canvas");
-  // Switching camera reconnects WHEP; wait briefly for its first frame.
-  if (!video.videoWidth) {
-    $("rules-status").textContent = "Waiting for a frame from this camera…";
-    for (let waited = 0; !video.videoWidth && waited < 8000 && !$("rules-panel").hidden; waited += 200)
-      await new Promise(r => setTimeout(r, 200));
-    if (state.selected !== streamId || $("rules-panel").hidden) return;
+  const name = cameraName(streamId), canvas = $("zone-canvas");
+  const noFrame = name + " has not sent a video frame yet. Check that the camera is on, then tap Draw an area again.";
+  // A grid tile already showing the camera gives a frame without switching the main view.
+  let video = [...$("camera-grid").children].find(tile => tile.dataset.stream === streamId)?.querySelector("video");
+  if (!video?.videoWidth) {
+    if (state.selected !== streamId) selectCamera(streamId);
+    video = $("video");
+    // Switching camera reconnects WHEP; give a slow stream time for its first frame.
+    if (!video.videoWidth) {
+      $("rules-status").textContent = "Waiting for a frame from " + name + "…";
+      for (let waited = 0; !video.videoWidth && waited < 20000 && !$("rules-panel").hidden; waited += 200)
+        await new Promise(r => setTimeout(r, 200));
+      if (state.selected !== streamId || $("rules-panel").hidden) return;
+    }
   }
-  if (!video.videoWidth || !video.videoHeight) { $("rules-status").textContent = "No live frame available yet for this camera."; return; }
+  if (!video.videoWidth || !video.videoHeight) { $("rules-status").textContent = noFrame; return; }
   $("rules-status").textContent = "";
   canvas.width = video.videoWidth; canvas.height = video.videoHeight;
   $("zone-stage").style.setProperty("--zone-aspect", String(video.videoWidth / video.videoHeight));
-  try { canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height); } catch (error) { $("rules-status").textContent = "No live frame available yet for this camera."; return; }
+  try { canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height); } catch (error) { $("rules-status").textContent = noFrame; return; }
   state.zoneBackup = state.zoneDraft ? {points: state.zoneDraft.points.map(p => [...p])} : null;
   state.zoneDraft = {points: (state.zoneDraft?.points || []).slice(0, ZONE_MAX).map(p => [...p])};
   state.zoneAdded = []; state.zoneNote = "";
@@ -3328,6 +3392,7 @@ for (const type of ["pointerup", "pointercancel"]) $("zone-stage").addEventListe
 function closeZoneEditor(save) {
   if ($("zone-editor").hidden) return;
   if (!save) state.zoneDraft = state.zoneBackup ?? null;
+  else state.ruleCameraPicked = true;
   state.dragZone = null; $("zone-editor").hidden = true; updateZoneSummary();
 }
 $("zone-undo").onclick = () => {
@@ -3358,7 +3423,7 @@ $("rule-form").onsubmit = async (event) => {
   };
   const editing = state.editingRule;
   if (!editing) {
-    await ruleMutation("/api/rules", "POST", fields);
+    if (await ruleMutation("/api/rules", "POST", fields)) state.ruleCameraPicked = false;
     return;
   }
   // A generated name follows the new object type/camera; a custom name is kept.
@@ -3717,6 +3782,7 @@ function sizeAssistant() {
   $("model-strip").inert = focused;
   $("lower").inert = focused;
   $("video-panel").inert = focused || $("workspace").classList.contains("resources-expanded");
+  requestAnimationFrame(placeAlertBanner);
 }
 window.visualViewport?.addEventListener("resize", sizeAssistant);
 async function openAssistant() {
@@ -4516,6 +4582,7 @@ window.addEventListener("resize", () => {
   if ($("workspace").classList.contains("resources-expanded")) sizeExpandedTelemetry();
   renderChart();
   renderZoneOverlay();
+  placeAlertBanner();
 });
 // Re-evaluate freshness even when the event stream stops delivering samples.
 setInterval(() => { renderTelemetry(); renderPresence(); }, 1000);
@@ -4523,6 +4590,7 @@ syncServerClock();
 setInterval(syncServerClock, 60000);
 
 refreshState().then(async () => {
+  refreshRules();
   await loadAssistantOptions();
   renderTracks(true);
   selectCamera(state.selected, true);

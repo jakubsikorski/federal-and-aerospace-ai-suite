@@ -2948,6 +2948,50 @@ def test_rule_options_validate_patch_clear_and_old_rows_load():
         alerts.close()
 
 
+def test_busy_scene_is_announced_again_after_the_cooldown():
+    from app import history
+    with tempfile.TemporaryDirectory() as tmp:
+        ing = _ingest(tmp)
+        said = _SaidArbiter()
+        alerts = _alerts(ing, str(Path(tmp) / "ingest.db"), said)
+        alerts.create(ing.conn, {"class_label": "person", "cooldown_seconds": 30})
+        now = time.time()
+        _observe(ing, "cam2", 1, start=now)
+        _observe(ing, "cam2", 2, start=now + 1)
+        assert len(said.said) == 1, said.said
+        # Sightings keep arriving (last match is recent), but the cooldown has
+        # passed since the announcement: the next new object is announced.
+        ing.conn.execute("UPDATE rule_matches SET matched_utc='2000-01-01T00:00:00Z' "
+                         "WHERE dispatch_state='pending'")
+        ing.conn.commit()
+        _observe(ing, "cam2", 3, start=now + 2)
+        assert len(said.said) == 2, "busy scene stayed silent past the cooldown"
+        _observe(ing, "cam2", 4, start=now + 3)
+        assert len(said.said) == 2, "a re-announcement restarts the cooldown"
+        (incident,) = history.incidents(ing.conn)
+        assert incident["match_count"] == 4 and incident["state"] == "open", incident
+        ing.conn.close()
+        alerts.close()
+
+
+def test_zone_rule_accepts_objects_touching_side_or_top_edges():
+    zone = {"points": [[0.3, 0.3], [0.7, 0.3], [0.7, 1.0], [0.3, 1.0]]}
+    with tempfile.TemporaryDirectory() as tmp:
+        ing = _ingest(tmp, cameras=("cam1",))
+        alerts = _alerts(ing, str(Path(tmp) / "ingest.db"))
+        alerts.create(ing.conn, {"class_label": "person", "zone": zone})
+        rect = {"frame_width": 100, "frame_height": 100}
+        # A tall, close person cut by the top edge: feet are inside the zone.
+        _observe(ing, "cam1", 1, detection_rect=[45, 0, 10, 50], object_touches_frame=True, **rect)
+        assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 1
+        # Cut by the bottom edge: the feet are not visible, so no match.
+        _observe(ing, "cam1", 2, start=1100.0, detection_rect=[45, 50, 10, 49.5],
+                 object_touches_frame=True, **rect)
+        assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 1
+        ing.conn.close()
+        alerts.close()
+
+
 def test_zone_hysteresis_and_frame_touching_ignore():
     zone = {"points": [[0.4, 0.4], [0.6, 0.4], [0.6, 0.6], [0.4, 0.6]]}
     with tempfile.TemporaryDirectory() as tmp:
@@ -2956,9 +3000,6 @@ def test_zone_hysteresis_and_frame_touching_ignore():
         alerts.create(ing.conn, {"class_label": "person", "zone": zone})
         rect = {"frame_width": 100, "frame_height": 100}
         _observe(ing, "cam1", 1, detection_rect=[70, 40, 10, 10], **rect)
-        assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 0
-        _observe(ing, "cam1", 2, detection_rect=[45, 40, 10, 10],
-                 object_touches_frame=True, **rect)
         assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 0
         _observe(ing, "cam1", 2, start=1000.2, detection_rect=[45, 40, 10, 10], **rect)
         assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 1
@@ -3181,9 +3222,13 @@ def test_alert_incidents_group_matches_and_follow_operator_actions():
         assert len(history.incidents(ing.conn)) == 2 and len(said.said) == 2
         cam1 = next(i for i in history.incidents(ing.conn) if i["stream_id"] == "cam1")
 
-        # A quiet spell before a new sighting re-announces an unhandled incident.
+        # Once the cooldown has passed since the announcement, a new sighting
+        # re-announces an unhandled incident.
         ing.conn.execute("UPDATE alert_incidents SET last_match_utc='2000-01-01T00:00:00Z' "
                          "WHERE incident_id=?", (incident["incident_id"],))
+        ing.conn.execute("UPDATE rule_matches SET matched_utc='2000-01-01T00:00:00Z' "
+                         "WHERE match_id=(SELECT head_match_id FROM alert_incidents "
+                         "WHERE incident_id=?)", (incident["incident_id"],))
         _observe(ing, "cam2", 4, start=now + 6)
         assert len(said.said) == 3 and said.said[-1][1] == "person on Camera 2.", said.said
 

@@ -358,6 +358,8 @@ def main():
             })()'''
             assert js('return window.eval(' + json.dumps(mission_error_check) + ')')
             click('#close-mission')
+            # Rule areas are drawn on the video and tiles without opening Manage alerts first.
+            assert js("return window.eval('Array.isArray(state.rules?.rules)')"), 'rules not loaded at startup'
             click('#rules-toggle')
             for _ in range(100):
                 if js("return document.getElementById('rule-list').textContent.includes('Person appears in any camera')"):
@@ -454,13 +456,17 @@ def main():
               })()`).then(done).catch(error=>done(String(error)));
             """)
             assert fixed_rules is True, fixed_rules
-            js("document.getElementById('rule-camera').value = 'cam2'; document.getElementById('rule-draw-zone').click()")
-            assert js("return document.getElementById('rules-status').textContent.includes('Waiting for a frame')")
-            time.sleep(8.6)
-            assert js("return document.getElementById('rules-status').textContent.includes('No live frame') && document.getElementById('zone-editor').hidden")
+            js("const c = document.getElementById('rule-camera'); c.value = 'cam2'; c.dispatchEvent(new Event('change')); document.getElementById('rule-draw-zone').click()")
+            assert js("return document.getElementById('rules-status').textContent.includes('Waiting for a frame from Camera 2')")
+            time.sleep(20.6)
+            assert js("return document.getElementById('rules-status').textContent.includes('Camera 2 has not sent a video frame') && document.getElementById('zone-editor').hidden")
             click('#close-rules')
-            # Light dismiss: a click elsewhere closes Rules, Escape closes Mission from anywhere.
+            # The operator's unsaved camera choice survives closing Rules and switching the live camera.
+            js("window.eval('selectCamera(\"cam1\")')")
             click('#rules-toggle')
+            assert js("return document.getElementById('rule-camera').value") == 'cam2', 'unsaved rule camera reset on reopen'
+            js("window.eval('state.ruleCameraPicked = false')")
+            # Light dismiss: a click elsewhere closes Rules, Escape closes Mission from anywhere.
             assert js("return !document.getElementById('rules-panel').hidden")
             js("document.getElementById('track-title').dispatchEvent(new PointerEvent('pointerdown', {bubbles: true}))")
             assert js("return document.getElementById('rules-panel').hidden"), 'outside click left Rules open'
@@ -536,11 +542,22 @@ def main():
               state.incidents = [{...state.incidents[0], head_match_id: "m9", match_count: 5}, ...state.incidents.slice(1)];
               renderAlerts();
               const shown = !$("alert-toast").hidden && $("alert-toast").textContent.includes("Person · Camera 2");
-              $("alert-toast").hidden = true;
+              // The banner stays until the alert is handled, also with the tray open.
+              renderAlerts();
+              const persists = !$("alert-toast").hidden;
               $("alerts").open = true;
               state.incidents = [{...state.incidents[0], head_match_id: "m10"}, ...state.incidents.slice(1)];
               renderAlerts();
-              const toast = shown && $("alert-toast").hidden;
+              const withTray = !$("alert-toast").hidden;
+              // The alerting rule's zone is highlighted on its camera.
+              const savedRules = state.rules, savedSelected = state.selected;
+              state.rules = {...(savedRules || {}), rules: [{rule_id: "r1", stream_id: "cam2", enabled: true, zone: {points: [[.1, .1], [.5, .1], [.3, .5]]}}]};
+              state.selected = "cam2"; renderZoneOverlay();
+              const flashed = !!$("zone-overlay").querySelector("polygon.alerting") && $("video-wrap").dataset.alert === "true";
+              state.rules = savedRules; state.selected = savedSelected; renderZoneOverlay();
+              state.incidents = [{...state.incidents[0], state: "acknowledged"}, ...state.incidents.slice(1)];
+              renderAlerts();
+              const toast = shown && persists && withTray && flashed && $("alert-toast").hidden;
               $("alerts").open = wasOpen;
               state.speech = {current: null, talk_held: false, queued: [], last: {outcome: "text_only", text: "person on Camera 2."}};
               renderSpeech();
@@ -728,6 +745,15 @@ def main():
                 if (pagerBox.top < gridBox.bottom || getComputedStyle($('video-note')).display !== 'none' || getComputedStyle($('video-fullscreen')).display !== 'none') return "grid controls overlap video";
                 const tileRects = [...$('camera-grid').children].map(t => t.getBoundingClientRect());
                 if (!tileRects.every(r => Math.abs(r.width - tileRects[0].width) < 2 && Math.abs(r.height - tileRects[0].height) < 2)) return "grid tiles uneven";
+                const firstTile = $('camera-grid').children[0], savedRules = state.rules;
+                state.rules = {...(savedRules || {}), rules: [{rule_id: 'rz', stream_id: firstTile.dataset.stream, enabled: true, zone: {points: [[.1,.1],[.9,.1],[.5,.9]]}}]};
+                renderZoneOverlay();
+                const tileZone = firstTile.querySelector('.zone-svg'), zoneBox = tileZone.getBoundingClientRect(), tileBox = firstTile.getBoundingClientRect();
+                const zoneOk = tileZone.querySelectorAll('polygon').length === 1 && zoneBox.width > 20 && zoneBox.left >= tileBox.left - 1
+                  && zoneBox.right <= tileBox.right + 1 && zoneBox.top >= tileBox.top - 1 && zoneBox.bottom <= tileBox.bottom + 1
+                  && [...$('camera-grid').children].slice(1).every(t => !t.querySelector('.zone-svg polygon'));
+                state.rules = savedRules; renderZoneOverlay();
+                if (!zoneOk) return "grid tile zone missing or outside its tile";
                 selectCamera("cam2");
                 if (localStorage.getItem('operator.selectedCamera') !== 'cam2') return "camera not remembered";
                 state.evidenceView = 'cards'; renderTracks(true); $('view-toggle').click();

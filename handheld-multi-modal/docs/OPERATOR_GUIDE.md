@@ -85,7 +85,8 @@ kiosk mode) on the handheld.
 ![Camera grid](images/guide-camera-grid.jpg)
 
 1. **Tile** — one camera, up to four per page. Tap to open that camera.
-   Tiles with open alerts glow.
+   Tiles with open alerts glow. Alert areas are drawn on each tile; an area
+   whose alert is open pulses amber.
 2. **‹ / ›** — next or previous four cameras (shown only with more than four).
 
 ## Adding and removing cameras
@@ -176,7 +177,11 @@ update. Every change is written to an audit log on the device.
 ![Live camera and alerts](images/guide-video-alerts.jpg)
 
 Tap **Cameras** in the top bar to add, rename, turn off or remove cameras
-(see above). New alerts update camera badges, highlights and a notification. Tap **Alerts**
+(see above). New alerts update camera badges and highlights, and show a
+banner over the top of the video ("Person in Gate area · Camera 2"). The banner
+stays until you tap **View** or **Acknowledge** on it, or the alert closes;
+several new alerts stack as "+N more". The alert's area pulses amber on the
+video and grid tile, and the video gets an amber border. Tap **Alerts**
 (the amber bar under the video) to open the list; it opens over the lower
 part of the video and scrolls inside, so Resources stays in place. Tap
 **Alerts** again to close it. Incoming alerts do not automatically expand it
@@ -303,10 +308,17 @@ check that panel for the exact device.
    **Anything detected** includes all object types detected by the configured pipeline.
 3. **Stays for** (only for **Stays too long**) — 10 seconds, 30 seconds, 1 minute or a custom duration.
 4. **Area** defaults to the whole camera view. Choose **Draw an area** to limit it.
+   You can draw an area for any camera, not only the one on screen: in
+   **All cameras** the frame comes from that camera's tile; otherwise the app
+   switches to it and waits up to 20 s for a frame. The chosen camera and
+   area are kept if you close and reopen **Manage alerts** before saving.
 5. **More options** contains confidence, repeat, active hours and speech settings.
-   **Repeat after quiet period** (default 30 s, 5–3600 s) sets
-   how long an object must be out of sight before a new sighting announces an
-   open alert again. After **Acknowledge**, the next sighting is announced at once.
+   **Announce again after** (default 30 s, 5–3600 s): while an alert is open,
+   a new object is announced again once this many seconds have passed since
+   the last announcement, even in a busy scene. After **Acknowledge**, the
+   next sighting is announced at once. Objects cut off by the bottom edge of
+   the picture are not placed in an area (their feet are not visible); objects
+   touching the sides or top are.
 6. Read the plain-language preview above it, then **Create alert**.
 7. Existing alerts show their conditions. **Edit**, **Turn off / Turn on** or **Delete**
    are available beside each. Editing finishes with **Save changes**.
