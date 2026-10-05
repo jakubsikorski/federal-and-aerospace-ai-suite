@@ -1238,7 +1238,7 @@ function closeModelDetails(restoreFocus = true) {
 $("close-model-details").onclick = () => closeModelDetails();
 document.addEventListener("click", (event) => {
   const panel = $("model-details");
-  if (panel.hidden || event.target.closest(".model-button, #close-model-details")) return;
+  if (panel.hidden || event.target.closest(".model-button, #close-model-details, #select-picker")) return;
   const inside = panel.contains(event.target);
   // Keep selected text available for copying; a normal panel tap dismisses it.
   if (inside && !window.getSelection().isCollapsed) return;
@@ -2883,14 +2883,17 @@ for (const [panel, toggle, close] of [["mission-panel", "mission-toggle", () => 
                                        ["rules-panel", "rules-toggle", () => closeRules(false)],
                                        ["cameras-panel", "cameras-toggle", () => closeCameras(false)]]) {
   document.addEventListener("pointerdown", (event) => {
-    // The zone editor belongs to Rules; drawing on it must not dismiss the panel.
+    // The zone editor belongs to Rules, and the select picker belongs to whichever panel opened it;
+    // neither must dismiss the panel.
     if ($(panel).hidden || $(panel).contains(event.target) || $(toggle).contains(event.target)
+        || $("select-picker").contains(event.target)
         || (panel === "rules-panel" && $("zone-editor").contains(event.target))) return;
     close();
   });
 }
 document.addEventListener("keydown", (event) => {
-  if (event.key !== "Escape" || event.defaultPrevented) return;
+  // Escape in the select picker closes only the picker.
+  if (event.key !== "Escape" || event.defaultPrevented || $("select-picker").contains(event.target)) return;
   if (!$("mission-panel").hidden) closeMission();
   else if (!$("rules-panel").hidden) closeRules();
   else if (!$("cameras-panel").hidden) closeCameras();

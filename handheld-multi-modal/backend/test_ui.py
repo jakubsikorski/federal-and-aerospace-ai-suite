@@ -367,6 +367,15 @@ def main():
                 time.sleep(.05)
             assert js("return !document.getElementById('rules-panel').hidden && document.getElementById('mission-panel').hidden")
             assert js("return [...document.getElementById('rule-camera').options].map(o => o.textContent).join('|')") == 'Any camera|Camera 1|Camera 2|Camera 3|Camera 4|Camera 5|Camera 6|Camera 7'
+            # Choosing from a select's touch list (a dialog outside the panel) or pressing Escape in it keeps the panel open.
+            click('#rule-camera')
+            assert js("return document.getElementById('select-picker').open")
+            js("document.querySelector('#select-picker-list button').dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))")
+            assert js("return !document.getElementById('rules-panel').hidden")
+            click('#select-picker-list button:nth-child(3)')
+            assert js("""return !document.getElementById('select-picker').open && !document.getElementById('rules-panel').hidden
+              && document.getElementById('rule-camera').value === 'cam2'"""), js("return [document.getElementById('rules-panel').hidden, document.getElementById('rule-camera').value]")
+            js("const s = document.getElementById('rule-camera'); s.value = ''; s.dispatchEvent(new Event('change', {bubbles: true}))")
             assert js("""return window.eval(`(() => {
               if ($('rule-class').value !== '' || $('rule-advanced').open || !$('rule-duration').hidden) return false;
               document.querySelector('input[name=rule-kind][value=dwell]').click();
