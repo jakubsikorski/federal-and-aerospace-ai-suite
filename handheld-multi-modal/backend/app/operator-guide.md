@@ -177,8 +177,9 @@ camera; after three corners a new corner joins the nearest edge, and an outline 
 crosses itself cannot be saved; Remove area restores the whole view after saving. Any
 camera can be chosen; the area is drawn on that camera's latest frame. More options contains
 confidence, Announce again after, active hours and speech settings. Read the preview and Create alert.
-A new alert shows a banner over the video until it is viewed or acknowledged, and its area
-pulses amber on the video and on the All cameras tile.
+A new alert shows a banner over the video until it is viewed or acknowledged. While the
+alerted object is on camera now it is red and pulses ("In view now"); once the object has
+left, an unacknowledged alert stays steady amber ("Needs attention", with last-seen time).
 Existing rules can be edited, turned off/on or deleted. Save changes completes edits.
 Switch to Appears to remove dwell. Missing qualifying observations can reset dwell;
 tracking does not establish a person's identity across cameras. Chat explains these

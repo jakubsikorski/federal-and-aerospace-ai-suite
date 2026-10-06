@@ -108,8 +108,9 @@ every service image and interface. **Back to app** returns.
 ![Camera grid](images/guide-camera-grid.jpg)
 
 1. **Tile** — one camera, up to four per page. Tap to open that camera.
-   Tiles with open alerts glow. Alert areas are drawn on each tile; an area
-   whose alert is open pulses amber.
+   Tiles with open alerts glow: pulsing red while the alerted object is on
+   camera now, steady amber once it has left. Alert areas are drawn on each
+   tile in the same colours.
 2. **‹ / ›** — next or previous four cameras (shown only with more than four).
 
 ## Adding and removing cameras
@@ -203,8 +204,19 @@ Tap **Cameras** in the top bar to add, rename, turn off or remove cameras
 (see above). New alerts update camera badges and highlights, and show a
 banner over the top of the video ("Person in Gate area · Camera 2"). The banner
 stays until you tap **View** or **Acknowledge** on it, or the alert closes;
-several new alerts stack as "+N more". The alert's area pulses amber on the
-video and grid tile, and the video gets an amber border. Tap **Alerts**
+several new alerts stack as "+N more". An alert that needs attention looks
+different depending on whether its object is still there:
+
+- **In view now** — the alerted object is on camera at this moment (and still
+  inside the alert's area, if it has one). Red: the banner starts with a red
+  dot and "In view now", the video border and the alert's area pulse red, and
+  the camera badge turns red.
+- **Needs attention** — the object has left, but nobody has acknowledged the
+  alert yet. Amber and steady, no pulsing; the banner says when the object
+  was last seen.
+
+"Now" uses the same few-second freshness window as the Current view. Once
+acknowledged, an alert shows neither. Tap **Alerts**
 (the amber bar under the video) to open the list; it opens over the lower
 part of the video and scrolls inside, so Resources stays in place. Tap
 **Alerts** again to close it. Incoming alerts do not automatically expand it

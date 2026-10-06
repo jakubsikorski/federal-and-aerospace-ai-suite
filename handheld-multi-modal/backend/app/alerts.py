@@ -641,6 +641,39 @@ class Alerts:
                                  cooldown=0.0 if reopened else rule["cooldown_seconds"],
                                  group=incident_id)
 
+    def mark_in_view(self, conn: sqlite3.Connection, incidents: list[dict], ingest, cutoff: float) -> None:
+        """Set `in_view` on each incident: a matched object is on camera now.
+
+        "Now" is a live track seen since `cutoff` (the freshness window), still
+        inside the rule's zone when it has one. Read-only: zone hysteresis state
+        belongs to matching and is not touched here.
+        """
+        rules = {rule["rule_id"]: rule for rule in self.rules}
+        live: dict[str, dict[int, dict]] = {}
+        for incident in incidents:
+            incident["in_view"] = False
+            if incident["state"] == "closed" or ingest is None:
+                continue
+            stream = incident["stream_id"]
+            if stream not in live:
+                live[stream] = {entry["track_id"]: entry for entry in ingest.live_tracks(stream, cutoff)
+                                if entry.get("track_id") is not None}
+            tracks = live[stream]
+            if not tracks:
+                continue
+            matched = conn.execute(
+                f"""SELECT track_id FROM rule_matches WHERE incident_id = ?
+                    AND track_id IN ({",".join("?" * len(tracks))})""",
+                (incident["incident_id"], *tracks)).fetchall()
+            zone = (rules.get(incident["rule_id"]) or {}).get("zone")
+            for (track_id,) in matched:
+                point = self._foot(tracks[track_id]) if zone else None
+                if zone is None or point is not None and (
+                        _point_in_polygon(point, zone["points"])
+                        or _edge_distance(point, zone["points"]) <= ZONE_MARGIN):
+                    incident["in_view"] = True
+                    break
+
     def crop_arrived(self, track_id: int) -> bool:
         """First image for an alert: record when it became available. True if alerted."""
         head = self.alert_tracks.get(track_id)

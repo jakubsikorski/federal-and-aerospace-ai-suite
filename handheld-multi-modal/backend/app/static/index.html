@@ -10,7 +10,7 @@
     --bg: #111d31; --panel: #1a2c43; --panel2: #253b57; --line: #415977;
     --surface: #16273c; --selected: #1c4d5c; --control: #5b7491;
     --text: #edf4ff; --muted: #b2c2d7; --accent: #72e4df;
-    --good: #8be0b5; --warn: #f4c779; --bad: #ffacb4;
+    --good: #8be0b5; --warn: #f4c779; --bad: #ffacb4; --live: #ff6f61;
   }
   * { box-sizing: border-box; }
   html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
@@ -209,7 +209,8 @@
   #video-panel:has(#video-wrap.all) { grid-template-rows: 54px minmax(200px, 1fr) auto auto; }
   #camera-grid { position: absolute; inset: 0; display: none; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); gap: 8px; padding: 8px; }
   .camera-tile { min-width: 0; position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 9px; background: #0e192a; padding: 0; text-align: left; }
-  .camera-tile[data-alert="true"] { border-color: var(--warn); box-shadow: 0 0 0 2px #efc58088, 0 0 18px #efc58066; }
+  .camera-tile[data-alert="attention"] { border-color: var(--warn); box-shadow: 0 0 0 2px #efc58088; }
+  .camera-tile[data-alert="live"] { border-color: var(--live); box-shadow: 0 0 0 3px var(--live), 0 0 18px #ff6f6188; }
   .camera-tile video { width: 100%; height: 100%; }
   .camera-tile span { position: absolute; left: 8px; top: 8px; padding: 3px 7px; border-radius: 6px; background: #2a3039e8; font-weight: 700; }
   .camera-tile small { position: absolute; left: 8px; bottom: 8px; padding: 3px 7px; border-radius: 6px; background: #2a3039e8; color: var(--muted); }
@@ -217,7 +218,8 @@
   #video-panel:has(#video-wrap.all) #grid-pager { display: flex; }
   #grid-pager button { min-width: 48px; min-height: 44px; border-radius: 8px; }
   #grid-page-label { min-width: 108px; text-align: center; padding: 8px 12px; border-radius: 8px; background: #2a3039e8; font-weight: 700; }
-  #grid-page-label[data-alert="true"] { color: var(--warn); }
+  #grid-page-label[data-alert="attention"] { color: var(--warn); }
+  #grid-page-label[data-alert="live"] { color: var(--live); }
   #latency-badge { position: absolute; left: 10px; top: 8px; display: none; padding: 4px 7px; border-radius: 6px; background: #2a3039e8; font-size: 12px; }
   #latency-badge.show { display: block; }
   #zone-editor { position: fixed; inset: 0; z-index: 30; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 10px; padding: 12px; background: #141920; }
@@ -249,6 +251,7 @@
   #alerts[open] > #alert-list { position: absolute; left: 0; right: 0; bottom: 100%; z-index: 4; max-height: 200px; padding-top: 4px; background: #17283d; border-top: 1px solid var(--warn); box-shadow: 0 -8px 18px rgba(0, 0, 0, .45); }
   #alerts summary { min-height: 44px; padding: 11px 12px; cursor: pointer; font-size: 13px; }
   #alerts[data-attention] summary { color: var(--warn); font-weight: 600; }
+  #alerts[data-attention="live"] summary { color: var(--live); }
   #alert-list { margin: 0; padding: 0 12px 4px; list-style: none; max-height: 150px; overflow: auto; }
   #alert-list li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 4px 0; font-size: 12px; border-top: 1px solid var(--line); }
   #alert-list .incident-main { flex: 1 1 220px; min-width: 220px; min-height: 48px; height: auto; display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; align-items: center; padding: 4px; border: 1px solid transparent; border-radius: 8px; background: transparent; text-align: left; }
@@ -259,6 +262,7 @@
   #alert-list .incident-title { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; }
   #alert-list .incident-state { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 9px; border: 1px solid currentColor; }
   #alert-list [data-incident="open"] .incident-state { color: var(--warn); }
+  #alert-list [data-live] .incident-state { color: #1b0f0d; background: var(--live); border-color: var(--live); }
   #alert-list [data-incident="acknowledged"] .incident-state, #alert-list [data-incident="snoozed"] .incident-state { color: var(--accent); }
   #alert-list [data-incident="closed"] { opacity: .65; }
   #alert-list [data-incident="closed"] .incident-state { color: var(--muted); }
@@ -270,18 +274,25 @@
   #alert-list .incident-actions select { height: 48px; min-height: 48px; width: auto; font-size: 12px; padding: 0 4px; }
   .camera[data-alerts]::after { content: attr(data-alerts); position: absolute; top: 3px; right: 3px; min-width: 16px; padding: 0 4px; border-radius: 9px; background: var(--warn); color: #0e192a; font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; }
   .camera[data-alerts] { padding-right: 30px; }
+  .camera[data-alerts][data-live]::after { background: var(--live); }
   /* Over the top of the live video (placed by placeAlertBanner); bottom-left when the video is not on screen. */
   #alert-toast { position: fixed; left: 16px; bottom: 16px; z-index: 50; display: flex; align-items: center; gap: 6px; max-width: 560px; padding: 3px; border: 2px solid var(--warn); border-radius: 10px; background: #3e3527f2; color: var(--text); box-shadow: 0 4px 16px #0008; }
   #alert-toast[hidden] { display: none; }
+  #alert-toast[data-live] { border-color: var(--live); background: #4a2622f2; }
+  #alert-toast[data-live] #alert-toast-view::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 8px; border-radius: 50%; background: var(--live); vertical-align: 1px; }
   #alert-toast button { min-height: 44px; border-radius: 8px; font-size: 14px; }
   #alert-toast-view { flex: 1 1 auto; min-width: 0; padding: 4px 10px; border: 0; background: none; color: var(--text); font-weight: 700; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
   #alert-toast-ack { flex: 0 0 auto; padding: 4px 14px; border: 1px solid var(--warn); background: var(--panel); color: var(--text); }
-  #video-wrap[data-alert="true"]::after { content: ""; position: absolute; inset: 0; border: 3px solid var(--warn); border-radius: 2px; pointer-events: none; }
+  #video-wrap[data-alert="attention"]::after, #video-wrap[data-alert="live"]::after { content: ""; position: absolute; inset: 0; border: 3px solid var(--warn); border-radius: 2px; pointer-events: none; }
+  #video-wrap[data-alert="live"]::after { border: 5px solid var(--live); }
   .zone-svg { position: absolute; pointer-events: none; }
   .zone-svg polygon { fill: rgba(153,197,245,.14); stroke: #99c5f5; stroke-width: 2px; vector-effect: non-scaling-stroke; }
   .zone-svg polygon.alerting { fill: rgba(244,199,121,.3); stroke: var(--warn); stroke-width: 4px; }
+  .zone-svg polygon.alerting.live { fill: rgba(255,111,97,.35); stroke: var(--live); }
   @media (prefers-reduced-motion: no-preference) {
-    .zone-svg polygon.alerting, #video-wrap[data-alert="true"]::after { animation: alert-pulse 1s ease-in-out infinite alternate; }
+    /* Only an alert whose object is on camera now pulses; one that has left stays steady. */
+    .zone-svg polygon.alerting.live, #video-wrap[data-alert="live"]::after, .camera-tile[data-alert="live"],
+    #alert-toast[data-live] #alert-toast-view::before, #alert-list [data-live] .incident-state { animation: alert-pulse 1s ease-in-out infinite alternate; }
   }
   @keyframes alert-pulse { from { opacity: 1; } to { opacity: .35; } }
   #alert-list .dispatch { font-weight: 600; }
@@ -561,6 +572,7 @@
   #alerts { background: #17283d; }
   #alerts[data-attention] summary { background: linear-gradient(90deg, #473c2b, #233143); }
   #alert-list [data-incident="open"] .incident-main { box-shadow: inset 2px 0 var(--warn); }
+  #alert-list [data-live] .incident-main { box-shadow: inset 4px 0 var(--live); }
   #alert-list .ack-button { background: #5b492a; border-color: #b99a60; color: #fff0d2; }
   #alert-list .incident-actions .quiet-button:not(.ack-button), #alert-list .incident-actions select { color: var(--text); }
   #track-controls, #list-status { background: var(--surface); }
@@ -1330,19 +1342,20 @@ function markTabOverflow() {
 $("cameras").addEventListener("scroll", markTabOverflow, {passive: true});
 window.addEventListener("resize", markTabOverflow);
 
-function openIncidentStreams() {
-  return new Set(state.incidents.filter(i => i.state === "open").map(i => i.stream_id));
+// "live": an alert needing attention whose object is on camera now (the
+// Backend's in_view); "attention": needs attention, object has left; "false".
+function alertLevel(streamIds) {
+  const open = state.incidents.filter(i => i.state === "open" && streamIds.includes(i.stream_id));
+  return open.some(i => i.in_view) ? "live" : open.length ? "attention" : "false";
 }
 function markGridPages() {
-  const open = openIncidentStreams();
-  for (const tile of $("camera-grid").children) tile.dataset.alert = String(open.has(tile.dataset.stream));
+  for (const tile of $("camera-grid").children) tile.dataset.alert = alertLevel([tile.dataset.stream]);
   const label = $("grid-page-label");
-  if (label) label.dataset.alert = String(state.streams.slice(state.gridPage * 4, state.gridPage * 4 + 4).some(s => open.has(s.stream_id)));
+  if (label) label.dataset.alert = alertLevel(state.streams.slice(state.gridPage * 4, state.gridPage * 4 + 4).map(s => s.stream_id));
 }
 function gridPageCount() { return Math.max(1, Math.ceil(state.streams.length / 4)); }
 function renderCameraGrid() {
   const grid = $("camera-grid");
-  const open = openIncidentStreams();
   const total = state.streams.length;
   state.gridPage = Math.min(state.gridPage, gridPageCount() - 1);
   const start = state.gridPage * 4, page = state.streams.slice(start, start + 4);
@@ -1358,7 +1371,7 @@ function renderCameraGrid() {
       continue;
     }
     const tile = document.createElement("button"); tile.type = "button"; tile.className = "camera-tile"; tile.dataset.stream = stream.stream_id;
-    tile.dataset.alert = String(open.has(stream.stream_id)); tile.setAttribute("aria-label", "Open " + stream.display_name);
+    tile.dataset.alert = alertLevel([stream.stream_id]); tile.setAttribute("aria-label", "Open " + stream.display_name);
     const video = document.createElement("video"); video.autoplay = true; video.muted = true; video.playsInline = true;
     const name = document.createElement("span"); name.textContent = stream.display_name;
     const note = document.createElement("small"); note.textContent = "Connecting…";
@@ -2099,8 +2112,11 @@ function renderAlertBanner() {
   const waiting = state.incidents.filter((incident) => state.bannerAlerts.has(incident.incident_id));
   toast.hidden = !waiting.length;
   if (!waiting.length) return;
-  const incident = waiting[0], more = waiting.length - 1;
-  $("alert-toast-view").textContent = "⚠ " + incidentTitle(incident) + " · " + incident.rule_name
+  // An object on camera now leads; one that has left says when it was last seen.
+  const incident = waiting.find(i => i.in_view) || waiting[0], more = waiting.length - 1;
+  toast.toggleAttribute("data-live", Boolean(incident.in_view));
+  $("alert-toast-view").textContent = (incident.in_view ? "In view now · " : "⚠ ") + incidentTitle(incident) + " · " + incident.rule_name
+    + (incident.in_view ? "" : " · last seen " + shortTime(incident.track?.last_observed_utc || incident.last_match_utc))
     + (more ? " · +" + more + " more" : "");
   $("alert-toast-view").title = "View this alert";
   $("alert-toast-view").onclick = () => { state.bannerAlerts.delete(incident.incident_id); renderAlertBanner(); viewIncident(incident); };
@@ -2208,6 +2224,7 @@ function renderAlerts() {
   for (const button of $("cameras").children) {
     const count = perStream[button.dataset.stream] || (button.dataset.stream === "all" ? open.length : 0);
     if (count) button.dataset.alerts = String(count); else delete button.dataset.alerts;
+    button.toggleAttribute("data-live", open.some(i => i.in_view && (button.dataset.stream === "all" || i.stream_id === button.dataset.stream)));
   }
   markGridPages();
   const viewed = state.alertView && incidents.find((item) => item.incident_id === state.alertView.incident.incident_id);
@@ -2236,8 +2253,10 @@ function renderAlerts() {
     active: incidents.filter((incident) => incident.state !== "closed").length};
   const summary = $("alert-summary");
   if (counts.open) {
-    summary.textContent = "Alerts · " + counts.open + " need" + (counts.open === 1 ? "s" : "") + " attention" + (open.length ? " · " + incidentTitle(open[0]) : "");
-    $("alerts").dataset.attention = "";
+    const live = open.find(i => i.in_view);
+    summary.textContent = "Alerts · " + counts.open + " need" + (counts.open === 1 ? "s" : "") + " attention"
+      + (live ? " · In view now: " + incidentTitle(live) : open.length ? " · " + incidentTitle(open[0]) : "");
+    $("alerts").dataset.attention = live ? "live" : "";
   } else {
     const handled = counts.active - counts.open;
     summary.textContent = "Alerts · " + (handled ? handled + " handled" : "No active alerts");
@@ -2271,6 +2290,7 @@ function renderAlerts() {
     }
     const item = document.createElement("li");
     item.dataset.incident = incident.state;
+    item.toggleAttribute("data-live", incident.state === "open" && Boolean(incident.in_view));
     item.dataset.incidentId = incident.incident_id;
     item.dataset.signature = rowSignature;
     let thumb;
@@ -2298,7 +2318,8 @@ function renderAlerts() {
     badge.textContent = incident.state === "snoozed"
       ? "Snoozed to " + shortTime(incident.snoozed_until_utc)
       : incident.state === "closed" && CLOSURES[incident.closure]
-        ? "Closed · " + CLOSURES[incident.closure] : INCIDENT_STATES[incident.state];
+        ? "Closed · " + CLOSURES[incident.closure]
+        : incident.state === "open" && incident.in_view ? "In view now" : INCIDENT_STATES[incident.state];
     title.append(name, badge);
     const meta = document.createElement("div");
     meta.className = "incident-meta";
@@ -3255,9 +3276,11 @@ $("rule-camera").addEventListener("change", () => { state.zoneDraft = null; stat
 function drawZones(svg, streamId, video, box) {
   const vw = video.videoWidth || 16, vh = video.videoHeight || 9, scale = Math.min(box.width / vw, box.height / vh);
   const width = vw * scale, height = vh * scale;
-  const alerting = new Set(state.incidents.filter(i => i.state === "open" && i.stream_id === streamId).map(i => i.rule_id));
+  const open = state.incidents.filter(i => i.state === "open" && i.stream_id === streamId);
+  const level = (rule) => open.some(i => i.rule_id === rule.rule_id && i.in_view) ? "live"
+    : open.some(i => i.rule_id === rule.rule_id) ? "attention" : "";
   const zones = streamId ? (state.rules?.rules || []).filter(rule => rule.stream_id === streamId && rule.zone?.points?.length)
-    .map(rule => [rule.zone.points.map(p => p.join(",")).join(" "), alerting.has(rule.rule_id)]) : [];
+    .map(rule => [rule.zone.points.map(p => p.join(",")).join(" "), level(rule)]) : [];
   Object.assign(svg.style, {left:(box.width - width) / 2 + "px", top:(box.height - height) / 2 + "px", width:width + "px", height:height + "px"});
   // Rebuilding restarts the highlight animation, so only redraw on change.
   const signature = JSON.stringify(zones);
@@ -3268,6 +3291,7 @@ function drawZones(svg, streamId, video, box) {
     const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
     poly.setAttribute("points", points);
     if (alert) poly.classList.add("alerting");
+    if (alert === "live") poly.classList.add("live");
     return poly;
   }));
 }
@@ -3275,7 +3299,7 @@ function renderZoneOverlay() {
   const svg = $("zone-overlay"), wrap = $("video-wrap"); if (!svg) return;
   const single = state.selected && state.selected !== "all";
   drawZones(svg, single ? state.selected : null, $("video"), wrap.getBoundingClientRect());
-  wrap.dataset.alert = String(!!single && state.incidents.some(i => i.state === "open" && i.stream_id === state.selected));
+  wrap.dataset.alert = single ? alertLevel([state.selected]) : "false";
   for (const tile of $("camera-grid").children) {
     const zones = tile.querySelector(".zone-svg");
     if (zones) drawZones(zones, tile.dataset.stream, tile.querySelector("video"), tile.getBoundingClientRect());

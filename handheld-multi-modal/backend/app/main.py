@@ -1285,6 +1285,8 @@ def _incidents(state, conn: sqlite3.Connection, limit: int = 50) -> list[dict]:
         row["latency"] = _latency(state, row["head_match_id"])
         row["undelivered"] = (row["dispatch_state"] == "failed"
                               and (row["attempts"] or 0) >= alerting.MAX_ATTEMPTS)
+    window = float(state.cfg.get("freshness_window_seconds", 8.0))
+    state.alerts.mark_in_view(conn, rows, state.ingest, time.time() - window)
     return rows
 
 

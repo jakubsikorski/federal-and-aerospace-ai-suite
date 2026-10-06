@@ -3184,6 +3184,35 @@ def test_zone_hysteresis_and_frame_touching_ignore():
         alerts.close()
 
 
+def test_incident_in_view_follows_live_matched_objects_and_zone():
+    from app import history
+    zone = {"points": [[0.4, 0.4], [0.6, 0.4], [0.6, 0.6], [0.4, 0.6]]}
+    with tempfile.TemporaryDirectory() as tmp:
+        ing = _ingest(tmp, cameras=("cam1",))
+        alerts = _alerts(ing, str(Path(tmp) / "ingest.db"))
+        alerts.create(ing.conn, {"class_label": "person", "zone": zone})
+        rect = {"frame_width": 100, "frame_height": 100}
+        _observe(ing, "cam1", 1, start=1000.0, detection_rect=[45, 40, 10, 10], **rect)
+
+        def in_view(cutoff):
+            rows = history.incidents(ing.conn)
+            alerts.mark_in_view(ing.conn, rows, ing, cutoff)
+            return rows[0]["in_view"]
+        assert in_view(995.0), "matched object inside the zone is not in view"
+        assert not in_view(1005.0), "an object last seen before the window is still in view"
+        # Still on camera but walked out of the zone: the alert has fired, not firing.
+        _observe(ing, "cam1", 1, start=1001.0, detection_rect=[80, 40, 10, 10], **rect)
+        assert not in_view(995.0), "object outside the zone counted as in view"
+        _observe(ing, "cam1", 1, start=1002.0, detection_rect=[45, 40, 10, 10], **rect)
+        assert in_view(995.0)
+        ing.conn.commit()
+        (incident,) = history.incidents(ing.conn)
+        assert alerts.act(incident["incident_id"], "dismiss")
+        assert not in_view(995.0), "a closed alert is in view"
+        ing.conn.close()
+        alerts.close()
+
+
 def test_zone_uses_real_dlsps_message_shape():
     # Live DLSPS: pixel box as x/y/w/h on the object, frame size as metadata width/height.
     zone = {"points": [[0.4, 0.4], [0.6, 0.4], [0.6, 0.6], [0.4, 0.6]]}
@@ -4577,7 +4606,8 @@ def test_live_and_rule_work_leave_event_loop_responsive():
             app.state.ingest = types.SimpleNamespace(snapshot=lambda: {})
             app.state.telemetry = types.SimpleNamespace(snapshot=lambda: {"metrics": []})
             app.state.alerts = types.SimpleNamespace(create=operation, update=operation,
-                act=lambda *a: bool(operation(*a)), confirmed=set(), latency={}, version=0)
+                act=lambda *a: bool(operation(*a)), confirmed=set(), latency={}, version=0,
+                mark_in_view=lambda *a: None)
             app.state.arbiter = types.SimpleNamespace(snapshot=lambda: {"version": 1})
             async def receive():
                 await asyncio.sleep(60)
