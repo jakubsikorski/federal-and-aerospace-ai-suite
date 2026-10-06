@@ -3961,6 +3961,17 @@ def test_any_object_dwell_is_per_track_and_retains_actual_types():
         alerts.close()
 
 
+def test_speech_spells_acronyms_with_letter_names():
+    from app.voice import speakable
+    assert speakable("The LLM runs on the GPU, detection on the NPU.") == (
+        "The ell ell em runs on the jee pee you, detection on the en pee you.")
+    assert speakable("Both GPUs; RTSP and MQTT; FP16.") == (
+        "Both jee pee youz; arr tee ess pee and em cue tee tee; ef pee 16.")
+    # Pronounceable capitals and mixed-case words are left alone.
+    assert speakable("Mission AMBER FIELD uses JSON and OpenVINO on the iGPU.") == (
+        "Mission AMBER FIELD uses JSON and OpenVINO on the iGPU.")
+
+
 def test_phase9_audio_upload_limits_and_stock_alias():
     import asyncio
     from types import SimpleNamespace

@@ -24,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import alerts as alerting, cameras, history, pipelines, reset
 from .speech import Arbiter, complete_answer_sentences, early_head
-from .voice import MAX_AUDIO_BYTES, silent_wav, validate_audio, transcribe
+from .voice import MAX_AUDIO_BYTES, silent_wav, speakable, validate_audio, transcribe
 from .assistant import (
     Assistant,
     InvalidInput,
@@ -302,6 +302,7 @@ async def lifespan(app: FastAPI):
         # browser as-is inside the speech state, so no clip endpoint is needed.
         # SpeechT5 can run on past an unpunctuated mid-sentence chunk (measured:
         # "... radiation and" gave 6.7 s instead of 3.1 s); a comma ends it cleanly.
+        text = speakable(text)
         if text and text[-1] not in ".,;:!?…":
             text += ","
         body = {"input": text, "response_format": "json"}
@@ -320,6 +321,7 @@ async def lifespan(app: FastAPI):
         "service": cfg["services"]["tts"].rstrip("/"),
         "voice": cfg.get("tts_voice") or "",
         "model": cfg.get("tts_model") or "",
+        "acronyms": "letter-names-1",
     }, sort_keys=True)
     app.state.arbiter = Arbiter(synthesize, alert_floor=float(cfg.get("alert_speech_floor_seconds", 3.0)),
                                 trace_path=cfg.get("arbiter_trace_path"))
