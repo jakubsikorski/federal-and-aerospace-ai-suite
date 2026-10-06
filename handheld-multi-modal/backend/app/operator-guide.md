@@ -73,43 +73,20 @@ and originals, not camera records. Ask about objectives or restrictions to consu
 mission material. Application capabilities do not establish mission facts.
 
 ## How this application is built
-- Everything runs on this one Intel edge device. Its Intel Core Ultra processor contains
-  the CPU, the integrated Intel Arc GPU and the Intel AI Boost NPU; there is no add-on hardware. All services except
-  the Backend are stock, unmodified Intel Open Edge Platform release-2026.2.0
-  microservices or open-source components, used only through their published APIs.
-- Backend: the only custom code (Python, FastAPI). It serves this web app, stores
-  detections in SQLite and cropped evidence images on disk (it does not record video), applies alert rules, decides what is spoken, and
-  calls the other services. It is not in the video path.
-- Video path, in order: (1) each camera sends RTSP video to MediaMTX (open-source media
-  server); (2) DL Streamer Pipeline Server reads it from MediaMTX, decodes it, detects and
-  tracks objects and draws boxes; (3) it pushes the annotated video back to MediaMTX over
-  WebRTC WHIP; (4) the browser plays it from MediaMTX over WebRTC WHEP. Coturn (open
-  source) relays WebRTC media when needed. The Backend never handles video.
-- DL Streamer Pipeline Server (Open Edge Platform): one pipeline per camera with Intel
-  GPU hardware video decode, YOLO26s OpenVINO INT8 object detection on the NPU,
-  gvatrack tracking on the CPU and box overlay. The Backend starts and stops pipelines
-  with its REST API (POST, GET and DELETE /pipelines). It publishes detections over
-  MQTT through Mosquitto (open source) and saves cropped evidence images to a shared folder.
-- Alert Agent (Open Edge Platform): the Backend sends each rule match to
-  POST /api/v1/actions/execute; it dispatches and de-duplicates alerts by rule, with
-  no language model. Text To Speech then speaks the alert.
-- Chat Q&A Core (Open Edge Platform): runs this assistant's language model,
-  Intel/neural-chat-7b-v3-3, with OpenVINO on the GPU, plus
-  granite-embedding-125m-english and ms-marco-electra-base on the CPU to retrieve
-  mission documents. The Backend calls POST /chat for answers and /documents to add or
-  remove mission documents. Chat Q&A keeps no conversation; the Backend sends recent
-  turns. For camera-history questions the model only drafts a search that the Backend
-  checks and runs read-only on SQLite; the model never sees video.
-- Audio Analyzer (Open Edge Platform): transcribes push-to-talk speech with
-  whisper-medium on the GPU through POST /v1/audio/transcriptions.
-- Text To Speech (Open Edge Platform): speaks answers and alerts with SpeechT5 on the
-  CPU through POST /v1/audio/speech.
-- Metrics Manager (Open Edge Platform): reports CPU, GPU, NPU, memory and temperature
-  through GET /api/v1/metrics/latest.
-- Model Download (Open Edge Platform): prepares the YOLO26s model during setup.
-- nginx (open source) provides HTTPS. The Architecture page in the app shows the
-  diagram, APIs and step-by-step flows.
-
+- Purpose: an operator console on a handheld device. It shows live camera video with detected objects boxed, keeps detections and object images as searchable evidence, raises alerts from operator rules, and answers typed or spoken questions about camera records, mission documents and general topics.
+- Device: one Intel Core Ultra edge device (CPU, integrated Arc GPU, AI Boost NPU). No cloud, no add-on hardware.
+- Custom code: only the Backend (Python, FastAPI). Everything else is stock and unmodified, runs in its own container, and is used only through published APIs.
+- Open Edge Platform release-2026.2.0 services (exactly six): DL Streamer Pipeline Server, Alert Agent, Chat Q&A Core, Audio Analyzer, Text To Speech, Metrics Manager. Model Download is used only during setup.
+- Open-source, not Open Edge Platform: MediaMTX (video relay), Coturn (WebRTC relay), Mosquitto (MQTT broker), nginx (HTTPS).
+- Video, in four steps: 1. Each camera sends RTSP video to MediaMTX. 2. DL Streamer Pipeline Server reads it from MediaMTX over RTSP, decodes it on the GPU, detects objects with YOLO26s INT8 on the NPU, tracks them with gvatrack on the CPU and draws boxes. 3. It sends the boxed video back to MediaMTX over WebRTC (WHIP). 4. The browser plays it from MediaMTX over WebRTC (WHEP). The Backend never touches video and nothing records it.
+- Detections: DL Streamer Pipeline Server publishes each detection over MQTT through Mosquitto; the Backend receives it and stores it in SQLite. The Pipeline Server also saves cropped object images to a shared folder, and the Backend shows them as evidence.
+- Backend: starts and stops camera pipelines, stores detections, checks alert rules, answers questions, forwards voice audio and speech, and relays resource metrics to the browser. It never touches video. Its calls: Pipeline Server POST/GET/DELETE /pipelines (start/stop per camera); Alert Agent POST /api/v1/actions/execute; Chat Q&A POST /chat and /documents; Audio Analyzer POST /v1/audio/transcriptions; Text To Speech POST /v1/audio/speech; Metrics Manager GET /api/v1/metrics/latest.
+- Alerts, in three steps: 1. The Backend checks each detection against the operator's alert rules. 2. For each match it calls Alert Agent, which dispatches the alert and drops duplicates; no language model is involved. 3. The Backend shows the alert and speaks it through Text To Speech. Alert Agent never sees detections or rules.
+- Assistant: Chat Q&A Core runs the language model Intel/neural-chat-7b-v3-3 on the GPU, with granite-embedding-125m-english and ms-marco-electra-base on the CPU for mission-document retrieval. It keeps no memory; the Backend sends recent turns.
+- Camera history (what was seen): the Backend answers with a read-only SQLite search of stored detections and shows the matching tracks with their images. The language model never sees video or images.
+- Voice: the browser records the microphone and sends the audio to the Backend, which has Audio Analyzer transcribe it with whisper-medium on the GPU. The text is then answered like a typed question. Answers and alerts are spoken by Text To Speech with SpeechT5 on the CPU and played in the browser.
+- Storage, all on the device: SQLite holds detections and tracks (kept 7 days), rules, alert incidents, the mission document list and the Mission Brief. Chat Q&A Core holds the indexed mission documents. Cropped images sit on disk.
+- The Architecture page shows the diagram, every API and step-by-step flows.
 ## Resources, services and limitations
 Resources shows CPU, memory, GPU/NPU and power telemetry when available. Details
 shows component readings; Expand enlarges the chart. Stale or unavailable readings

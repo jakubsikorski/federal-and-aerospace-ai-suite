@@ -300,9 +300,12 @@ reach my screen?") and the Assistant answers from a verified description of
 the build: components, models, devices and APIs, plus live model placement.
 It keeps that description in
 [`backend/app/operator-guide.md`](../backend/app/operator-guide.md) under
-"How this application is built". The language model decides whether a question
-is about the application; no question list is coded. It is a 7B model, so
-check details against the **Architecture** page.
+"How this application is built", one short fact line per topic. Each prompt
+carries the identity lines (purpose, device, custom code, services) plus the
+two lines whose words best match the question, so the 7B model is not asked
+to sift a long list; it is told to add nothing the facts do not state. The
+language model decides whether a question is about the application; no
+question list is coded. Check details against the **Architecture** page.
 
 The Assistant never asks you to rephrase. It answers with its closest search
 and says first what it assumed:

@@ -1637,11 +1637,11 @@ def test_questions_never_dead_end():
         assert "language model: Intel/neural-chat-7b-v3-3 on GPU" in prompts[0] and "intent" not in prompts[0][:200]
         # Every general prompt carries the build description; the model, not a
         # question pattern, decides whether the question is about this application.
-        assert "How this application is built (verified facts):" in prompts[0] and "POST /chat" in prompts[0]
+        assert "Application facts (complete and authoritative):" in prompts[0] and "- Assistant: Chat Q&A Core" in prompts[0]
         assert "For an application question" in prompts[0] and "It never describes this application" in prompts[0]
         prompts.clear()
         a.ask("What is an NPU?")
-        assert len(prompts) == 1 and "How this application is built (verified facts):" in prompts[0], prompts
+        assert len(prompts) == 1 and "Application facts (complete and authoritative):" in prompts[0], prompts
         assert "language model: Intel/neural-chat-7b-v3-3 on GPU" in prompts[0]
 
         prompts.clear()
@@ -2483,7 +2483,7 @@ def test_explain_mode_app_questions_use_the_guide_not_mission_documents():
             assistant.ask("How is person detection working with Intel silicon?", mode="general")
         prompt = prompts[-1]
         assert "How detection works: " in prompt and "YOLO26s" in prompt and "NPU" in prompt
-        assert "do not use or mention the mission documents" in prompt
+        assert "Do not use or mention the mission documents" in prompt
         assert "does not identify people, read colours" in prompt
 
 
@@ -2514,13 +2514,17 @@ def test_application_knowledge_grounding():
             assert answer["intent"] == "application_help"
             assert "Application guide summary" in prompts[-1] and len(prompts[-1]) < len(OPERATOR_GUIDE) + 2000
             assert "Test doorway." in prompts[-1] and '"selected_camera": "cam1"' in prompts[-1]
-            assert "is not described" in prompts[-1]
-            assert len(prompts) == 2
+            assert "That detail isn't part of how this application is described." in prompts[-1]
+            # A how-does-the-application question needs no routing call, even with record words.
+            assert len(prompts) == 1
             assistant.ask("Explain that more simply.")
-            assert len(prompts) == 3 and "How does this application store evidence?" in prompts[-1]
+            assert len(prompts) == 2 and "How does this application store evidence?" in prompts[-1]
             assistant.ask("What are the limitations of this application?", mode="general")
-            assert len(prompts) == 4 and "Application guide summary" in prompts[-1]
-            assert "DL Streamer Pipeline Server" in prompts[-1] and "/api/v1/actions/execute" in prompts[-1]
+            assert len(prompts) == 3 and "Application guide summary" in prompts[-1]
+            answer = assistant.ask("How does the assistant answer questions about what was seen?")
+            assert answer["intent"] == "application_help" and len(prompts) == 4, answer
+            assert "DL Streamer Pipeline Server" in prompts[-1] and "- Camera history (what was seen):" in prompts[-1]
+            assert "/api/v1/actions/execute" not in prompts[-1], "unrelated facts crowd the answer"
         routing = _routing_prompt("How do I search camera history?", ("person",), None, None)
         assert "application_help" in routing and "HOW to use a control" in routing
         brief = _brief_prompt("objective")

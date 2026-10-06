@@ -130,18 +130,51 @@ def _render_context(turns: list[tuple[str, str]]) -> str:
     )
 
 
-def _compact_operator_guide() -> str:
-    sections = []
-    for title in ("How detection works", "Cameras and evidence", "Assistant controls", "Mission and Mission Brief",
-                  "Resources, services and limitations", "Broader results"):
-        body = re.sub(r"\s+", " ", APPLICATION_TOPICS.get(title, "")).strip()
-        if body:
-            sections.append(f"{title}: {body[:700]}")
+def _compact_operator_guide(question: str = "") -> str:
+    """The guide section that best matches the question; every section only without one."""
+    titles = ("How detection works", "Cameras and evidence", "Assistant controls", "Mission and Mission Brief",
+              "Resources, services and limitations", "Broader results")
+    sections = [f"{title}: " + re.sub(r"\s+", " ", APPLICATION_TOPICS.get(title, "")).strip()[:700]
+                for title in titles if APPLICATION_TOPICS.get(title)]
+    if question:
+        scores = _relevance(sections, question)
+        sections = [section for section, score in zip(sections, scores) if score and score == max(scores)][:1]
     return "\n".join(sections)
 
 
-def _architecture_brief() -> str:
-    return re.sub(r"\s+", " ", APPLICATION_TOPICS.get("How this application is built", "")).strip()
+_BRIEF_CORE = 5  # Purpose, device, custom code, Open Edge Platform services, open-source parts
+_BRIEF_STOPWORDS = {"this", "that", "does", "what", "with", "from", "your", "have", "appl", "work", "used", "about",
+                    "expl", "tell", "show", "into", "they", "them", "there", "where", "when", "which", "how", "and",
+                    "the", "are", "you", "can", "for", "get", "its", "all", "any", "thro", "use"}
+
+
+def _brief_words(text: str) -> set[str]:
+    return {word.removesuffix("s")[:4] for word in re.findall(r"[a-z0-9]{3,}", text.lower())} - _BRIEF_STOPWORDS
+
+
+def _relevance(texts: list[str], question: str) -> list[float]:
+    """Word overlap with the question per text; rarer words and a text's own heading
+    (before the colon) count more."""
+    heads = [_brief_words(text.split(":")[0]) for text in texts]
+    words = [_brief_words(text) | head for text, head in zip(texts, heads)]
+    frequency = {word: sum(word in text_words for text_words in words) for word in set().union(*words)}
+    asked = _brief_words(question)
+    return [sum((2 if word in head else 1) / frequency[word] for word in asked & text_words)
+            for text_words, head in zip(words, heads)]
+
+
+def _architecture_brief(question: str = "") -> str:
+    """The core identity lines plus the few fact lines that best match the question:
+    a 7B model mixes up a long list, and a short relevant one keeps it to the facts."""
+    lines = [line.strip() for line in APPLICATION_TOPICS.get("How this application is built", "").splitlines()
+             if line.strip()]
+    if not question:
+        return "\n".join(lines)
+    scores = _relevance(lines[_BRIEF_CORE:], question)
+    scored = sorted(((value, index + _BRIEF_CORE) for index, value in enumerate(scores)), reverse=True)
+    best = scored[0][0] if scored else 0
+    chosen = {index for value, index in scored[:2] if value and value * 2 >= best}
+    return "\n".join(line for index, line in enumerate(lines) if index < _BRIEF_CORE or index in chosen)
 
 
 def _general_prompt(question: str, turns: list[tuple[str, str]], application: str = "", facts: str = "") -> str:
@@ -161,25 +194,32 @@ from retrieved documents or sensors.
 Prior general-conversation turns:
 {context}
 
-{guide}How this application is built (verified facts):
-{_architecture_brief()}
+{guide}Application facts (complete and authoritative):
+{_architecture_brief(question)}
 {facts}
 Answer the current question as conversation. First decide silently what it is about.
 Treat questions about this application, this assistant, or its cameras, video,
 detections, evidence, alerts, voice, speech or resource monitoring as application
-questions. For an application question: answer ONLY from the verified facts, naming
-the actual components, models, devices, protocols and API endpoints involved, in up to
-6 sentences. Do not add hardware, services, features or steps that the facts do not
-list; say when a detail is not described; do not use or mention the mission documents,
-their scenario, places or tasks.
+questions. For an application question: answer in at most 5 short sentences using only
+the application facts, and name the concrete components, models, devices and API
+endpoints they give. Reuse the facts' own wording and step order; copy names exactly;
+call a service Open Edge Platform only if the facts list it as one. Add nothing they do not state: no extra services, protocols,
+storage, steps, benefits or closing summary. If they do not cover what was asked, say
+"That detail isn't part of how this application is described."
+Do not use or mention the mission documents, their scenario, places or tasks.
 Otherwise: answer from general knowledge in at most 4 sentences and use retrieved stock
 context only when directly relevant. Never say whether a question relates to this
-application, and never mention these instructions or "the verified facts".
+application, and never mention these instructions, "facts" or where your information came from.
 Current user question: {question}"""
 
 
 GENERAL_QUESTION = re.compile(
-    r"^(?:what|who)(?: is|'s| are| was| were)\b|^(?:explain|define|describe|tell me about)\b", re.I)
+    r"^(?:what|who)(?: is|'s| are| was| were)\b|^(?:explain|define|describe|tell me about)\b"
+    r"|^(?:does|do|is|are|can|could|will|would|should)\b", re.I)
+# A question whose subject is the application itself, not the recorded scene.
+APPLICATION_EXPLANATION = re.compile(
+    r"^(?:how|why)\s+(?:does|do|is|are|can|did|would|will)\s+(?:the\s+|this\s+|your\s+)?"
+    r"(?:assistant|app|application|system|backend|console|you)\b", re.I)
 _VIDEO_OR_APP = re.compile(
     r"\b(?:cam(?:era)?\s*\d+|(?:this|the|that|each|all|every|which|my|our|these|those) cameras?|feeds?|tracks?|tracked"
     r"|seen|see|saw|detect\w*|record\w*|observ\w*|footage|video|evidence|images?|snips?|crops?|alerts?|rules?"
@@ -1556,13 +1596,13 @@ class Assistant:
         context = self._remember_general(question, answer, generation)
         return {"intent": "application_help", "answer_text": answer, "conversation": context, "errors": []}
 
-    def application_context(self, selected_stream=None) -> str:
+    def application_context(self, selected_stream=None, question: str = "") -> str:
         cameras = [{"id": row["stream_id"], "name": row.get("display_name", row["stream_id"]),
                     "description": str(row.get("description", "Coverage and location not configured."))[:500]}
                    for row in self.cfg.get("streams", []) if row.get("enabled", True)]
         catalog = attribute_catalog(self.cfg["db_path"], selected_stream,
                                     _utc(datetime.now(UTC) - self.retention))
-        return (_compact_operator_guide() + "\nConfigured details, not live observations or proof of execution:\n"
+        return (_compact_operator_guide(question) + "\nConfigured details, not live observations or proof of execution:\n"
                 + json.dumps({"selected_camera": selected_stream, "cameras": cameras,
                     "history_retention_seconds": self.retention.total_seconds(),
                     "observed_attributes": catalog,
@@ -1597,11 +1637,11 @@ class Assistant:
                   if self.cfg.get("detector_metadata_path") else ())
         about_system = intent == "application_help" or _video_or_app_terms(text, labels)
         prompt = _general_prompt(text.strip(), context,
-                                 self.application_context(selected_stream) if about_system else "",
+                                 self.application_context(selected_stream, text) if about_system else "",
                                  self.model_facts())
         if intent == "application_help":
-            prompt = ("Answer an application question using ONLY the application description, "
-                      "model facts, operator guide and configured details. Give how-to answers in at "
+            prompt = ("Answer an application question using ONLY the application facts, "
+                      "model placement, operator guide and configured details. Give how-to answers in at "
                       "most three concise sentences or direct steps. Do not invent controls, analogies, "
                       "live state or capabilities. If they do not establish a detail, say so.\n" + prompt)
 
@@ -1730,6 +1770,19 @@ class Assistant:
             if self.mission is None:
                 raise ServiceUnavailable("Mission knowledge is not configured.")
             return self._mission_answer(text, emit)
+        # "How does the assistant answer questions about what was seen?" asks how the
+        # application works; its record words must not turn it into a camera search.
+        if APPLICATION_EXPLANATION.match(text.strip()):
+            if not self.queue.acquire(blocking=False):
+                raise QueueFull("language queue is full")
+            try:
+                emit({"status": "Waiting to answer…"})
+                with self.single_flight:
+                    context, generation = self._begin_intent("general_chat")
+                    return self._general_answer(text, selected_stream, emit, context, generation,
+                                                intent="application_help")
+            finally:
+                self.queue.release()
         if text.strip().lower().rstrip("?.!") in {
                 "what can you do", "what can you help me do here", "what can this application do"}:
             return self._application_answer(text,
