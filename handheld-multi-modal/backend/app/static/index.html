@@ -4045,6 +4045,9 @@ function updateAssistantPaging() {
 
 function renderAssistant(answer) {
   state.assistantAnswer = answer;
+  const searched = answer.query?.filters?.streams, context = state.assistantContext;
+  if (searched?.length === 1 && context && searched[0] !== context.payload.selected_stream)
+    $("assistant-submitted").textContent = `${context.payload.text ? "You asked: " : ""}${context.text} · ${state.streams.find(s => s.stream_id === searched[0])?.display_name || searched[0]}`;
   $('replay-answer').hidden = !answer.answer_text;
   $("assistant-panel").classList.remove("welcome");
   renderAnswerActions(answer);

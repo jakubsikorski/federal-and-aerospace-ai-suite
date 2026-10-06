@@ -1663,6 +1663,16 @@ def test_questions_never_dead_end():
         answer = a.ask("Any people on camera 1 in the last 10 minutes?", "cam2")
         assert answer["intent"] == "video_history" and answer["query"]["filters"]["streams"] == ["cam1"]
         assert answer["answer_text"].startswith("You named Camera 1"), answer
+        # A named camera also narrows an "All cameras" scope, on every route.
+        conn.execute("""INSERT INTO streams (stream_id, display_name, source_uri, annotated_path, enabled,
+                        sort_order, tracking_session_id, history_generation)
+                        VALUES ('cam2','Camera 2','rtsp://cam2','annotated2',1,1,'session-2','generation-2')""")
+        conn.commit()
+        assert a.ask("What was seen?", "all")["query"]["filters"]["streams"] == ["cam1", "cam2"]
+        for question in ("Any people on camera 1 in the last 10 minutes?", "What was seen recently on camera 1?"):
+            answer = a.ask(question, "all")
+            assert answer["query"]["filters"]["streams"] == ["cam1"], (question, answer)
+            assert not answer["answer_text"].startswith("You named"), answer
         conn.close()
 
 

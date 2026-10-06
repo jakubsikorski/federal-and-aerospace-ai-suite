@@ -1676,9 +1676,10 @@ class Assistant:
         named = _mentioned_stream(text)
         cameras = {row["stream_id"]: row.get("display_name", row["stream_id"])
                    for row in self.cfg.get("streams", []) if row.get("enabled", True)}
-        if named and selected_stream and named != selected_stream and named in cameras:
-            # The spoken camera is the operator's latest intent; the selector may be stale.
-            scope_note = f"You named {cameras[named]}, so I searched it instead of {cameras.get(selected_stream, selected_stream)}."
+        if named and named in cameras and named != selected_stream:
+            # The spoken camera is the operator's latest intent; the selector may be stale or "all".
+            if selected_stream:
+                scope_note = f"You named {cameras[named]}, so I searched it instead of {cameras.get(selected_stream, selected_stream)}."
             selected_stream = named
         # Common control explanations use the shipped guide verbatim: no routing
         # latency and no invented behavior. Action requests still use the router.
