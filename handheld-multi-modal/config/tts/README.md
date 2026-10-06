@@ -35,7 +35,7 @@ Two candidates fully investigated:
 
 `config/tts/config.yaml` now pins: `models.tts.name: microsoft/speecht5_tts`,
 `runtime: openvino`, `device: CPU` (GPU until 2026-09-28, see below), `dtype: fp16`, `model_variant: default`,
-`default_speaker: Ryan` (stock default; owner-directed 2026-10-06, D64, after Miles in D57 and briefly Aaron). Deployed cleanly w/ no packaging issues —
+`default_speaker: Miles` (owner-directed, D57; kept in D64 after trying Aaron and Ryan; stock default Ryan). Deployed cleanly w/ no packaging issues —
 `transformers`/`torch`/`optimum-intel[openvino]` (already in pinned
 image's `requirements.txt`) are all SpeechT5 needs; no extra pip package
 required, unlike Parler.

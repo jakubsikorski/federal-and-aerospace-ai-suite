@@ -30,7 +30,7 @@ models:
     #             (CMU Arctic ids bdl/jmk/rms/clb/slt/ksp/awb are accepted as aliases)
     #   Qwen custom_voice example: Ryan
     #   Qwen voice_design: speaker can be omitted
-    default_speaker: Ryan  # owner-directed 2026-10-06 (D64; Miles in D57, Aaron briefly); stock default
+    default_speaker: Miles  # owner-directed (D57; D64 kept Miles after trying Aaron and Ryan); stock default Ryan
     # Default language. Permitted values: English (the service currently supports English only)
     default_language: English
     # Shared cache/output settings used by both models
