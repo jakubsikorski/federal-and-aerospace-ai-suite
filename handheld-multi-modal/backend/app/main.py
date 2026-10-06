@@ -1074,6 +1074,7 @@ def create_app() -> FastAPI:
                 "identity": "tracks_not_people",
             })
             last_speech = None
+            last_view = None
             while not pipelines.shutdown.is_set() and not await request.is_disconnected():
                 state = request.app.state
                 alert_version = state.alerts.version
@@ -1089,9 +1090,13 @@ def create_app() -> FastAPI:
                     if speech["version"] != last_speech:
                         last_speech = speech["version"]
                         yield _event("speech", {"stream_id": None, **speech})
-                    if state.alerts.version != alert_version:
+                    # An object leaving or entering view has no event of its own,
+                    # so "In view now" is re-checked here rather than every second.
+                    view = await asyncio.to_thread(_in_view_key, request)
+                    if state.alerts.version != alert_version or last_view not in (None, view):
                         alert_version = state.alerts.version
                         yield await asyncio.to_thread(_alert_event, request)
+                    last_view = view
                     await asyncio.sleep(0.2)
 
         return StreamingResponse(events(), media_type="text/event-stream", headers={
@@ -1240,6 +1245,17 @@ def _alert_payload(state, conn: sqlite3.Connection) -> str:
         "incident_counts": history.incident_counts(conn),
         "server_time": time.time(),
     })
+
+
+def _in_view_key(request: Request) -> tuple:
+    """Incidents whose object is on camera now, checked between data ticks."""
+    state = request.app.state
+    with read_connection(request) as conn:
+        rows = [dict(row) for row in conn.execute(
+            "SELECT incident_id, rule_id, stream_id, state FROM alert_incidents WHERE state != 'closed'")]
+        window = float(state.cfg.get("freshness_window_seconds", 8.0))
+        state.alerts.mark_in_view(conn, rows, state.ingest, time.time() - window)
+    return tuple(sorted(row["incident_id"] for row in rows if row.get("in_view")))
 
 
 def _alert_event(request: Request) -> str:

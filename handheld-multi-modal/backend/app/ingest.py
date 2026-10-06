@@ -130,6 +130,8 @@ class Ingest:
                 self.identity[row["stream_id"]] = (row["tracking_session_id"],
                                                    row["history_generation"] or "")
         self.last_frame: dict[str, float] = {}
+        # Newest frame time (observed_at) per camera, on the producer's clock.
+        self.newest_frame: dict[str, float] = {}
         self.health: dict[str, tuple[bool, str]] = {}
         self.open_intervals: dict[tuple, dict] = {}
         # Section 6.3: active track state, checkpointed to SQLite but readable
@@ -278,6 +280,7 @@ class Ingest:
             log.info("camera %s adopted session=%s generation=%s", stream_id, *identity)
 
         self.last_frame[stream_id] = time.monotonic()
+        self.newest_frame[stream_id] = max(observed_at, self.newest_frame.get(stream_id, observed_at))
         self._set_health(stream_id, True, None, observed_at)
 
         stamp = _utc(observed_at)
@@ -826,6 +829,10 @@ class Ingest:
                     for key, entry in self.active.items()
                     if key[0] == stream_id and key[1:3] == identity
                     and entry["last_at"] >= cutoff]
+
+    def newest_frame_at(self, stream_id: str) -> float | None:
+        with self.lock:
+            return self.newest_frame.get(stream_id)
 
     def live_intervals(self, stream_id: str) -> dict[int, dict]:
         """Open visibility intervals not yet checkpointed, by tracker id.

@@ -3205,6 +3205,15 @@ def test_incident_in_view_follows_live_matched_objects_and_zone():
         assert not in_view(995.0), "object outside the zone counted as in view"
         _observe(ing, "cam1", 1, start=1002.0, detection_rect=[45, 40, 10, 10], **rect)
         assert in_view(995.0)
+        # "Now" is the camera's newest frame, not the wall clock: once later
+        # frames no longer show the object, it has left even though its last
+        # sighting is still inside the freshness window.
+        _observe(ing, "cam1", 2, start=1002.4, label="car")
+        assert in_view(995.0), "a sub-second detection miss ended in view"
+        _observe(ing, "cam1", 2, start=1003.0, label="car")
+        assert not in_view(995.0), "object gone from newer frames is still in view"
+        _observe(ing, "cam1", 1, start=1003.1, detection_rect=[45, 40, 10, 10], **rect)
+        assert in_view(995.0)
         ing.conn.commit()
         (incident,) = history.incidents(ing.conn)
         assert alerts.act(incident["incident_id"], "dismiss")

@@ -215,8 +215,9 @@ different depending on whether its object is still there:
   alert yet. Amber and steady, no pulsing; the banner says when the object
   was last seen.
 
-"Now" uses the same few-second freshness window as the Current view. Once
-acknowledged, an alert shows neither. Tap **Alerts**
+"Now" follows the camera's own frames: the look turns amber within about a
+second of the object leaving the video. Once acknowledged, an alert shows
+neither. Tap **Alerts**
 (the amber bar under the video) to open the list; it opens over the lower
 part of the video and scrolls inside, so Resources stays in place. Tap
 **Alerts** again to close it. Incoming alerts do not automatically expand it

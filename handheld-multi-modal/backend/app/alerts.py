@@ -27,6 +27,9 @@ MAX_RULES = 50
 SNOOZE_MINUTES = (5, 15, 60)
 INCIDENT_ACTIONS = ("acknowledge", "snooze", "dismiss", "false_alarm")
 ZONE_MARGIN = 0.02
+# Missed-detection tolerance for "in view now", in seconds of camera frames.
+# Measured on the demo feed: the tracker misses a dog for <=0.4 s 95% of the time.
+IN_VIEW_GAP = 0.5
 MAX_MATCH_STATE = 5000
 
 
@@ -644,9 +647,13 @@ class Alerts:
     def mark_in_view(self, conn: sqlite3.Connection, incidents: list[dict], ingest, cutoff: float) -> None:
         """Set `in_view` on each incident: a matched object is on camera now.
 
-        "Now" is a live track seen since `cutoff` (the freshness window), still
-        inside the rule's zone when it has one. Read-only: zone hysteresis state
-        belongs to matching and is not touched here.
+        "Now" is the camera's newest frame, not the wall clock: observations
+        arrive seconds after their frame, so a wall-clock window kept an object
+        "in view" well after it left the video. A matched track counts while it
+        was in one of the frames from the last IN_VIEW_GAP seconds (missed
+        detections), and only while the camera is still delivering (`cutoff`).
+        It must still be inside the rule's zone when it has one. Read-only:
+        zone hysteresis state belongs to matching and is not touched here.
         """
         rules = {rule["rule_id"]: rule for rule in self.rules}
         live: dict[str, dict[int, dict]] = {}
@@ -656,8 +663,11 @@ class Alerts:
                 continue
             stream = incident["stream_id"]
             if stream not in live:
-                live[stream] = {entry["track_id"]: entry for entry in ingest.live_tracks(stream, cutoff)
-                                if entry.get("track_id") is not None}
+                newest = ingest.newest_frame_at(stream)
+                live[stream] = {} if newest is None or newest < cutoff else {
+                    entry["track_id"]: entry
+                    for entry in ingest.live_tracks(stream, newest - IN_VIEW_GAP)
+                    if entry.get("track_id") is not None}
             tracks = live[stream]
             if not tracks:
                 continue
