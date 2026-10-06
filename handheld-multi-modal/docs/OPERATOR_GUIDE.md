@@ -69,8 +69,8 @@ kiosk mode) on the handheld.
 7. **Models & devices** — each model with its device and status (Vision on
    NPU, LLM and Transcription on GPU, Speech on CPU). Click one for details.
    Transcription uses whisper-medium with FP16 weights; Speech uses the voice Miles.
-8. **Architecture** — opens the architecture page (below) in a new tab, so live
-   video keeps running; **Back to app** closes that tab.
+8. **Architecture** — opens the architecture page (below) in place;
+   **Back to app** returns to the console.
 
 ### Architecture page
 
