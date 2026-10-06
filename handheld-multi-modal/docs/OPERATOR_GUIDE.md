@@ -6,7 +6,8 @@ Red numbers in the pictures match the numbered lists below.
 The console is one fixed landscape screen: live camera and alerts on the left,
 evidence and the assistant on the right, resources below. It uses a dark navy
 theme with teal for primary actions (Talk, Ask, selected camera), amber for
-alerts and warnings, and red only for a recording Talk button or failures.
+alerts and warnings, and red only for an alerted object on camera now, a
+recording Talk button or failures.
 The reference display is a 1280×800 handheld touch screen: everything fits
 without page scrolling, and the layout grows with larger screens. Main
 actions (Talk, Mission, Manage alerts, Audio, camera tabs, Acknowledge, View,
@@ -20,6 +21,7 @@ kiosk mode) on the handheld.
 ## Contents
 
 - [Top bar](#top-bar)
+  - [Architecture page](#architecture-page)
   - [Model details](#model-details)
 - [All cameras](#all-cameras)
 - [Adding and removing cameras](#adding-and-removing-cameras)
@@ -52,7 +54,8 @@ kiosk mode) on the handheld.
 
 1. **Camera tabs** — pick the live camera. The last camera you used is
    restored on the next visit. **All cameras** shows the live grid (below).
-   A yellow badge counts open alerts. With many cameras the tab strip scrolls
+   A badge counts alerts that need attention: amber, or red while an
+   alerted object is on camera now. With many cameras the tab strip scrolls
    sideways; a fade on the right means more tabs.
 2. **Talk** — ask a question by voice (see
    [Voice questions](#voice-questions-and-spoken-answers)). While listening it
@@ -216,17 +219,22 @@ different depending on whether its object is still there:
   was last seen.
 
 "Now" follows the camera's own frames: the look turns amber within about a
-second of the object leaving the video. Once acknowledged, an alert shows
-neither. Tap **Alerts**
-(the amber bar under the video) to open the list; it opens over the lower
-part of the video and scrolls inside, so Resources stays in place. Tap
+second or two of the object leaving the video. Any object the rule asks for
+counts, so the tracker renumbering the same dog does not flicker it. Once
+acknowledged, an alert shows
+neither.
+
+Tap **Alerts** (the bar under the video; amber, or red with "In view now"
+while an alerted object is on camera) to open the list; it opens over the
+lower part of the video and scrolls inside, so Resources stays in place. Tap
 **Alerts** again to close it. Incoming alerts do not automatically expand it
 or resize video.
 
 1. Annotated video of the selected camera (boxes on detected objects). The
    small badge shows estimated video delay when available.
 2. **Fullscreen** — enlarge the video.
-3. **Alert** — object, camera, sightings, first–last time, state. Tap the
+3. **Alert** — object, camera, sightings, first–last time, state (**In view
+   now** in red, **Needs attention**, **Acknowledged**, …). Tap the
    picture or text to show the objects that raised it in Evidence. The small
    ⏱ time under the picture is how many seconds after the detector first saw
    the object the whole alert arrived (on screen, voice and picture). Hover
@@ -297,7 +305,8 @@ through the existing history APIs; tap **View** to jump into them.
 4. **Answer mode** — **Ask anything** (records, mission or general) or
    **General chat** (no camera records).
 5. **History filters** — object type and time range.
-6. **Find person** — recorded priority objects, last 10 minutes.
+6. **Find person** — recorded priority objects, last 10 minutes. Named after
+   the configured priority object type; hidden when none is set.
 7. **Mission objective** — from the loaded mission.
 8. **Explain a topic** — general conversation.
 9. **New conversation** — forget earlier questions.

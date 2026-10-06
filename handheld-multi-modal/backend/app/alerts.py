@@ -28,8 +28,9 @@ SNOOZE_MINUTES = (5, 15, 60)
 INCIDENT_ACTIONS = ("acknowledge", "snooze", "dismiss", "false_alarm")
 ZONE_MARGIN = 0.02
 # Missed-detection tolerance for "in view now", in seconds of camera frames.
-# Measured on the demo feed: the tracker misses a dog for <=0.4 s 95% of the time.
-IN_VIEW_GAP = 0.5
+# Measured on the demo feed: detection of a visible dog drops out for up to
+# about 1.0 s (most gaps are <=0.4 s), so shorter values flicker.
+IN_VIEW_GAP = 1.2
 MAX_MATCH_STATE = 5000
 
 
@@ -644,40 +645,39 @@ class Alerts:
                                  cooldown=0.0 if reopened else rule["cooldown_seconds"],
                                  group=incident_id)
 
-    def mark_in_view(self, conn: sqlite3.Connection, incidents: list[dict], ingest, cutoff: float) -> None:
-        """Set `in_view` on each incident: a matched object is on camera now.
+    def mark_in_view(self, incidents: list[dict], ingest, cutoff: float) -> None:
+        """Set `in_view` on each incident: what its rule asks for is on camera now.
 
-        "Now" is the camera's newest frame, not the wall clock: observations
-        arrive seconds after their frame, so a wall-clock window kept an object
-        "in view" well after it left the video. A matched track counts while it
-        was in one of the frames from the last IN_VIEW_GAP seconds (missed
-        detections), and only while the camera is still delivering (`cutoff`).
-        It must still be inside the rule's zone when it has one. Read-only:
-        zone hysteresis state belongs to matching and is not touched here.
+        Any tracked object meeting the rule (camera, object type, confidence,
+        area) counts, not only the tracks that matched: the tracker often gives
+        the same object a new id, and that track has not matched yet.
+        "Now" is the camera's newest frame, not the wall clock, so delivery
+        delay does not keep an object "in view" after it left the video. An
+        object counts while it was in the frames of the last IN_VIEW_GAP
+        seconds, and only while the camera is still delivering (`cutoff`).
+        Read-only: zone hysteresis state belongs to matching.
         """
         rules = {rule["rule_id"]: rule for rule in self.rules}
-        live: dict[str, dict[int, dict]] = {}
+        live: dict[str, list[dict]] = {}
         for incident in incidents:
             incident["in_view"] = False
-            if incident["state"] == "closed" or ingest is None:
+            rule = rules.get(incident["rule_id"])
+            if incident["state"] == "closed" or ingest is None or rule is None:
                 continue
             stream = incident["stream_id"]
             if stream not in live:
                 newest = ingest.newest_frame_at(stream)
-                live[stream] = {} if newest is None or newest < cutoff else {
-                    entry["track_id"]: entry
-                    for entry in ingest.live_tracks(stream, newest - IN_VIEW_GAP)
-                    if entry.get("track_id") is not None}
-            tracks = live[stream]
-            if not tracks:
-                continue
-            matched = conn.execute(
-                f"""SELECT track_id FROM rule_matches WHERE incident_id = ?
-                    AND track_id IN ({",".join("?" * len(tracks))})""",
-                (incident["incident_id"], *tracks)).fetchall()
-            zone = (rules.get(incident["rule_id"]) or {}).get("zone")
-            for (track_id,) in matched:
-                point = self._foot(tracks[track_id]) if zone else None
+                live[stream] = [] if newest is None or newest < cutoff else [
+                    entry for entry in ingest.live_tracks(stream, newest - IN_VIEW_GAP)
+                    if entry.get("track_id") is not None]
+            zone = rule.get("zone")
+            for entry in live[stream]:
+                if rule["class_label"] is not None and entry["class_label"] != rule["class_label"]:
+                    continue
+                if rule["min_confidence"] is not None and (
+                        entry.get("peak_confidence") or 0.0) < rule["min_confidence"]:
+                    continue
+                point = self._foot(entry) if zone else None
                 if zone is None or point is not None and (
                         _point_in_polygon(point, zone["points"])
                         or _edge_distance(point, zone["points"]) <= ZONE_MARGIN):

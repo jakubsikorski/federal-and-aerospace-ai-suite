@@ -3196,7 +3196,7 @@ def test_incident_in_view_follows_live_matched_objects_and_zone():
 
         def in_view(cutoff):
             rows = history.incidents(ing.conn)
-            alerts.mark_in_view(ing.conn, rows, ing, cutoff)
+            alerts.mark_in_view(rows, ing, cutoff)
             return rows[0]["in_view"]
         assert in_view(995.0), "matched object inside the zone is not in view"
         assert not in_view(1005.0), "an object last seen before the window is still in view"
@@ -3208,12 +3208,17 @@ def test_incident_in_view_follows_live_matched_objects_and_zone():
         # "Now" is the camera's newest frame, not the wall clock: once later
         # frames no longer show the object, it has left even though its last
         # sighting is still inside the freshness window.
-        _observe(ing, "cam1", 2, start=1002.4, label="car")
-        assert in_view(995.0), "a sub-second detection miss ended in view"
         _observe(ing, "cam1", 2, start=1003.0, label="car")
+        assert in_view(995.0), "a one-second detection miss ended in view"
+        _observe(ing, "cam1", 2, start=1003.4, label="car")
         assert not in_view(995.0), "object gone from newer frames is still in view"
-        _observe(ing, "cam1", 1, start=1003.1, detection_rect=[45, 40, 10, 10], **rect)
-        assert in_view(995.0)
+        # The tracker re-identifies the same object under a new id: still in
+        # view, even before that track has matched (here a dwell rule).
+        (incident,) = history.incidents(ing.conn)
+        ing.conn.commit()
+        assert alerts.update(ing.conn, incident["rule_id"], {"dwell_seconds": 60})
+        _observe(ing, "cam1", 7, start=1003.5, detection_rect=[45, 40, 10, 10], **rect)
+        assert in_view(995.0), "a not-yet-matched object meeting the rule is not in view"
         ing.conn.commit()
         (incident,) = history.incidents(ing.conn)
         assert alerts.act(incident["incident_id"], "dismiss")

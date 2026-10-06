@@ -1254,7 +1254,7 @@ def _in_view_key(request: Request) -> tuple:
         rows = [dict(row) for row in conn.execute(
             "SELECT incident_id, rule_id, stream_id, state FROM alert_incidents WHERE state != 'closed'")]
         window = float(state.cfg.get("freshness_window_seconds", 8.0))
-        state.alerts.mark_in_view(conn, rows, state.ingest, time.time() - window)
+        state.alerts.mark_in_view(rows, state.ingest, time.time() - window)
     return tuple(sorted(row["incident_id"] for row in rows if row.get("in_view")))
 
 
@@ -1302,7 +1302,7 @@ def _incidents(state, conn: sqlite3.Connection, limit: int = 50) -> list[dict]:
         row["undelivered"] = (row["dispatch_state"] == "failed"
                               and (row["attempts"] or 0) >= alerting.MAX_ATTEMPTS)
     window = float(state.cfg.get("freshness_window_seconds", 8.0))
-    state.alerts.mark_in_view(conn, rows, state.ingest, time.time() - window)
+    state.alerts.mark_in_view(rows, state.ingest, time.time() - window)
     return rows
 
 
