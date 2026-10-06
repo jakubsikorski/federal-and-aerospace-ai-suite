@@ -1581,6 +1581,10 @@ def test_camera_history_question_fast_path_common_phrasings():
         ("Did you see a truck today?", ["truck"], 1440),
         ("How many persons were detected in the past 30 minutes?", ["person"], 30),
         ("Show me cars from the last hour", ["car"], 60),
+        # Whisper spells small counts out.
+        ("Show me people from the last three minutes.", ["person"], 3),
+        ("What objects were detected in the last three minutes?", None, 3),
+        ("Any cars in the past twenty minutes?", ["car"], 20),
     ]:
         plan = simple_plan(text, labels, None)
         assert plan and plan["classes"] == classes and plan["window"]["minutes"] == minutes, text

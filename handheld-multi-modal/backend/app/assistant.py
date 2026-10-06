@@ -237,13 +237,16 @@ _RECORD_TERMS = re.compile(
     r"|evidence|images?|snips?|happen\w*|going on|activity|movement|moving|show me|find|any(?:one|body|thing)"
     r"|alerts?|today|yesterday|tonight|last|past|ago|since|between|minutes?|hours?|morning|afternoon|evening"
     r"|\d{1,2}:\d{2})\b", re.I)
+# Whisper writes small counts as words ("last three minutes").
+NUMBER_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8,
+                "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "fifteen": 15, "twenty": 20, "thirty": 30,
+                "forty": 40, "forty-five": 45, "sixty": 60}
 _PLAIN_QUERY_WORDS = {
     "show", "find", "list", "were", "was", "there", "any", "anything", "anyone", "anybody", "seen", "see",
     "detected", "recorded", "observed", "tracks", "track", "the", "a", "an", "in", "on", "of", "for", "me",
     "last", "past", "minutes", "minute", "hours", "hour", "today", "all", "camera", "cameras", "cam",
     "how", "many", "what", "which", "did", "do", "you", "is", "are", "i", "people", "going", "happened",
-    "happening", "activity", "movement", "moving", "images", "evidence", "ten", "five", "two", "one",
-    "fifteen", "thirty", "sixty", "yesterday", "since", "ago", "and", "or", "summarize", "summarise",
+    "happening", "activity", "movement", "moving", "images", "evidence", *NUMBER_WORDS, "yesterday", "since", "ago", "and", "or", "summarize", "summarise",
     "summary", "during", "within", "over", "from", "recent", "recently", "give", "tell", "about", "check",
     "report", "been", "some", "time", "period", "window", "please", "can", "could", "would", "shows",
     "happen", "happens", "has", "have", "had", "any", "to", "at", "by", "with", "it", "that", "this",
@@ -1177,11 +1180,10 @@ def simple_plan(text: str, labels: tuple[str, ...], window: dict | None) -> dict
             return None
     else:
         match = re.fullmatch(r"(.+?)\s+(?:(?:in|over|during|for|from)\s+)?(?:the\s+)?(?:last|past)\s+"
-                             r"(\d+|one|two|five|ten|fifteen|thirty|sixty)\s+(minutes?|hours?|days?)", text)
+                             r"(\d+|" + "|".join(sorted(NUMBER_WORDS, key=len, reverse=True)) + r")\s+(minutes?|hours?|days?)", text)
         if match:
             prefix, number, unit = match.groups()
-            words = {"one":1,"two":2,"five":5,"ten":10,"fifteen":15,"thirty":30,"sixty":60}
-            minutes = (int(number) if number.isdigit() else words[number]) * (
+            minutes = (int(number) if number.isdigit() else NUMBER_WORDS[number]) * (
                 1440 if unit.startswith("day") else 60 if unit.startswith("hour") else 1)
             window = {"kind":"relative", "minutes":minutes}
         else:
