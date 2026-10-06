@@ -4447,6 +4447,7 @@ async function refreshState() {
 }
 
 function connectEvents() {
+  clearTimeout(state.eventsRetry);
   if (state.events) state.events.close();
   const query = historyQuery(false);
   const events = new EventSource("/api/stream" + (query ? "?" + query : ""));
@@ -4464,6 +4465,12 @@ function connectEvents() {
     $("connection").textContent = "Connection lost · retrying";
     $("connection").className = "lost";
     renderConnectionState(true);
+    // The browser retries only network drops; an HTTP error (the proxy's 502
+    // while the Backend restarts) closes the stream for good.
+    if (events.readyState === EventSource.CLOSED) {
+      clearTimeout(state.eventsRetry);
+      state.eventsRetry = setTimeout(() => { if (state.events === events) connectEvents(); }, 3000);
+    }
   };
   events.addEventListener("feed", (event) => {
     if (state.events !== events) return;

@@ -1194,7 +1194,13 @@ def create_app() -> FastAPI:
 
     static = Path(__file__).parent / "static"
     if static.is_dir():
-        app.mount("/", StaticFiles(directory=static, html=True), name="ui")
+        class RevalidatedFiles(StaticFiles):
+            # Without it the browser reuses a cached UI after an update.
+            async def get_response(self, path, scope):
+                response = await super().get_response(path, scope)
+                response.headers["Cache-Control"] = "no-cache"
+                return response
+        app.mount("/", RevalidatedFiles(directory=static, html=True), name="ui")
 
     return app
 

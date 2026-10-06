@@ -4658,6 +4658,11 @@ def test_replay_answer_validation_and_recording_guard():
             arbiter.say_answer = lambda text, generation: None
             assert (await client.post("/api/speech/replay", json={"text": "Hello."})).status_code == 422
             arbiter.say_answer = real
+            # The UI revalidates so a browser never keeps running a pre-update page.
+            for path in ("/", "/architecture.html"):
+                page = await client.get(path)
+                assert page.status_code == 200 and page.headers["cache-control"] == "no-cache", path
+            assert "EventSource.CLOSED" in (await client.get("/")).text, "closed live stream must reconnect"
     asyncio.run(check())
 
 
