@@ -143,7 +143,7 @@ speech_ack_text: "Checking."
 # Talk press wakes TTS and Whisper at most this often (idle devices were 4-9 s slower).
 voice_warm_interval_seconds: 20.0
 # Optional stock voice name from GET /v1/model-info; unset uses the service default.
-tts_voice: Miles
+tts_voice: Aaron
 # Optional JSONL arbiter trace for evidence; unset keeps only the in-memory ring.
 # arbiter_trace_path: /data/arbiter_trace.jsonl
 

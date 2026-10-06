@@ -68,7 +68,7 @@ kiosk mode) on the handheld.
    **Connection lost · retrying** means data may be stale until it reconnects.
 7. **Models & devices** — each model with its device and status (Vision on
    NPU, LLM and Transcription on GPU, Speech on CPU). Click one for details.
-   Transcription uses whisper-medium with FP16 weights; Speech uses the voice Miles.
+   Transcription uses whisper-medium with FP16 weights; Speech uses the voice Aaron.
 8. **Architecture** — opens the architecture page (below) in place;
    **Back to app** returns to the console.
 
@@ -452,7 +452,7 @@ or transcription fails, type your question; no camera settings are changed.
 
 With **Audio on**, you hear "Checking." as soon as your question is recognized,
 then the answer starts within a few seconds. Answers are spoken by the voice
-**Miles**, in short parts (long sentences split into bounded clauses). The first
+**Aaron**, in short parts (long sentences split into bounded clauses). The first
 part starts before the model has finished writing. Each part plays to its end,
 then the next starts without a gap once ready. If several tabs or devices
 have Audio on, each plays the answer at its own pace. Close extra tabs to hear
