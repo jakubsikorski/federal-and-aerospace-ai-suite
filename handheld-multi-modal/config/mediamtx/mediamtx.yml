@@ -6,6 +6,11 @@ apiAddress: :9997
 rtsp: yes
 rtspAddress: :8554
 rtspTransports: [tcp]
+# Per-reader send queue in packets (default 512). A 1080p keyframe arrives as
+# a burst of several hundred RTP packets; when DLSPS reads a little slowly
+# the default overflowed ("write queue is full"), packets were dropped, and
+# the video froze until the next keyframe.
+writeQueueSize: 8192
 rtmp: no
 hls: no
 srt: no
