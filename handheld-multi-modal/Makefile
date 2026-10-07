@@ -36,7 +36,7 @@ ANNOTATED_IDS := $(patsubst cam%,annotated%,$(CAMERA_IDS))
 .PHONY: help prereq demo-prereq up demo-up demo-mission status stop \
   pipelines-restart down clean clean-demo clean-history clean-all \
   demo-stop demo-down demo-status demo-pipelines-restart \
-  preflight setup tls asset-permissions model-downloader-up \
+  bundle bundle-load preflight setup tls asset-permissions model-downloader-up \
   test test-ui test-assets test-phase5
 
 help:
@@ -61,6 +61,11 @@ help:
 	@echo '  make speech-device TTS_DEVICE=GPU  Move speech (SpeechT5) to GPU; CPU moves it back'
 	@echo '  make down             Remove containers; keep models, history and TLS'
 	@echo '  demo-stop, demo-down and demo-status are the same as stop, down and status.'
+	@echo
+	@echo 'Copy to another device (no internet needed there)'
+	@echo '  make bundle BUNDLE=<dir>       Save images, source, models and caches (after a demo-up)'
+	@echo '                                 IMAGES=no skips docker save when images are copied separately'
+	@echo '  make bundle-load BUNDLE=<dir>  Verify and restore them, then run make demo-up'
 	@echo
 	@echo 'Clean up'
 	@echo '  make clean            down + remove generated per-device config'
@@ -470,6 +475,65 @@ clean-all:
 	$(as_root) 'rm -rf /assets/data /assets/config/tls /assets/config/devices.yaml /assets/config/mediamtx.yml'
 	$(ASSET_COMPOSE) down --volumes --remove-orphans
 	echo 'Removed. Container images remain; make up or make demo-up downloads everything again.'
+
+# ---------------------------------------------------------------- copy to another device
+
+# Everything a device downloads on its first start, so another device can start
+# without internet: images, source, YOLO, demo videos, Chat Q&A models, and the
+# Whisper and SpeechT5 caches that live in Docker volumes. History, missions,
+# TLS keys and detected device settings stay per device.
+BUNDLE_DATA := data/chatqna/model_cache data/dlsps/yolo_export data/dlsps/demo-video
+BUNDLE_VOLUMES := audio_analyzer_models audio_analyzer_cache tts_models tts_cache
+# Runs as root so container-owned files keep their numeric owners.
+define bundle_tar
+$(COMPOSE) run --rm --no-deps --user 0:0 --entrypoint /bin/sh \
+  -v "$$ASSET_ROOT:/assets" -v "$$BUNDLE:/bundle" \
+  $(foreach volume,$(BUNDLE_VOLUMES),-v handheld-multi-modal_$(volume):/volumes/$(volume)) model-downloader -ec
+endef
+
+define bundle_dir
+[[ -n "$(BUNDLE)" ]] || { echo 'Set BUNDLE=<directory>, for example a folder on a USB disk' >&2; exit 1; }
+export BUNDLE=$$(realpath -m "$(BUNDLE)")
+endef
+
+bundle: preflight
+	@$(bundle_dir)
+	for path in $(BUNDLE_DATA); do
+	  [[ -d "$$ASSET_ROOT/$$path" ]] || { echo "$$path is missing; run make demo-up once on this device first" >&2; exit 1; }
+	done
+	images=$$($(COMPOSE) --profile assets config --images | sort -u)
+	for image in $$images; do
+	  docker image inspect "$$image" >/dev/null 2>&1 || { echo "Image $$image is missing; run make demo-up once on this device first" >&2; exit 1; }
+	done
+	mkdir -p "$$BUNDLE"
+	rm -f "$$BUNDLE/images.tar"
+	printf '%s\n' $$images > "$$BUNDLE/images.txt"
+	git archive --format=tar --prefix=handheld-multi-modal/ -o "$$BUNDLE/source.tar" HEAD
+	[[ -z $$(git status --porcelain --untracked-files=no) ]] || echo 'note: uncommitted changes are not in source.tar' >&2
+	if [[ "$(IMAGES)" != no ]]; then
+	  echo "Saving $$(wc -l < "$$BUNDLE/images.txt") images (takes several minutes)"
+	  docker save -o "$$BUNDLE/images.tar" $$images
+	fi
+	echo 'Saving models, caches and demo videos'
+	$(bundle_tar) 'tar -C /assets -cf /bundle/assets.tar $(BUNDLE_DATA); tar -C /volumes -cf /bundle/volumes.tar $(BUNDLE_VOLUMES); chown $(shell id -u):$(shell id -g) /bundle/assets.tar /bundle/volumes.tar'
+	cd "$$BUNDLE"
+	sha256sum images.txt source.tar assets.tar volumes.tar $$([[ -f images.tar ]] && echo images.tar) > SHA256SUMS
+	printf 'Bundle ready: %s (%s)\n' "$$BUNDLE" "$$(du -sh . | cut -f1)"
+	printf 'On the other device: tar -xf source.tar && cd handheld-multi-modal && make bundle-load BUNDLE=%s\n' "$$BUNDLE"
+
+bundle-load: preflight
+	@$(bundle_dir)
+	echo 'Verifying the bundle checksums (several minutes for large bundles)'
+	(cd "$$BUNDLE" && sha256sum -c --quiet SHA256SUMS)
+	if [[ -f "$$BUNDLE/images.tar" ]]; then docker load -q -i "$$BUNDLE/images.tar"; fi
+	missing=$$(while read -r image; do docker image inspect "$$image" >/dev/null 2>&1 || echo "  $$image"; done < "$$BUNDLE/images.txt")
+	[[ -z $$missing ]] || { printf 'These images are missing; load them first:\n%s\n' "$$missing" >&2; exit 1; }
+	$(COMPOSE) --profile assets stop
+	# Let Compose create the volumes so later starts recognise them as its own.
+	$(COMPOSE) create audio-analyzer tts
+	echo 'Restoring models, caches and demo videos'
+	$(bundle_tar) 'tar -C /assets -xpf /bundle/assets.tar; tar -C /volumes -xpf /bundle/volumes.tar; chown $(shell id -u):$(shell id -g) /assets/data /assets/data/chatqna /assets/data/dlsps'
+	echo 'Loaded. Start with make demo-up (or make up); no internet needed.'
 
 # ---------------------------------------------------------------- checks
 

@@ -33,7 +33,9 @@ and OpenSSL. The first start downloads several GB of models and needs internet
 access; later starts and restarts run without internet. Each start rebuilds
 the Backend image when `backend/` changed (for example after `git pull`);
 without internet it warns that the Backend is not the current version and
-starts the previous one.
+starts the previous one. To set up devices without internet, `make bundle`
+copies a prepared device; see
+[Copy to another device](docs/application/application-operations.md#copy-to-another-device-offline).
 
 ```sh
 make demo-up        # demo: pinned sample videos as looping cameras
