@@ -9,8 +9,15 @@
 #      RTSP_URL=rtsp://127.0.0.1:8554/cam4 examples/realsense-rtsp.sh
 #
 # RealSense colour is raw YUYV over UVC, so it must be encoded to H.264.
-# ENCODER=vaapi (default) encodes on the Intel GPU (user needs the render
-# group); ENCODER=cpu uses libx264 (~20-40% of one core at 720p30).
+# ENCODER=auto (default) encodes on the Intel GPU through VA-API when it
+# works and otherwise falls back to libx264 on the CPU (~20-40% of one core
+# at 720p30), printing why. ENCODER=vaapi or ENCODER=cpu forces one.
+# VA-API needs the user in the render group and a host media driver that
+# supports the GPU: Ubuntu 24.04's intel-media-va-driver 24.1 cannot drive
+# Lunar Lake or Panther Lake ("Failed to set value '/dev/dri/renderD128' for
+# option 'vaapi_device'"); a newer intel-media-va-driver fixes that. The
+# application's own containers bring their own drivers and are unaffected.
+# RENDER_NODE defaults to the first Intel /dev/dri/renderD* node.
 #
 # Selecting the device: a RealSense exposes several /dev/video* nodes (depth,
 # IR, colour, metadata) and only the colour node offers YUYV. With DEVICE
@@ -52,8 +59,38 @@ fi
 RTSP_URL=${RTSP_URL:?set RTSP_URL to the address shown when adding the camera}
 SIZE=${SIZE:-1280x720}
 FPS=${FPS:-30}
-ENCODER=${ENCODER:-vaapi}
-RENDER_NODE=${RENDER_NODE:-/dev/dri/renderD128}
+ENCODER=${ENCODER:-auto}
+
+if [[ -z ${RENDER_NODE:-} ]]; then
+  for node in /dev/dri/renderD*; do
+    [[ $(cat "/sys/class/drm/${node##*/}/device/vendor" 2>/dev/null) == 0x8086 ]] \
+      && { RENDER_NODE=$node; break; }
+  done
+  RENDER_NODE=${RENDER_NODE:-/dev/dri/renderD128}
+fi
+# libva 2.20 looks for a non-existent xe_drv_video.so on GPUs using the xe
+# kernel driver; iHD is the Intel media driver for both i915 and xe.
+export LIBVA_DRIVER_NAME=${LIBVA_DRIVER_NAME:-iHD}
+
+vaapi_error() {
+  [[ -r $RENDER_NODE && -w $RENDER_NODE ]] \
+    || { echo "no access to $RENDER_NODE (add the user to the render group and log in again)"; return; }
+  ffmpeg -nostdin -hide_banner -loglevel error -vaapi_device "$RENDER_NODE" \
+    -f lavfi -i testsrc=size=640x360:rate=30 -frames:v 2 \
+    -vf format=nv12,hwupload -c:v h264_vaapi -f null - 2>&1 | head -n1 | sed "s/^\[[^]]*\] //"
+  return 0
+}
+
+if [[ $ENCODER == auto ]]; then
+  ENCODER=vaapi
+  if ! ffmpeg -nostdin -hide_banner -loglevel quiet -vaapi_device "$RENDER_NODE" \
+      -f lavfi -i testsrc=size=640x360:rate=30 -frames:v 2 \
+      -vf format=nv12,hwupload -c:v h264_vaapi -f null - 2>/dev/null; then
+    echo "GPU encoding unavailable on $RENDER_NODE: $(vaapi_error)" >&2
+    echo "Falling back to CPU encoding (set ENCODER=cpu to skip this check)." >&2
+    ENCODER=cpu
+  fi
+fi
 
 input=(-f v4l2 -input_format yuyv422 -video_size "$SIZE" -framerate "$FPS" -i "$DEVICE")
 # One keyframe per second and no B-frames keep start-up and latency short.
@@ -62,7 +99,7 @@ case "$ENCODER" in
                  -c:v h264_vaapi -g "$FPS" -bf 0) ;;
   cpu)   encode=(-pix_fmt yuv420p -c:v libx264 -preset ultrafast -tune zerolatency
                  -g "$FPS" -bf 0) ;;
-  *)     echo "ENCODER must be vaapi or cpu" >&2; exit 2 ;;
+  *)     echo "ENCODER must be auto, vaapi or cpu" >&2; exit 2 ;;
 esac
 
 exec ffmpeg -nostdin -hide_banner -loglevel warning "${input[@]}" "${encode[@]}" \
