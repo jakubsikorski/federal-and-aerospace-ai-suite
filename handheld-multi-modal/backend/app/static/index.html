@@ -1484,7 +1484,7 @@ function startLatency(current) {
 function retryWhep(current, reason) {
   if (state.whep !== current || current.retrying || state.whepLeaving) return;
   current.retrying = true;
-  const delay = Math.min(30000, 1000 * 2 ** Math.min(state.whepFailures++, 5));
+  const delay = Math.min(8000, 1000 * 2 ** Math.min(state.whepFailures++, 3));
   $("video").srcObject = null;
   $("video-wrap").classList.add("inactive");
   $("video-note").textContent = current.stream.display_name + ": " + reason
@@ -1540,18 +1540,11 @@ async function attachWhep(stream, retry = false) {
         startLatency(current);
       }
     };
+    // Post the offer at once, as the grid does: without browser candidates
+    // MediaMTX learns the browser's address from its connectivity checks,
+    // one path through Docker's UDP NAT. Waiting for gathering sent Firefox's
+    // mDNS host candidates and made connections intermittent on some devices.
     await pc.setLocalDescription(await pc.createOffer());
-    await new Promise((resolve, reject) => {
-      const cancelled = () => reject(new DOMException("Connection cancelled", "AbortError"));
-      if (current.abort.signal.aborted) return cancelled();
-      if (pc.iceGatheringState === "complete") return resolve();
-      current.abort.signal.addEventListener("abort", cancelled, {once: true});
-      pc.onicegatheringstatechange = () => {
-        if (pc.iceGatheringState === "complete") {
-          current.abort.signal.removeEventListener("abort", cancelled); resolve();
-        }
-      };
-    });
     if (!active()) return;
     const endpoint = new URL(stream.whep_path, location.origin);
     const response = await fetch(endpoint, {
