@@ -102,5 +102,5 @@ case "$ENCODER" in
   *)     echo "ENCODER must be auto, vaapi or cpu" >&2; exit 2 ;;
 esac
 
-exec ffmpeg -nostdin -hide_banner -loglevel warning "${input[@]}" "${encode[@]}" \
+exec ffmpeg -nostdin -hide_banner -loglevel warning -stats "${input[@]}" "${encode[@]}" \
   -an -f rtsp -rtsp_transport tcp "$RTSP_URL"
