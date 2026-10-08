@@ -273,12 +273,14 @@ demo-prereq: prereq
 	# macroblocks into crops until the next keyframe. They are re-encoded once
 	# here: keyframe every second, no B-frames, same resolution, at most 30 fps.
 	# Detection runs on every frame (zero-term tracking); a 60 fps source outran
-	# the detector and its pipeline ended every ~90 s. The .max30 name keeps an
-	# older full-rate cache from being reused.
-	for source in person-bicycle-car-detection.mp4 pexels-34622113.mp4; do
-	  stem="$${source%.*}.max30"
+	# the detector and its pipeline ended every ~90 s. cam2 is capped at 25 fps
+	# (owner-directed) to leave detector headroom. The .maxN name keeps a cache
+	# made with another cap from being reused.
+	for clip in person-bicycle-car-detection.mp4:30 pexels-34622113.mp4:25; do
+	  source=$${clip%:*} fps=$${clip##*:}
+	  stem="$${source%.*}.max$$fps"
 	  codec=(-c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -bf 0 -sc_threshold 0 \
-	         -fpsmax 30 -force_key_frames 'expr:gte(t,n_forced*1)')
+	         -fpsmax "$$fps" -force_key_frames 'expr:gte(t,n_forced*1)')
 	  [[ -f "$$video/$$stem.ts" ]] && continue
 	  docker run --rm --user "$$(id -u):$$(id -g)" -v "$$video:/video" jrottenberg/ffmpeg:6.1-ubuntu2404 \
 	    -hide_banner -loglevel warning -y -fflags +genpts -i "/video/$$source" \

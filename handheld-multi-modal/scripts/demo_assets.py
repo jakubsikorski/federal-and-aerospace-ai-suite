@@ -22,7 +22,7 @@ SOURCE = "c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9"
 EXPORT_SCRIPT = "4d22f42ffe1df79800dc2ef1749f7e37f3d47bf1"
 VIDEO_URL = f"https://raw.githubusercontent.com/open-edge-platform/edge-ai-libraries/{SOURCE}/microservices/dlstreamer-pipeline-server/resources/videos/classroom.avi"
 VIDEO_SHA = "ca6d1b53d54a40ffda9d4ca1d0ab0cc43f744583324aaf97146c820e2b62a2fa"
-# (file name, source URL, sha256). Make re-encodes the mp4 clips to <stem>.max30.ts
+# (file name, source URL, sha256). Make re-encodes the mp4 clips to <stem>.maxN.ts
 # for the camera publishers; classroom.avi serves the DLSPS smoke tests.
 # Pexels items are used under the Pexels License.
 VIDEOS = (

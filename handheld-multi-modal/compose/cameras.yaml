@@ -12,9 +12,9 @@
 # per-camera pipeline cost (design 3.4) attributable to DLSPS, not to the
 # simulator. -re paces at real time; -stream_loop -1 loops forever.
 #
-# Sources (pinned in scripts/demo_assets.py, re-encoded to .ts by make demo-prereq):
+# Sources (pinned in scripts/demo_assets.py, re-encoded to <stem>.maxN.ts by make demo-prereq):
 #   cam1  person-bicycle-car-detection.max30.ts  intel-iot-devkit sample, 768x432 12 fps
-#   cam2  pexels-34622113.max30.ts  Pexels 34622113, 59.94 fps source capped to 30 fps
+#   cam2  pexels-34622113.max25.ts  Pexels 34622113, 59.94 fps source capped to 25 fps
 #
 # Add more cameras in the console's Cameras panel (or `make up` with your own).
 
@@ -40,6 +40,6 @@ services:
     <<: *camera
     container_name: handheld-demo-cam2
     command: ["-nostdin", "-hide_banner", "-loglevel", "warning",
-              "-re", "-stream_loop", "-1", "-i", "/video/pexels-34622113.max30.ts",
+              "-re", "-stream_loop", "-1", "-i", "/video/pexels-34622113.max25.ts",
               "-map", "0:v:0", "-c", "copy",
               "-f", "rtsp", "-rtsp_transport", "tcp", "rtsp://127.0.0.1:8554/cam2"]
