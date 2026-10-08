@@ -58,7 +58,10 @@ if [[ -z ${DEVICE:-} ]]; then
 fi
 RTSP_URL=${RTSP_URL:?set RTSP_URL to the address shown when adding the camera}
 SIZE=${SIZE:-1280x720}
+# The camera captures at FPS (RealSense colour offers 6/15/30/60) and the
+# stream is published at OUTPUT_FPS, dropping frames evenly.
 FPS=${FPS:-30}
+OUTPUT_FPS=${OUTPUT_FPS:-24}
 ENCODER=${ENCODER:-auto}
 
 if [[ -z ${RENDER_NODE:-} ]]; then
@@ -95,10 +98,10 @@ fi
 input=(-f v4l2 -input_format yuyv422 -video_size "$SIZE" -framerate "$FPS" -i "$DEVICE")
 # One keyframe per second and no B-frames keep start-up and latency short.
 case "$ENCODER" in
-  vaapi) encode=(-vaapi_device "$RENDER_NODE" -vf format=nv12,hwupload
-                 -c:v h264_vaapi -g "$FPS" -bf 0) ;;
-  cpu)   encode=(-pix_fmt yuv420p -c:v libx264 -preset ultrafast -tune zerolatency
-                 -g "$FPS" -bf 0) ;;
+  vaapi) encode=(-vaapi_device "$RENDER_NODE" -vf "fps=$OUTPUT_FPS,format=nv12,hwupload"
+                 -c:v h264_vaapi -g "$OUTPUT_FPS" -bf 0) ;;
+  cpu)   encode=(-vf "fps=$OUTPUT_FPS" -pix_fmt yuv420p -c:v libx264 -preset ultrafast
+                 -tune zerolatency -g "$OUTPUT_FPS" -bf 0) ;;
   *)     echo "ENCODER must be auto, vaapi or cpu" >&2; exit 2 ;;
 esac
 
