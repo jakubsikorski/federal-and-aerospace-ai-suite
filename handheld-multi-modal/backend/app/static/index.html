@@ -2158,11 +2158,14 @@ async function syncServerClock() {
     state.serverOffset = samples.reduce((best, sample) => sample.rtt < best.rtt ? sample : best).offset;
   } catch (_) { /* keep the previous estimate */ }
 }
+// Milliseconds on the device's clock, so a viewer whose own clock is off still
+// sees live telemetry and alert timing.
+const serverNow = () => Date.now() + (state.serverOffset ?? state.fallbackOffset ?? 0);
 
 function noteAlertTimes(serverTime) {
   // Until the first round trip completes, fall back to the payload's clock.
   if (state.serverOffset == null && typeof serverTime === "number") state.fallbackOffset = serverTime * 1000 - Date.now();
-  const now = () => (Date.now() + (state.serverOffset ?? state.fallbackOffset ?? 0)) / 1000;
+  const now = () => serverNow() / 1000;
   for (const incident of state.incidents) {
     const id = incident.head_match_id;
     if (!incident.latency || !id) continue;
@@ -3513,7 +3516,7 @@ const chartColors = ["#99c5f5", "#efc580", "#bdb1ed", "#91c9a5", "#f2a5a5"];
 function metricState(metric) {
   if (!metric || metric.state === "unavailable" || !Number.isFinite(metric.value)) return "unavailable";
   const sampled = Date.parse(metric.sampled_utc);
-  return metric.state === "stale" || !Number.isFinite(sampled) || Date.now() - sampled > 5000
+  return metric.state === "stale" || !Number.isFinite(sampled) || serverNow() - sampled > 5000
     ? "stale" : "live";
 }
 
@@ -3600,7 +3603,7 @@ function renderChart() {
     if (text !== undefined) el.textContent = text;
     svg.append(el); return el;
   };
-  const end = Date.now(), start = end - 300000;
+  const end = serverNow(), start = end - 300000;
   const histories = metrics.map((m) => (state.history.get(m.id) || []).filter((v) => v.at >= start && v.at <= end));
   const unit = metrics[0]?.unit || "%";
   const maximum = unit === "%" ? 100 : Math.max(10, Math.ceil(Math.max(0, ...histories.flat().map((v) => v.value)) / 10) * 10);
@@ -3658,7 +3661,7 @@ function renderDiagnostics() {
 
 function renderTelemetryState() {
   const snapshot = state.telemetry;
-  const age = Date.now() - Date.parse(snapshot?.sampled_utc);
+  const age = serverNow() - Date.parse(snapshot?.sampled_utc);
   const metrics = snapshot?.metrics || [];
   const stale = metrics.some((metric) => metricState(metric) === "stale");
   $("telemetry-status").textContent = !metrics.length ? "Unavailable"
