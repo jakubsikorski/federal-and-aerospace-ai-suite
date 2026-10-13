@@ -110,13 +110,14 @@ def load_config(path: str | None = None) -> dict[str, Any]:
     file = Path(path)
     if file.is_file():
         cfg = _merge(cfg, yaml.safe_load(file.read_text()) or {})
-    # The demo publisher count is authoritative only in the demo Compose override.
+    # The deployment camera count from `make` (0 for `make up`: cameras are added
+    # in the console; N for `make demo-up`: the demo publishers).
     demo_count = os.environ.get("BACKEND_DEMO_CAMERAS")
     if demo_count is not None:
         count = int(demo_count)
         wanted = {f"cam{i}" for i in range(1, count + 1)}
         available = {stream["stream_id"] for stream in cfg["streams"] if stream.get("enabled", True)}
-        if count < 1 or not wanted <= available:
+        if count < 0 or not wanted <= available:
             raise ValueError("demo camera count must name enabled cam1…camN sources in backend.yaml")
         for stream in cfg["streams"]:
             stream["enabled"] = stream["stream_id"] in wanted

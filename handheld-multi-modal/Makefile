@@ -19,6 +19,8 @@ export ACCEL_GID ?= $(shell stat -c '%g' /dev/accel/accel0 2>/dev/null)
 export ASSET_GID := $(shell id -g)
 export CAMERAS
 # SpeechT5 device. `setup` records it in config/devices.yaml, so it stays until the next up.
+# `setup` also records the deployment cameras: cam1..camCAMERAS for demo-up,
+# none for up (cameras are then added in the console).
 TTS_DEVICE ?= CPU
 override TTS_DEVICE := $(shell echo '$(TTS_DEVICE)' | tr a-z A-Z)
 export TTS_DEVICE
@@ -76,7 +78,7 @@ help:
 	@echo 'Checks: make check          Images, models and demo videos complete; once started, every service answers'
 	@echo '        make test | test-ui | test-assets | test-phase5 (needs demo-up)'
 	@echo
-	@echo 'Options: CAMERAS=1..2 (default 2)  TTS_DEVICE=CPU|GPU (default CPU)'
+	@echo 'Options: CAMERAS=1..2 demo cameras (default 2)  TTS_DEVICE=CPU|GPU (default CPU)'
 	@echo '         HOST_IP=<LAN address>  ASSET_ROOT=<path>'
 	@echo 'The first start downloads several GB of models (internet, up to an hour); later starts run offline.'
 
@@ -307,7 +309,7 @@ tls:
 setup: tls
 	@mkdir -p "$$ASSET_ROOT/data/backend"
 	install -d -m 2775 "$$ASSET_ROOT/data/dlsps/crops" "$$ASSET_ROOT/data/chatqna/model_cache"
-	python3 -c 'import json,os; print("services:"); [print("  " + service + ":\n    group_add: !override " + json.dumps(list(dict.fromkeys(os.environ[k] for k in keys)))) for service,keys in {"dlsps":("RENDER_GID","ACCEL_GID","ASSET_GID"), "chatqna":("RENDER_GID","ASSET_GID")}.items()]; d=os.environ["TTS_DEVICE"]; print("  tts:\n    environment:\n      TEXT_TO_SPEECH__MODELS__TTS__DEVICE: " + d + "\n  backend:\n    environment:\n      TTS_DEVICE: " + d)' > "$$ASSET_ROOT/config/devices.yaml"
+	BACKEND_CAMERAS=$(if $(DEMO_FEEDS),$(CAMERAS),0) python3 -c 'import json,os; print("services:"); [print("  " + service + ":\n    group_add: !override " + json.dumps(list(dict.fromkeys(os.environ[k] for k in keys)))) for service,keys in {"dlsps":("RENDER_GID","ACCEL_GID","ASSET_GID"), "chatqna":("RENDER_GID","ASSET_GID")}.items()]; d=os.environ["TTS_DEVICE"]; print("  tts:\n    environment:\n      TEXT_TO_SPEECH__MODELS__TTS__DEVICE: " + d + "\n  backend:\n    environment:\n      TTS_DEVICE: " + d + "\n      BACKEND_DEMO_CAMERAS: \"" + os.environ["BACKEND_CAMERAS"] + "\"")' > "$$ASSET_ROOT/config/devices.yaml"
 	sed -e 's|webrtcAdditionalHosts:.*|webrtcAdditionalHosts: [127.0.0.1, $(COTURN_EXTERNAL_IP)]|' \
 	    -e 's|:127.0.0.1:3478|:$(COTURN_EXTERNAL_IP):3478|g' \
 	    config/mediamtx/mediamtx.yml > "$$ASSET_ROOT/config/mediamtx.yml"
@@ -400,7 +402,7 @@ dashboard=$$(curl -skfsS --max-time 5 https://127.0.0.1:8443/)
 trap - ERR
 printf '\nApplication ready: https://%s:8443/  (trust config/tls/server.crt on the tablet)\n' "$(COTURN_EXTERNAL_IP)"
 if [[ -n $$backend_stale ]]; then $(backend_stale_warning); fi
-$(if $(DEMO_FEEDS),printf 'Demo cameras live: $(CAMERA_IDS)\n',printf 'Waiting for cameras: publish H.264 RTSP to rtsp://127.0.0.1:8554/$(firstword $(CAMERA_IDS)) ... $(lastword $(CAMERA_IDS)); check with make status\n')
+$(if $(DEMO_FEEDS),printf 'Demo cameras live: $(CAMERA_IDS)\n',printf 'No cameras yet: add one in the console under Cameras\n')
 endef
 
 up: prereq setup

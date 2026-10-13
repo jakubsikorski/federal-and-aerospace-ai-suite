@@ -91,7 +91,8 @@ def main():
     def dlsps():
         running = [p for p in call("http://127.0.0.1:8080/pipelines/status") if p.get("state") == "RUNNING"]
         if not publishing and not running:
-            raise Waiting("no camera publishes yet; the Backend starts a pipeline when one does")
+            raise Waiting(("no camera publishes yet" if streams else "no cameras on; add one in the console")
+                          + "; the Backend starts a pipeline when one does")
         if len(running) < len(publishing):
             raise RuntimeError(f"{len(running)} pipelines running for {len(publishing)} publishing cameras")
         stalled = [p for p in running if not p.get("avg_fps")]

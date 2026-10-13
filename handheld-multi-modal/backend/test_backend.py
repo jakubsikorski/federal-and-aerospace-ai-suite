@@ -84,6 +84,8 @@ def test_demo_camera_count_enables_only_named_sources():
         os.environ["BACKEND_DEMO_CAMERAS"] = "2"
         enabled = {s["stream_id"]: s["enabled"] for s in load_config(fh.name)["streams"]}
         assert enabled == {"cam1": True, "cam2": True, "cam3": False}, enabled
+        os.environ["BACKEND_DEMO_CAMERAS"] = "0"  # make up: no deployment cameras
+        assert not any(s["enabled"] for s in load_config(fh.name)["streams"])
         os.environ["BACKEND_DEMO_CAMERAS"] = "4"
         try:
             load_config(fh.name)
