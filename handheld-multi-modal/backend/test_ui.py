@@ -1693,8 +1693,9 @@ def main():
               const open = !$("cameras-panel").hidden && $("cameras-toggle").getAttribute("aria-expanded") === "true";
               const rows = items.length === 2 && items[1].textContent.includes("Network camera · rtsp://192.168.1.9/s");
               items[0].querySelector(".camera-edit-toggle").click();
-              const config = $("camera-list").children[0].textContent.includes("rename only")
-                && !$("camera-list").children[0].querySelector(".camera-actions, .camera-remove");
+              const config = $("camera-list").children[0].textContent.includes("stays off until you turn it on")
+                && !!$("camera-list").children[0].querySelector(".camera-actions")
+                && !$("camera-list").children[0].querySelector(".camera-remove");
               const addHidden = $("camera-add").hidden && !$("camera-add-open").hidden;
               $("camera-add-open").click();
               const addShown = !$("camera-add").hidden && $("camera-add-open").hidden

@@ -194,6 +194,7 @@ def migrate(conn: sqlite3.Connection) -> None:
     for column, ddl in (("origin", "TEXT NOT NULL DEFAULT 'config'"),
                         ("pull_url", "TEXT"),
                         ("name_locked", "INTEGER NOT NULL DEFAULT 0"),
+                        ("operator_off", "INTEGER NOT NULL DEFAULT 0"),
                         ("created_utc", "TEXT"),
                         ("removed_utc", "TEXT")):
         if column not in stream_columns:
@@ -206,7 +207,9 @@ def sync_streams(conn: sqlite3.Connection, streams: list[dict]) -> None:
 
     Cameras added in the console (`origin = 'operator'`) are never changed here,
     and a config entry that collides with one is ignored with a warning. An
-    operator rename of a config camera (`name_locked`) survives restarts.
+    operator rename of a config camera (`name_locked`) survives restarts, and so
+    does an operator turning it off (`operator_off`) while the deployment has it
+    on. Once the deployment turns a camera off, that choice is cleared.
     """
     for stream in streams:
         taken = conn.execute("SELECT origin FROM streams WHERE stream_id = ?",
@@ -224,7 +227,9 @@ def sync_streams(conn: sqlite3.Connection, streams: list[dict]) -> None:
                  display_name=CASE WHEN streams.name_locked THEN streams.display_name
                                    ELSE excluded.display_name END,
                  source_uri=excluded.source_uri,
-                 annotated_path=excluded.annotated_path, enabled=excluded.enabled,
+                 annotated_path=excluded.annotated_path,
+                 enabled=CASE WHEN streams.operator_off THEN 0 ELSE excluded.enabled END,
+                 operator_off=CASE WHEN excluded.enabled THEN streams.operator_off ELSE 0 END,
                  sort_order=excluded.sort_order""",
             {**stream, "enabled": int(stream.get("enabled", True))},
         )
@@ -235,7 +240,8 @@ def sync_streams(conn: sqlite3.Connection, streams: list[dict]) -> None:
     configured = [s["stream_id"] for s in streams]
     holes = ",".join("?" * len(configured)) or "''"
     retired = conn.execute(
-        f"UPDATE streams SET enabled = 0 WHERE enabled = 1 AND origin = 'config' "
+        f"UPDATE streams SET enabled = 0, operator_off = 0 "
+        f"WHERE (enabled = 1 OR operator_off = 1) AND origin = 'config' "
         f"AND stream_id NOT IN ({holes})",
         configured).rowcount
     if retired:

@@ -1,7 +1,8 @@
 """Runtime camera registry: cameras added, renamed, turned off or removed in the console.
 
 The `streams` table is the live camera list. Config cameras (`origin = 'config'`)
-still follow backend.yaml and the demo camera count on every start; cameras
+still follow backend.yaml and the demo camera count on every start, except that
+the operator may turn one off (`operator_off`, kept across restarts); cameras
 added here (`origin = 'operator'`) exist only in SQLite. Changing the list never
 edits a pipeline: the supervisor starts or stops the one fixed DLSPS definition
 per enabled camera, exactly as for config cameras.
@@ -105,10 +106,11 @@ def _audit(db: sqlite3.Connection, action: str, stream_id: str, detail: dict | N
 
 
 def listed(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    # A deployment camera that is off (not selected by `make CAMERAS`, or dropped
-    # from backend.yaml) cannot be turned on here, so it is not offered at all.
+    # A deployment camera the deployment has off (not selected by `make CAMERAS`,
+    # or dropped from backend.yaml) cannot be turned on here, so it is not offered
+    # at all; one the operator turned off is listed so it can be turned on again.
     return conn.execute("SELECT * FROM streams WHERE removed_utc IS NULL "
-                        "AND (enabled = 1 OR origin = 'operator') "
+                        "AND (enabled = 1 OR origin = 'operator' OR operator_off = 1) "
                         "ORDER BY sort_order, stream_id").fetchall()
 
 
@@ -298,17 +300,19 @@ def update(state, stream_id: str, body) -> None:
     with _lock:
         def change(db):
             row = _row(db, stream_id)
-            if "enabled" in body and row["origin"] != "operator" and enabled != bool(row["enabled"]):
-                raise CameraError("This camera is set by the deployment (backend.yaml / "
-                                  "make CAMERAS). Only console-added cameras can be turned "
-                                  "on or off here.", 409, "config_camera")
+            deployment = row["origin"] != "operator"
+            if deployment and enabled and not row["enabled"] and not row["operator_off"]:
+                raise CameraError("This camera is off in the deployment (backend.yaml / "
+                                  "make CAMERAS) and cannot be turned on here.", 409, "config_camera")
             if name is not None and name != row["display_name"]:
                 _unique_name(db, name, stream_id)
                 db.execute("UPDATE streams SET display_name = ?, name_locked = 1 WHERE stream_id = ?",
                            (name, stream_id))
                 _audit(db, "renamed", stream_id, {"display_name": name})
             if enabled is not None and enabled != bool(row["enabled"]):
-                db.execute("UPDATE streams SET enabled = ? WHERE stream_id = ?", (int(enabled), stream_id))
+                # operator_off keeps a deployment camera off across restarts.
+                db.execute("UPDATE streams SET enabled = ?, operator_off = ? WHERE stream_id = ?",
+                           (int(enabled), int(deployment and not enabled), stream_id))
                 _audit(db, "enabled" if enabled else "disabled", stream_id)
             return row
         row = state.ingest.write(change)
@@ -332,8 +336,8 @@ def remove(state, stream_id: str, confirm: str | None) -> None:
         def retire(db):
             row = _row(db, stream_id)
             if row["origin"] != "operator":
-                raise CameraError("This camera is set by the deployment; remove it from "
-                                  "backend.yaml instead.", 409, "config_camera")
+                raise CameraError("This camera is set by the deployment: turn it off here, "
+                                  "or remove it from backend.yaml.", 409, "config_camera")
             db.execute("UPDATE streams SET enabled = 0, removed_utc = ? WHERE stream_id = ?",
                        (_utc(), stream_id))
             _audit(db, "removed", stream_id, {"display_name": row["display_name"]})

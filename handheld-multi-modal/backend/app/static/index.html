@@ -74,6 +74,9 @@
   #camera-list .camera-edit label { display: grid; gap: 4px; color: #c3d3e0; }
   #camera-list .camera-edit form { display: flex; gap: 8px; align-items: end; }
   #camera-list .camera-edit form label { flex: 1; min-width: 0; }
+  .camera-power[data-action="off"], .camera-power[data-action="off"]:not(:disabled):hover { background: #363629; border-color: #a28b5f; color: #f4d49e; }
+  .camera-power[data-action="on"], .camera-power[data-action="on"]:not(:disabled):hover { background: #1f483c; border-color: #5d9e85; color: #b6eed3; }
+  .camera-power:not(:disabled):hover { filter: brightness(1.15); }
   #camera-list .camera-actions, #camera-add .camera-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   #camera-list .camera-remove { border-top: 1px dashed #5a3b3b; padding-top: 10px; display: grid; gap: 8px; }
   #camera-list .danger, #camera-list .camera-remove .danger { border-color: #b85c5c; color: #ffd0d0; }
@@ -1178,6 +1181,10 @@ function placementStatus(model) {
   return model.status;
 }
 
+function statusText(status) {
+  return status === "idle" ? "Not running" : titleCase(status);
+}
+
 function renderModels() {
   const buttons = $("model-buttons");
   for (const [id, label] of modelLabels) {
@@ -1208,7 +1215,7 @@ function renderModels() {
     const full = model?.runtime_model || model?.configured_model || "";
     const short = full.split(" · ")[0].split("/").pop();
     button.firstChild.textContent = label + (short ? " · " + short : "");
-    button.lastChild.textContent = (device || "Unknown device") + " · " + titleCase(status)
+    button.lastChild.textContent = (device || "Unknown device") + " · " + statusText(status)
       + (device && !reported ? " · configured" : "");
     button.title = full ? label + ": " + full : label;
     button.dataset.status = status;
@@ -1220,7 +1227,7 @@ function renderModels() {
   $("model-title").textContent = model?.label || modelLabels.find(([id]) => id === state.selectedModel)?.[1] || "Model details";
   const status = placementStatus(model);
   const reported = model?.runtime_device && status !== "unknown" && status !== "unavailable";
-  $("model-status").textContent = titleCase(status);
+  $("model-status").textContent = statusText(status);
   $("model-configured").textContent = model?.runtime_model || model?.configured_model || "Unknown";
   $("model-device").textContent = (reported ? model.runtime_device : model?.configured_device) || "Unknown";
   $("model-host").textContent = model?.host || "Unknown";
@@ -1228,6 +1235,7 @@ function renderModels() {
     : status === "starting" ? "Not answering yet. It may still be starting or downloading its model; the first start can take up to an hour."
     : status === "unknown" ? "Live status unavailable. Showing last known configuration."
     : status === "mismatch" ? "Service settings differ from the deployment."
+    : status === "idle" ? "No cameras are on, so no detection pipelines are running. Turn on or add a camera to start."
     : reported ? "Device reported by the service." : "Configured device; runtime device is not reported.";
 
 }
@@ -3068,21 +3076,22 @@ function cameraEditor(camera) {
     note.textContent = "Send H.264 RTSP video from this device to:";
     panel.append(note, cameraAddress(camera.source.publish_url));
   }
-  if (camera.origin !== "operator") {
-    const note = document.createElement("p"); note.className = "camera-note";
-    note.textContent = "Set by the deployment: rename only. Turn it off or remove it in the deployment configuration.";
-    panel.append(note);
-    return panel;
-  }
   const actions = document.createElement("div"); actions.className = "camera-actions";
-  const toggle = document.createElement("button"); toggle.type = "button"; toggle.className = "quiet-button";
+  const toggle = document.createElement("button"); toggle.type = "button"; toggle.className = "quiet-button camera-power";
   toggle.textContent = camera.enabled ? "Turn off" : "Turn on";
+  toggle.dataset.action = camera.enabled ? "off" : "on";
   const hint = document.createElement("span"); hint.className = "camera-note";
   hint.textContent = camera.enabled ? "Stops video and detection. History is kept." : "Starts video and detection again.";
   toggle.onclick = () => cameraAction(() => cameraMutation("/api/cameras/" + camera.stream_id, "PATCH", {enabled: !camera.enabled}),
     camera.display_name + (camera.enabled ? " turned off. Its history is kept." : " turned on. Video starts once the source is live."));
   actions.append(toggle, hint);
   panel.append(actions);
+  if (camera.origin !== "operator") {
+    const note = document.createElement("p"); note.className = "camera-note";
+    note.textContent = "Set by the deployment: it stays off until you turn it on, even after a restart. Remove it in the deployment configuration.";
+    panel.append(note);
+    return panel;
+  }
   const danger = document.createElement("div"); danger.className = "camera-remove";
   if (state.cameraRemoving === camera.stream_id) {
     const ask = document.createElement("p"); ask.className = "camera-note";
@@ -4426,8 +4435,9 @@ async function refreshState() {
   const streams = await api("/api/streams");
   if (version !== state.requestVersion) return;
   const cameraSet = (list) => JSON.stringify(list.map((s) => [s.stream_id, s.display_name]));
-  const camerasChanged = state.streams.length > 0 && cameraSet(state.streams) !== cameraSet(streams);
-  state.streams = streams;
+  // Not on the first load, but also when the last camera was off and one returns.
+  const camerasChanged = state.streamsLoaded && cameraSet(state.streams) !== cameraSet(streams);
+  state.streams = streams; state.streamsLoaded = true;
   if (camerasChanged) syncSearchCamera();
   if (!state.selected) {
     const remembered = storeGet("operator.selectedCamera");

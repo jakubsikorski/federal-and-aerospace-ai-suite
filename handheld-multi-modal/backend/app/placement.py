@@ -132,6 +132,9 @@ class Placement:
             if observed:
                 vision["status"] = "unknown"
                 vision["note"] += f" {len(observed)} owned cameras still have fresh observations; pipeline status could not be checked."
+        elif not owned:
+            vision["status"] = "idle"
+            vision["note"] += " No cameras are on, so no detection pipelines are running."
         else:
             ready = [stream for stream, instance in owned.items()
                      if instances.get(instance) == "RUNNING" and feeds.get(stream, {}).get("ok") is True]
