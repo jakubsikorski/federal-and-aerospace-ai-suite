@@ -38,7 +38,7 @@ Expected: `card0`/`renderD128` under `/dev/dri`, `accel0` under `/dev/accel`, an
 Run the official OEP Vision AI SDK installer on the target. It configures Docker, pulls the DL Streamer image, and installs the OpenVINO tooling and sample content:
 
 ```bash
-curl https://raw.githubusercontent.com/open-edge-platform/edge-ai-suites/refs/heads/main/metro-ai-suite/metro-sdk-manager/scripts/oep-vision-ai-sdk.sh | bash
+curl https://raw.githubusercontent.com/open-edge-platform/metro-ai-suite/refs/heads/main/metro-sdk-manager/scripts/oep-vision-ai-sdk.sh | bash
 ```
 
 The installer sets up:
