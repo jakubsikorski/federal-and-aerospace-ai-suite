@@ -75,7 +75,15 @@ Coturn <-> MediaMTX WebRTC only
 
 Backend not in video path, doesn't crop images, doesn't reconfigure DLSPS
 at runtime. UI never touches SQLite or snip filesystem paths directly.
-No DLSPS-to-Coturn path. Business rules, speech arbitration and telemetry
+Localhost-only profile (owner direction, 2026-10-13; see
+`docs/design/THREAT_MODEL.md`): every host port binds to `127.0.0.1`; the
+browser runs on the device at `https://localhost:8443`. MediaMTX WHIP/WHEP
+signaling has no host port; ICE media uses `127.0.0.1:8189/udp` directly.
+Coturn stays, loopback-only: listens and relays on `127.0.0.1`, peers limited
+to `127.0.0.1` (MediaMTX ICE), TURN over TCP so a remote browser can use an
+SSH tunnel (`-L 8443 -L 3478`). No DLSPS-to-Coturn path. Never reintroduce
+all-interface bindings or host networking beyond loopback-bound Coturn.
+Business rules, speech arbitration and telemetry
 aggregation belong to the application Backend, never to stock components.
 
 ## Commands and integration work

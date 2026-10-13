@@ -213,7 +213,7 @@ commit; documentation: <a href="https://docs.openedgeplatform.intel.com/2026.2/i
 <thead><tr><th>Service</th><th>Origin</th><th>Role</th><th>Model and device</th><th>Image</th></tr></thead>
 <tbody>
 <tr data-service="mediamtx"><td>MediaMTX</td><td><span class="badge oss">Open source</span></td><td>Video relay: camera RTSP in, annotated WebRTC (WHIP in, WHEP out to the UI)</td><td>—</td><td><code>bluenviron/mediamtx:1.11.3</code></td></tr>
-<tr data-service="coturn"><td>Coturn</td><td><span class="badge oss">Open source</span></td><td>TURN relay for WebRTC media</td><td>—</td><td><code>coturn/coturn:4.18.0</code></td></tr>
+<tr data-service="coturn"><td>Coturn</td><td><span class="badge oss">Open source</span></td><td>Loopback-only TURN relay for WebRTC media (SSH-tunnelled browsers)</td><td>—</td><td><code>coturn/coturn:4.18.0</code></td></tr>
 <tr data-service="mqtt"><td>Mosquitto</td><td><span class="badge oss">Open source</span></td><td>MQTT broker for detections and snip events; also the Alert Agent's broker</td><td>—</td><td><code>eclipse-mosquitto:2.0.22</code></td></tr>
 <tr data-service="dlsps"><td>DL Streamer Pipeline Server</td><td><span class="badge oep">Open Edge Platform</span></td><td>Decode, detect, track, annotate and crop snips for each camera</td><td>YOLO26s OpenVINO INT8 on NPU (fixed CPU/GPU alternatives); <code>gvatrack</code> on CPU; Intel hardware decode/encode</td><td><code>intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24</code></td></tr>
 <tr data-service="chatqna"><td>Chat Q&amp;A Core</td><td><span class="badge oep">Open Edge Platform</span></td><td>Language model, mission-document retrieval (RAG) and history query planning</td><td><code>Intel/neural-chat-7b-v3-3</code> on GPU; embeddings <code>ibm-granite/granite-embedding-125m-english</code> and reranker <code>cross-encoder/ms-marco-electra-base</code> on CPU</td><td><code>intel/chatqna:core_gpu_2026.2.0</code></td></tr>
@@ -300,17 +300,17 @@ const NODES = {
     image: "intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24", src: "microservices/dlstreamer-pipeline-server",
     apis: ["POST /pipelines/user_defined_pipelines/{name} — start one pipeline per camera", "GET /pipelines/status · /pipelines/{id}/status — check",
       "DELETE /pipelines/{id} — stop", "MQTT publish detections/live, detections/snips", "WebRTC WHIP publish → MediaMTX"]},
-  coturn: {p: "oss", x: 300, y: 262, w: 200, h: 76, icon: "turn", t: "Coturn", s: ["TURN relay, media only"],
-    kind: "TURN relay", role: "Relays WebRTC media between the browser and MediaMTX when a direct path is not available. It never talks to DL Streamer.",
+  coturn: {p: "oss", x: 300, y: 262, w: 200, h: 76, icon: "turn", t: "Coturn", s: ["TURN relay, loopback only"],
+    kind: "TURN relay", role: "Relays WebRTC media between the browser and MediaMTX when a direct path is not available, such as a browser reaching this device through an SSH tunnel. It listens and relays on 127.0.0.1 only and may reach MediaMTX only. It never talks to DL Streamer.",
     image: "coturn/coturn:4.18.0", apis: ["TURN"]},
   mqtt: {p: "oss", x: 580, y: 262, w: 180, h: 76, icon: "broker", t: "Mosquitto", s: ["MQTT broker"],
     kind: "MQTT broker", role: "Carries detection and evidence-image events from DL Streamer to the Backend. Also the Alert Agent's broker.",
     image: "eclipse-mosquitto:2.0.22", apis: ["MQTT detections/live", "MQTT detections/snips"]},
-  browser: {x: 30, y: 438, w: 204, h: 160, icon: "tablet", t: "Operator UI", s: ["browser on the handheld", "live video · alerts", "evidence · history", "chat · push-to-talk"],
+  browser: {x: 30, y: 438, w: 204, h: 160, icon: "tablet", t: "Operator UI", s: ["browser on this device", "live video · alerts", "evidence · history", "chat · push-to-talk"],
     kind: "Client", role: "Plays annotated video directly from MediaMTX and talks to the Backend for everything else. It never reads the database or image files directly.",
     apis: ["WebRTC WHEP from MediaMTX", "HTTPS REST /api/… and SSE /api/stream"]},
   proxy: {p: "oss", x: 300, y: 470, w: 200, h: 86, icon: "shield", t: "nginx", s: ["TLS termination", "API + WHEP signalling"],
-    kind: "TLS proxy", role: "Serves the UI over HTTPS and forwards Backend API and WHEP signalling. Media itself goes over WebRTC.",
+    kind: "TLS proxy", role: "Serves the UI over HTTPS on localhost only (127.0.0.1:8443) and forwards Backend API and WHEP signalling. Media itself goes over WebRTC on loopback.",
     image: "nginx:1.27-alpine", apis: ["HTTPS"]},
   backend: {p: "app", x: 580, y: 430, w: 254, h: 190, icon: "server", t: "Backend",
     s: ["application logic", "• alert rules & incidents", "• history (SQLite)", "• assistant routing", "• speech arbitration", "• pipeline lifecycle"],
@@ -368,7 +368,7 @@ const SCENARIOS = {
     "Each camera publishes RTSP video to MediaMTX.",
     "DL Streamer Pipeline Server pulls the clean stream, decodes it on Intel hardware, detects objects with YOLO26s on the NPU and tracks them on the CPU.",
     "It draws the boxes and pushes the annotated video back to MediaMTX over WebRTC (WHIP).",
-    "The browser plays it over WebRTC (WHEP); Coturn relays the media when a direct path is not available.",
+    "The browser plays it over WebRTC (WHEP) on localhost; loopback-only Coturn relays the media for a browser reaching the device through an SSH tunnel.",
     "The Backend is not in the video path; it only starts and stops pipelines with POST and DELETE /pipelines."]},
   alert: {t: "Detection → alert", edges: ["m1", "m2", "f1", "r-alert", "r-tts", "h2", "h1"], steps: [
     "DL Streamer publishes every tracked object on MQTT and saves a cropped evidence image to a shared volume.",

@@ -1386,14 +1386,30 @@ function renderCameraGrid() {
   markGridPages();
   renderZoneOverlay();
 }
+// MediaMTX advertises its configured STUN/TURN servers as WHEP Link headers
+// (answer to OPTIONS). TURN over TCP lets a browser reach the device through an
+// SSH tunnel; locally the direct loopback candidate wins. Failure is not cached.
+let whepIceCache = null;
+function whepIceServers(path) {
+  return whepIceCache ||= fetch(new URL(path, location.origin), {method: "OPTIONS"}).then(response => {
+    const servers = (response.headers.get("link") || "").split(", ").map(link => {
+      const m = link.match(/^<(.+?)>; rel="ice-server"(?:; username="(.*?)"; credential="(.*?)"; credential-type="password")?/i);
+      return m && (m[2] === undefined ? {urls: [m[1]]} : {urls: [m[1]], username: m[2], credential: m[3]});
+    }).filter(Boolean);
+    if (!response.ok) throw new Error("ICE servers unavailable");
+    return servers;
+  }).catch(() => { whepIceCache = null; return []; });
+}
 async function attachGridWhep(stream, video, note, retry = false) {
   const previous = state.gridWheps.get(stream.stream_id);
   if (state.whepLeaving || (previous && !retry)) return;
   if (previous) clearTimeout(previous.retryTimer);
   const current = {stream, resource: null, abort: new AbortController(), pc: null, video, note};
   state.gridWheps.set(stream.stream_id, current);
+  const iceServers = await whepIceServers(stream.whep_path);
+  if (state.whepLeaving || state.gridWheps.get(stream.stream_id) !== current) return;
   try {
-    const pc = current.pc = new RTCPeerConnection({bundlePolicy: "max-bundle"});
+    const pc = current.pc = new RTCPeerConnection({bundlePolicy: "max-bundle", iceServers});
     pc.addTransceiver("video", {direction: "recvonly"});
     pc.ontrack = event => {
       if (state.gridWheps.get(stream.stream_id) !== current || current.retrying) return;
@@ -1508,8 +1524,10 @@ async function attachWhep(stream, retry = false) {
   note.textContent = (retry ? "Reconnecting to " : "Connecting to ") + stream.display_name + "…";
   const current = {stream, resource: null, abort: new AbortController(), pc: null};
   const active = () => state.whep === current && !current.retrying;
+  const iceServers = await whepIceServers(stream.whep_path);
+  if (serial !== state.whepSerial || state.selected !== stream.stream_id || state.whepLeaving) return;
   try {
-    const pc = current.pc = new RTCPeerConnection({bundlePolicy: "max-bundle"});
+    const pc = current.pc = new RTCPeerConnection({bundlePolicy: "max-bundle", iceServers});
     state.whep = current;
     current.timeout = setTimeout(() => retryWhep(current, "Connection timed out."), 15000);
     pc.addTransceiver("video", {direction: "recvonly"});

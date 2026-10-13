@@ -1,7 +1,4 @@
 services:
-  mediamtx:
-    volumes:
-      - ${ASSET_ROOT:?set ASSET_ROOT}/config/mediamtx.yml:/mediamtx.yml:ro
   dlsps:
     volumes:
       - ${ASSET_ROOT:?set ASSET_ROOT}/data/dlsps/yolo_export/yolo26s_int8_openvino_model:/home/pipeline-server/yolo_models/yolo26s/INT8:ro

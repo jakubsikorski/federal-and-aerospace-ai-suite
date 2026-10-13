@@ -2,20 +2,53 @@
 
 import argparse
 import asyncio
+import functools
+import re
+import ssl
 from urllib.parse import urljoin, urlsplit
 from urllib.request import Request, urlopen
 
 
+CONTEXT = None
+# MediaMTX WHEP OPTIONS advertises ICE servers as Link headers.
+LINK = re.compile(r'^<(.+?)>; rel="ice-server"(?:; username="(.+?)"; credential="(.+?)"; credential-type="password")?')
+
+
 def request(url, method, body=None):
     headers = {"Content-Type": "application/sdp"} if body is not None else {}
-    with urlopen(Request(url, data=body, headers=headers, method=method), timeout=10) as response:
+    with urlopen(Request(url, data=body, headers=headers, method=method), timeout=10, context=CONTEXT) as response:
         return response.status, response.headers, response.read()
 
 
-async def smoke(endpoint):
+def relay_ice_servers(endpoint):
+    from aiortc import RTCIceServer
+
+    _, headers, _ = request(endpoint, "OPTIONS")
+    servers = []
+    for link in headers.get_all("Link") or []:
+        match = LINK.match(link)
+        if match and match[1].startswith("turn:"):
+            servers.append(RTCIceServer(match[1], match[2], match[3]))
+    if not servers:
+        raise RuntimeError("WHEP OPTIONS advertised no TURN server")
+    return servers
+
+
+async def smoke(endpoint, relay_only=False):
     from aiortc import RTCConfiguration, RTCPeerConnection, RTCSessionDescription
 
-    peer = RTCPeerConnection(RTCConfiguration(iceServers=[]))
+    ice_servers = []
+    if relay_only:
+        # Mimic a browser that reaches the device only through an SSH tunnel:
+        # gather relay candidates only, from the advertised TURN server.
+        import aioice
+        import aiortc.rtcicetransport as ice_transport
+
+        ice_servers = await asyncio.to_thread(relay_ice_servers, endpoint)
+        ice_transport.Connection = functools.partial(
+            aioice.Connection, transport_policy=aioice.TransportPolicy.RELAY
+        )
+    peer = RTCPeerConnection(RTCConfiguration(iceServers=ice_servers))
     peer.addTransceiver("video", direction="recvonly")
     receiver = None
     video_ready = asyncio.Event()
@@ -56,7 +89,7 @@ async def smoke(endpoint):
         if receiver is None:
             raise RuntimeError("WHEP did not negotiate a video track")
         await asyncio.wait_for(receiver, timeout=25)
-        print("PASS: WHEP negotiated and decoded three video frames")
+        print("PASS: WHEP negotiated and decoded three video frames" + (" over TURN relay" if relay_only else ""))
     finally:
         if receiver is not None and not receiver.done():
             receiver.cancel()
@@ -76,11 +109,15 @@ async def smoke(endpoint):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("endpoint")
+    parser.add_argument("--cafile", help="trust this certificate, e.g. config/tls/server.crt")
+    parser.add_argument("--relay-only", action="store_true", help="use only the advertised TURN relay (SSH-tunnel path)")
     args = parser.parse_args()
+    global CONTEXT
+    CONTEXT = ssl.create_default_context(cafile=args.cafile) if args.cafile else None
     parsed = urlsplit(args.endpoint)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         parser.error("endpoint must be an HTTP(S) WHEP URL")
-    asyncio.run(smoke(args.endpoint))
+    asyncio.run(smoke(args.endpoint, args.relay_only))
 
 
 if __name__ == "__main__":

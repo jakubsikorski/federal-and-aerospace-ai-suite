@@ -125,11 +125,15 @@ requires Python and pinned `aiortc`:
 ```sh
 python3 -m venv .venv
 .venv/bin/pip install -r scripts/smoke/requirements.txt
-.venv/bin/python scripts/smoke/whep_client.py http://127.0.0.1:8889/annotated/whep
+.venv/bin/python scripts/smoke/whep_client.py --cafile config/tls/server.crt \
+  https://127.0.0.1:8443/annotated1/whep
 ```
 
-Performs SDP offer/answer, receives and decodes three video frames, and
-deletes session. OPTIONS response or SDP exchange alone isn't a pass.
+Uses the proxy's WHEP route because MediaMTX signaling (8889) has no host
+port in the localhost-only profile. Performs SDP offer/answer, receives and
+decodes three video frames over loopback ICE, and deletes session. Add
+`--relay-only` to use only the TURN server advertised by WHEP `OPTIONS`
+(loopback Coturn, TURN/TCP) — the SSH-tunnel path. OPTIONS response or SDP exchange alone isn't a pass.
 
 Stop only this project's infrastructure when finished:
 

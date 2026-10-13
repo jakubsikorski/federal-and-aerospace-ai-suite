@@ -21,7 +21,8 @@ DLSPS -> shared snips -> Backend static evidence images
 
 Metrics Manager -> Backend -> UI
 Backend -> UI HTTP/SSE/WebSocket
-Coturn <-> MediaMTX WebRTC only
+Coturn <-> MediaMTX WebRTC only (loopback listener/relay/peer)
+Browser on the device or via SSH tunnel: every host port binds to 127.0.0.1
 
 Backend does NOT sit in the video path.
 Backend does NOT reconfigure DLSPS at runtime.

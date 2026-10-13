@@ -14,8 +14,9 @@ persistence volume needed for relaying.
 Prepared paths `/cam1` (clean RTSP input, `source: publisher`) and
 `/annotated` (native DLSPS WHIP push, not RTSP — see
 `docs/application/video-contracts.md` for the owner-approved amendment).
-Host RTSP TCP 8554; WHEP HTTP 8889; ICE UDP 8189; API TCP 9997.
-Containers use `mediamtx:8554`; host uses loopback.
+Host loopback: RTSP TCP 8554; ICE UDP 8189; API TCP 9997. WHEP/WHIP HTTP
+8889 has no host port: containers use `mediamtx:8889`, the host browser uses
+the loopback TLS proxy `https://localhost:8443/annotatedN/whep`.
 
 **Runtime-verified** (`bash scripts/smoke/01_mediamtx.sh`, hardened
 2026-09-10, live PASS with 79 real decoded `video/x-raw` WHEP frames):
@@ -37,8 +38,11 @@ Server-side path-ready state (`GET /v3/paths/list`) is supplementary
 confirmation only — the load-bearing check is a real client-side decode
 (`decodebin` producing `video/x-raw` buffers), not just a log line.
 
-Loopback-only unauthenticated dev configuration is not a tablet/LAN
-deployment. Do not publish these ports on external interfaces without
-authentication/reachability work. No Backend in video path. Coturn, if needed,
-assists MediaMTX WebRTC only. Do not relay DLSPS JPEG RTP and call it H.264.
+Localhost-only profile (2026-10-13, `docs/design/THREAT_MODEL.md`): never
+publish these ports on external interfaces or add a non-loopback
+`webrtcAdditionalHosts` entry. The only ICE server is loopback Coturn,
+`turn:127.0.0.1:3478?transport=tcp` (`clientOnly`), for SSH-tunnelled browsers;
+the UI reads it from the WHEP OPTIONS `Link` headers. A LAN/tablet profile needs the
+authentication controls in `docs/design/SECURITY_ARCHITECTURE_REVIEW.md` first.
+No Backend in video path. Do not relay DLSPS JPEG RTP and call it H.264.
 See `docs/application/video-contracts.md` for source links and limitations.

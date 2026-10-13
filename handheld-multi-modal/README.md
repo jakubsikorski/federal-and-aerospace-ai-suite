@@ -42,7 +42,9 @@ make demo-up        # demo: pinned sample videos as looping cameras
 make up             # or: your own cameras, published to rtsp://127.0.0.1:8554/camN
 ```
 
-Open `https://<device-address>:8443/` after trusting `config/tls/server.crt`.
+Open `https://localhost:8443/` on the device after trusting
+`config/tls/server.crt`. The application listens on `127.0.0.1` only; to use
+it from another machine, see [Remote access](#remote-access-ssh-tunnel).
 Run `make` for the full command list (status, stop, clean-up, tests); run
 `make demo-up` (or `make up`) again to restart.
 `make demo-mission` loads the example mission packet from `examples/`.
@@ -52,6 +54,23 @@ camera added as **Publisher on this device** (see the script header).
 On the handheld, run the browser full screen (F11 or kiosk mode) at
 1280×800. Touch-target and fit requirements are in
 [docs/design/HANDHELD_TOUCH_REQUIREMENTS.md](docs/design/HANDHELD_TOUCH_REQUIREMENTS.md).
+
+### Remote access (SSH tunnel)
+
+From a laptop, forward the UI port and the loopback TURN port over SSH:
+
+```sh
+ssh -N -L 8443:127.0.0.1:8443 -L 3478:127.0.0.1:3478 <user>@<device-address>
+```
+
+Then open `https://localhost:8443/` on the laptop and accept the device
+certificate (or trust `config/tls/server.crt`). Keep local port 8443: the
+proxy accepts only `localhost:8443`/`127.0.0.1:8443` origins. The 3478 forward
+carries live video: SSH does not carry UDP, so the browser relays WebRTC media
+over TURN/TCP through the device's loopback-only Coturn. Without it the page
+loads but camera tiles stay black. The tunnel gives full, unauthenticated UI
+access: do not share it (`ssh -g`, `GatewayPorts`). Details:
+[application-operations.md](docs/application/application-operations.md).
 
 ## Services
 
@@ -73,9 +92,9 @@ images, pinned in `compose/handheld-multi-modal.yaml`):
 | Service | Image | Role here |
 |---|---|---|
 | MediaMTX | `bluenviron/mediamtx:1.11.3` | RTSP camera input, WHIP/WHEP WebRTC relay to the browser |
-| Coturn | `coturn/coturn:4.18.0` | TURN relay for WebRTC only |
+| Coturn | `coturn/coturn:4.18.0` | TURN relay for WebRTC only, loopback-only (SSH-tunnelled browsers) |
 | Eclipse Mosquitto | `eclipse-mosquitto:2.0.22` | MQTT broker between DLSPS and the Backend |
-| nginx | `nginx:1.27-alpine` | TLS reverse proxy (`https://<device>:8443`) |
+| nginx | `nginx:1.27-alpine` | TLS reverse proxy, localhost only (`https://localhost:8443`) |
 | FFmpeg | `jrottenberg/ffmpeg:6.1-ubuntu2404` | Demo only: loops the sample videos as RTSP cameras |
 
 **Built for this application** (`backend/`): the application Backend
@@ -103,7 +122,14 @@ size. The running app has an interactive version of this page (see below).
 | Model Download (setup only) | `POST /api/v1/models/download`, `GET /api/v1/jobs/{id}` | [microservices/model-download](https://github.com/open-edge-platform/edge-ai-libraries/tree/c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9/microservices/model-download) |
 
 Open-source infrastructure: MediaMTX (video relay; the Backend also uses its
-`/v3` control API for camera paths and sessions), Coturn, Mosquitto and nginx.
+`/v3` control API for camera paths and sessions), Coturn (loopback-only TURN),
+Mosquitto and nginx.
+
+The application is localhost-only: every published port binds to `127.0.0.1`
+(Coturn too, so a TURN relay is available only to local clients). Open it in
+a browser on the device itself, or from another machine through an
+[SSH tunnel](#remote-access-ssh-tunnel). See
+`docs/design/THREAT_MODEL.md` for the residual local risks.
 
 The Backend never sits in the video path and never edits pipelines at runtime.
 The running app serves an **Architecture** page (`/architecture.html`, linked

@@ -11,6 +11,32 @@ from unittest.mock import patch
 import demo_assets as assets
 
 
+def check_localhost_only():
+    """Localhost-only profile: every host listener and the TURN relay stay on loopback."""
+    import yaml
+    for name in ('handheld-multi-modal.yaml', 'cameras.yaml', 'phase4-demo.override.yaml'):
+        services = yaml.safe_load((assets.REPO / 'compose' / name).read_text()).get('services') or {}
+        for service, spec in services.items():
+            if spec.get('network_mode') == 'host':
+                assert service == 'coturn', f'{name}: {service} uses host networking'
+                assert spec['command'] == ['-c', '/etc/coturn/turnserver.conf'], f'{name}: Coturn command overrides config'
+            for port in spec.get('ports') or []:
+                assert str(port).startswith('127.0.0.1:'), f'{name}: {service} publishes {port} beyond loopback'
+    turn = [line.strip() for line in (assets.REPO / 'config/coturn/turnserver.conf').read_text().splitlines()]
+    turn = [line for line in turn if line and not line.startswith('#')]
+    for required in ('listening-ip=127.0.0.1', 'relay-ip=127.0.0.1', 'denied-peer-ip=0.0.0.0-255.255.255.255',
+                     'allowed-peer-ip=127.0.0.1', 'no-tcp-relay', 'no-multicast-peers'):
+        assert required in turn, f'turnserver.conf lacks {required}'
+    keys = [line.split('=')[0] for line in turn]
+    assert keys.count('listening-ip') == keys.count('relay-ip') == keys.count('allowed-peer-ip') == 1
+    assert not {'external-ip', 'cli', 'cli-ip'} & set(keys)
+    mediamtx = yaml.safe_load((assets.REPO / 'config/mediamtx/mediamtx.yml').read_text())
+    assert mediamtx['webrtcAdditionalHosts'] == ['127.0.0.1']
+    assert not mediamtx['webrtcIPsFromInterfaces']
+    assert [server['url'] for server in mediamtx['webrtcICEServers2']] == ['turn:127.0.0.1:3478?transport=tcp']
+    assert all(server.get('clientOnly') for server in mediamtx['webrtcICEServers2'])
+
+
 def main():
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
@@ -129,12 +155,12 @@ def main():
         (group_root / 'config').mkdir(parents=True)
         subprocess.run(['make', '--no-print-directory', '-C', str(assets.REPO), 'setup',
                         '-o', 'tls',
-                        f'ASSET_ROOT={group_root}', 'RENDER_GID=12345', 'ACCEL_GID=23456',
-                        'HOST_IP=192.0.2.10', 'COTURN_EXTERNAL_IP=192.0.2.10'], check=True)
+                        f'ASSET_ROOT={group_root}', 'RENDER_GID=12345', 'ACCEL_GID=23456'], check=True)
         groups = [json.loads(line.split('!override ')[1]) for line in (group_root / 'config/devices.yaml').read_text().splitlines() if '!override' in line]
         assert groups == [list(dict.fromkeys(['12345', '23456', str(os.getgid())])),
                           list(dict.fromkeys(['12345', str(os.getgid())]))]
-        assert '192.0.2.10' in (group_root / 'config/mediamtx.yml').read_text()
+        assert not (group_root / 'config/mediamtx.yml').exists(), 'MediaMTX needs no per-device LAN copy'
+    check_localhost_only()
     # The committed example packet is exactly what the generator produces.
     assert assets.MISSION_EXAMPLE.read_bytes() == assets._pdf_bytes(assets.MISSION_DEMO_LINES), \
         'examples/demo-mission-packet.pdf is stale; run: python3 scripts/demo_assets.py mission'
@@ -146,7 +172,7 @@ def main():
                          capture_output=True, text=True).stdout
     assert 'demo_assets.py model' in own and 'demo_assets.py video' not in own and 'up -d --force-recreate cam' not in own
     assert 'demo_assets.py video' in dry and 'up -d --force-recreate cam1 cam2' in dry
-    print('PASS: stock job request, atomic installation, cached reuse, corruption/failed-job rejection, timeout cancellation, video integrity, Make dry-run safety/full-stack failure cleanup, separate device groups, interrupted Chat export recovery, committed example mission packet not auto-loaded')
+    print('PASS: stock job request, atomic installation, cached reuse, corruption/failed-job rejection, timeout cancellation, video integrity, Make dry-run safety/full-stack failure cleanup, separate device groups, interrupted Chat export recovery, committed example mission packet not auto-loaded, localhost-only bindings')
 
 
 if __name__ == '__main__':

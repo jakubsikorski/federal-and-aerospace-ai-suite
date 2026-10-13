@@ -11,9 +11,6 @@ export ASSET_ROOT := $(abspath $(ASSET_ROOT))
 export WAIT_SECONDS ?= 360
 MODEL_WAIT_SECONDS ?= 3600
 AI_WAIT_SECONDS ?= 3600
-HOST_NAME ?= $(shell hostname)
-HOST_IP ?= $(shell ip -4 -o addr show scope global | awk 'NR==1{split($$4,a,"/"); print a[1]}')
-export COTURN_EXTERNAL_IP ?= $(HOST_IP)
 export RENDER_GID ?= $(shell stat -c '%g' /dev/dri/renderD128 2>/dev/null)
 export ACCEL_GID ?= $(shell stat -c '%g' /dev/accel/accel0 2>/dev/null)
 export ASSET_GID := $(shell id -g)
@@ -76,7 +73,8 @@ help:
 	@echo 'Checks: make test | test-ui | test-assets | test-phase5 (needs demo-up)'
 	@echo
 	@echo 'Options: CAMERAS=1..2 (default 2)  TTS_DEVICE=CPU|GPU (default CPU)'
-	@echo '         HOST_IP=<LAN address>  ASSET_ROOT=<path>'
+	@echo '         ASSET_ROOT=<path>'
+	@echo 'Localhost only: open https://localhost:8443/ in a browser on this device.'
 	@echo 'The first start downloads several GB of models (internet, up to an hour); later starts run offline.'
 
 # Shown while waiting for services that download on their first start.
@@ -288,25 +286,22 @@ demo-prereq: prereq
 	  mv "$$video/$$stem.part.ts" "$$video/$$stem.ts"
 	done
 
+# Localhost-only profile: the certificate names only loopback identities.
 tls:
-	@test -n "$(COTURN_EXTERNAL_IP)" || { echo 'Set HOST_IP to the device LAN address' >&2; exit 1; }
-	if [[ ! -f "$(TLS_DIR)/server.crt" || ! -f "$(TLS_DIR)/server.key" ]]; then
+	@if [[ ! -f "$(TLS_DIR)/server.crt" || ! -f "$(TLS_DIR)/server.key" ]]; then
 	  mkdir -p "$(TLS_DIR)"
 	  openssl req -x509 -newkey rsa:2048 -nodes -days 825 \
 	    -keyout "$(TLS_DIR)/server.key" -out "$(TLS_DIR)/server.crt" \
-	    -subj "/CN=$(HOST_NAME)" \
-	    -addext "subjectAltName=DNS:$(HOST_NAME),DNS:localhost,IP:$(COTURN_EXTERNAL_IP),IP:127.0.0.1"
+	    -subj "/CN=localhost" \
+	    -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
 	  chmod 600 "$(TLS_DIR)/server.key"
 	fi
 
-# Per-device configuration: detected device groups and the LAN address.
+# Per-device configuration: detected device groups.
 setup: tls
 	@mkdir -p "$$ASSET_ROOT/data/backend"
 	install -d -m 2775 "$$ASSET_ROOT/data/dlsps/crops" "$$ASSET_ROOT/data/chatqna/model_cache"
 	python3 -c 'import json,os; print("services:"); [print("  " + service + ":\n    group_add: !override " + json.dumps(list(dict.fromkeys(os.environ[k] for k in keys)))) for service,keys in {"dlsps":("RENDER_GID","ACCEL_GID","ASSET_GID"), "chatqna":("RENDER_GID","ASSET_GID")}.items()]; d=os.environ["TTS_DEVICE"]; print("  tts:\n    environment:\n      TEXT_TO_SPEECH__MODELS__TTS__DEVICE: " + d + "\n  backend:\n    environment:\n      TTS_DEVICE: " + d)' > "$$ASSET_ROOT/config/devices.yaml"
-	sed -e 's|webrtcAdditionalHosts:.*|webrtcAdditionalHosts: [127.0.0.1, $(COTURN_EXTERNAL_IP)]|' \
-	    -e 's|:127.0.0.1:3478|:$(COTURN_EXTERNAL_IP):3478|g' \
-	    config/mediamtx/mediamtx.yml > "$$ASSET_ROOT/config/mediamtx.yml"
 
 # ---------------------------------------------------------------- start
 
@@ -369,14 +364,15 @@ chat_cache=$$($(COMPOSE) run --rm --no-deps --entrypoint python3 \
   -e PYTHONPATH=/handheld/scripts chatqna -c 'import pathlib,yaml; from demo_assets import repair_chat_cache, chat_cache_ready; cache=pathlib.Path("/tmp/model_cache"); models=yaml.safe_load(pathlib.Path("/tmp/model_config/config.yaml").read_text())["model_settings"]; ids=[models[role + "_MODEL_ID"] for role in ("LLM", "EMBEDDING", "RERANKER")]; repair_chat_cache(cache, ids); print("cached" if chat_cache_ready(cache, ids) else "download")' | tail -n 1)
 export CHATQNA_HF_HUB_OFFLINE=$$([[ $$chat_cache == cached ]] && echo 1 || echo 0)
 printf 'Chat Q&A models: %s\n' "$$([[ $$chat_cache == cached ]] && echo 'cached; no internet needed' || echo 'downloading on this start; internet required')"
-$(COMPOSE) up -d coturn mediamtx mqtt metrics dlsps alert-agent chatqna audio-analyzer tts
+$(COMPOSE) up -d --remove-orphans coturn mediamtx mqtt metrics dlsps alert-agent chatqna audio-analyzer tts
 WAIT_CONTAINER=handheld-multi-modal-mediamtx-1 wait_for "MediaMTX" curl -fsS --max-time 3 http://127.0.0.1:9997/v3/paths/list
 WAIT_CONTAINER=handheld-multi-modal-dlsps-1 wait_for "DLSPS" curl -fsS --max-time 3 http://127.0.0.1:8080/pipelines
 WAIT_CONTAINER=handheld-multi-modal-metrics wait_for "Metrics Manager" curl -fsS --max-time 3 http://127.0.0.1:9090/health
 $(if $(DEMO_FEEDS),$(start_demo_cameras))
 $(build_backend)
 $(COMPOSE) up -d --no-deps backend
-$(COMPOSE) up -d --no-deps proxy
+# nginx resolves upstream IPs at start; recreate so a recreated MediaMTX is reached.
+$(COMPOSE) up -d --no-deps --force-recreate proxy
 WAIT_CONTAINER=handheld-multi-modal-backend wait_for "Backend through TLS proxy" curl -skfsS --max-time 5 https://127.0.0.1:8443/api/streams
 $(if $(DEMO_FEEDS),$(wait_demo_video))
 wait_for "Backend telemetry" telemetry_ready
@@ -388,7 +384,7 @@ WAIT_CONTAINER=handheld-multi-modal-alert-agent wait_for "Alert Agent" curl -fsS
 dashboard=$$(curl -skfsS --max-time 5 https://127.0.0.1:8443/)
 [[ $$dashboard == *'id="pause-updates"'* ]]
 trap - ERR
-printf '\nApplication ready: https://%s:8443/  (trust config/tls/server.crt on the tablet)\n' "$(COTURN_EXTERNAL_IP)"
+printf '\nApplication ready on this device only: https://localhost:8443/  (trust config/tls/server.crt)\n'
 if [[ -n $$backend_stale ]]; then $(backend_stale_warning); fi
 $(if $(DEMO_FEEDS),printf 'Demo cameras live: $(CAMERA_IDS)\n',printf 'Waiting for cameras: publish H.264 RTSP to rtsp://127.0.0.1:8554/$(firstword $(CAMERA_IDS)) ... $(lastword $(CAMERA_IDS)); check with make status\n')
 endef
@@ -456,6 +452,7 @@ down demo-down:
 
 # ---------------------------------------------------------------- clean up
 
+# config/mediamtx.yml is a per-device copy generated by older versions.
 clean: down
 	rm -f "$$ASSET_ROOT/config/devices.yaml" "$$ASSET_ROOT/config/mediamtx.yml"
 
