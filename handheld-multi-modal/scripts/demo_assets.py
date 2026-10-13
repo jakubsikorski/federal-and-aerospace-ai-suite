@@ -262,10 +262,18 @@ def ir_problem(xml):
     return None
 
 
-def report(results):
-    for label, problem, fix in results:
-        print(f"ok       {label}" if problem is None else f"MISSING  {label}: {problem}  -> {fix}", flush=True)
-    return 0 if all(problem is None for _, problem, _ in results) else 1
+# Exit code of check when only demo-up assets are missing; make up can start.
+DEMO_ONLY_MISSING = 3
+
+
+def report(results, optional=()):
+    """Print each result; optional ones (needed only by make demo-up) never fail."""
+    for marker, items in (("MISSING", results), ("--", optional)):
+        for label, problem, fix in items:
+            print(f"ok       {label}" if problem is None else f"{marker:8} {label}: {problem}  -> {fix}", flush=True)
+    if any(problem is not None for _, problem, _ in results):
+        return 1
+    return DEMO_ONLY_MISSING if any(problem is not None for _, problem, _ in optional) else 0
 
 
 def chat_models():
@@ -281,23 +289,24 @@ def check(root, clips):
     except ValueError as error:
         problem = str(error)
     results.append((f"{MODEL} INT8 detector (approved hashes)", problem, "make prereq"))
+    demo = []
     video = root / "data/dlsps/demo-video"
     for name, _, digest in VIDEOS:
         path = video / name
         problem = None if path.is_file() and sha(path) == digest else (
             "checksum mismatch" if path.is_file() else "not downloaded")
-        results.append((f"demo video {name}", problem, "make demo-prereq"))
+        demo.append((f"demo video {name}", problem, "make demo-prereq (only make demo-up needs it)"))
     for clip in clips:
         source, fps = clip.rsplit(":", 1)
         name = f"{Path(source).stem}.max{fps}.ts"
-        results.append((f"demo camera clip {name}", None if (video / name).is_file() else "not prepared",
-                        "make demo-prereq"))
+        demo.append((f"demo camera clip {name}", None if (video / name).is_file() else "not prepared",
+                     "make demo-prereq (only make demo-up needs it)"))
     cache = root / "data/chatqna/model_cache"
     for model in chat_models():
         problem = (ir_problem(cache / model / "openvino_model.xml")
                    or (None if chat_cache_ready(cache, [model]) else "Hub snapshot missing"))
-        results.append((f"Chat Q&A model {model}", problem, "make demo-up (internet)"))
-    return report(results)
+        results.append((f"Chat Q&A model {model}", problem, "make up or make demo-up (internet)"))
+    return report(results, demo)
 
 
 def check_ir(base, files, fix):

@@ -560,18 +560,27 @@ VOICE_MODELS := \
 
 # Read-only: reports whether a start can run offline. Downloads nothing.
 check: preflight
-	@failed=0
-	report() { if [[ $$1 == ok ]]; then printf 'ok       %s\n' "$$2"; else printf '%-8s %s  -> %s\n' "$${1^^}" "$$2" "$$3"; failed=1; fi; }
+	@failed=0 demo_missing=0
+	# Items marked -- are needed only by make demo-up and never fail the check.
+	report() {
+	  if [[ $$1 == ok ]]; then printf 'ok       %s\n' "$$2"
+	  elif [[ $$1 == optional ]]; then printf -- '--       %s  -> %s\n' "$$2" "$$3"; demo_missing=1
+	  else printf '%-8s %s  -> %s\n' "$${1^^}" "$$2" "$$3"; failed=1; fi
+	}
 	echo 'Images'
+	app_images=$$($(ASSET_COMPOSE) --profile assets config --images | sort -u)
 	for image in $$($(COMPOSE) --profile assets config --images | sort -u); do
-	  docker image inspect "$$image" >/dev/null 2>&1 && state=ok || state=missing
-	  report "$$state" "$$image" 'make demo-up (internet) or make bundle-load'
+	  if docker image inspect "$$image" >/dev/null 2>&1; then state=ok fix=
+	  elif grep -qxF "$$image" <<< "$$app_images"; then state=missing fix='make up or make demo-up (internet), or make bundle-load'
+	  else state=optional fix='make demo-up (internet) downloads it; only the demo cameras use it'; fi
+	  report "$$state" "$$image" "$$fix"
 	done
 	built=$(backend_built)
 	[[ -z $$built || $$built == $(backend_hash) ]] && state=ok || state=stale
-	report "$$state" 'Backend image matches backend/ sources' 'make demo-up rebuilds it'
+	report "$$state" 'Backend image matches backend/ sources' 'make up or make demo-up rebuilds it'
 	echo 'Models and demo videos'
-	python3 scripts/demo_assets.py check --clips $(DEMO_CLIPS) || failed=1
+	code=0; python3 scripts/demo_assets.py check --clips $(DEMO_CLIPS) || code=$$?
+	if ((code == 3)); then demo_missing=1; elif ((code)); then failed=1; fi
 	# Plain docker run: mount only volumes that already exist, so nothing is created.
 	image=$$($(ASSET_COMPOSE) config --images model-downloader)
 	mounts=()
@@ -584,27 +593,30 @@ check: preflight
 	if (($${#mounts[@]})) && docker image inspect "$$image" >/dev/null 2>&1; then
 	  docker run --rm --network none --user 0:0 "$${mounts[@]}" -v "$(CURDIR)/scripts:/scripts:ro" \
 	    -v "$(CURDIR)/config:/config:ro" --entrypoint python3 "$$image" /scripts/demo_assets.py check-ir \
-	    --root /volumes --fix 'make demo-up (internet) or make bundle-load' $(VOICE_MODELS) || failed=1
+	    --root /volumes --fix 'make up or make demo-up (internet), or make bundle-load' $(VOICE_MODELS) || failed=1
 	else
-	  for file in $(VOICE_MODELS); do report missing "$$file" 'make demo-up (internet) or make bundle-load'; done
+	  for file in $(VOICE_MODELS); do report missing "$$file" 'make up or make demo-up (internet), or make bundle-load'; done
 	fi
 	echo 'Application'
 	running=$$($(COMPOSE) ps --status running --services 2>/dev/null || true)
 	if [[ -z $$running ]]; then
-	  echo 'not started: services were not checked (make demo-up, then make check again)'
+	  echo 'not started: services were not checked (make up or make demo-up, then make check again)'
 	else
 	  for service in $(APP_SERVICES) backend proxy; do
 	    grep -qxF "$$service" <<< "$$running" && state=ok || state='not running'
-	    report "$$state" "$$service container" 'make demo-up'
+	    report "$$state" "$$service container" 'make up or make demo-up'
 	  done
-	  python3 scripts/check_live.py || failed=1
+	  # Cameras with a running demo publisher must be live; others may wait for a publisher.
+	  CHECK_DEMO_CAMERAS=$$(grep -x 'cam[0-9]*' <<< "$$running" | paste -sd, || true) python3 scripts/check_live.py || failed=1
 	fi
 	echo
-	if ((failed)); then echo 'Not ready: run the command shown after each item that is not ok.' >&2; exit 1; fi
-	if [[ -z $$running ]]; then
-	  echo 'Ready to start: images, models and demo videos are complete; make demo-up needs no internet.'
-	else
+	if ((failed)); then echo 'Not ready: run the command shown after each item marked MISSING, STALE, NOT RUNNING or FAILED.' >&2; exit 1; fi
+	if [[ -n $$running ]]; then
 	  echo 'Ready: every service is running and answered a real request.'
+	elif ((demo_missing)); then
+	  echo 'Ready for make up (no internet needed). make demo-up also needs the items marked --: run make demo-prereq.'
+	else
+	  echo 'Ready for make up or make demo-up; no internet needed.'
 	fi
 
 test:

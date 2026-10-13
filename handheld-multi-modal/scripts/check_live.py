@@ -22,7 +22,14 @@ OPENER = urllib.request.build_opener(
     urllib.request.HTTPSHandler(context=ssl._create_unverified_context()))
 # A service still loading its model is reported, not waited for; demo-up waits.
 INFERENCE_TIMEOUT = 60
+# Cameras whose demo publisher runs (make demo-up); they must be live. Other
+# cameras may simply not publish yet (make up), which is not a failure.
+DEMO_CAMERAS = set(filter(None, os.environ.get("CHECK_DEMO_CAMERAS", "").split(",")))
 failed = False
+
+
+class Waiting(Exception):
+    """Nothing is broken; an input the operator provides (a camera) is absent."""
 
 
 def call(url, body=None, headers=None, timeout=5, raw=False):
@@ -40,6 +47,9 @@ def probe(label, fix, test):
         detail = test()
         print(f"ok       {label}: {detail} ({time.monotonic() - start:.1f} s)", flush=True)
         return True
+    except Waiting as reason:
+        print(f"--       {label}: {reason}", flush=True)
+        return True
     except Exception as error:  # every failure is reported, never hidden
         failed = True
         print(f"FAILED   {label}: {error}  -> {fix}", flush=True)
@@ -55,12 +65,20 @@ def main():
     streams = [s for s in call("https://127.0.0.1:8443/api/streams")["data"] if s.get("enabled", True)]
     paths = {item["name"]: item.get("ready") for item in call("http://127.0.0.1:9997/v3/paths/list")["items"]}
 
+    publishing = [s for s in streams if paths.get(s["stream_id"])]
+
     def camera(stream):
         def test():
+            camera_id = stream["stream_id"]
+            if not paths.get(camera_id):
+                message = f"nothing published to rtsp://127.0.0.1:8554/{camera_id}"
+                if camera_id in DEMO_CAMERAS:
+                    raise RuntimeError(f"demo publisher runs but {message}")
+                raise Waiting(f"waiting for a camera: {message}")
             feed = stream.get("feed") or {}
             if not feed.get("ok"):
-                raise RuntimeError(f"no fresh detections ({feed.get('reason') or 'feed not receiving'})")
-            annotated = stream["stream_id"].replace("cam", "annotated", 1)
+                raise RuntimeError(f"camera publishes but no fresh detections ({feed.get('reason') or 'feed not receiving'})")
+            annotated = camera_id.replace("cam", "annotated", 1)
             if not paths.get(annotated):
                 raise RuntimeError(f"detections arrive but {annotated} video is not publishing")
             return f"camera feed, detections and {annotated} video live"
@@ -72,8 +90,10 @@ def main():
 
     def dlsps():
         running = [p for p in call("http://127.0.0.1:8080/pipelines/status") if p.get("state") == "RUNNING"]
-        if len(running) < len(streams):
-            raise RuntimeError(f"{len(running)} pipelines running for {len(streams)} cameras")
+        if not publishing and not running:
+            raise Waiting("no camera publishes yet; the Backend starts a pipeline when one does")
+        if len(running) < len(publishing):
+            raise RuntimeError(f"{len(running)} pipelines running for {len(publishing)} publishing cameras")
         stalled = [p for p in running if not p.get("avg_fps")]
         if stalled:
             raise RuntimeError(f"{len(stalled)} running pipelines process no frames")
@@ -146,7 +166,7 @@ def main():
         if 'id="pause-updates"' not in page:
             raise RuntimeError("operator console page is not served")
         return "operator console served through the TLS proxy"
-    probe("Operator console", "make demo-up", console)
+    probe("Operator console", "make up or make demo-up", console)
     return 1 if failed else 0
 
 
@@ -154,4 +174,4 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except OSError as error:
-        sys.exit(f"FAILED   application is not reachable: {error}  -> make demo-up")
+        sys.exit(f"FAILED   application is not reachable: {error}  -> make up or make demo-up")
