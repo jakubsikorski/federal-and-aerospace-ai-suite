@@ -1,5 +1,4 @@
 /                                             @rrajore @pperycz @jakubsikorski @ikyrycho @xwu2intel
-/README.md                                    @rrajore @pperycz @jakubsikorski @ikyrycho @xwu2intel @open-edge-platform/open-edge-platform-docs-write
 /handheld-multi-modal/                        @rrajore @pperycz @jakubsikorski @ikyrycho @kpuczyns @xwu2intel
 /handheld-multi-modal/docs/                   @rrajore @pperycz @jakubsikorski @ikyrycho @kpuczyns @xwu2intel @open-edge-platform/open-edge-platform-docs-write
 /handheld-multi-modal/README.md               @rrajore @pperycz @jakubsikorski @ikyrycho @kpuczyns @xwu2intel @open-edge-platform/open-edge-platform-docs-write
@@ -12,8 +11,8 @@
 /uav-mission-compute-sdk                      @k-mochi @nathsudi @rranjan3 @pperycz @abjyoti
 /uav-mission-compute-sdk/docs/                @k-mochi @nathsudi @rranjan3 @pperycz @abjyoti @open-edge-platform/open-edge-platform-docs-write
 /uav-mission-compute-sdk/README.md            @k-mochi @nathsudi @rranjan3 @pperycz @abjyoti @open-edge-platform/open-edge-platform-docs-write
-LICENSE            @xwu2intel
-CONTRIBUTING.md    @xwu2intel @open-edge-platform/open-edge-platform-docs-write
-CODE_OF_CONDUCT.md @xwu2intel
-SECURITY.md        @xwu2intel
-README.md          @xwu2intel @open-edge-platform/open-edge-platform-docs-write
+/LICENSE            @xwu2intel
+/CONTRIBUTING.md    @xwu2intel @open-edge-platform/open-edge-platform-docs-write
+/CODE_OF_CONDUCT.md @xwu2intel
+/SECURITY.md        @xwu2intel
+/README.md          @rrajore @pperycz @jakubsikorski @ikyrycho @xwu2intel @open-edge-platform/open-edge-platform-docs-write
