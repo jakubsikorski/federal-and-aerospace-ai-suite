@@ -30,7 +30,9 @@ UI does NOT access SQLite directly.
 UI does NOT access snip filesystem paths directly.
 ```
 
-Backend owns microphone capture; Audio Analyzer owns transcription.
+The browser captures microphone audio; Backend validates and forwards bounded
+audio; Audio Analyzer owns transcription. Backend owns pipeline REST lifecycle
+(start/stop fixed pipelines per camera), alert rules and speech arbitration.
 Snips must be cropped inside the DLSPS pipeline, never in Backend.
 CPU/GPU/NPU pipelines are predefined, NPU is the intended default. Do not
 introduce a dynamic pipeline-editing API or expose the stock Chat Q&A UI.

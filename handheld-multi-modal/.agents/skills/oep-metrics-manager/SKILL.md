@@ -14,8 +14,7 @@ Locally authored; source baseline is `release-2026.2.0`, commit
 
 ## Required workflow
 
-1. Pinned **`intel/metrics-manager:2026.1.0`** confirmed running, as selected
-   by `VERSION` in the release checkout.
+1. Pinned **`intel/metrics-manager:2026.2.0`** confirmed running.
 2. Stock mounts include `/sys:ro`, `/run:ro`, Telegraf configs and
    custom-input storage; GPU uses `/dev/dri`, host PID namespace and render-
    group access (`compose/handheld-multi-modal.yaml`, service `metrics`).
@@ -40,12 +39,12 @@ Locally authored; source baseline is `release-2026.2.0`, commit
 - GPU: `gpu_engine_usage_usage` (%) with engine/type/host/gpu_id labels;
   `gpu_frequency_value{type="cur_freq"}` is MHz (current/requested).
   `gpu_power_value{type="gpu_cur_power"}` and
-  `gpu_power_value{type="pkg_cur_power"}` are W — **confirmed real values this
-  session, ~10-18W idle**. Units were traced into pinned qmassa source.
+  `gpu_power_value{type="pkg_cur_power"}` are W — **confirmed real values,
+  ~10-18W idle**. Units were traced into pinned qmassa source.
   Retain GPU versus package domains and verify counter availability. No
   default GPU-memory utilization series. Do not invent `gpu_usage_percent`.
 - NPU: `npu_power` (W), `npu_utilization` (%), `npu_temperature` (°C,
-  **confirmed real ~50°C via PMT this session**), `npu_tile_config` (integer).
+  **confirmed real ~50°C via PMT**), `npu_tile_config` (integer).
   `npu_memory_mb` actually divides by 1024² (MiB); `-1` means unavailable,
   **confirmed on this Lunar Lake host** (documented sentinel, not a bug).
 - NPU utilization can be false-zero when `npu_busy_time_us` is unavailable.
@@ -56,7 +55,7 @@ Locally authored; source baseline is `release-2026.2.0`, commit
   conditional on counter support/permissions; it is not CPU-only power.
   Do not sum overlapping GPU/package and NPU domains.
 - Treat missing, stale, unsupported, sentinel and real zero separately.
-  Values confirmed this session are **idle-state** (no concurrent DLSPS
+  Recorded deployment values are **idle-state** (no concurrent DLSPS
   load) — do not extrapolate idle metrics into loaded-workload behavior.
 
 ## Target and evidence gates
@@ -75,5 +74,5 @@ telemetry or claiming a smoke pass beyond what was actually run.
 is **PASS** for CPU/RAM (two original, fresh, advancing Prometheus export
 timestamps; `/latest` timestamps alone cannot prove freshness because that
 API can synthesize them) — its scope is CPU/RAM-only by design. Real
-GPU/NPU/temperature data was additionally confirmed manually this session
+GPU/NPU/temperature data was additionally confirmed manually at deployment
 (see evidence log above), not by this script.

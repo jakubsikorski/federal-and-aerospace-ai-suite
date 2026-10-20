@@ -7,7 +7,7 @@ description: Use when resolving provenance-compliant stock OEP TTS configuration
 
 Pinned source/image: `edge-ai-libraries` commit
 `c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9`,
-`intel/text-to-speech:2026.2.0-rc3`.
+`intel/text-to-speech:2026.2.0`.
 See `docs/application/ai-contracts.md` for source evidence and model lineages.
 
 **Deployed and runtime-verified** on this Lunar Lake host as SpeechT5, not
@@ -26,8 +26,10 @@ not set in this repo's Compose.
 Model configuration lives under `models.tts`; runtime `openvino|pytorch`,
 `device`, model identity and variant are distinct fields.
 
-Device: CPU (owner-directed 2026-09-28, D52; Compose `cpus: 4`, no `/dev/dri`).
-On the shared GPU SpeechT5 queued behind LLM generation.
+Device: CPU by default (owner-directed 2026-09-28, D52/D56; Compose `cpus: 4`).
+On the shared GPU SpeechT5 queued behind LLM generation. `make speech-device
+TTS_DEVICE=GPU` switches to GPU (generated `config/devices.yaml`); `CPU`
+switches back. Backend is the only TTS caller (`backend/app/speech.py`).
 Stock persistent targets `/app/text-to-speech/{models,storage,.cache}`;
 service owns model export/download. No custom TTS service or unrelated LLM.
 

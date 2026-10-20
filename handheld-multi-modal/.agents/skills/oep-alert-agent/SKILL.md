@@ -11,13 +11,13 @@ Source baseline `release-2026.2.0`, commit
 `c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9`,
 `microservices/alert-agent-service/`.
 **Deployed and runtime-verified** on this Lunar Lake host
-(`intel/alert-agent-service:2026.2.0-rc3`, host `127.0.0.1:8010`) — see
+(`intel/alert-agent-service:2026.2.0`, host `127.0.0.1:8010` → container `8000`) — see
 `STATUS.md` and `docs/application/evidence/alert-agent/smoke.log`,
 not source-only.
 
 ## Required workflow
 
-1. Pinned image `intel/alert-agent-service:2026.2.0-rc3` confirmed pulled and
+1. Pinned image `intel/alert-agent-service:2026.2.0` confirmed pulled and
    running.
 2. `AGENT_MODE=false` confirmed via startup log and `/health`. Never use ADK,
    an LLM, or "fallback after LLM failure" in the critical path. Do not start
@@ -31,22 +31,23 @@ not source-only.
    deployed `/openapi.json` (nested body, not the flat published examples).
    `/api/v1/alerts` accepts flat JSON but masks dispatch errors with
    `accepted`.
-5. For the future logical action `backend.speak_alert`, use a real backend MCP
-   server advertising `speak_alert`. A server named `backend` produces the
-   discovered name `mcp_backend_speak_alert`, not `backend.speak_alert` — this
-   registration contract is confirmed/documented, but no backend exists yet
-   to actually register, so `backend.speak_alert` delivery itself cannot be
-   proven this session. `MCP_ENABLED=false` confirmed in this deployment.
-   Set `MCP_ENABLED=true` only with valid server config; inspect
-   `/api/v1/mcp/status` and `/api/v1/mcp/tools` for connection/input schema.
-   Do not invent the backend URL or speech argument schema.
-6. Confirmed this session: one real `log_alert` dispatch, one real dedup
+5. Backend integration (`backend/app/alerts.py`): Backend evaluates its own
+   rules, posts matches to `POST /api/v1/actions/execute` with `field_hash`
+   dedup on `metadata.track_id`, follows SSE `/api/v1/events`, and arbitrates
+   speech itself (`backend/app/speech.py`) via stock TTS. No Backend MCP
+   server is registered; `MCP_ENABLED=false`. A server named `backend`
+   advertising `speak_alert` would register as `mcp_backend_speak_alert`, not
+   `backend.speak_alert`. Set `MCP_ENABLED=true` only with valid server
+   config; inspect `/api/v1/mcp/status` and `/api/v1/mcp/tools`. Do not
+   invent a backend URL or speech argument schema.
+6. Confirmed at deployment: one real `log_alert` dispatch, one real dedup
    skip (`field_hash`), real `trigger_webhook`→local HTTP listener, real
    `capture_snapshot` PNG, real `publish_mqtt` on this repo's Mosquitto, real
    SSE `init`+`alert_action` fanout. Unknown tools are skipped; execution is
    concurrent; MCP `isError` is not checked by the wrapper. `actions_taken`
-   alone does not prove playback. Do not implement final business rules,
-   speech arbitration, or a custom server in the application.
+   alone does not prove playback. Business rules and speech
+   arbitration belong to the Backend, never to the stock agent; do not add a
+   custom alert server.
 
 ## Dedup and streaming constraints
 

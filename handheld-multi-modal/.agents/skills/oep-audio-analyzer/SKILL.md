@@ -7,7 +7,7 @@ description: Use when configuring the required stock Whisper-medium OpenVINO GPU
 
 Pinned source/image: `edge-ai-libraries` commit
 `c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9`,
-`intel/audio-analyzer:2026.2.0-rc3`. **Deployed and runtime-verified** on
+`intel/audio-analyzer:2026.2.0`. **Deployed and runtime-verified** on
 this Lunar Lake host (see `STATUS.md`,
 `docs/application/evidence/audio-analyzer/smoke.log`), not source-only.
 Full API, model ownership and source references: `docs/application/ai-contracts.md`.
@@ -24,13 +24,13 @@ Required values: `app.use_ov_genai=true`,
 `sentiment.enabled=false`. Denoising is disabled too.
 
 GPU access `/dev/dri` plus actual render/video groups (`video`, GID 992
-observed on this host). No microphone or `/dev/snd` mapping: Backend owns
-capture.
+observed on this host). No microphone or `/dev/snd` mapping: the browser
+captures; Backend validates and forwards bounded WAV (`backend/app/voice.py`).
 Stock persistent targets under `/app/audio_analyzer`: `models`, `chunks`,
 `storage`, `.cache`; HF cache `.cache/huggingface`.
 Service owns export of `openai/whisper-medium` to
 `models/openvino/whisper-medium` (confirmed via a real first-run
-`optimum-cli export openvino` this session; required a real corporate
+`optimum-cli export openvino`; required a real corporate
 `http(s)_proxy` for the outbound HF download). Immutable model revision is
 not yet pinned.
 
@@ -43,7 +43,7 @@ curl --fail --max-time 180 http://127.0.0.1:8011/v1/audio/transcriptions \
   -F file=@utterance.wav -F model=whisper-1 -F response_format=json
 ```
 
-Confirmed working this session: real transcription of a 15s spoken-philosophy
+Confirmed at deployment: real transcription of a 15s spoken-philosophy
 WAV returned recognizable non-empty text.
 `whisper-1` is the required HTTP compatibility alias; sending
 `model=whisper-medium` fails DTO validation. The server config selects the
