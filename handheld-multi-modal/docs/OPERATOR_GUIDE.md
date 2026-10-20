@@ -389,10 +389,11 @@ check that panel for the exact device.
 5. **More options** contains confidence, repeat, active hours and speech settings.
    **Announce again after** (default 30 s, 5–3600 s): while an alert is open,
    a new object is announced again once this many seconds have passed since
-   the last announcement, even in a busy scene. After **Acknowledge**, the
-   next sighting is announced at once. Objects cut off by the bottom edge of
-   the picture are not placed in an area (their feet are not visible); objects
-   touching the sides or top are.
+   the last announcement, even in a busy scene. A kind of object the alert has
+   not announced yet (a person after a car on an **Anything** alert) and the
+   same alert on another camera are announced at once. After **Acknowledge**,
+   the next sighting is announced at once. Objects cut off by any edge of the
+   picture count in an area like any other detection.
 6. Read the plain-language preview above it, then **Create alert**.
 7. Existing alerts show their conditions. **Edit**, **Turn off / Turn on** or **Delete**
    are available beside each. Editing finishes with **Save changes**.

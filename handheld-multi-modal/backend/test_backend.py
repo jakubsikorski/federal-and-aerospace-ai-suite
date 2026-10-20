@@ -3145,7 +3145,27 @@ def test_busy_scene_is_announced_again_after_the_cooldown():
         alerts.close()
 
 
-def test_zone_rule_accepts_objects_touching_side_or_top_edges():
+def test_new_kind_of_object_and_other_camera_are_announced_within_the_cooldown():
+    with tempfile.TemporaryDirectory() as tmp:
+        ing = _ingest(tmp)
+        said = _SaidArbiter()
+        alerts = _alerts(ing, str(Path(tmp) / "ingest.db"), said)
+        alerts.create(ing.conn, {"cooldown_seconds": 300})  # Anything
+        now = time.time()
+        _observe(ing, "cam1", 1, label="car", start=now)
+        _observe(ing, "cam1", 2, label="person", start=now + 1)
+        assert [t for _, t, _ in said.said] == ["car on Camera 1.", "person on Camera 1."], said.said
+        _observe(ing, "cam1", 3, label="car", start=now + 2)
+        _observe(ing, "cam1", 4, label="person", start=now + 3)
+        assert len(said.said) == 2, "a kind already announced waits for the cooldown"
+        # Same rule, other camera: its own incident, spoken without a rule cooldown.
+        _observe(ing, "cam2", 5, label="person", start=now + 4)
+        assert len(said.said) == 3 and "cooldown" not in said.said[-1][2], said.said
+        ing.conn.close()
+        alerts.close()
+
+
+def test_zone_rule_accepts_objects_touching_any_frame_edge():
     zone = {"points": [[0.3, 0.3], [0.7, 0.3], [0.7, 1.0], [0.3, 1.0]]}
     with tempfile.TemporaryDirectory() as tmp:
         ing = _ingest(tmp, cameras=("cam1",))
@@ -3155,10 +3175,10 @@ def test_zone_rule_accepts_objects_touching_side_or_top_edges():
         # A tall, close person cut by the top edge: feet are inside the zone.
         _observe(ing, "cam1", 1, detection_rect=[45, 0, 10, 50], object_touches_frame=True, **rect)
         assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 1
-        # Cut by the bottom edge: the feet are not visible, so no match.
+        # Cut by the bottom edge: counted like any other detection.
         _observe(ing, "cam1", 2, start=1100.0, detection_rect=[45, 50, 10, 49.5],
                  object_touches_frame=True, **rect)
-        assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 1
+        assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 2
         ing.conn.close()
         alerts.close()
 
@@ -3503,7 +3523,7 @@ def test_alert_incidents_group_matches_and_follow_operator_actions():
         assert seen["state"] == "open" and seen["match_count"] == 1 and seen["acknowledged_utc"] is None, seen
         assert seen["counted_from_utc"] == seen["last_match_utc"] != "2000-01-01T00:00:00Z", \
             "span did not restart at the first sighting after Acknowledge"
-        assert len(said.said) == spoken + 1 and said.said[-1][2]["cooldown"] == 0.0, said.said[-1]
+        assert len(said.said) == spoken + 1 and said.said[-1][2].get("cooldown", 0.0) == 0.0, said.said[-1]
         assert [t["track_id"] for t in history.incident_tracks(ing.conn, live["incident_id"])] == \
             [seen["track"]["track_id"]], "sightings before Acknowledge still listed"
         # Sightings while open are grouped; the span start stays at the first one.

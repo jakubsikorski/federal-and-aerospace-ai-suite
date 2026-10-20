@@ -449,10 +449,18 @@ class Alerts:
             # A new object on an unhandled incident is announced again once the
             # cooldown has passed since the last announcement. Counting from the
             # last match kept busy scenes silent: every sighting restarted it.
+            # A kind of object not yet announced in this incident (an "Anything"
+            # rule seeing a person after a car) is announced at once.
             head = conn.execute("SELECT matched_utc FROM rule_matches WHERE match_id=?",
                                 (row["head_match_id"],)).fetchone()
             announced = _epoch(head[0]) if head else _epoch(row["last_match_utc"])
-            notify = now - announced >= rule["cooldown_seconds"]
+            classes = {label for (label,) in conn.execute(
+                """SELECT DISTINCT t.class_label FROM rule_matches m
+                   JOIN tracks t ON t.track_id = m.track_id
+                   WHERE m.incident_id = ? AND m.dispatch_state != 'grouped'""",
+                (row["incident_id"],))}
+            notify = (now - announced >= rule["cooldown_seconds"]
+                      or entry["class_label"] not in classes)
             reopen = False
         else:
             # Acknowledged means "seen so far": the next sighting needs attention
@@ -520,19 +528,6 @@ class Alerts:
         x, y, w, h = rect
         return ((x + w / 2.0) / width, (y + h) / height)
 
-    def _touches_frame(self, entry: dict) -> bool:
-        # Only a box cut by the bottom edge hides the feet the zone test uses;
-        # objects at the side or top edges still have a reliable foot point.
-        rect = entry.get("detection_rect")
-        height = entry.get("frame_height")
-        if (not isinstance(rect, (list, tuple)) or len(rect) != 4
-                or isinstance(height, bool) or not isinstance(height, (int, float)) or height <= 0):
-            return entry.get("object_touches_frame") is True
-        try:
-            return (float(rect[1]) + float(rect[3])) / float(height) >= 0.99
-        except (TypeError, ValueError):
-            return False
-
     def _in_zone(self, rule: dict, track_id: int, entry: dict) -> bool:
         zone = rule.get("zone")
         if zone is None:
@@ -590,13 +585,11 @@ class Alerts:
             if rule["min_confidence"] is not None and (
                     entry.get("peak_confidence") or 0.0) < rule["min_confidence"]:
                 continue
-            constrained = rule.get("zone") is not None or rule.get("dwell_seconds") is not None
             if rule.get("zone") is not None and self._foot(entry) is None:
                 self.inside.pop(key, None)
                 self.dwell.pop(key, None)
                 continue
             qualifies = self._active_now(rule, float(entry.get("last_at") or time.time()))
-            qualifies = qualifies and not (constrained and self._touches_frame(entry))
             qualifies = qualifies and self._in_zone(rule, track_id, entry)
             if not self._dwell_ready(rule, track_id, entry, qualifies):
                 continue
@@ -638,12 +631,11 @@ class Alerts:
                 continue
             self.wake.set()
             if rule["speak"] and self.arbiter is not None:
-                # A sighting after Acknowledge is new information: the rule's
-                # speech cooldown does not silence it (the global floor still applies).
+                # The incident decided this sighting is announced, so speech adds
+                # no cooldown of its own: a per-rule one silenced the same rule
+                # on another camera. The global alert floor still spaces alerts.
                 self.arbiter.say("alert", self.announcement(entry), ref=match_id,
-                                 rule_id=rule["rule_id"],
-                                 cooldown=0.0 if reopened else rule["cooldown_seconds"],
-                                 group=incident_id)
+                                 rule_id=rule["rule_id"], group=incident_id)
 
     def mark_in_view(self, incidents: list[dict], ingest, cutoff: float) -> None:
         """Set `in_view` on each incident: what its rule asks for is on camera now.

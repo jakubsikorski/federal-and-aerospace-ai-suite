@@ -729,7 +729,7 @@
         </div>
         <details id="rule-advanced"><summary>More options <small>Confidence, repeat, active hours, speech</small></summary><div>
           <label>Minimum confidence<input id="rule-confidence" type="number" min="0" max="1" step="0.05" placeholder="Any confidence"></label>
-          <label title="While an alert is open, a new object is announced again once this many seconds have passed since the last announcement. After Acknowledge, the next sighting is announced at once.">Announce again after (s)<input id="rule-cooldown" type="number" min="5" max="3600" step="1" value="30"></label>
+          <label title="While an alert is open, a new object of a kind already announced is announced again once this many seconds have passed since the last announcement. A new kind of object, another camera, or a sighting after Acknowledge is announced at once.">Announce again after (s)<input id="rule-cooldown" type="number" min="5" max="3600" step="1" value="30"></label>
           <label>Active from<input id="rule-active-start" type="time"></label>
           <label>Active to<input id="rule-active-end" type="time"></label>
           <label class="rule-speak"><input id="rule-speak" type="checkbox" checked> Announce by speech</label>
