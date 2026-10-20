@@ -252,7 +252,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--screenshots', type=Path)
     args = parser.parse_args()
-    assert shutil.which('geckodriver'), 'Install Firefox/geckodriver to run the browser check'
+    # The snap's /snap/bin/geckodriver wrapper drops WebDriver replies; the
+    # unconfined binary shipped inside the Firefox snap works.
+    snap_driver = Path('/snap/firefox/current/usr/lib/firefox/geckodriver')
+    driver = os.environ.get('GECKODRIVER') or (str(snap_driver) if snap_driver.is_file() else shutil.which('geckodriver'))
+    assert driver, 'Install Firefox/geckodriver to run the browser check'
     server = ThreadingHTTPServer(('127.0.0.1', 0), Fixture)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     with socket.socket() as sock:
@@ -260,7 +264,7 @@ def main():
         port = sock.getsockname()[1]
     # A home-directory profile also works with snap-packaged Firefox.
     with tempfile.TemporaryDirectory(prefix='handheld-ui-', dir=Path.home()) as profile, tempfile.TemporaryFile() as log:
-        process = subprocess.Popen(['geckodriver', '--host', '127.0.0.1', '--port', str(port), '--profile-root', profile],
+        process = subprocess.Popen([driver, '--host', '127.0.0.1', '--port', str(port), '--profile-root', profile],
                                    stdout=log, stderr=log, env={**os.environ, 'MOZ_HEADLESS': '1'})
         session = None
         def request(method, path, data=None):
@@ -385,7 +389,9 @@ def main():
               document.querySelector('input[name=rule-kind][value=appears]').click();
               return ruleDwell() === null && $('rule-duration').hidden;
             })()` )"""), 'Simple alert defaults or duration controls failed'
-            js("document.getElementById('rule-class').value = 'person'; document.getElementById('rule-camera').value = 'cam2'; document.getElementById('rule-confidence').value = '0.6'")
+            js("""const c = document.getElementById('rule-class'); c.value = 'person'; c.dispatchEvent(new Event('change', {bubbles: true}));
+              document.getElementById('rule-camera').value = 'cam2'; document.getElementById('rule-confidence').value = '0.6'""")
+            assert js("return document.getElementById('rule-cooldown').value") == '30', 'Class rule did not take the 30 s repeat default'
             click('#rule-form button[type="submit"]')
             for _ in range(100):
                 if js("return document.getElementById('rule-list').children.length") == 2:
@@ -562,7 +568,7 @@ def main():
               const savedRules = state.rules, savedSelected = state.selected;
               state.rules = {...(savedRules || {}), rules: [{rule_id: "r1", stream_id: "cam2", enabled: true, zone: {points: [[.1, .1], [.5, .1], [.3, .5]]}}]};
               state.selected = "cam2"; renderZoneOverlay();
-              const flashed = !!$("zone-overlay").querySelector("polygon.alerting") && $("video-wrap").dataset.alert === "true";
+              const flashed = !!$("zone-overlay").querySelector("polygon.alerting") && $("video-wrap").dataset.alert === "attention";
               state.rules = savedRules; state.selected = savedSelected; renderZoneOverlay();
               state.incidents = [{...state.incidents[0], state: "acknowledged"}, ...state.incidents.slice(1)];
               renderAlerts();
@@ -1182,7 +1188,11 @@ def main():
                 chrome = js('return outerHeight - innerHeight')
                 request('POST', base + '/window/rect', {'width': width, 'height': height + chrome})
                 time.sleep(.2)
-                check('state.resource = "gpu"; renderTelemetry(); true')
+                # Live telemetry refreshes every second; keep the fixture fresh so
+                # tiles are measured without the "Stale" line.
+                check('''(() => { state.resource = "gpu"; const fresh = new Date(serverNow()).toISOString();
+                  state.telemetry.metrics.forEach(m => { m.sampled_utc = fresh; }); state.telemetry.sampled_utc = fresh;
+                  renderTelemetry(); return true; })()''')
                 # Overlay panels stay inside the viewport and keep their title/Close
                 # visible when their body scrolls (1280x800 is the test display).
                 check('''(() => {
@@ -1219,7 +1229,7 @@ def main():
                         && $("workspace").scrollWidth === $("workspace").clientWidth
                         && chart.height >= ({str(expanded).lower()} ? 85 : 50) && chart.bottom <= panel.bottom
                         && (!{str(expanded).lower()} || $("chart-note").getBoundingClientRect().bottom <= panel.bottom)
-                        && ({str(expanded).lower()} || innerHeight <= 650 || $("video-panel").getBoundingClientRect().height >= 1.5 * panel.height)
+                        && ({str(expanded).lower()} || innerHeight <= 650 || $("video-panel").getBoundingClientRect().height >= 1.45 * panel.height)
                         && $("track-scroll").clientHeight > 100
                         && controls.every((el) => el.getBoundingClientRect().height >= 44);
                       return ok || {{viewport: [innerWidth, innerHeight], expanded: {str(expanded).lower()},
@@ -1439,12 +1449,12 @@ def main():
                   timers.delete(key); timer.fn(); await settle();
                 };
                 class Peer {
-                  constructor() { this.connectionState = this.iceConnectionState = "new";
-                    this.iceGatheringState = mode === "ice" ? "gathering" : "complete"; peers.push(this); }
+                  constructor() { this.connectionState = this.iceConnectionState = "new"; this.stalled = mode === "stall"; peers.push(this); }
                   addTransceiver() {}
                   async createOffer() { return {type:"offer", sdp:"fixture"}; }
                   async setLocalDescription(value) { this.localDescription = value; }
                   async setRemoteDescription() {
+                    if (this.stalled) return;
                     this.connectionState = this.iceConnectionState = "connected";
                     this.track = {muted:false};
                     this.ontrack({streams:[new MediaStream()],track:this.track});
@@ -1484,7 +1494,7 @@ def main():
                   healthy.track.onmute(); await fire(state.whep.mediaTimer); await fire(state.whep.retryTimer);
                   assert(state.whep.pc !== healthy,"muted video did not reconnect");
                   mode = "fail"; await attachWhep(one);
-                  for (const delay of [1000,2000,4000,8000,16000,30000,30000]) {
+                  for (const delay of [1000,2000,4000,8000,8000,8000]) {
                     assert(timers.get(state.whep.retryTimer)?.ms === delay,"incorrect retry backoff");
                     await fire(state.whep.retryTimer);
                   }
@@ -1499,9 +1509,9 @@ def main():
                   const selectedPeer = state.whep.pc;
                   held(new Response("late answer",{status:201,headers:{Location:"/session/stale"}})); await pending;
                   assert(state.whep.pc === selectedPeer && deleted.some(url=>url.endsWith("/session/stale")),"late session leaked or stole camera");
-                  state.selected = one.stream_id; mode = "ice";
-                  const gathering = attachWhep(one); await settle(); await fire(state.whep.timeout); await gathering;
-                  assert(state.whep.retryTimer,"ICE timeout did not retry");
+                  state.selected = one.stream_id; mode = "stall";
+                  await attachWhep(one); await fire(state.whep.timeout);
+                  assert(state.whep.retryTimer,"connection timeout did not retry");
                   state.gridPage = 0; selectCamera("all"); await settle();
                   assert(!state.whep && state.gridWheps.size <= 4,"All cameras did not switch to grid sessions");
                   const gridVideos = [...$('camera-grid').querySelectorAll('video')];

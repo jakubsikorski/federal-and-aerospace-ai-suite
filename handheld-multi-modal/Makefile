@@ -76,7 +76,7 @@ help:
 	@echo '        make test | test-ui | test-assets | test-history (needs demo-up)'
 	@echo
 	@echo 'Options: CAMERAS=1..2 demo cameras (default 2)  TTS_DEVICE=CPU|GPU (default CPU)'
-	@echo '         HOST_IP=<LAN address>  ASSET_ROOT=<path>'
+	@echo '         ASSET_ROOT=<path>'
 	@echo 'The first start downloads several GB of models (internet, up to an hour); later starts run offline.'
 
 # Shown while waiting for services that download on their first start.
@@ -271,7 +271,7 @@ demo-prereq: prereq
 	@python3 scripts/demo_assets.py video
 	video="$$ASSET_ROOT/data/dlsps/demo-video"
 	# The mp4 clips become MPEG-TS for the camera publishers. classroom.avi is not
-	# published; it backs the stock DLSPS sample path used by the smoke tests.
+	# published; it backs the stock DLSPS sample path used by test_crops.py --live.
 	# The clips have 4-10 s keyframe gaps, so each -stream_loop wrap left the hardware decoder without references and smeared
 	# macroblocks into crops until the next keyframe. They are re-encoded once
 	# here: keyframe every second, no B-frames, same resolution, at most 30 fps.
@@ -627,4 +627,5 @@ test-ui:
 	python3 backend/test_ui.py
 
 test-history:
-	python3 scripts/smoke/14_history.py
+	docker run --rm --network host -u "$$(id -u):$$(id -g)" -e ASSET_ROOT=/srv -e NO_PROXY='*' -e no_proxy='*' \
+	  -v "$(CURDIR):/srv" -w /srv handheld/backend:dev python3 scripts/smoke/14_history.py
