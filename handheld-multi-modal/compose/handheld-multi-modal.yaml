@@ -344,6 +344,11 @@ services:
     restart: "no"
     security_opt:
       - no-new-privileges:true
+    # Root without root's powers: DAC_OVERRIDE for host-owned /data and the
+    # DLSPS-owned crop store, SETUID/SETGID to run the per-camera reset CLI as
+    # the store's owner (backend/app/reset.py). Everything else is dropped.
+    cap_drop: [ALL]
+    cap_add: [DAC_OVERRIDE, SETUID, SETGID]
     # No published port: the loopback-bound proxy is the only entry point (D15).
     environment:
       BACKEND_CONFIG: /config/backend.yaml

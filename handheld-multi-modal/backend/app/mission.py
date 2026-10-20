@@ -131,6 +131,7 @@ def _has_text_pdf(reader) -> bool:
             if page.extract_text().strip():
                 return True
         except Exception:  # an unreadable page is not proof the rest is empty
+            log.debug("skipping unreadable PDF page", exc_info=True)
             continue
     return False
 

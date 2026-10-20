@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
-import subprocess
+import subprocess  # nosec B404 - fixed argv, no shell
 import sys
 import time
 from pathlib import Path
@@ -92,7 +92,7 @@ def _run_cleanup(cfg: dict, stream_id: str) -> None:
         info = os.stat(directory)
         if info.st_uid != 0:
             credentials = {"user": info.st_uid, "group": info.st_gid}
-    result = subprocess.run(
+    result = subprocess.run(  # nosec B603 - fixed interpreter/script argv, no shell
         [sys.executable, script, "--clear-store", directory, "--confirm-clear"],
         capture_output=True, text=True, timeout=CLI_TIMEOUT_SECONDS, **credentials)
     if result.returncode != 0:

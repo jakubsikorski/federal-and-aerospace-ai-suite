@@ -16,10 +16,12 @@ import uuid
 
 REPO = Path(__file__).resolve().parents[1]
 ASSET_ROOT = Path(os.environ.get("ASSET_ROOT", REPO))
-# Local calls must not go through an inherited corporate proxy.
+# Local calls must not go through an inherited corporate proxy. The proxy's
+# self-signed certificate (make tls) is the trust anchor; nothing is unverified.
 OPENER = urllib.request.build_opener(
     urllib.request.ProxyHandler({}),
-    urllib.request.HTTPSHandler(context=ssl._create_unverified_context()))
+    urllib.request.HTTPSHandler(context=ssl.create_default_context(
+        cafile=ASSET_ROOT / "config/tls/server.crt")))
 # A service still loading its model is reported, not waited for; demo-up waits.
 INFERENCE_TIMEOUT = 60
 # Cameras whose demo publisher runs (make demo-up); they must be live. Other

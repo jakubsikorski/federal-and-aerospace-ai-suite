@@ -15,8 +15,10 @@ LINK = re.compile(r'^<(.+?)>; rel="ice-server"(?:; username="(.+?)"; credential=
 
 
 def request(url, method, body=None):
+    if not url.startswith(("http://", "https://")):
+        raise ValueError(f"WHEP URL must be http(s): {url}")
     headers = {"Content-Type": "application/sdp"} if body is not None else {}
-    with urlopen(Request(url, data=body, headers=headers, method=method), timeout=10, context=CONTEXT) as response:
+    with urlopen(Request(url, data=body, headers=headers, method=method), timeout=10, context=CONTEXT) as response:  # nosec B310 - scheme checked above
         return response.status, response.headers, response.read()
 
 

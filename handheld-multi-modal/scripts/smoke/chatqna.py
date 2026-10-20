@@ -9,13 +9,15 @@ import re
 from urllib.request import Request, urlopen
 import uuid
 from zipfile import ZipFile
-from xml.sax.saxutils import escape
+from xml.sax.saxutils import escape  # nosec B406 - escapes output only, parses nothing
 
 
 def api(base, path, body=None, content_type="application/json"):
+    if not base.startswith(("http://", "https://")):
+        raise ValueError(f"base URL must be http(s): {base}")
     request = Request(base + path, data=body,
                       headers={"Content-Type": content_type} if body is not None else {})
-    with urlopen(request, timeout=300) as response:
+    with urlopen(request, timeout=300) as response:  # nosec B310 - scheme checked above
         return json.load(response)
 
 

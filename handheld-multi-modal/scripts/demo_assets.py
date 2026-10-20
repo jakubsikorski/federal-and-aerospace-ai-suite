@@ -13,7 +13,9 @@ import tempfile
 import time
 import urllib.request
 import uuid
-import xml.etree.ElementTree as ET
+# Parses only OpenVINO IR written locally by the pinned Model Download job;
+# Python's expat does not expand external entities.
+import xml.etree.ElementTree as ET  # nosec B405
 
 REPO = Path(__file__).resolve().parents[1]
 REQUEST = json.loads((REPO / "config/model-download/yolo26s.json").read_text())
@@ -101,7 +103,7 @@ def download_model(root, timeout):
             or job.get("result", {}).get("int8_requested") is not True):
         raise ValueError(f"Unexpected completed job: {job}")
     source = root / "data/model-download" / subdir / f"ultralytics/public/{MODEL}/INT8"
-    tree = ET.parse(source / f"{MODEL}.xml")
+    tree = ET.parse(source / f"{MODEL}.xml")  # nosec B314 - local downloader output
     if tree.find(".//rt_info/nncf/quantization") is None:
         raise ValueError("Downloader output has no INT8 quantization metadata")
     metadata = (source / "metadata.yaml").read_text()
@@ -135,7 +137,8 @@ def download_video(root):
             staged = Path(temporary) / target.name
             # Pexels rejects urllib's default User-Agent with 403.
             request = urllib.request.Request(url, headers={"User-Agent": "handheld-demo-assets/1.0"})
-            with urllib.request.urlopen(request, timeout=60) as response, staged.open("wb") as output:
+            # Pinned https URL only; the download is sha256-verified below.
+            with urllib.request.urlopen(request, timeout=60) as response, staged.open("wb") as output:  # nosec B310
                 shutil.copyfileobj(response, output)
             if sha(staged) != digest:
                 raise ValueError(f"Downloaded demo video checksum mismatch: {name}")
@@ -250,7 +253,7 @@ def ir_problem(xml):
         return "not downloaded"
     end = 0
     try:
-        for _, element in ET.iterparse(xml):
+        for _, element in ET.iterparse(xml):  # nosec B314 - local model IR
             if element.tag == "data" and "offset" in element.attrib and "size" in element.attrib:
                 end = max(end, int(element.get("offset")) + int(element.get("size")))
             element.clear()
