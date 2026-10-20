@@ -49,8 +49,9 @@ Deployment: `compose/handheld-multi-modal.yaml` service `chatqna`
 is the single entry point: a build agent (or any fresh environment with no
 existing container) runs `docker compose -f compose/handheld-multi-modal.yaml
 up -d chatqna` and gets a clean, reproducible deployment — no other setup
-step is required. `HF_ACCESS_TOKEN` is read from the caller's environment,
-never hardcoded/committed.
+step is required. The token comes from the caller's `HF_TOKEN` (the same
+variable Audio Analyzer and TTS use; a legacy `HF_ACCESS_TOKEN` still works)
+and reaches the image as `HF_ACCESS_TOKEN`; never hardcoded/committed.
 
 Adoption note for this dev environment specifically: this container was
 originally started by hand, by name, before it was declared in Compose. A

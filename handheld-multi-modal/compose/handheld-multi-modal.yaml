@@ -234,7 +234,7 @@ services:
       - "${RENDER_GID:-992}"
     environment:
       HF_HOME: /app/audio_analyzer/.cache/huggingface
-      HF_TOKEN: "${HF_TOKEN:-}"
+      HF_TOKEN: "${HF_TOKEN:-${HF_ACCESS_TOKEN:-}}"
       <<: *proxy-env-real
     volumes:
       - ../config/audio-analyzer/config.yaml:/app/audio_analyzer/config.yaml:ro
@@ -279,7 +279,7 @@ services:
       # runtime needs an existing directory). In the container home every
       # recreated GPU container recompiled for minutes.
       NEO_CACHE_DIR: /app/text-to-speech/.cache
-      HF_TOKEN: "${HF_TOKEN:-}"
+      HF_TOKEN: "${HF_TOKEN:-${HF_ACCESS_TOKEN:-}}"
       <<: *proxy-env-real
     volumes:
       - ../config/tts/config.yaml:/app/text-to-speech/config.yaml:ro
@@ -312,7 +312,9 @@ services:
       - "127.0.0.1:8888:8888/tcp"
     environment:
       # Public model download; token stays optional/env-supplied, never baked in.
-      HF_ACCESS_TOKEN: "${HF_ACCESS_TOKEN:-}"
+      # One host variable, HF_TOKEN, serves every service; the stock Chat Q&A
+      # image reads it as HF_ACCESS_TOKEN (the old host name still works).
+      HF_ACCESS_TOKEN: "${HF_TOKEN:-${HF_ACCESS_TOKEN:-}}"
       # snapshot_download and Optimum must share the mounted cache.
       HF_HUB_CACHE: /tmp/model_cache
       HUGGINGFACE_HUB_CACHE: /tmp/model_cache # pinned Optimum uses the legacy name

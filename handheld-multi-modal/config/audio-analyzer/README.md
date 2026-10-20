@@ -38,7 +38,7 @@ matches application requirement (sentiment/diarization both disabled).
   (`http://proxy.example.com:911` / `:912` on this host) or export
   silently stalls forever, no error, no retry log. Only `no_proxy`
   should list local addresses.
-- `HF_TOKEN` passed through but not required for this public checkpoint
+- `HF_TOKEN` (or legacy `HF_ACCESS_TOKEN`) passed through but not required for this public checkpoint
   (only needed if diarization were enabled).
 
 ## Evidence
