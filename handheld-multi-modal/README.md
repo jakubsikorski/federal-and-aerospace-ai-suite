@@ -39,7 +39,7 @@ copies a prepared device; see
 
 ```sh
 make demo-up        # demo: pinned sample videos as looping cameras
-make up             # or: your own cameras, published to rtsp://127.0.0.1:8554/camN
+make up             # or: no demo cameras; add your own in the console under Cameras
 ```
 
 Open `https://localhost:8443/` on the device after trusting

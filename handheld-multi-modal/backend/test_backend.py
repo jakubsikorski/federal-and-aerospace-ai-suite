@@ -84,6 +84,8 @@ def test_demo_camera_count_enables_only_named_sources():
         os.environ["BACKEND_DEMO_CAMERAS"] = "2"
         enabled = {s["stream_id"]: s["enabled"] for s in load_config(fh.name)["streams"]}
         assert enabled == {"cam1": True, "cam2": True, "cam3": False}, enabled
+        os.environ["BACKEND_DEMO_CAMERAS"] = "0"  # make up: no deployment cameras
+        assert not any(s["enabled"] for s in load_config(fh.name)["streams"])
         os.environ["BACKEND_DEMO_CAMERAS"] = "4"
         try:
             load_config(fh.name)
@@ -1005,6 +1007,7 @@ def test_model_placement_separates_configuration_runtime_and_availability():
         replies["/model"] = {"llm_model": "unexpected-model"}
         placement.expires = 0
         result = placement.snapshot({}, {})
+        assert result["models"][0]["status"] == "idle", "no cameras on: pipelines are not running, not failed"
         assert result["models"][1]["status"] == "mismatch"
         assert result["models"][3]["status"] == "unavailable"
         assert result["models"][3]["configured_device"] == "GPU"
@@ -4794,9 +4797,19 @@ def test_config_cameras_keep_operator_rows_and_locked_names():
         rows = {r["stream_id"]: r for r in conn.execute("SELECT * FROM streams")}
         assert rows["cam1"]["display_name"] == "Front"
         assert rows["cam2"]["display_name"] == "Mine" and rows["cam2"]["origin"] == "operator"
+        # An operator "off" survives restarts while the deployment has the camera on.
+        conn.execute("UPDATE streams SET enabled=0, operator_off=1 WHERE stream_id='cam1'")
+        sync_streams(conn, [row("cam1", "Gate")])
+        r = conn.execute("SELECT enabled, operator_off FROM streams WHERE stream_id='cam1'").fetchone()
+        assert tuple(r) == (0, 1)
+        # A deployment "off" clears it, so the camera is not offered in the console.
+        sync_streams(conn, [row("cam1", "Gate", enabled=False)])
+        r = conn.execute("SELECT enabled, operator_off FROM streams WHERE stream_id='cam1'").fetchone()
+        assert tuple(r) == (0, 0)
+        conn.execute("UPDATE streams SET enabled=0, operator_off=1 WHERE stream_id='cam1'")
         sync_streams(conn, [])  # retiring config cameras never touches operator ones
         rows = {r["stream_id"]: r for r in conn.execute("SELECT * FROM streams")}
-        assert not rows["cam1"]["enabled"] and rows["cam2"]["enabled"]
+        assert not rows["cam1"]["enabled"] and not rows["cam1"]["operator_off"] and rows["cam2"]["enabled"]
         conn.close()
 
 
@@ -4844,8 +4857,12 @@ def test_camera_add_rename_toggle_remove():
         cameras.update(state, "cam1", {"display_name": "Gate"})
         assert state.alerts.names["cam1"] == "Gate"
         assert conn.execute("SELECT name_locked FROM streams WHERE stream_id='cam1'").fetchone()[0] == 1
-        # Config cameras follow the deployment for on/off and removal.
-        assert _camera_error(lambda: cameras.update(state, "cam1", {"enabled": False})).code == "config_camera"
+        # Config cameras: the operator may turn them off and on, not remove them.
+        cameras.update(state, "cam1", {"enabled": False})
+        assert conn.execute("SELECT operator_off FROM streams WHERE stream_id='cam1'").fetchone()[0] == 1
+        assert "cam1" in [c["stream_id"] for c in cameras.view(conn, state.cfg, {})["cameras"]]
+        cameras.update(state, "cam1", {"enabled": True})
+        assert conn.execute("SELECT operator_off FROM streams WHERE stream_id='cam1'").fetchone()[0] == 0
         assert _camera_error(lambda: cameras.remove(state, "cam1", "cam1")).code == "config_camera"
         assert _camera_error(lambda: cameras.update(state, "cam9", {"display_name": "x"})).status == 404
         # Disabling a pull camera drops its MediaMTX path; removal is soft.
@@ -4862,7 +4879,7 @@ def test_camera_add_rename_toggle_remove():
         assert cameras.add(state, {"display_name": "Back door", "source": {"kind": "publish"}}) == "cam5"
         actions = [r[0] for r in conn.execute("SELECT action FROM camera_audit ORDER BY audit_id")]
         assert actions == ["added", "disabled", "added", "add_failed", "added", "enabled", "renamed", "disabled",
-                           "removed", "added"], actions
+                           "enabled", "disabled", "removed", "added"], actions
         view = cameras.view(conn, state.cfg, {})
         assert [c["stream_id"] for c in view["cameras"]] == ["cam1", "cam2", "cam4", "cam5"]
         assert view["enabled_count"] == 3 and "max_streams" not in view

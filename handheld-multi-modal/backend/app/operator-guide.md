@@ -31,8 +31,9 @@ password are refused and belong in MediaMTX. After adding a publisher camera, a 
 shows the rtsp://127.0.0.1:8554/camN address to send H.264 video to, with Copy and an
 example ffmpeg command. The address works only on this device and is also shown under
 Edit. The card changes to Live when video arrives. Turning off or removing a camera
-stops its video and detection but keeps its history and alerts. Deployment cameras
-can only be renamed. Alert rules on a removed camera show "camera off or removed" and
+stops its video and detection but keeps its history and alerts. Deployment (demo)
+cameras can be renamed and turned off or on, and stay off across restarts until
+turned on again; they are removed only in the deployment configuration. Alert rules on a removed camera show "camera off or removed" and
 can only be turned off or deleted. The assistant
 cannot add or remove cameras.
 

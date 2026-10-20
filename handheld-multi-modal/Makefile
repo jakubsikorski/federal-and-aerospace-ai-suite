@@ -16,6 +16,8 @@ export ACCEL_GID ?= $(shell stat -c '%g' /dev/accel/accel0 2>/dev/null)
 export ASSET_GID := $(shell id -g)
 export CAMERAS
 # SpeechT5 device. `setup` records it in config/devices.yaml, so it stays until the next up.
+# `setup` also records the deployment cameras: cam1..camCAMERAS for demo-up,
+# none for up (cameras are then added in the console).
 TTS_DEVICE ?= CPU
 override TTS_DEVICE := $(shell echo '$(TTS_DEVICE)' | tr a-z A-Z)
 export TTS_DEVICE
@@ -34,7 +36,7 @@ ANNOTATED_IDS := $(patsubst cam%,annotated%,$(CAMERA_IDS))
   pipelines-restart down clean clean-demo clean-history clean-all \
   demo-stop demo-down demo-status demo-pipelines-restart \
   bundle bundle-load preflight setup tls asset-permissions model-downloader-up \
-  test test-ui test-assets test-phase5
+  check test test-ui test-assets test-phase5
 
 help:
 	@echo 'Handheld operator application'
@@ -70,11 +72,11 @@ help:
 	@echo '  make clean-history CONFIRM=yes  Delete tracks, evidence images, rules, alerts, mission documents'
 	@echo '  make clean-all CONFIRM=yes      All of the above + downloaded models, caches and TLS keys'
 	@echo
-	@echo 'Checks: make test | test-ui | test-assets | test-phase5 (needs demo-up)'
+	@echo 'Checks: make check          Images, models and demo videos complete; once started, every service answers'
+	@echo '        make test | test-ui | test-assets | test-phase5 (needs demo-up)'
 	@echo
-	@echo 'Options: CAMERAS=1..2 (default 2)  TTS_DEVICE=CPU|GPU (default CPU)'
-	@echo '         ASSET_ROOT=<path>'
-	@echo 'Localhost only: open https://localhost:8443/ in a browser on this device.'
+	@echo 'Options: CAMERAS=1..2 demo cameras (default 2)  TTS_DEVICE=CPU|GPU (default CPU)'
+	@echo '         HOST_IP=<LAN address>  ASSET_ROOT=<path>'
 	@echo 'The first start downloads several GB of models (internet, up to an hour); later starts run offline.'
 
 # Shown while waiting for services that download on their first start.
@@ -262,6 +264,9 @@ prereq: preflight asset-permissions
 	  python3 scripts/demo_assets.py model --timeout $(MODEL_WAIT_SECONDS)
 	fi
 
+# Demo camera clips and their frame-rate caps (<video>:<max fps>).
+DEMO_CLIPS := person-bicycle-car-detection.mp4:30 pexels-34622113.mp4:25
+
 demo-prereq: prereq
 	@python3 scripts/demo_assets.py video
 	video="$$ASSET_ROOT/data/dlsps/demo-video"
@@ -274,7 +279,7 @@ demo-prereq: prereq
 	# the detector and its pipeline ended every ~90 s. cam2 is capped at 25 fps
 	# (owner-directed) to leave detector headroom. The .maxN name keeps a cache
 	# made with another cap from being reused.
-	for clip in person-bicycle-car-detection.mp4:30 pexels-34622113.mp4:25; do
+	for clip in $(DEMO_CLIPS); do
 	  source=$${clip%:*} fps=$${clip##*:}
 	  stem="$${source%.*}.max$$fps"
 	  codec=(-c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -bf 0 -sc_threshold 0 \
@@ -301,7 +306,10 @@ tls:
 setup: tls
 	@mkdir -p "$$ASSET_ROOT/data/backend"
 	install -d -m 2775 "$$ASSET_ROOT/data/dlsps/crops" "$$ASSET_ROOT/data/chatqna/model_cache"
-	python3 -c 'import json,os; print("services:"); [print("  " + service + ":\n    group_add: !override " + json.dumps(list(dict.fromkeys(os.environ[k] for k in keys)))) for service,keys in {"dlsps":("RENDER_GID","ACCEL_GID","ASSET_GID"), "chatqna":("RENDER_GID","ASSET_GID")}.items()]; d=os.environ["TTS_DEVICE"]; print("  tts:\n    environment:\n      TEXT_TO_SPEECH__MODELS__TTS__DEVICE: " + d + "\n  backend:\n    environment:\n      TTS_DEVICE: " + d)' > "$$ASSET_ROOT/config/devices.yaml"
+	BACKEND_CAMERAS=$(if $(DEMO_FEEDS),$(CAMERAS),0) python3 -c 'import json,os; print("services:"); [print("  " + service + ":\n    group_add: !override " + json.dumps(list(dict.fromkeys(os.environ[k] for k in keys)))) for service,keys in {"dlsps":("RENDER_GID","ACCEL_GID","ASSET_GID"), "chatqna":("RENDER_GID","ASSET_GID")}.items()]; d=os.environ["TTS_DEVICE"]; print("  tts:\n    environment:\n      TEXT_TO_SPEECH__MODELS__TTS__DEVICE: " + d + "\n  backend:\n    environment:\n      TTS_DEVICE: " + d + "\n      BACKEND_DEMO_CAMERAS: \"" + os.environ["BACKEND_CAMERAS"] + "\"")' > "$$ASSET_ROOT/config/devices.yaml"
+	sed -e 's|webrtcAdditionalHosts:.*|webrtcAdditionalHosts: [127.0.0.1, $(COTURN_EXTERNAL_IP)]|' \
+	    -e 's|:127.0.0.1:3478|:$(COTURN_EXTERNAL_IP):3478|g' \
+	    config/mediamtx/mediamtx.yml > "$$ASSET_ROOT/config/mediamtx.yml"
 
 # ---------------------------------------------------------------- start
 
@@ -325,10 +333,13 @@ speech_warm := curl -fsS --max-time 300 -o /dev/null -H 'Content-Type: applicati
 # the base image even when it is cached, so without internet the stale image is
 # updated in place from backend/Dockerfile.offline (same Python and packages,
 # new application code); a changed requirements.txt still needs internet.
+backend_hash = $$(cd backend && find . -type f ! -path '*/__pycache__/*' -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -c1-16)
+backend_built = $$(docker image inspect -f '{{index .Config.Labels "handheld.source"}}' handheld/backend:dev 2>/dev/null || true)
+
 define build_backend
 backend_stale=
-export BACKEND_SOURCE_HASH=$$(cd backend && find . -type f ! -path '*/__pycache__/*' -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -c1-16)
-built=$$(docker image inspect -f '{{index .Config.Labels "handheld.source"}}' handheld/backend:dev 2>/dev/null || true)
+export BACKEND_SOURCE_HASH=$(backend_hash)
+built=$(backend_built)
 if [[ $$built == "$$BACKEND_SOURCE_HASH" ]]; then
   echo 'Backend image matches the current sources'
 elif ! $(COMPOSE) build backend; then
@@ -345,6 +356,9 @@ printf '\n%s\n%s\n%s\n%s\n\n' \
   'Starting with the previously built Backend instead; new Backend changes are missing.' \
   'Run the same make command again once online to update it.' >&2
 endef
+
+# Started before the Backend and proxy; make check expects all of them running.
+APP_SERVICES := coturn mediamtx mqtt metrics dlsps alert-agent chatqna audio-analyzer tts
 
 # Shared by up and demo-up; DEMO_FEEDS adds the looping camera publishers.
 define start_application
@@ -364,7 +378,7 @@ chat_cache=$$($(COMPOSE) run --rm --no-deps --entrypoint python3 \
   -e PYTHONPATH=/handheld/scripts chatqna -c 'import pathlib,yaml; from demo_assets import repair_chat_cache, chat_cache_ready; cache=pathlib.Path("/tmp/model_cache"); models=yaml.safe_load(pathlib.Path("/tmp/model_config/config.yaml").read_text())["model_settings"]; ids=[models[role + "_MODEL_ID"] for role in ("LLM", "EMBEDDING", "RERANKER")]; repair_chat_cache(cache, ids); print("cached" if chat_cache_ready(cache, ids) else "download")' | tail -n 1)
 export CHATQNA_HF_HUB_OFFLINE=$$([[ $$chat_cache == cached ]] && echo 1 || echo 0)
 printf 'Chat Q&A models: %s\n' "$$([[ $$chat_cache == cached ]] && echo 'cached; no internet needed' || echo 'downloading on this start; internet required')"
-$(COMPOSE) up -d --remove-orphans coturn mediamtx mqtt metrics dlsps alert-agent chatqna audio-analyzer tts
+$(COMPOSE) up -d $(APP_SERVICES)
 WAIT_CONTAINER=handheld-multi-modal-mediamtx-1 wait_for "MediaMTX" curl -fsS --max-time 3 http://127.0.0.1:9997/v3/paths/list
 WAIT_CONTAINER=handheld-multi-modal-dlsps-1 wait_for "DLSPS" curl -fsS --max-time 3 http://127.0.0.1:8080/pipelines
 WAIT_CONTAINER=handheld-multi-modal-metrics wait_for "Metrics Manager" curl -fsS --max-time 3 http://127.0.0.1:9090/health
@@ -386,7 +400,7 @@ dashboard=$$(curl -skfsS --max-time 5 https://127.0.0.1:8443/)
 trap - ERR
 printf '\nApplication ready on this device only: https://localhost:8443/  (trust config/tls/server.crt)\n'
 if [[ -n $$backend_stale ]]; then $(backend_stale_warning); fi
-$(if $(DEMO_FEEDS),printf 'Demo cameras live: $(CAMERA_IDS)\n',printf 'Waiting for cameras: publish H.264 RTSP to rtsp://127.0.0.1:8554/$(firstword $(CAMERA_IDS)) ... $(lastword $(CAMERA_IDS)); check with make status\n')
+$(if $(DEMO_FEEDS),printf 'Demo cameras live: $(CAMERA_IDS)\n',printf 'No cameras yet: add one in the console under Cameras\n')
 endef
 
 up: prereq setup
@@ -535,6 +549,76 @@ bundle-load: preflight
 	echo 'Loaded. Start with make demo-up (or make up); no internet needed.'
 
 # ---------------------------------------------------------------- checks
+
+# OpenVINO models the voice services load from their Docker volumes.
+VOICE_MODELS := \
+  audio_analyzer_models/openvino/whisper-medium-fp16/openvino_encoder_model.xml \
+  audio_analyzer_models/openvino/whisper-medium-fp16/openvino_decoder_model.xml \
+  tts_models/openvino/microsoft_speecht5_tts__fp16/openvino_encoder_model.xml \
+  tts_models/openvino/microsoft_speecht5_tts__fp16/openvino_decoder_model.xml \
+  tts_models/openvino/microsoft_speecht5_tts__fp16/openvino_postnet.xml \
+  tts_models/openvino/microsoft_speecht5_tts__fp16/openvino_vocoder.xml
+
+# Read-only: reports whether a start can run offline. Downloads nothing.
+check: preflight
+	@failed=0 demo_missing=0
+	# Items marked -- are needed only by make demo-up and never fail the check.
+	report() {
+	  if [[ $$1 == ok ]]; then printf 'ok       %s\n' "$$2"
+	  elif [[ $$1 == optional ]]; then printf -- '--       %s  -> %s\n' "$$2" "$$3"; demo_missing=1
+	  else printf '%-8s %s  -> %s\n' "$${1^^}" "$$2" "$$3"; failed=1; fi
+	}
+	echo 'Images'
+	app_images=$$($(ASSET_COMPOSE) --profile assets config --images | sort -u)
+	for image in $$($(COMPOSE) --profile assets config --images | sort -u); do
+	  if docker image inspect "$$image" >/dev/null 2>&1; then state=ok fix=
+	  elif grep -qxF "$$image" <<< "$$app_images"; then state=missing fix='make up or make demo-up (internet), or make bundle-load'
+	  else state=optional fix='make demo-up (internet) downloads it; only the demo cameras use it'; fi
+	  report "$$state" "$$image" "$$fix"
+	done
+	built=$(backend_built)
+	[[ -z $$built || $$built == $(backend_hash) ]] && state=ok || state=stale
+	report "$$state" 'Backend image matches backend/ sources' 'make up or make demo-up rebuilds it'
+	echo 'Models and demo videos'
+	code=0; python3 scripts/demo_assets.py check --clips $(DEMO_CLIPS) || code=$$?
+	if ((code == 3)); then demo_missing=1; elif ((code)); then failed=1; fi
+	# Plain docker run: mount only volumes that already exist, so nothing is created.
+	image=$$($(ASSET_COMPOSE) config --images model-downloader)
+	mounts=()
+	for volume in $(sort $(foreach file,$(VOICE_MODELS),$(firstword $(subst /, ,$(file))))); do
+	  if docker volume inspect "handheld-multi-modal_$$volume" >/dev/null 2>&1; then
+	    mounts+=(-v "handheld-multi-modal_$$volume:/volumes/$$volume:ro")
+	  fi
+	done
+	# Same integrity check as the host models, inside a container that can read the volumes.
+	if (($${#mounts[@]})) && docker image inspect "$$image" >/dev/null 2>&1; then
+	  docker run --rm --network none --user 0:0 "$${mounts[@]}" -v "$(CURDIR)/scripts:/scripts:ro" \
+	    -v "$(CURDIR)/config:/config:ro" --entrypoint python3 "$$image" /scripts/demo_assets.py check-ir \
+	    --root /volumes --fix 'make up or make demo-up (internet), or make bundle-load' $(VOICE_MODELS) || failed=1
+	else
+	  for file in $(VOICE_MODELS); do report missing "$$file" 'make up or make demo-up (internet), or make bundle-load'; done
+	fi
+	echo 'Application'
+	running=$$($(COMPOSE) ps --status running --services 2>/dev/null || true)
+	if [[ -z $$running ]]; then
+	  echo 'not started: services were not checked (make up or make demo-up, then make check again)'
+	else
+	  for service in $(APP_SERVICES) backend proxy; do
+	    grep -qxF "$$service" <<< "$$running" && state=ok || state='not running'
+	    report "$$state" "$$service container" 'make up or make demo-up'
+	  done
+	  # Cameras with a running demo publisher must be live; others may wait for a publisher.
+	  CHECK_DEMO_CAMERAS=$$(grep -x 'cam[0-9]*' <<< "$$running" | paste -sd, || true) python3 scripts/check_live.py || failed=1
+	fi
+	echo
+	if ((failed)); then echo 'Not ready: run the command shown after each item marked MISSING, STALE, NOT RUNNING or FAILED.' >&2; exit 1; fi
+	if [[ -n $$running ]]; then
+	  echo 'Ready: every service is running and answered a real request.'
+	elif ((demo_missing)); then
+	  echo 'Ready for make up (no internet needed). make demo-up also needs the items marked --: run make demo-prereq.'
+	else
+	  echo 'Ready for make up or make demo-up; no internet needed.'
+	fi
 
 test:
 	docker run --rm --network none -v "$(CURDIR):/srv" -w /srv/backend handheld/backend:dev python3 test_backend.py

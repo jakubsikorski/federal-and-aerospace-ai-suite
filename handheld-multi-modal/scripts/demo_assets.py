@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import sys
 import tempfile
@@ -241,12 +242,92 @@ def chat_cache_ready(directory, models):
     return True
 
 
+def ir_problem(xml):
+    """None when an OpenVINO IR is complete: its .bin holds every weight the .xml references."""
+    xml = Path(xml)
+    weights = xml.with_suffix(".bin")
+    if not xml.is_file() or not weights.is_file():
+        return "not downloaded"
+    end = 0
+    try:
+        for _, element in ET.iterparse(xml):
+            if element.tag == "data" and "offset" in element.attrib and "size" in element.attrib:
+                end = max(end, int(element.get("offset")) + int(element.get("size")))
+            element.clear()
+    except ET.ParseError as error:
+        return f"{xml.name} is damaged ({error})"
+    size = weights.stat().st_size
+    if size < end:
+        return f"{weights.name} is incomplete ({size} of {end} bytes)"
+    return None
+
+
+# Exit code of check when only demo-up assets are missing; make up can start.
+DEMO_ONLY_MISSING = 3
+
+
+def report(results, optional=()):
+    """Print each result; optional ones (needed only by make demo-up) never fail."""
+    for marker, items in (("MISSING", results), ("--", optional)):
+        for label, problem, fix in items:
+            print(f"ok       {label}" if problem is None else f"{marker:8} {label}: {problem}  -> {fix}", flush=True)
+    if any(problem is not None for _, problem, _ in results):
+        return 1
+    return DEMO_ONLY_MISSING if any(problem is not None for _, problem, _ in optional) else 0
+
+
+def chat_models():
+    text = (REPO / "config/chatqna/config.yaml").read_text()
+    return re.findall(r'^\s*(?:LLM|EMBEDDING|RERANKER)_MODEL_ID:\s*"([^"]+)"', text, re.MULTILINE)
+
+
+def check(root, clips):
+    """Report, without downloading anything, whether host-side assets are ready."""
+    results = []
+    try:
+        problem = None if verify_model(root / MODEL_DIR) else "not downloaded"
+    except ValueError as error:
+        problem = str(error)
+    results.append((f"{MODEL} INT8 detector (approved hashes)", problem, "make prereq"))
+    demo = []
+    video = root / "data/dlsps/demo-video"
+    for name, _, digest in VIDEOS:
+        path = video / name
+        problem = None if path.is_file() and sha(path) == digest else (
+            "checksum mismatch" if path.is_file() else "not downloaded")
+        demo.append((f"demo video {name}", problem, "make demo-prereq (only make demo-up needs it)"))
+    for clip in clips:
+        source, fps = clip.rsplit(":", 1)
+        name = f"{Path(source).stem}.max{fps}.ts"
+        demo.append((f"demo camera clip {name}", None if (video / name).is_file() else "not prepared",
+                     "make demo-prereq (only make demo-up needs it)"))
+    cache = root / "data/chatqna/model_cache"
+    for model in chat_models():
+        problem = (ir_problem(cache / model / "openvino_model.xml")
+                   or (None if chat_cache_ready(cache, [model]) else "Hub snapshot missing"))
+        results.append((f"Chat Q&A model {model}", problem, "make up or make demo-up (internet)"))
+    return report(results, demo)
+
+
+def check_ir(base, files, fix):
+    return report([(name, ir_problem(Path(base) / name), fix) for name in files])
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["check-model", "model", "video", "mission"])
+    parser.add_argument("action", choices=["check", "check-ir", "check-model", "model", "video", "mission"])
     parser.add_argument("--root", type=Path, default=Path(os.environ.get("ASSET_ROOT", REPO)))
     parser.add_argument("--timeout", type=int, default=3600)
-    args = parser.parse_args()
+    parser.add_argument("--clips", nargs="*", default=[], help="<video>:<max fps> camera clips (check)")
+    parser.add_argument("--fix", default="", help="command shown for missing items (check-ir)")
+    parser.add_argument("files", nargs="*", help="OpenVINO .xml files relative to --root (check-ir)")
+    args = parser.parse_intermixed_args()
+    # Read-only checks take no lock: they must not wait behind a running download,
+    # and check-ir also runs on read-only Docker volume mounts.
+    if args.action == "check-ir":
+        return check_ir(args.root, args.files, args.fix)
+    if args.action == "check":
+        return check(args.root, args.clips)
     args.root.mkdir(parents=True, exist_ok=True)
     with (args.root / ".demo-assets.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
