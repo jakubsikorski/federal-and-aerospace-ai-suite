@@ -729,7 +729,7 @@
         </div>
         <details id="rule-advanced"><summary>More options <small>Confidence, repeat, active hours, speech</small></summary><div>
           <label>Minimum confidence<input id="rule-confidence" type="number" min="0" max="1" step="0.05" placeholder="Any confidence"></label>
-          <label title="While an alert is open, a new object of a kind already announced is announced again once this many seconds have passed since the last announcement. A new kind of object, another camera, or a sighting after Acknowledge is announced at once.">Announce again after (s)<input id="rule-cooldown" type="number" min="5" max="3600" step="1" value="30"></label>
+          <label title="While an alert is open, a new object of a kind already announced is announced again once this many seconds have passed since the last announcement. A new kind of object, another camera, or a sighting after Acknowledge is announced at once. Default: 5 s for Anything detected, 30 s otherwise.">Announce again after (s)<input id="rule-cooldown" type="number" min="5" max="3600" step="1" value="5"></label>
           <label>Active from<input id="rule-active-start" type="time"></label>
           <label>Active to<input id="rule-active-end" type="time"></label>
           <label class="rule-speak"><input id="rule-speak" type="checkbox" checked> Announce by speech</label>
@@ -3233,6 +3233,14 @@ function updateRuleForm() {
   updateRulePreview();
 }
 $("rule-form").addEventListener("change", updateRuleForm);
+// Keep the class's default repeat time unless the operator chose another.
+const ruleCooldownDefault = classLabel => classLabel ? 30 : 5;
+let ruleCooldownClass = "";
+$("rule-class").addEventListener("change", () => {
+  const next = $("rule-class").value;
+  if (Number($("rule-cooldown").value) === ruleCooldownDefault(ruleCooldownClass)) $("rule-cooldown").value = ruleCooldownDefault(next);
+  ruleCooldownClass = next;
+});
 $("rule-form").addEventListener("input", updateRulePreview);
 $("rule-remove-zone").onclick = () => { state.zoneDraft = null; updateZoneSummary(); };
 function autoRuleName(classLabel, streamId, dwell = null) {
@@ -3244,7 +3252,7 @@ function autoRuleName(classLabel, streamId, dwell = null) {
 // tracks it already matched) is preserved.
 function editRule(rule) {
   state.editingRule = rule;
-  $("rule-class").value = rule.class_label || "";
+  $("rule-class").value = ruleCooldownClass = rule.class_label || "";
   $("rule-camera").value = rule.stream_id || "";
   $("rule-confidence").value = rule.min_confidence ?? "";
   $("rule-cooldown").value = rule.cooldown_seconds;
@@ -3269,9 +3277,9 @@ function stopEditingRule() {
   state.editingRule = null;
   state.zoneDraft = null; updateZoneSummary();
   $("rule-active-start").value = $("rule-active-end").value = "";
-  $("rule-class").value = "";
+  $("rule-class").value = ruleCooldownClass = "";
   $("rule-confidence").value = "";
-  $("rule-cooldown").value = 30;
+  $("rule-cooldown").value = ruleCooldownDefault("");
   $("rule-speak").checked = true;
   $("rule-dwell").value = 30;
   $("rule-duration-choice").value = "30";

@@ -387,7 +387,8 @@ check that panel for the exact device.
    switches to it and waits up to 20 s for a frame. The chosen camera and
    area are kept if you close and reopen **Manage alerts** before saving.
 5. **More options** contains confidence, repeat, active hours and speech settings.
-   **Announce again after** (default 30 s, 5–3600 s): while an alert is open,
+   **Announce again after** (default 5 s for **Anything**, 30 s for one kind
+   of object; 5–3600 s): while an alert is open,
    a new object is announced again once this many seconds have passed since
    the last announcement, even in a busy scene. A kind of object the alert has
    not announced yet (a person after a car on an **Anything** alert) and the

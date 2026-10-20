@@ -38,6 +38,11 @@ def _epoch(stamp: str) -> float:
     return calendar.timegm(time.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ"))
 
 
+# "Anything" covers every class, so a busy scene groups far more objects into
+# one open alert; it repeats sooner by default.
+ANYTHING_COOLDOWN_SECONDS = 5
+
+
 class RuleError(ValueError):
     pass
 
@@ -201,6 +206,8 @@ class Alerts:
                                "cooldown_seconds": 30, "speak": True, "enabled": True,
                                "dwell_seconds": None, "active_hours": None,
                                "zone": None, "class_label": None}), **body}
+        if current is None and "cooldown_seconds" not in body and rule["class_label"] is None:
+            rule["cooldown_seconds"] = ANYTHING_COOLDOWN_SECONDS
         label = rule.get("class_label")
         if label is not None and (not isinstance(label, str) or label not in self.labels()):
             raise RuleError("class_label must be a detector class or null for any detected object")

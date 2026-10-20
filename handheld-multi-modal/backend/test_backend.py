@@ -3165,6 +3165,19 @@ def test_new_kind_of_object_and_other_camera_are_announced_within_the_cooldown()
         alerts.close()
 
 
+def test_anything_rule_defaults_to_a_short_cooldown():
+    with tempfile.TemporaryDirectory() as tmp:
+        ing = _ingest(tmp)
+        alerts = _alerts(ing, str(Path(tmp) / "ingest.db"))
+        assert alerts.create(ing.conn, {})["cooldown_seconds"] == 5
+        assert alerts.create(ing.conn, {"class_label": "person"})["cooldown_seconds"] == 30
+        assert alerts.create(ing.conn, {"cooldown_seconds": 60})["cooldown_seconds"] == 60
+        rule = alerts.create(ing.conn, {"class_label": "car"})
+        assert alerts.update(ing.conn, rule["rule_id"], {"class_label": None})["cooldown_seconds"] == 30
+        ing.conn.close()
+        alerts.close()
+
+
 def test_zone_rule_accepts_objects_touching_any_frame_edge():
     zone = {"points": [[0.3, 0.3], [0.7, 0.3], [0.7, 1.0], [0.3, 1.0]]}
     with tempfile.TemporaryDirectory() as tmp:
