@@ -6,7 +6,7 @@ entry points exit 2 and are **not implemented smoke tests**.
 
 | Entry point | Current scope |
 |---|---|
-| `bash scripts/smoke/01_mediamtx.sh` | **PASS.** Decodes one real RTSP frame from `/cam1`; verifies a real WHEP pull session against `/annotated` via in-container `whepclientsrc` (VP9), confirmed by MediaMTX's own "is reading from path 'annotated'" log line |
+| `bash scripts/smoke/01_mediamtx.sh` | **PASS.** Decodes one real RTSP frame from `/cam1`; verifies a real WHEP pull session against a per-run `/annotated9NNNN` path via in-container `whepclientsrc` (H.264 for NPU/GPU; `SMOKE_WHEP_CODEC=VP9` for CPU), confirmed by MediaMTX's own "is reading from path" log line |
 | `bash scripts/smoke/02_dlsps_cpu.sh` | **PASS.** Starts `config/dlsps/cpu/config.json` (must be the mounted config), confirms real ~23-30fps detection via `gvafpscounter` |
 | `bash scripts/smoke/03_dlsps_gpu.sh` | **PASS.** Starts `config/dlsps/gpu/config.json` (must be the mounted config), confirms real ~29fps detection via `gvafpscounter` |
 | `bash scripts/smoke/04_dlsps_npu.sh` | **PASS.** Starts `config/dlsps/npu/config.json` — the shipped default (must be the mounted config) — confirms real ~30fps detection, no NPU compile/plugin errors in logs |
@@ -27,8 +27,19 @@ Requires `dlsps` service from `compose/handheld-multi-modal.yaml` running,
 plus MediaMTX and MQTT:
 
 ```sh
-docker compose -f compose/handheld-multi-modal.yaml up -d
+make demo-up                                             # cam1 publisher + services
+docker compose -f compose/handheld-multi-modal.yaml stop backend
+bash scripts/smoke/04_dlsps_npu.sh                        # 01..06
+make demo-up                                             # restore the application
 ```
+
+The Backend owns every DLSPS instance and deletes any it does not own, so
+scripts 01–06 exit 2 (BLOCKED) while it runs. Each smoke instance reads the
+live `rtsp://mediamtx:8554/cam1` feed (`DLSPS_DEMO_URI`), sends a unique
+`model_instance`, and tags crops/observations with stream id `smoke`
+(`SMOKE_STREAM_ID`), which the Backend ignores as an unregistered camera, so
+live camera history is never touched. Script 06 counts crops in
+`data/dlsps/crops/smoke` through the DLSPS container (store owner UID 1999).
 
 `scripts/smoke/_dlsps_lib.sh` holds shared helpers (container/REST names,
 starting/stopping pipelines, waiting for real `gvafpscounter` line).
@@ -53,39 +64,32 @@ bash scripts/smoke/03_dlsps_gpu.sh
 docker compose -f compose/handheld-multi-modal.yaml up -d --force-recreate dlsps
 ```
 
-Script 05 assumes NPU (shipped default) config is mounted. Script 06 is
-intentional `BLOCKED` entry point (exit 2) — doesn't start a pipeline.
+Scripts 01, 05 and 06 assume the NPU (shipped default) config is mounted.
 
-**Known codec gotcha for WHEP (01_mediamtx.sh):** this application's webrtc
-destination is fed from JPEG-encoded appsink branch. DLSPS's WebRTC manager
-(`src/server/webrtc/gstreamer_webrtc_manager.py`) always picks software
-`vp9enc` encoder when source frame is JPEG/system-memory, regardless of
-CPU/GPU/NPU detection device. `aiortc` (used by `scripts/smoke/whep_client.py`)
-has no VP9 decoder, so can't be used to verify this particular pipeline
-shape — 01_mediamtx.sh instead uses in-container `whepclientsrc`
-GStreamer element (`rswebrtc` plugin), which supports VP9, and cross-checks
-MediaMTX's own log for real "is reading from path 'annotated'" line.
-`whep_client.py`/`aiortc` remains available as H264-only fallback for any
-future pipeline variant feeding webrtc directly from VA-memory (no JPEG
-re-encode), where DLSPS would instead pick `vah264enc`.
+**WHEP codec (01_mediamtx.sh):** the shipped NPU/GPU variants push VA-memory
+frames that DLSPS encodes as H.264 in hardware (`vah264enc`); the CPU variant
+negotiates VP9. The script offers only `SMOKE_WHEP_CODEC` (default `H264`), so
+a mismatch fails with "codecs not supported by client" rather than passing on
+a different leg. `whepclientsrc` (`rswebrtc`) decodes both;
+`whep_client.py`/`aiortc` handles H.264 only.
 
 ## MediaMTX transport
 
-Scaffold Compose file starts only MediaMTX and Mosquitto. Doesn't start
-DLSPS, publish test video, download models, or run any final application:
+To start only MediaMTX and Mosquitto (no DLSPS, test video, models or
+application):
 
 ```sh
 docker compose -f compose/handheld-multi-modal.yaml up -d mediamtx mqtt
 ```
 
-Run the complete Phase 4 demo with one target:
+Run the complete demo with one target:
 
 ```sh
 make demo-up CAMERAS=2
 ```
 
 This validates pinned local assets, creates TLS when absent, prepares the
-re-encoded demo clips when needed, starts the Phase 4 service subset in
+re-encoded demo clips when needed, starts every service in
 dependency order, launches `/cam1` and `/cam2`, waits for Backend MQTT feed
 health plus `/annotated1` and `/annotated2`, and leaves the stack running.
 If ignored assets live outside the checkout, pass their repository root

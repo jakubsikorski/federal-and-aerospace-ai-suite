@@ -34,7 +34,7 @@ Full producer fragment:
 
 **Do not put `kwarg="{...}"` directly in the config.json `pipeline` string.** DLSPS runs that string through `str.format()` (for `{auto_source}`) and then a Jinja2 template render before handing it to `gst_parse_launch`. Both layers, plus `gst_parse_launch`'s own quote handling, mangle embedded JSON braces/quotes — every escaping combination tried (`\"`, `{{ }}`, `arg=` instead of `kwarg=`) either throws `KeyError`/`TemplateSyntaxError` at request time or silently strips the quotes so gvapython's own JSON parser rejects the bare value.
 
-Instead, leave `gvapython` bare (name only, no `arg=`/`kwarg=`) in the pipeline string, and declare the config path as a DLSPS pipeline `parameter` mapped to that element's `kwarg` property — the same mechanism used for `detection-properties`/`model`:
+Instead, leave `gvapython` bare (name only, no `arg=`/`kwarg=`) in the pipeline string, and declare the config path as a DLSPS pipeline `parameter` mapped to that element's `kwarg` property:
 
 ```json
 "parameters": {
@@ -52,12 +52,12 @@ Then pass the value in the `POST /pipelines/.../{name}` launch payload, where it
 
 ```json
 "parameters": {
-    "detection-properties": { "model": "/home/pipeline-server/yolo_models/yolo26s/INT8/yolo26s.xml", "device": "NPU" },
-    "crop-config": "{\"config\": \"/opt/handheld-crops-config.json\"}"
+    "model_instance": "inst_cam1_1a2b3c4d",
+    "crop-config": "{\"config\": \"/opt/handheld-crops-config/template.json\", \"stream_id\": \"cam1\"}"
 }
 ```
 
-This is wired into all three shipped `config/dlsps/{cpu,gpu,npu}/config.json` variants and `compose/handheld-multi-modal.yaml` (crop script dir, crop config, and a writable crop-output volume are mounted into the `dlsps` service). Validated end-to-end on the NPU variant: pipeline reached `RUNNING` at ~30 FPS and produced matched `.jpg`+`.json` crop pairs in the mounted output volume for a 3-minute manual-validation run.
+This is wired into all three shipped `config/dlsps/{cpu,gpu,npu}/config.json` variants and `compose/handheld-multi-modal.yaml` (crop script dir, the `config/dlsps/crops` template directory, and a writable crop-output volume are mounted into the `dlsps` service). The model and device are fixed per variant in the pipeline string; Backend sends a unique `model_instance` and the camera's `stream_id` per start (`backend/app/pipelines.py`). Validated end-to-end on the NPU variant: pipeline reached `RUNNING` at ~30 FPS and produced matched `.jpg`+`.json` crop pairs in the mounted output volume for a 3-minute manual-validation run.
 
 If the `dlsps` process previously failed to construct `CropCandidates` for any reason (e.g. bad config path) while holding the crop-output directory's advisory lock file (`.lock`), the lock is never released until the container restarts — a stuck `Resource temporarily unavailable` on `Store.__init__` means restart the `dlsps` container (and remove any stale `.lock`) before relaunching.
 

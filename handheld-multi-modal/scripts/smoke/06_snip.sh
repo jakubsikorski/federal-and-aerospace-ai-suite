@@ -11,30 +11,33 @@ source "$root/scripts/smoke/_dlsps_lib.sh"
 #
 # Requires: the mounted config.json declares a `cropcandidates`-named
 # gvapython element and a `crop-config` parameter mapped to its `kwarg`
-# property (see config/dlsps/npu/README.md); compose mounts
-# scripts/dlsps -> /opt/handheld-crops (ro), a Settings-schema config JSON
-# -> /opt/handheld-crops-config.json (ro), and a writable output dir ->
-# /opt/handheld-crops-output. The config path passed here MUST match
-# compose's mount, not any host path.
-: "${CROPS_HOST_DIR:=$root/data/dlsps/crops}"
-: "${CROP_CONFIG_CONTAINER_PATH:=/opt/handheld-crops-config.json}"
+# property; compose mounts scripts/dlsps -> /opt/handheld-crops (ro),
+# config/dlsps/crops -> /opt/handheld-crops-config (ro), and the writable
+# store root -> /opt/handheld-crops-output. Crops land in the smoke stream's
+# own store (<root>/$SMOKE_STREAM_ID), never a live camera's.
+: "${CROPS_HOST_DIR:=${ASSET_ROOT:-$root}/data/dlsps/crops/$SMOKE_STREAM_ID}"
+: "${CROP_CONFIG_CONTAINER_PATH:=/opt/handheld-crops-config/template.json}"
 
 dlsps_require_container
 
-if [ ! -d "$CROPS_HOST_DIR" ]; then
-  echo "BLOCKED: $CROPS_HOST_DIR does not exist. Create data/dlsps/crop-config.json and data/dlsps/crops/ (writable) and mount them per compose/handheld-multi-modal.yaml before running this test; see scripts/dlsps/README.md." >&2
+if [ ! -d "$(dirname "$CROPS_HOST_DIR")" ]; then
+  echo "BLOCKED: $(dirname "$CROPS_HOST_DIR") does not exist; run make setup first." >&2
   exit 2
 fi
 
-before_count=$(find "$CROPS_HOST_DIR" -maxdepth 1 -name '*.jpg' 2>/dev/null | wc -l)
+# The store may be unreadable to this user (UID 1999, mode 2700); count inside
+# the container, which owns it.
+count_crops() {
+  docker exec "$DLSPS_CONTAINER" sh -c "ls /opt/handheld-crops-output/$SMOKE_STREAM_ID/*.jpg 2>/dev/null | wc -l"
+}
+before_count=$(count_crops)
 
 echo "Starting NPU pipeline with crop callback enabled..." >&2
 DLSPS_PIPELINE_NAME=handheld_npu_detect
-crop_params="{\"config\": \"$CROP_CONFIG_CONTAINER_PATH\"}"
 resp=$(curl --fail --silent --show-error --max-time 15 \
   -X POST "$DLSPS_REST/pipelines/user_defined_pipelines/$DLSPS_PIPELINE_NAME" \
   -H 'Content-Type: application/json' \
-  -d "{\"source\": {\"uri\": \"$DLSPS_DEMO_URI\", \"type\": \"uri\"}, \"destination\": {\"metadata\": {\"type\": \"mqtt\", \"publish_frame\": false, \"topic\": \"detections/live\"}}, \"parameters\": {\"detection-properties\": {\"model\": \"$DLSPS_MODEL\", \"device\": \"NPU\"}, \"crop-config\": $(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$crop_params")}}")
+  -d "{\"source\": {\"uri\": \"$DLSPS_DEMO_URI\", \"type\": \"uri\"}, \"destination\": {\"metadata\": {\"type\": \"mqtt\", \"publish_frame\": false, \"topic\": \"detections/live\"}}, \"parameters\": $(dlsps_smoke_parameters "$CROP_CONFIG_CONTAINER_PATH")}")
 iid=$(python3 -c "import json,sys; print(json.loads(sys.argv[1]))" "$resp")
 echo "Started instance $iid" >&2
 trap 'dlsps_stop_pipeline "$iid" || echo "WARN: instance $iid may still be running, check manually" >&2' EXIT
@@ -44,7 +47,7 @@ dlsps_wait_pipeline "$iid" 20 5 >/dev/null
 echo "Letting the crop producer admit tracked objects for 15s..." >&2
 sleep 15
 
-after_count=$(find "$CROPS_HOST_DIR" -maxdepth 1 -name '*.jpg' 2>/dev/null | wc -l)
+after_count=$(count_crops)
 new_crops=$((after_count - before_count))
 
 if [ "$new_crops" -le 0 ]; then
@@ -56,14 +59,7 @@ fi
 # tracker/label/confidence/rect metadata) — a lone .jpg without its sidecar
 # indicates the producer wrote the image but failed before its durable
 # JSON event, which the real Backend consumer would treat as incomplete.
-orphans=0
-for f in "$CROPS_HOST_DIR"/*.jpg; do
-  [ -e "$f" ] || continue
-  base="${f%.jpg}"
-  if [ ! -f "${base}.json" ]; then
-    orphans=$((orphans + 1))
-  fi
-done
+orphans=$(docker exec "$DLSPS_CONTAINER" sh -c "cd /opt/handheld-crops-output/$SMOKE_STREAM_ID && for f in *.jpg; do [ -e \"\$f\" ] && [ ! -f \"\${f%.jpg}.json\" ] && echo x; done | wc -l")
 if [ "$orphans" -gt 0 ]; then
   echo "FAIL: $orphans crop .jpg file(s) in $CROPS_HOST_DIR have no matching .json sidecar." >&2
   exit 1

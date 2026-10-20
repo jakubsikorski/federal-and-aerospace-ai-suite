@@ -8,7 +8,7 @@ dlsps_require_container
 echo "Starting NPU pipeline (config/dlsps/npu/config.json — the shipped default — must be the currently mounted config)..." >&2
 start_ts=$(date -u +%s)
 DLSPS_PIPELINE_NAME=handheld_npu_detect
-iid=$(dlsps_start_pipeline NPU)
+iid=$(dlsps_start_pipeline)
 echo "Started instance $iid" >&2
 trap 'dlsps_stop_pipeline "$iid" || echo "WARN: instance $iid may still be running, check manually" >&2' EXIT
 

@@ -13,7 +13,7 @@ dlsps_require_container "$MQTT_CONTAINER"
 # element, which is broken in this 2026.2.0 image — see docs/application/video-contracts.md).
 echo "Starting NPU pipeline for this test..." >&2
 DLSPS_PIPELINE_NAME=handheld_npu_detect
-iid=$(dlsps_start_pipeline NPU)
+iid=$(dlsps_start_pipeline)
 echo "Started instance $iid" >&2
 trap 'dlsps_stop_pipeline "$iid" || echo "WARN: instance $iid may still be running, check manually" >&2' EXIT
 dlsps_wait_pipeline "$iid" 15 5 >/dev/null

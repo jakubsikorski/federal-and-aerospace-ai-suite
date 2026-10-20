@@ -7,7 +7,7 @@ dlsps_require_container
 
 echo "Starting GPU pipeline (config/dlsps/gpu/config.json must be the currently mounted config)..." >&2
 DLSPS_PIPELINE_NAME=handheld_gpu_detect
-iid=$(dlsps_start_pipeline GPU)
+iid=$(dlsps_start_pipeline)
 echo "Started instance $iid" >&2
 trap 'dlsps_stop_pipeline "$iid" || echo "WARN: instance $iid may still be running, check manually" >&2' EXIT
 

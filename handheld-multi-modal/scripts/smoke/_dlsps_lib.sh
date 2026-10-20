@@ -4,8 +4,17 @@ _dlsps_lib_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 : "${COMPOSE_FILE:=$_dlsps_lib_root/compose/handheld-multi-modal.yaml}"
 : "${DLSPS_REST:=http://127.0.0.1:8080}"
 : "${DLSPS_PIPELINE_NAME:=handheld_smoke}"
-: "${DLSPS_DEMO_URI:=file:///home/pipeline-server/resources/videos/classroom.avi}"
-: "${DLSPS_MODEL:=/home/pipeline-server/yolo_models/yolo26s/INT8/yolo26s.xml}"
+# Same source shape as the application: a live MediaMTX camera path (needs a
+# publisher, e.g. `make demo-up`). Short local files finish before checks run.
+: "${DLSPS_DEMO_URI:=rtsp://mediamtx:8554/cam1}"
+# MediaMTX only accepts annotatedN; a high, per-run number keeps smoke pushes
+# off live camera paths and off a previous run's lingering session (one
+# publisher per path).
+: "${SMOKE_ANNOTATED_PATH:=annotated9$RANDOM}"
+# Crop context stream id. Without one the crop callback defaults to cam1 and
+# smoke detections would land in the live cam1 history; Backend drops
+# observations and snips for unregistered cameras such as this one.
+: "${SMOKE_STREAM_ID:=smoke}"
 
 # dlsps_resolve_container <service> — resolve the real container name via
 # Compose service identity (docker compose ps -a), not a guessed
@@ -34,12 +43,26 @@ dlsps_resolve_container() {
 
 : "${DLSPS_CONTAINER:=$(dlsps_resolve_container dlsps)}"
 
+# dlsps_require_backend_stopped — the Backend owns every DLSPS instance and
+# its reconciler deletes any instance no camera owns, so a smoke pipeline is
+# reaped within seconds. Stop it first (`docker compose ... stop backend`);
+# `make demo-up` restores the application afterwards.
+dlsps_require_backend_stopped() {
+  local backend
+  backend=$(docker compose -f "$COMPOSE_FILE" ps --status running -q backend 2>/dev/null || true)
+  if [ -n "$backend" ]; then
+    echo "BLOCKED: the Backend is running and deletes DLSPS instances it does not own. Stop it (docker compose -f $COMPOSE_FILE stop backend), run the smoke, then make demo-up." >&2
+    exit 2
+  fi
+}
+
 # dlsps_require_container [container] — assert the container is actually
 # running. A successful `docker inspect` only proves the container exists;
 # its State.Running can still print "false". Check the printed boolean, not
 # just the command's exit code.
 dlsps_require_container() {
   local container="${1:-$DLSPS_CONTAINER}"
+  [ -n "${1:-}" ] || dlsps_require_backend_stopped
   local running
   running=$(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null || echo "false")
   if [ "$running" != "true" ]; then
@@ -48,25 +71,39 @@ dlsps_require_container() {
   fi
 }
 
-# dlsps_start_pipeline <device> [extra_destination_json]
+# dlsps_smoke_parameters [crop_config_path]
+# Request parameters the shipped configs require: a unique model_instance
+# (model, device and decode are fixed per variant in config.json) and a
+# crop-config JSON text naming this smoke stream.
+dlsps_smoke_parameters() {
+  python3 -c '
+import json, sys, uuid
+crop = {"stream_id": sys.argv[1]}
+if sys.argv[2]:
+    crop["config"] = sys.argv[2]
+print(json.dumps({"model_instance": "smoke_" + uuid.uuid4().hex[:8],
+                  "crop-config": json.dumps(crop)}))' "$SMOKE_STREAM_ID" "${1:-}"
+}
+
+# dlsps_start_pipeline [extra_destination_json]
 # Prints the real pipeline instance id returned by DLSPS on stdout.
 # Callers MUST capture this id and use it with dlsps_wait_pipeline /
 # dlsps_stop_pipeline — never assume "a pipeline is running" proves this
 # specific call succeeded, and never sweep/stop pipelines this call didn't
 # start (an unrelated operator pipeline must survive every smoke script).
 dlsps_start_pipeline() {
-  local device="$1" extra_dest="${2:-}"
+  local extra_dest="${1:-}"
   local dest
   if [ -n "$extra_dest" ]; then
     dest="$extra_dest"
   else
-    dest='{"frame": {"type": "webrtc", "peer-id": "annotated", "overlay": true}}'
+    dest="{\"frame\": {\"type\": \"webrtc\", \"peer-id\": \"$SMOKE_ANNOTATED_PATH\", \"overlay\": true}}"
   fi
   local resp
   resp=$(curl --fail --silent --show-error --max-time 15 \
     -X POST "$DLSPS_REST/pipelines/user_defined_pipelines/$DLSPS_PIPELINE_NAME" \
     -H 'Content-Type: application/json' \
-    -d "{\"source\": {\"uri\": \"$DLSPS_DEMO_URI\", \"type\": \"uri\"}, \"destination\": $dest, \"parameters\": {\"detection-properties\": {\"model\": \"$DLSPS_MODEL\", \"device\": \"$device\"}}}")
+    -d "{\"source\": {\"uri\": \"$DLSPS_DEMO_URI\", \"type\": \"uri\"}, \"destination\": $dest, \"parameters\": $(dlsps_smoke_parameters "")}")
   python3 -c "import json,sys; print(json.loads(sys.argv[1]))" "$resp"
 }
 

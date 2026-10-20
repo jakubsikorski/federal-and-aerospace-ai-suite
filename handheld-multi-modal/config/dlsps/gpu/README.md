@@ -20,14 +20,17 @@ Copying a file into an unmounted `/tmp` path then `docker restart` does
 `config/dlsps/<variant>/config.json`; changing the mounted source requires
 recreating the container, not restarting it.
 
-Start request:
+Start request shape (the Backend sends this per camera, `backend/app/pipelines.py`;
+model and device are fixed in config.json; stop the Backend before starting
+one by hand, or its reconciler deletes it):
 
 ```sh
 curl -X POST http://127.0.0.1:8080/pipelines/user_defined_pipelines/handheld_gpu_detect \
   -H 'Content-Type: application/json' -d '{
-    "source": {"uri": "file:///home/pipeline-server/resources/videos/classroom.avi", "type": "uri"},
-    "destination": {"frame": {"type": "webrtc", "peer-id": "annotated", "overlay": true}},
-    "parameters": {"detection-properties": {"model": "/home/pipeline-server/yolo_models/yolo26s/INT8/yolo26s.xml", "device": "GPU"}}
+    "source": {"uri": "rtsp://mediamtx:8554/cam1", "type": "uri"},
+    "destination": {"frame": {"type": "webrtc", "peer-id": "annotated1", "overlay": true}},
+    "parameters": {"model_instance": "inst_cam1_1a2b3c4d",
+                   "crop-config": "{\"config\": \"/opt/handheld-crops-config/template.json\", \"stream_id\": \"cam1\"}"}
   }'
 ```
 
