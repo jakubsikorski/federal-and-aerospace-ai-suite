@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: (C) 2026 Intel Corporation
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Video File Processing
+# Example 5: Video File Processing
 
 Analyze recorded video files with DLStreamer object detection → HTML report.
 
@@ -14,7 +14,7 @@ flowchart LR
     A[Load Video<br/>MP4/AVI/MOV] --> B[DLStreamer<br/>Object Detection]
     B --> C[Extract Frames<br/>Key moments]
     C --> D[HTML Report<br/>Timeline + Gallery]
-    
+
     style A fill:#e1f5ff
     style B fill:#e8f5e9
     style C fill:#e8f5e9
@@ -32,19 +32,19 @@ flowchart LR
 
 **Infrastructure Inspection**
 ```
-"Analyze bridge_inspection_2024.mp4 with DLStreamer, 
+"Analyze bridge_inspection_2024.mp4 with DLStreamer,
 detect cracks and rust, generate HTML report"
 ```
 
 **Traffic Analysis**
 ```
-"Process traffic_cam_footage.mp4 with DLStreamer, 
+"Process traffic_cam_footage.mp4 with DLStreamer,
 count vehicles and pedestrians, generate timeline report"
 ```
 
 **Batch Processing**
 ```
-"Process all MP4 videos in $HOME/inspection_videos/, 
+"Process all MP4 videos in $HOME/inspection_videos/,
 generate individual reports and summary"
 ```
 

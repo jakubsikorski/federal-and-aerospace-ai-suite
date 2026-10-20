@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: (C) 2026 Intel Corporation
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Example 4: Real-Time Monitoring with Anomaly Alerts
+# Example 2: Real-Time Monitoring with Anomaly Alerts
 
 ## Use Case
 Monitor UAV during live mission and get AI-powered alerts for abnormal behavior.
@@ -132,7 +132,7 @@ Next Steps:
 > - Could be loose connection
 > - May fail suddenly in future flights
 >
-> **Required action**: 
+> **Required action**:
 > - Ground the UAV
 > - Inspect battery visually and electrically
 > - Do not fly until issue resolved
@@ -158,8 +158,8 @@ Next Steps:
 - **Context**: Distinguishes real issues from normal variations
 
 ## What Makes This Useful
-✅ Live anomaly detection during flight  
-✅ Alerts to critical issues immediately  
-✅ Distinguishes real problems from noise  
-✅ Provides mission timeline with context  
+✅ Live anomaly detection during flight
+✅ Alerts to critical issues immediately
+✅ Distinguishes real problems from noise
+✅ Provides mission timeline with context
 ✅ Generates detailed post-flight report

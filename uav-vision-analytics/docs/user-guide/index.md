@@ -25,15 +25,14 @@ It runs the YOLO11s, Ultralytics' pretrained small object detection model.
 
 The application supports two deployment modes depending on whether an external SDK is available.
 
-![  uav vision analytics application architecture](./_assets/FedAero-uav-vision-architecture.svg)
+![uav vision analytics application architecture](./_assets/FedAero-uav-vision-architecture.svg)
 
 | Component                                      | Role                                                                                                    |
 | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | RTSP / Video File / Live Camera Streams        | Input video source — UAV camera feed, a recorded video file, or a simulated RTSP stream                 |
 | MAVLink UAV Telemetry                          | Telemetry input — GPS, altitude, speed, and heading received from the flight controller over UDP        |
-| DL Streamer Pipeline Server (CPU / GPU / NPU)  | Core inference engine — runs YOLO11s object detection and renders the telemetry overlay on each frame |
+| DL Streamer Pipeline Server (CPU / GPU / NPU)  | Core inference engine — runs YOLO11s object detection and renders the telemetry overlay on each frame   |
 | RTSP Stream with Detection & Telemetry Overlay | Annotated output stream — processed video with bounding boxes and telemetry overlay, served over RTSP   |
-
 
 ## Deployment Modes
 
@@ -51,7 +50,6 @@ Integration mode that connects to a running instance of the UAV Mission Compute 
 
 [Get Started — UAV Mission Compute SDK Mode](./get-started/get-started-uavsdk.md)
 
-
 To learn more about the application and how to use it, see
 [How to use UAV Vision Analytics Application](./how-to-guides.md).
 
@@ -60,11 +58,10 @@ To learn more about the application and how to use it, see
 Follow the steps below to set up and run the UAV Blueprint:
 
 1. [Infrastructure Setup](./infrastructure-setup.md) — Build the OS image, flash it to a bootable USB, and validate the provisioned platform.
-2. [Install OEP SDKs](./get-started/install-oep-sdks.md) — Verify hardware accelerators and install the UAV Mission Compute SDK on the provisioned target.
+2. [Install OEP SDK and Usage](./get-started/install-oep-sdks.md) — Verify hardware accelerators and install the UAV Mission Compute SDK on the provisioned target.
 3. [Install UAV Vision Analytics Application](install-uav-app.md) — Choose and follow the deployment mode that matches your setup (Standalone or UAV Mission Compute SDK).
 4. [How to use UAV Vision Analytics Application](./how-to-guides.md) — Learn how to configure models, cameras, QGroundControl, and more.
 5. [Benchmarks](./benchmark.md) — Measure stream density and hardware utilization.
-
 
 ## AI Agent Skills
 
@@ -97,7 +94,7 @@ immediately.
 :hidden:
 
 Infrastructure Setup <./infrastructure-setup.md>
-Install OEP SDKs <./get-started/install-oep-sdks.md>
+Install OEP SDK and Usage <./get-started/install-oep-sdks.md>
 Install UAV Vision Analytics Application <install-uav-app.md>
 How to use UAV Vision Analytics Application <./how-to-guides.md>
 Benchmarks <./benchmark.md>

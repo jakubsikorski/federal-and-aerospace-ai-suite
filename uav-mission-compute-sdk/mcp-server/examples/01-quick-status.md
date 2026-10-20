@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: (C) 2026 Intel Corporation
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Example 5: Quick Status and Location Check
+# Example 1: Quick Status and Location Check
 
 ## Use Case
 Fast pre-flight verification - check UAV is ready and know where it is.
@@ -36,12 +36,12 @@ Google Maps: https://www.google.com/maps?q=47.397742,8.545594
 
 > Your UAV is ready:
 >
-> **Status**: DISARMED (safe), HOLD mode  
-> **Battery**: 100% charged  
-> **Connection**: Active ✓  
-> **Location**: Zurich, Switzerland  
-> - GPS: 47.397742°N, 8.545594°E  
-> - Altitude: 488m  
+> **Status**: DISARMED (safe), HOLD mode
+> **Battery**: 100% charged
+> **Connection**: Active ✓
+> **Location**: Zurich, Switzerland
+> - GPS: 47.397742°N, 8.545594°E
+> - Altitude: 488m
 >
 > Ready for flight operations.
 

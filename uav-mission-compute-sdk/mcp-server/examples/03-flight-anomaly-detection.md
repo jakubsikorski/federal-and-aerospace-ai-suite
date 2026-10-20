@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: (C) 2026 Intel Corporation
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Flight Anomaly Detection
+# Example 3: Flight Anomaly Detection
 
 Detect abnormal behavior in UAV flight data to catch issues before crashes.
 
@@ -14,7 +14,7 @@ flowchart LR
     A[Collect Flight Data<br/>120s] --> B[Train Anomalib<br/>PADIM model]
     B --> C[Detect Anomalies<br/>New flight]
     C --> D[Report Issues]
-    
+
     style A fill:#e1f5ff
     style B fill:#e8f5e9
     style C fill:#e8f5e9
@@ -61,6 +61,6 @@ Recommendations:
 
 ## Real-World Value
 
-✅ Prevents crashes by detecting IMU/battery issues early  
-✅ Automates log analysis (hours → minutes)  
+✅ Prevents crashes by detecting IMU/battery issues early
+✅ Automates log analysis (hours → minutes)
 ✅ Detects issues humans miss in raw data

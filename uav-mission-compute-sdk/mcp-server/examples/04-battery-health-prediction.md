@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: (C) 2026 Intel Corporation
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Example 3: Battery Health Prediction
+# Example 4: Battery Health Prediction
 
 ## Use Case
 Predict battery degradation and estimate remaining cycles before replacement needed.
@@ -82,7 +82,7 @@ Current Status:
   Voltage: 15.80V (full charge)
   Capacity: 87% of original
   Cycles: ~145 completed
-  
+
 Degradation Analysis:
   ⚠️  Voltage drop: 0.40V from new (2.5% loss)
   ⚠️  Capacity fade: 13% (faster than expected)
@@ -92,7 +92,7 @@ Prediction:
   Estimated remaining cycles: 55-65 flights
   Expected lifespan: ~200 cycles total
   Current health: 72% (Good but declining)
-  
+
 Recommended action: Order replacement battery now
 Reason: Lead time may be 2-3 weeks, replace before critical
 ```
@@ -140,8 +140,8 @@ Reason: Lead time may be 2-3 weeks, replace before critical
 - **Planning**: Budget for replacements in advance
 
 ## What Makes This Useful
-✅ Predicts failures before they happen  
-✅ Learns from flight history (not guessing)  
-✅ Actionable timeline (55-65 flights remaining)  
-✅ Explains WHY battery is degrading  
+✅ Predicts failures before they happen
+✅ Learns from flight history (not guessing)
+✅ Actionable timeline (55-65 flights remaining)
+✅ Explains WHY battery is degrading
 ✅ Helps optimize charging/usage behavior
