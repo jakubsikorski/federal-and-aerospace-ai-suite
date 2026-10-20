@@ -19,7 +19,7 @@ entry points exit 2 and are **not implemented smoke tests**.
 | `bash scripts/smoke/11_tts.sh` | PASS (SpeechT5, owner-approved); needs `TTS_URL`; checks `/health`, `device=${TTS_DEVICE:-CPU}` via `/v1/model-info` (D56), and validates real synthesis returns a non-trivial WAV |
 | `bash scripts/smoke/12_alert_agent.sh` | **PASS**, executed against deployed `intel/alert-agent-service:2026.2.0` (`ALERT_URL=http://127.0.0.1:8010`). Confirms rule-based mode, one real `log_alert` dispatch, one real dedup skip. Webhook/snapshot/MQTT/SSE and `backend.speak_alert` verified/documented manually — see `config/alert-agent/README.md`, `docs/application/evidence/alert-agent/smoke.log` |
 | `bash scripts/smoke/13_metrics.sh` | **PASS**, executed against deployed `intel/metrics-manager:2026.2.0` (2026-09-29; earlier runs on 2026.1.0). Script scope is CPU/RAM-only by design; real GPU/NPU/temperature data additionally confirmed manually (see `config/metrics/README.md`, `docs/application/evidence/metrics/smoke.log`) |
-| `make test-phase5` | **PASS.** Runs strict route/plan, interval-overlap, read-only budget, aggregate, completeness and stable-paging tests, then a live typed ten-minute query through stock Chat Q&A. Records independent malformed-plan safe failures rather than repairing model output; evidence under `docs/application/evidence/phase5/` |
+| `make test-history` | **PASS.** Runs strict route/plan, interval-overlap, read-only budget, aggregate, completeness and stable-paging tests, then a live typed ten-minute query through stock Chat Q&A. Records independent malformed-plan safe failures rather than repairing model output; evidence under `docs/application/evidence/history/` |
 
 ## DLSPS / MediaMTX / MQTT (video pipeline)
 
@@ -101,15 +101,15 @@ with `-fflags +genpts` first; its broken PTS cost ~132% extra CPU.
 
 Then start the DLSPS pipeline pushing native WebRTC to `/annotatedN` (see
 `config/dlsps/npu/README.md`, or just start the Backend, which owns pipeline
-lifecycle from Phase 2 onward).
+lifecycle).
 Media test must not be reported as DLSPS pass if synthetic publisher
 used instead. Software generation of synthetic demo is not hardware
 encode evidence.
 
-Phase 5 typed-history smoke requires that full demo and is one target:
+The typed-history smoke requires that full demo and is one target:
 
 ```sh
-make test-phase5
+make test-history
 ```
 
 The selected camera is authoritative. Stock Chat Q&A emits only a strict

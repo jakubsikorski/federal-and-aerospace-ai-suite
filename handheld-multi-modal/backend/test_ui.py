@@ -259,7 +259,7 @@ def main():
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
     # A home-directory profile also works with snap-packaged Firefox.
-    with tempfile.TemporaryDirectory(prefix='phase4-ui-', dir=Path.home()) as profile, tempfile.TemporaryFile() as log:
+    with tempfile.TemporaryDirectory(prefix='handheld-ui-', dir=Path.home()) as profile, tempfile.TemporaryFile() as log:
         process = subprocess.Popen(['geckodriver', '--host', '127.0.0.1', '--port', str(port), '--profile-root', profile],
                                    stdout=log, stderr=log, env={**os.environ, 'MOZ_HEADLESS': '1'})
         session = None

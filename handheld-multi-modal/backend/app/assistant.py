@@ -1,4 +1,4 @@
-"""Typed video-history routing and bounded read-only queries (Phase 5)."""
+"""Typed video-history routing and bounded read-only queries."""
 from __future__ import annotations
 
 import base64

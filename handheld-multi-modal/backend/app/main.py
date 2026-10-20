@@ -659,7 +659,7 @@ def create_app() -> FastAPI:
         return await _camera_change(
             request, lambda: cameras.remove(request.app.state, stream_id, confirm))
 
-    # -- rules (Phase 8) -------------------------------------------------------
+    # -- rules -------------------------------------------------------------
     def _rule_error(exc: Exception) -> JSONResponse:
         return JSONResponse(status_code=422, content=envelope(error={
             "code": "invalid_rule", "message": str(exc)}))
@@ -715,7 +715,7 @@ def create_app() -> FastAPI:
                 raise HTTPException(status_code=404, detail="unknown rule")
         return envelope({"rule_id": rule_id, "deleted": True})
 
-    # -- speech (Phase 8 audio arbiter) --------------------------------------
+    # -- speech (audio arbiter) --------------------------------------------
     @app.get("/api/speech")
     def speech(request: Request, trace: int = 0):
         arbiter = request.app.state.arbiter
@@ -847,7 +847,7 @@ def create_app() -> FastAPI:
     def history_options(request: Request):
         return envelope(request.app.state.assistant.options())
 
-    # -- mission knowledge (Phase 6) -----------------------------------------
+    # -- mission knowledge -----------------------------------------------
     @app.get("/api/mission/documents")
     def mission_documents(request: Request):
         return envelope(request.app.state.mission.status())

@@ -14,7 +14,7 @@ import demo_assets as assets
 def check_localhost_only():
     """Localhost-only profile: every host listener and the TURN relay stay on loopback."""
     import yaml
-    for name in ('handheld-multi-modal.yaml', 'cameras.yaml', 'phase4-demo.override.yaml'):
+    for name in ('handheld-multi-modal.yaml', 'cameras.yaml'):
         services = yaml.safe_load((assets.REPO / 'compose' / name).read_text()).get('services') or {}
         for service, spec in services.items():
             if spec.get('network_mode') == 'host':

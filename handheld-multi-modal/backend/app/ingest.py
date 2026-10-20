@@ -35,7 +35,7 @@ HOUSEKEEPING_SECONDS = 30.0
 # detector-fresh or predicted, so it is never presented as fresh inference.
 FRESHNESS = "tracker_metadata_unverified"
 # Stock short-term gvatrack writes exactly 1.0 on objects it predicts rather
-# than detects (phase 8 evidence, tracker_confidence_probe.txt). The marker is
+# than detects (evidence/phase8/tracker_confidence_probe.txt). The marker is
 # only applied when the selected pipeline uses such a tracker (pipelines.
 # PREDICTED_CONFIDENCE); zero-term detects every frame and keeps every score.
 
@@ -155,7 +155,7 @@ class Ingest:
         # steady-state pass costs one directory listing and no SQLite at all.
         self.scanned: dict[str, set[str]] = {}
         self.counters: Counter = Counter()
-        # Phase 8 rule matcher; evaluated per observation of a logical track.
+        # Rule matcher; evaluated per observation of a logical track.
         self.alerts = None
         self.frames_since_commit = 0
         self.stopping = threading.Event()

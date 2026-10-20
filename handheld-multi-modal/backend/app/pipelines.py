@@ -58,7 +58,7 @@ def resolve_pipeline_name(path: str = PIPELINE_CONFIG_PATH, override: str | None
 
 
 # Stock short-term gvatrack writes exactly 1.0 on boxes it predicted without
-# inference (phase 8 evidence, tracker_confidence_probe.txt). Only then is 1.0 a
+# inference (evidence/phase8/tracker_confidence_probe.txt). Only then is 1.0 a
 # marker rather than a score; zero-term tracking never predicts, so nothing is
 # discarded there. Set by configure() from the selected pipeline definition.
 PREDICTED_CONFIDENCE: float | None = None

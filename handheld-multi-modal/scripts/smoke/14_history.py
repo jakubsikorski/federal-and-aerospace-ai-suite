@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 5 typed-history contract and live typed-query smoke."""
+"""Typed-history contract and live typed-query smoke."""
 
 import json
 import os
@@ -17,8 +17,9 @@ import test_backend  # noqa: E402
 
 
 EVIDENCE = Path(os.environ.get(
-    "PHASE5_EVIDENCE", ROOT / "docs/application/evidence/phase5"))
-URL = os.environ.get("PHASE5_URL", "https://127.0.0.1:8443/api/ask")
+    "HISTORY_EVIDENCE", ROOT / "docs/application/evidence/history"))
+URL = os.environ.get("HISTORY_URL", "https://127.0.0.1:8443/api/ask")
+TLS_CERT = Path(os.environ.get("ASSET_ROOT", ROOT)) / "config/tls/server.crt"
 ATTEMPTS = 1  # first-submission reliability; never retry the smoke into a pass
 SAFE_FAILURE = "I could not turn that into a query I can answer."
 
@@ -35,9 +36,11 @@ def post(payload):
         headers={"content-type": "application/json"},
         method="POST",
     )
-    context = ssl._create_unverified_context() if URL.startswith("https://") else None
+    if not URL.startswith(("http://", "https://")):
+        raise ValueError(f"HISTORY_URL must be http(s): {URL}")
+    context = ssl.create_default_context(cafile=TLS_CERT) if URL.startswith("https://") else None
     started = time.monotonic()
-    with urllib.request.urlopen(request, timeout=180, context=context) as response:
+    with urllib.request.urlopen(request, timeout=180, context=context) as response:  # nosec B310 - scheme checked above
         result = json.load(response)
     result["elapsed_seconds"] = round(time.monotonic() - started, 3)
     return result
@@ -68,9 +71,9 @@ def verify_live(body):
 
 def main():
     focused = [
-        test_backend.test_phase5_plan_validation_retries_then_fails_safely,
-        test_backend.test_phase5_interval_query_aggregates_completeness_and_safe_grounding,
-        test_backend.test_phase5_readonly_budget_and_stable_paging,
+        test_backend.test_history_plan_validation_retries_then_fails_safely,
+        test_backend.test_history_interval_query_aggregates_completeness_and_safe_grounding,
+        test_backend.test_history_readonly_budget_and_stable_paging,
         test_backend.test_handheld_search_fast_path_and_recovery,
     ]
     for test in focused:
@@ -101,12 +104,17 @@ def main():
         "live": {"status": "not_exercised_insufficient_rows"},
     }
 
+    # Missing or uncheckable details are answered with a stated assumption, not refused.
     probes = []
-    for question in ("What was seen?", "Were there any weapons in the last ten minutes?",
-                     "What did camera 2 see in the last ten minutes?"):
+    for question, stream in (("What was seen?", "cam1"),
+                             ("Were there any weapons in the last ten minutes?", "cam1"),
+                             ("What did camera 2 see in the last ten minutes?", "cam2")):
         body = post({"text": question, "selected_stream": "cam1"})
-        assert body["data"]["intent"] == "clarification", body
-        probes.append({"question": question, "intent": "clarification",
+        data = body["data"]
+        assert data["intent"] == "video_history" and data.get("assumption"), body
+        assert data["query"]["filters"]["streams"] == [stream], body
+        probes.append({"question": question, "intent": data["intent"], "streams": [stream],
+                       "assumption": data["assumption"],
                        "elapsed_seconds": body["elapsed_seconds"]})
     success = None
     for attempt in range(1, ATTEMPTS + 1):
@@ -187,7 +195,7 @@ def main():
     if not hour_success:
         raise AssertionError("hour-history question failed on its first submission")
     write_json("paging_stability.json", paging_evidence)
-    print("PASS: Phase 5 strict plans, interval truth, paging, and live typed history")
+    print("PASS: strict plans, interval truth, paging, and live typed history")
 
 
 if __name__ == "__main__":

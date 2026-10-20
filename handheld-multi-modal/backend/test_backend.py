@@ -4,7 +4,7 @@
 Deliberately framework-free and offline: it covers config derivation, the
 schema migration, stream sync and observation demultiplexing.
 Service adapters and the pipeline lifecycle are not mocked here - they are proven
-against the real pinned containers via /api/health and the Phase 2 evidence,
+against the real pinned containers via /api/health and the recorded evidence,
 which are the only assertions that actually mean anything for them.
 """
 from contextlib import nullcontext
@@ -1043,10 +1043,10 @@ def test_model_placement_separates_configuration_runtime_and_availability():
         services.close()
 
 
-def _phase5_fixture(root: Path):
+def _history_fixture(root: Path):
     from app.assistant import _utc
 
-    db = root / "phase5.db"
+    db = root / "history.db"
     conn = connect(str(db))
     migrate(conn)
     conn.execute(
@@ -1101,12 +1101,12 @@ def _phase5_fixture(root: Path):
     return conn, cutoff, metadata
 
 
-def test_phase5_plan_validation_retries_then_fails_safely():
+def test_history_plan_validation_retries_then_fails_safely():
     from app.assistant import Assistant, InvalidPlan, validate_route
 
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
-        conn, cutoff, metadata = _phase5_fixture(root)
+        conn, cutoff, metadata = _history_fixture(root)
         labels = ("person", "car", "suitcase")
         valid = {
             "intent": "video_history",
@@ -1160,7 +1160,7 @@ def test_phase5_plan_validation_retries_then_fails_safely():
         calls = []
         bad = json.dumps(invalid[0])
         assistant = Assistant(
-            {"db_path": str(root / "phase5.db"),
+            {"db_path": str(root / "history.db"),
              "detector_metadata_path": str(metadata),
              "history_retention_seconds": 604800},
             None, generate=lambda prompt: calls.append(prompt) or bad)
@@ -1170,7 +1170,7 @@ def test_phase5_plan_validation_retries_then_fails_safely():
         conn.close()
 
 
-def test_phase7_general_conversation_context_and_echo_adapter():
+def test_general_conversation_context_and_echo_adapter():
     from app.assistant import (
         CHAT_ANSWER_MARKER,
         CONTEXT_IDLE_SECONDS,
@@ -1231,7 +1231,7 @@ def test_phase7_general_conversation_context_and_echo_adapter():
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        conn, _, metadata = _phase5_fixture(root)
+        conn, _, metadata = _history_fixture(root)
         prompts = []
         def generate(prompt):
             if "Classify the operator request" in prompt:
@@ -1240,7 +1240,7 @@ def test_phase7_general_conversation_context_and_echo_adapter():
             return "General reply " + str(len(prompts))
 
         assistant = Assistant(
-            {"db_path": str(root / "phase5.db"),
+            {"db_path": str(root / "history.db"),
              "detector_metadata_path": str(metadata)},
             None, generate=generate)
         for index in range(6):
@@ -1259,7 +1259,7 @@ def test_phase7_general_conversation_context_and_echo_adapter():
                 routed.append(prompt)
                 return '{"intent":"general_chat"}'
             return "General reply"
-        fast = Assistant({"db_path": str(root / "phase5.db"), "detector_metadata_path": str(metadata)},
+        fast = Assistant({"db_path": str(root / "history.db"), "detector_metadata_path": str(metadata)},
                          None, generate=counting)
         for question in ("What is yolo26s", "What is a thermal camera?", "Explain OpenVINO.", "Who was Alan Turing?"):
             assert fast.ask(question)["intent"] == "general_chat", question
@@ -1302,7 +1302,7 @@ def test_phase7_general_conversation_context_and_echo_adapter():
             assert release_generation.wait(1)
             return "Late reply"
         blocked = Assistant(
-            {"db_path": str(root / "phase5.db"),
+            {"db_path": str(root / "history.db"),
              "detector_metadata_path": str(metadata)},
             None, generate=blocked_generate)
         errors = []
@@ -1318,12 +1318,12 @@ def test_phase7_general_conversation_context_and_echo_adapter():
         conn.close()
 
 
-def test_phase5_interval_query_aggregates_completeness_and_safe_grounding():
+def test_history_interval_query_aggregates_completeness_and_safe_grounding():
     from app.assistant import Assistant
 
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
-        conn, _, metadata = _phase5_fixture(root)
+        conn, _, metadata = _history_fixture(root)
         responses = iter([
             json.dumps({
                 "intent": "video_history",
@@ -1333,7 +1333,7 @@ def test_phase5_interval_query_aggregates_completeness_and_safe_grounding():
             }),
         ])
         assistant = Assistant(
-            {"db_path": str(root / "phase5.db"),
+            {"db_path": str(root / "history.db"),
              "detector_metadata_path": str(metadata),
              "history_retention_seconds": 604800},
             None, generate=lambda _prompt: next(responses))
@@ -1357,14 +1357,14 @@ def test_phase5_interval_query_aggregates_completeness_and_safe_grounding():
         plan = validate_plan({"window": {"kind": "relative", "minutes": 10}},
             labels=("person", "car"), known_streams=("cam1",), selected_stream="cam1",
             cutoff=cutoff, retention=timedelta(days=7))
-        without = query_history(str(root / "phase5.db"), plan, cutoff, 2,
+        without = query_history(str(root / "history.db"), plan, cutoff, 2,
             {"cam1": {"tracking_session_id": "session-1", "history_generation": "generation-1"}})
         assert without["total"] == 1 and without["with_crops_total"] == 0
         assert without["tracks"] == [] and not without["truncated"]
         conn.close()
 
 
-def test_phase5_readonly_budget_and_stable_paging():
+def test_history_readonly_budget_and_stable_paging():
     from app.assistant import (
         InvalidInput,
         QueryBudgetExceeded,
@@ -1378,7 +1378,7 @@ def test_phase5_readonly_budget_and_stable_paging():
 
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
-        conn, cutoff, _ = _phase5_fixture(root)
+        conn, cutoff, _ = _history_fixture(root)
         from app.assistant import _utc
         for track_id, last_seconds in ((3, 60), (4, 120)):
             conn.execute(
@@ -1417,14 +1417,14 @@ def test_phase5_readonly_budget_and_stable_paging():
             "tracking_session_id": "session-1",
             "history_generation": "generation-1",
         }}
-        first = query_history(str(root / "phase5.db"), plan, cutoff, ceiling, scope)
+        first = query_history(str(root / "history.db"), plan, cutoff, ceiling, scope)
         assert first["tracks"][0]["track_id"] == 3 and first["total"] == 3
         # Expiry on an earlier page must not shift later tracks past OFFSET.
         conn.execute("UPDATE candidates SET image_state='expired' WHERE track_id=3")
         conn.commit()
-        expired = query_history(str(root / "phase5.db"), plan, cutoff, ceiling, scope)
+        expired = query_history(str(root / "history.db"), plan, cutoff, ceiling, scope)
         assert expired["tracks"][0]["track_id"] == 4 and expired["truncated"]
-        secret = b"phase5-test-secret"
+        secret = b"history-test-secret"
         token = encode_page_token(plan, cutoff, ceiling, scope, secret, cursor=first["next_cursor"])
         try:
             decode_page_token(token[:-1] + ("A" if token[-1] != "A" else "B"), secret)
@@ -1462,7 +1462,7 @@ def test_phase5_readonly_budget_and_stable_paging():
             known_streams=("cam1",), selected_stream=None, cutoff=cutoff,
             retention=timedelta(days=7))
         second = query_history(
-            str(root / "phase5.db"), second_plan, cutoff, body["track_id_ceiling"],
+            str(root / "history.db"), second_plan, cutoff, body["track_id_ceiling"],
             body["scope"], body["cursor"])
         assert second["tracks"][0]["track_id"] == 4, second["tracks"]
 
@@ -1470,27 +1470,27 @@ def test_phase5_readonly_budget_and_stable_paging():
         # A crop arriving on an earlier page must not duplicate later tracks.
         conn.execute("UPDATE candidates SET image_state='present' WHERE track_id=3")
         conn.commit()
-        third = query_history(str(root / "phase5.db"), {**second_plan, "page": 2},
+        third = query_history(str(root / "history.db"), {**second_plan, "page": 2},
                               cutoff, ceiling, scope, second["next_cursor"])
         assert [row["track_id"] for row in third["tracks"]] == [1]
         assert not third["truncated"]
-        previous = query_history(str(root / "phase5.db"), second_plan, cutoff,
+        previous = query_history(str(root / "history.db"), second_plan, cutoff,
                                  ceiling, scope, third["previous_cursor"])
         assert [row["track_id"] for row in previous["tracks"]] == [4]
         # An upcoming crop expires: seek skips it and still fills the next page.
         conn.execute("UPDATE candidates SET image_state='expired' WHERE track_id=4")
         conn.commit()
-        skipped = query_history(str(root / "phase5.db"), second_plan, cutoff,
+        skipped = query_history(str(root / "history.db"), second_plan, cutoff,
                                 ceiling, scope, first["next_cursor"])
         assert [row["track_id"] for row in skipped["tracks"]] == [1]
         conn.execute("UPDATE candidates SET image_state='present'")
         conn.commit()
         ascending_plan = {**plan, "order": "last_observed_asc"}
-        ascending = query_history(str(root / "phase5.db"), ascending_plan, cutoff, ceiling, scope)
+        ascending = query_history(str(root / "history.db"), ascending_plan, cutoff, ceiling, scope)
         assert ascending["tracks"][0]["track_id"] == 1
         conn.execute("UPDATE candidates SET image_state='expired' WHERE track_id=1")
         conn.commit()
-        ascending_next = query_history(str(root / "phase5.db"), {**ascending_plan, "page": 1},
+        ascending_next = query_history(str(root / "history.db"), {**ascending_plan, "page": 1},
                                        cutoff, ceiling, scope, ascending["next_cursor"])
         assert ascending_next["tracks"][0]["track_id"] == 4
 
@@ -1502,7 +1502,7 @@ def test_phase5_readonly_budget_and_stable_paging():
             retention=timedelta(days=7))
         assert selected_page["streams"] == ["cam1"]
 
-        with readonly_connection(str(root / "phase5.db")) as read:
+        with readonly_connection(str(root / "history.db")) as read:
             try:
                 read.execute("DELETE FROM tracks")
             except sqlite3.OperationalError:
@@ -1540,8 +1540,8 @@ def test_handheld_search_fast_path_and_recovery():
                        {"kind":"relative", "minutes":10}) is None
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        conn, cutoff, metadata = _phase5_fixture(root)
-        a = Assistant({"db_path":str(root / "phase5.db"), "detector_metadata_path":str(metadata),
+        conn, cutoff, metadata = _history_fixture(root)
+        a = Assistant({"db_path":str(root / "history.db"), "detector_metadata_path":str(metadata),
                        "assistant_queue_depth":1}, None,
                       generate=lambda _: json.dumps({"intent": "video_history", "plan": {
                           "window": {"kind": "relative", "minutes": 10}, "classes": None, "attributes": []}}))
@@ -1557,7 +1557,7 @@ def test_handheld_search_fast_path_and_recovery():
         weapons = a.ask("Were there weapons in the last ten minutes?", "cam1")
         assert weapons["intent"] == "video_history" and weapons["assumption"].startswith("I can't check weapons"), weapons
         assert a.search({"window":{"kind":"relative", "minutes":10}, "classes":["invented"]}, "cam1")["recovery"]["reason"] == "invalid_filters"
-        known, ceiling, scope = query_context(str(root / "phase5.db"))
+        known, ceiling, scope = query_context(str(root / "history.db"))
         plan = validate_plan({"window":{"kind":"relative", "minutes":10}, "classes":None},
             labels=labels, known_streams=known, selected_stream="cam1", cutoff=cutoff, retention=timedelta(days=7))
         token = encode_page_token(plan, cutoff, ceiling, scope, a.page_secret)
@@ -1597,7 +1597,7 @@ def test_camera_history_question_fast_path_common_phrasings():
                         "end_utc": "2026-09-25T13:00:00Z"})["classes"] == ["bicycle"]
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        conn, _, metadata = _phase5_fixture(root)
+        conn, _, metadata = _history_fixture(root)
         conn.execute("""INSERT INTO streams (stream_id, display_name, source_uri, annotated_path,
                        enabled, sort_order, tracking_session_id, history_generation)
                        VALUES ('cam2','Camera 2','rtsp://cam2','annotated2',1,1,'session-2','generation-2')""")
@@ -1616,7 +1616,7 @@ def test_camera_history_question_fast_path_common_phrasings():
                      (_utc(now - timedelta(minutes=6)), _utc(now - timedelta(minutes=5))))
         conn.commit()
         calls = []
-        assistant = Assistant({"db_path": str(root / "phase5.db"), "detector_metadata_path": str(metadata)},
+        assistant = Assistant({"db_path": str(root / "history.db"), "detector_metadata_path": str(metadata)},
                               None, generate=lambda prompt: calls.append(prompt) or '{"intent":"clarification"}')
         answer = assistant.ask("Any people on camera 2 in the last 10 minutes?")
         assert answer["intent"] == "video_history" and answer["query"]["filters"]["streams"] == ["cam2"]
@@ -1631,8 +1631,8 @@ def test_questions_never_dead_end():
          "configured_device": "GPU", "runtime_model": "Intel/neural-chat-7b-v3-3", "status": "ready"}]}
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        conn, _, metadata = _phase5_fixture(root)
-        cfg = {"db_path": str(root / "phase5.db"), "detector_metadata_path": str(metadata),
+        conn, _, metadata = _history_fixture(root)
+        cfg = {"db_path": str(root / "history.db"), "detector_metadata_path": str(metadata),
                "streams": [{"stream_id": "cam1", "display_name": "Camera 1"},
                            {"stream_id": "cam2", "display_name": "Camera 2"}]}
         prompts = []
@@ -1687,8 +1687,8 @@ def test_search_options_current_session_availability():
     from app.assistant import Assistant, _utc
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        conn, cutoff, metadata = _phase5_fixture(root)
-        assistant = Assistant({"db_path": str(root / "phase5.db"),
+        conn, cutoff, metadata = _history_fixture(root)
+        assistant = Assistant({"db_path": str(root / "history.db"),
                                "detector_metadata_path": str(metadata)}, None)
         options = assistant.options()
         assert options["classes"] == ("person", "car", "suitcase")
@@ -1724,11 +1724,11 @@ def test_history_ux_regressions():
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        conn, _, metadata = _phase5_fixture(root)
+        conn, _, metadata = _history_fixture(root)
         broad = json.dumps({"intent": "video_history", "plan": {
             "window": {"kind": "relative", "minutes": 10}, "classes": None, "attributes": []}})
         calls = []
-        a = Assistant({"db_path": str(root / "phase5.db"), "detector_metadata_path": str(metadata)},
+        a = Assistant({"db_path": str(root / "history.db"), "detector_metadata_path": str(metadata)},
                       None, generate=lambda prompt: calls.append(prompt) or broad)
         assert a.ask(
             "What did camera 2 see in the last ten minutes?", "cam1"
@@ -1809,7 +1809,7 @@ def test_clock_time_history_question():
         assert "24-hour" in result["answer_text"], result
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        conn, cutoff, metadata = _phase5_fixture(root)
+        conn, cutoff, metadata = _history_fixture(root)
         from zoneinfo import ZoneInfo
         start = (cutoff-timedelta(minutes=10)).astimezone(ZoneInfo("Europe/Warsaw")).strftime("%H:%M")
         end = (cutoff-timedelta(minutes=5)).astimezone(ZoneInfo("Europe/Warsaw")).strftime("%H:%M")
@@ -1819,7 +1819,7 @@ def test_clock_time_history_question():
         def generate(prompt):
             prompts.append(prompt)
             return json.dumps({"intent":"video_history","plan":{"window":window,"classes":None}})
-        a = Assistant({"db_path":str(root/'phase5.db'), "detector_metadata_path":str(metadata)}, None, generate=generate)
+        a = Assistant({"db_path":str(root/'history.db'), "detector_metadata_path":str(metadata)}, None, generate=generate)
         result = a.ask(text, "cam1", timezone="Europe/Warsaw")
         assert result["intent"] == "video_history" and not prompts
         assert result["query"]["window"]["started_utc"] == window["start_utc"]
@@ -1827,7 +1827,7 @@ def test_clock_time_history_question():
 
 
 def test_mission_lifecycle_retains_reconciles_and_discloses_citation_limits():
-    """Phase 6 keeps originals outside stock in-memory FAISS and never fakes citations."""
+    """Mission knowledge keeps originals outside stock in-memory FAISS and never fakes citations."""
     from app.mission import (
         BRIEF_FIELDS,
         MissionService,
@@ -1961,7 +1961,7 @@ def test_mission_upload_limits_are_configurable_and_types_are_named():
         assert service.limits["max_pdf_pages"] == 400
 
 
-def test_mission_phase6_failure_matrix():
+def test_mission_failure_matrix():
     """Regression coverage for lifecycle serialization, corpus truth and bounded uploads."""
     from app.assistant import Assistant, ServiceUnavailable
     from app.mission import (
@@ -2310,14 +2310,14 @@ def test_chat_sessions_streaming_and_followups():
     from app.assistant import Assistant, InvalidInput, ServiceUnavailable
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        conn, _, metadata = _phase5_fixture(root)
+        conn, _, metadata = _history_fixture(root)
         conn.execute("INSERT INTO streams (stream_id,display_name,source_uri,annotated_path,enabled,sort_order) VALUES ('cam2','Camera 2','rtsp://cam2','annotated2',1,1)")
         conn.commit()
         prompts = []
         def generate(prompt):
             prompts.append(prompt)
             return '{"intent":"general_chat"}' if "Classify the operator request" in prompt else "A short answer."
-        assistant = Assistant({"db_path": str(root / "phase5.db"),
+        assistant = Assistant({"db_path": str(root / "history.db"),
             "detector_metadata_path": str(metadata), "streams": [
                 {"stream_id": "cam1", "display_name": "Camera 1", "description": "Configured test coverage."}]},
             None, generate=generate)
@@ -2478,12 +2478,12 @@ def test_explain_mode_app_questions_use_the_guide_not_mission_documents():
     from app.assistant import Assistant
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        conn, _, metadata = _phase5_fixture(root)
+        conn, _, metadata = _history_fixture(root)
         prompts = []
         def generate(prompt):
             prompts.append(prompt)
             return "YOLO26s on the NPU detects people; gvatrack tracks them."
-        assistant = Assistant({"db_path": str(root / "phase5.db"),
+        assistant = Assistant({"db_path": str(root / "history.db"),
             "detector_metadata_path": str(metadata), "streams": [
                 {"stream_id": "cam1", "display_name": "Entrance"}]}, None, generate=generate)
         with assistant.conversation("e" * 32):
@@ -2499,14 +2499,14 @@ def test_application_knowledge_grounding():
     from app.mission import _brief_prompt, OPERATOR_GUIDE
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        conn, _, metadata = _phase5_fixture(root)
+        conn, _, metadata = _history_fixture(root)
         prompts = []
         def generate(prompt):
             prompts.append(prompt)
             if "Classify the operator request" in prompt:
                 return '{"intent":"application_help"}'
             return "Pause freezes list updates, not the camera pipeline."
-        assistant = Assistant({"db_path": str(root / "phase5.db"),
+        assistant = Assistant({"db_path": str(root / "history.db"),
             "detector_metadata_path": str(metadata), "streams": [
                 {"stream_id":"cam1", "display_name":"Entrance", "description":"Test doorway."}]},
             None, generate=generate)
@@ -2545,12 +2545,12 @@ def test_colour_questions_get_a_qualified_answer_with_images_and_no_model_call()
     from app.assistant import Assistant
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        conn, _, metadata = _phase5_fixture(root)
+        conn, _, metadata = _history_fixture(root)
         prompts = []
         def generate(prompt):
             prompts.append(prompt)
             return "It is a general answer."
-        a = Assistant({"db_path": str(root / "phase5.db"), "detector_metadata_path": str(metadata)},
+        a = Assistant({"db_path": str(root / "history.db"), "detector_metadata_path": str(metadata)},
                       None, generate=generate)
         with a.conversation("b" * 32):
             car = a.ask("What is the color of the car detected in the last hour?", "cam1")
@@ -2571,11 +2571,11 @@ def test_partial_clarification_offers_broader_search():
     from app.assistant import Assistant, InvalidPlan, validate_route
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        conn, cutoff, metadata = _phase5_fixture(root)
+        conn, cutoff, metadata = _history_fixture(root)
         proposal = {"intent":"clarification", "plan":{"window":{"kind":"relative","minutes":10},
             "classes":["person"], "attributes":[]}, "unresolved_conditions":["wearing red shirts"]}
         responses = iter(['{"intent":"clarification"}', json.dumps(proposal)])
-        a = Assistant({"db_path":str(root/'phase5.db'),"detector_metadata_path":str(metadata)},
+        a = Assistant({"db_path":str(root/'history.db'),"detector_metadata_path":str(metadata)},
             None, generate=lambda _: next(responses))
         answer = a.ask("How many people wearing red shirts were detected in the last 10 minutes?", "cam1")
         # The broader search runs, and the answer leads with what it did not check.
@@ -2695,8 +2695,8 @@ def test_unmapped_conditions_and_catalog_overflow_degrade_safely():
 
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
-        conn, _, metadata = _phase5_fixture(root)
-        cfg = {"db_path": str(root / "phase5.db"), "detector_metadata_path": str(metadata),
+        conn, _, metadata = _history_fixture(root)
+        cfg = {"db_path": str(root / "history.db"), "detector_metadata_path": str(metadata),
                "history_retention_seconds": 604800,
                "streams": [{"stream_id": "cam1", "display_name": "Camera 1", "enabled": True}]}
         base = {"window": {"kind": "relative", "minutes": 10}, "order": "last_observed_desc",
@@ -2898,7 +2898,7 @@ def test_priority_classes_survive_the_evidence_limit():
 
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
-        conn, cutoff, _metadata = _phase5_fixture(root)
+        conn, cutoff, _metadata = _history_fixture(root)
         cfg = {"evidence_priority_classes": ["person"]}
         # Furniture observed more recently than the person, as on a real feed.
         for index in range(30):
@@ -2994,7 +2994,7 @@ def test_profile_validation_and_required_source_startup():
 
 
 
-# -- Phase 8: rules, dispatch and the audio arbiter ---------------------------
+# -- rules, dispatch and the audio arbiter ---------------------------
 class _SaidArbiter:
     def __init__(self):
         self.said = []
@@ -3029,7 +3029,7 @@ def _observe(ing, stream_id, tracker_id, count=1, label="person", start=1000.0, 
             payload=_observation(stream_id, tracker_id, label, start + index * 0.1, **kw)))
 
 
-def test_phase8_rule_fires_once_per_logical_track_and_restart_does_not_replay():
+def test_rule_fires_once_per_logical_track_and_restart_does_not_replay():
     from app.alerts import RuleError
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -3619,7 +3619,7 @@ def test_tracker_predicted_confidence_never_becomes_peak_or_matches_threshold_ru
         alerts.close()
 
 
-def test_phase8_dispatch_distinguishes_delivered_suppressed_and_failed_with_backoff():
+def test_dispatch_distinguishes_delivered_suppressed_and_failed_with_backoff():
     from app import alerts as alerting
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -3716,7 +3716,7 @@ def _settle(arbiter, timeout=5.0):
     raise AssertionError("arbiter did not settle")
 
 
-def test_phase8_arbiter_never_overlaps_and_preempts_by_priority():
+def test_arbiter_never_overlaps_and_preempts_by_priority():
     arbiter = _arbiter({"long alert": 1.0})
     try:
         arbiter.say("alert", "long alert", ref="a1", rule_id="r1", cooldown=0)
@@ -3765,7 +3765,7 @@ def _wait_current(arbiter, ref, timeout=3.0):
     return arbiter.snapshot()["current"]["id"]
 
 
-def test_phase8_speech_is_spoken_only_on_browser_ack_and_cancels_with_the_operator():
+def test_speech_is_spoken_only_on_browser_ack_and_cancels_with_the_operator():
     from app import speech
 
     arbiter = _arbiter({"long": 2.0, "late": 1.0})
@@ -3838,7 +3838,7 @@ def test_phase8_speech_is_spoken_only_on_browser_ack_and_cancels_with_the_operat
         preparing.close()
 
 
-def test_phase8_arbiter_suppresses_while_talking_bounds_queue_and_rate_limits():
+def test_arbiter_suppresses_while_talking_bounds_queue_and_rate_limits():
     from app.speech import bound_words
 
     arbiter = _arbiter({"interrupted": 1.0})
@@ -3887,7 +3887,7 @@ def test_phase8_arbiter_suppresses_while_talking_bounds_queue_and_rate_limits():
         failing.close()
 
 
-def test_phase8_tts_cache_hit_skips_second_synthesis_and_is_visible():
+def test_tts_cache_hit_skips_second_synthesis_and_is_visible():
     from app import speech
 
     speech.PLAYBACK_MARGIN_SECONDS = 0.0
@@ -3912,7 +3912,7 @@ def test_phase8_tts_cache_hit_skips_second_synthesis_and_is_visible():
         arbiter.close()
 
 
-def test_phase8_tts_cache_is_byte_bounded_lru_and_skips_failures():
+def test_tts_cache_is_byte_bounded_lru_and_skips_failures():
     from app import speech
 
     cache = speech.AudioCache(max_bytes=10, max_entries=3)
@@ -3948,7 +3948,7 @@ def test_phase8_tts_cache_is_byte_bounded_lru_and_skips_failures():
         arbiter.close()
 
 
-def test_phase8_manual_speak_skips_floor_without_overlap_and_auto_alerts_wait():
+def test_manual_speak_skips_floor_without_overlap_and_auto_alerts_wait():
     from app import speech
 
     speech.PLAYBACK_MARGIN_SECONDS = 0.0
@@ -4059,7 +4059,7 @@ def test_speech_spells_acronyms_with_letter_names():
         "Mission AMBER FIELD uses JSON and OpenVINO on the iGPU.")
 
 
-def test_phase9_audio_upload_limits_and_stock_alias():
+def test_audio_upload_limits_and_stock_alias():
     import asyncio
     from types import SimpleNamespace
     from app.main import create_app
@@ -4165,7 +4165,7 @@ def test_phase9_audio_upload_limits_and_stock_alias():
     services.client.close()
 
 
-def test_phase9_chunked_answer_order_and_interruption():
+def test_chunked_answer_order_and_interruption():
     from app.speech import Arbiter, answer_chunks
     text = 'First answer. ' + ' '.join(['word'] * 75) + '. Last sentence.'
     chunks = answer_chunks(text)
@@ -4206,7 +4206,7 @@ def test_phase9_chunked_answer_order_and_interruption():
         arbiter.close()
 
 
-def test_phase9_prefetch_one_chunk_serial_order_and_missing_ack():
+def test_prefetch_one_chunk_serial_order_and_missing_ack():
     from app import speech
 
     speech.PLAYBACK_MARGIN_SECONDS = 0.0
@@ -4259,7 +4259,7 @@ def test_phase9_prefetch_one_chunk_serial_order_and_missing_ack():
         arbiter.close()
 
 
-def test_phase9_numbered_stream_preserves_order_and_chunk_shape():
+def test_numbered_stream_preserves_order_and_chunk_shape():
     from app.main import EarlyAnswerSpeech
     from app import speech
 
@@ -4436,7 +4436,7 @@ def test_voice_release_holds_alerts_and_warmup_never_overlaps_synthesis():
         arbiter.close()
 
 
-def test_phase9_prepared_chunk_starts_before_following_prefetch_finishes():
+def test_prepared_chunk_starts_before_following_prefetch_finishes():
     from app import speech
 
     speech.PLAYBACK_MARGIN_SECONDS = 0.0
@@ -4503,7 +4503,7 @@ def test_ready_next_chunk_is_exposed_and_its_early_acks_are_kept():
         arbiter.close()
 
 
-def test_phase9_prefetch_rejects_late_results_failures_and_answer_outranks_alerts():
+def test_prefetch_rejects_late_results_failures_and_answer_outranks_alerts():
     from app import speech
 
     speech.PLAYBACK_MARGIN_SECONDS = 0.0
@@ -4590,7 +4590,7 @@ def test_answer_window_holds_alerts_until_the_answer_is_spoken():
         arbiter.close()
 
 
-def test_phase9_streaming_answer_speech_once_order_and_races():
+def test_streaming_answer_speech_once_order_and_races():
     from app.main import EarlyAnswerSpeech
     from app import speech
 

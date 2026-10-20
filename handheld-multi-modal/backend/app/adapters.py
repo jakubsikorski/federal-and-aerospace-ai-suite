@@ -1,6 +1,6 @@
 """Thin adapters for the seven stock services.
 
-Each adapter does exactly two things in Phase 1: report reachability, and make
+Each adapter does exactly two things: report reachability, and make
 one real call that proves the service is actually usable rather than merely
 listening. Endpoints and ports were probed live against the pinned containers on
 2026-09-14; none of them are guessed.
@@ -99,7 +99,7 @@ class Services:
         }
 
     def dlsps(self) -> tuple[str, dict | None]:
-        """GET /pipelines lists loaded definitions; instances are Phase 2."""
+        """GET /pipelines lists loaded definitions; instances are managed by pipelines.py."""
         body = self._get("dlsps", "/pipelines").json()
         names = [f"{p.get('name')}/{p.get('version')}" for p in body] if isinstance(body, list) else []
         if not names:

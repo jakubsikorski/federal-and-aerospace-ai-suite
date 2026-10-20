@@ -131,14 +131,14 @@ services:
       # bind mount's source — set DLSPS_CONFIG_VARIANT and recreate instead:
       #   DLSPS_CONFIG_VARIANT=cpu docker compose -f compose/handheld-multi-modal.yaml up -d --force-recreate dlsps
       - ../config/dlsps/${DLSPS_CONFIG_VARIANT:-npu}/config.json:/home/pipeline-server/config.json:ro
-      - ../data/dlsps/yolo_export/yolo26s_int8_openvino_model:/home/pipeline-server/yolo_models/yolo26s/INT8:ro
+      - ${ASSET_ROOT:-..}/data/dlsps/yolo_export/yolo26s_int8_openvino_model:/home/pipeline-server/yolo_models/yolo26s/INT8:ro
       # Demo source copied from the pinned edge-ai-libraries commit's own
       # microservices/dlstreamer-pipeline-server/resources/videos/classroom.avi
       # (sha256 ca6d1b53d54a40ffda9d4ca1d0ab0cc43f744583324aaf97146c820e2b62a2fa,
       # confirmed identical); reproduction runbook for both this file and the
       # detector IR above: docs/application/video-contracts.md "Detector IR and
       # demo video" section.
-      - ../data/dlsps/demo-video:/home/pipeline-server/resources/videos:ro
+      - ${ASSET_ROOT:-..}/data/dlsps/demo-video:/home/pipeline-server/resources/videos:ro
       # Crop mechanism, active on every launch (corrected 2026-09-14, S2):
       # the gvapython callback (scripts/dlsps/README.md) read-only, plus a
       # shared writable output volume for produced crop JPEGs/sidecars.
@@ -147,7 +147,7 @@ services:
       # camera gets its own output_dir because the producer takes an exclusive
       # lock per store. See config/dlsps/crops/README.md.
       - ../config/dlsps/crops:/opt/handheld-crops-config:ro
-      - ../data/dlsps/crops:/opt/handheld-crops-output
+      - ${ASSET_ROOT:-..}/data/dlsps/crops:/opt/handheld-crops-output
     networks: [handheld]
   metrics:
     image: intel/metrics-manager:2026.2.0
@@ -322,14 +322,14 @@ services:
       HF_HUB_OFFLINE: "${CHATQNA_HF_HUB_OFFLINE:-0}"
       <<: *proxy-env-real
     volumes:
-      - ../data/chatqna/model_cache:/tmp/model_cache
+      - ${ASSET_ROOT:-..}/data/chatqna/model_cache:/tmp/model_cache
       - ../config/chatqna/config.yaml:/tmp/model_config/config.yaml:ro
     healthcheck:
       <<: *gpu-healthcheck
       test: ["CMD", "python3", "-c",
              "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8888/health', timeout=5).read()"]
     networks: [handheld]
-  # --- application services (Phase 1, docs/design/APPLICATION_DESIGN.md) ---
+  # --- application services (docs/design/APPLICATION_DESIGN.md) ---
   backend:
     build:
       context: ../backend
@@ -363,12 +363,12 @@ services:
       - ../config/audio-analyzer/config.yaml:/config/model-placement/audio-analyzer.yaml:ro
       - ../config/tts/config.yaml:/config/model-placement/tts.yaml:ro
       - ../config/dlsps/${DLSPS_CONFIG_VARIANT:-npu}/config.json:/config/model-placement/dlsps.json:ro
-      - ../data/dlsps/yolo_export/yolo26s_int8_openvino_model:/config/detector:ro
-      - ../data/backend:/data
+      - ${ASSET_ROOT:-..}/data/dlsps/yolo_export/yolo26s_int8_openvino_model:/config/detector:ro
+      - ${ASSET_ROOT:-..}/data/backend:/data
       # Read-write, but only one call site writes: the stopped-producer cleanup
       # of design section 9.2, which must hold the producer's own exclusive lock.
       # Image serving is read-only in code. No Docker socket is mounted.
-      - ../data/dlsps/crops:/crops
+      - ${ASSET_ROOT:-..}/data/dlsps/crops:/crops
       - ../scripts/dlsps/crop_candidates.py:/opt/handheld-crops/crop_candidates.py:ro
     depends_on: [mediamtx, mqtt, dlsps, chatqna, audio-analyzer, tts, alert-agent, metrics]
     networks: [handheld]
@@ -387,7 +387,7 @@ services:
       - "127.0.0.1:8443:8443/tcp"
     volumes:
       - ../config/proxy/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ../config/tls:/etc/tls:ro
+      - ${ASSET_ROOT:-..}/config/tls:/etc/tls:ro
     depends_on: [backend, mediamtx]
     networks: [handheld]
 

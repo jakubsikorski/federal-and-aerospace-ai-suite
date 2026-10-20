@@ -29,7 +29,7 @@ BRIEF_FIELDS = (
     "objective", "times", "locations", "people_units", "restrictions",
     "resources", "dependencies", "risks",
 )
-# Phase 6 anchored this by pasting the whole operator guide into the brief
+# An earlier version anchored this by pasting the whole operator guide into the brief
 # prompt. Live generation showed the model answering *about* the guide -- it
 # described the Pause control instead of emitting a brief -- so the exclusion
 # is stated in one line and the guide text is kept out of the prompt.

@@ -25,7 +25,7 @@ x-camera: &camera
   restart: unless-stopped
   network_mode: "container:handheld-multi-modal-mediamtx-1"
   volumes:
-    - ../data/dlsps/demo-video:/video:ro
+    - ${ASSET_ROOT:-..}/data/dlsps/demo-video:/video:ro
   entrypoint: ["ffmpeg"]
 
 services:
