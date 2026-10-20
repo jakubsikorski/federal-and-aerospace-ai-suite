@@ -1,64 +1,61 @@
-# Copilot Instructions for edge-ai-suites
+<!--
+SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+SPDX-License-Identifier: Apache-2.0
+-->
+
+# Copilot Instructions for Federal and Aerospace AI Suite
 
 ## Repository Overview
 
-This is a monorepo containing multiple Intel Edge AI Suites, each in its own top-level directory:
+This repository contains AI-enabled applications and supporting components for aerospace and defense edge deployments. Component directories are directly under the repository root:
 
-- `education-ai-suite/` — Smart classroom application
-- `federal-and-aerospace-ai-suite/` — Deterministic threat detection, handheld multi-modal
-- `health-and-life-sciences-ai-suite/` — NICU Warmer, multi-modal patient monitoring
-- `manufacturing-ai-suite/` — Industrial edge insights (vision, time-series, multimodal), HMI augmented worker
-- `metro-ai-suite/` — Smart NVR, live video analysis, smart traffic, agentic RAG, VMS adapter, etc.
-- `retail-ai-suite/` — Loss prevention, order accuracy, voice-enabled interactions
-- `robotics-ai-suite/` — ROS2-based components (SLAM, mapping, object detection, multicam)
+- [handheld-multi-modal/](../handheld-multi-modal/README.md) — LLM inference, speech-to-text, chat UI, and observability
+- [deterministic-threat-detection/](../deterministic-threat-detection/README.md) — Deterministic, low-latency AI video and sensor processing using Time-Sensitive Networking (preview)
+- [uav-mission-compute-sdk/](../uav-mission-compute-sdk/README.md) — UAV simulation, telemetry, camera streaming, and edge AI infrastructure
+- [uav-vision-analytics/](../uav-vision-analytics/README.md) — UAV object detection with correlated MAVLink telemetry overlays
 
 ### Navigation
 
 When working on a specific component, check for a local `AGENTS.md` file first — it contains authoritative per-component instructions:
-- [federal-and-aerospace-ai-suite/handheld-multi-modal/AGENTS.md](../federal-and-aerospace-ai-suite/handheld-multi-modal/AGENTS.md)
-- [metro-ai-suite/metro-sdk-manager/AGENTS.md](../metro-ai-suite/metro-sdk-manager/AGENTS.md)
-- [metro-ai-suite/live-video-analysis/live-video-captioning/AGENTS.md](../metro-ai-suite/live-video-analysis/live-video-captioning/AGENTS.md)
-- [manufacturing-ai-suite/industrial-edge-insights-vision/win-vision-ai/.github/copilot-instructions.md](../manufacturing-ai-suite/industrial-edge-insights-vision/win-vision-ai/.github/copilot-instructions.md)
+- [handheld-multi-modal/AGENTS.md](../handheld-multi-modal/AGENTS.md)
 
-Each suite directory has its own `README.md` with suite-level context. Each sub-project within a suite has its own `README.md` with setup and usage details.
+Read the [root README](../README.md) for suite-level context and the active component's `README.md` for setup and usage details. User guides are under each component's `docs/user-guide/` directory. Paths in workflows and root build commands are relative to this repository, without an additional `federal-and-aerospace-ai-suite/` prefix.
 
 ## Languages & Frameworks
 
-- **Primary language:** Python (FastAPI, Gradio, LangChain, OpenVINO, PyTorch)
-- **Secondary:** C++ (robotics-ai-suite ROS2 components), Bash (deploy scripts, test harnesses)
-- **Frontend:** JavaScript/TypeScript (React, Vite) for UI components
-- **Infrastructure:** Docker, Docker Compose, Helm, Kubernetes
+- **Primary language:** Python (Flask services, inference, telemetry, and pipeline management)
+- **Scripts:** Bash for deployment, setup, and validation
+- **UI and observability:** Open WebUI, Grafana, NGINX, and application HTML/JavaScript
+- **Infrastructure:** Docker and Docker Compose
 - **ML/AI:** OpenVINO, OVMS (OpenVINO Model Server), HuggingFace, Intel DL Streamer
+- **UAV and streaming:** PX4, Gazebo, MAVLink, MQTT, and RTSP
 
 ## Build Systems
 
-- **Make** is the standard build orchestrator. Every suite and most sub-projects have a `Makefile`; run `make help` to list all available targets for a component.
-- **Docker Compose** (`docker compose`) is the deployment mechanism. Projects use `docker-compose.yml` / `docker-compose.yaml` with `.env` files for configuration.
-- **Helm** charts are provided for Kubernetes deployment (found in `helm/` directories).
+- **Make** orchestrates packaging and component lifecycle tasks. The [root Makefile](../Makefile) builds component and full-suite ZIP archives into `dist/`; it is not a deployment entry point. Run `make help` in the active component where available.
+- **Docker Compose** (`docker compose`) runs application services. Follow the component's documented Compose files, prerequisites, and `.env` configuration; filenames and deployment targets differ between components.
+- **Handheld deployment:** Follow [AGENTS.md](../handheld-multi-modal/AGENTS.md) for `make deploy`, `make deploy-cdi`, or `make up-standalone`. The standard and CDI modes require the Visual Pipeline and Platform Evaluation Tool network.
+- **UAV deployment:** Follow the [SDK user guide](../uav-mission-compute-sdk/docs/user-guide/get-started.md) and [analytics user guide](../uav-vision-analytics/docs/user-guide/index.md) for the selected camera and telemetry mode.
 - **Python packaging:** Mix of `requirements.txt`, `pyproject.toml` (with setuptools or uv), and `pip`.
-- **ROS2 (robotics):** `colcon build` with CMakeLists.txt and Debian packaging via `dpkg-buildpackage`.
 
 ## Testing Patterns
 
-- **Framework:** pytest (Python), Google Test (C++), Robot Framework (manufacturing-ai-suite/vision)
-- **Structure:** `tests/` directory at project root, with `tests/unit/` and `tests/functional/` or `tests/integration/` subdirectories
-- **Config:** `pytest.ini` or `[tool.pytest.ini_options]` in `pyproject.toml`
-- **Async:** `pytest-asyncio` with `asyncio_mode = "auto"`
-- **Fixtures:** Shared in `conftest.py` files; environment-based configuration via `monkeypatch.setenv`
-- **Naming:** `test_*.py` files, `Test*` classes, `test_*` functions
-- **Markers:** `@pytest.mark.unit`, `@pytest.mark.mqtt`, `@pytest.mark.opcua`, `@pytest.mark.gpu`, `@pytest.mark.longrun`
+- Follow the active component's documented checks and existing test conventions; do not assume a shared root-level test suite or uniform `tests/unit/` layout.
+- [uav-mission-compute-sdk/pyproject.toml](../uav-mission-compute-sdk/pyproject.toml) contains pytest configuration. Verify that configured test paths and dependencies are available before running tests.
+- [handheld-multi-modal/tests/](../handheld-multi-modal/tests/) contains speech-to-text API fuzzing assets; its Makefile also provides service connectivity checks.
+- For pytest tests, use `test_*.py` files, `Test*` classes, and `test_*` functions. Reuse existing fixtures and markers where present, and use environment-based test configuration rather than hardcoding credentials.
+- Run the smallest relevant check after editing. Distinguish static checks from hardware-dependent or running-service validation, and report checks that could not be run.
 
 ## Linting & Formatting
 
-- **Ruff** (lint + format) — configured via `pyproject.toml` or `.pre-commit-config.yaml`
-- **super-linter** (Docker-based) — used by robotics-ai-suite; validates YAML, JSON, Python (pylint/flake8), Bash, Markdown, clang-format
+- **Ruff** (lint + format) — configured in [uav-mission-compute-sdk/pyproject.toml](../uav-mission-compute-sdk/pyproject.toml); follow the active component's configuration
 - **ShellCheck** — for all `.sh` files
-- **pre-commit** hooks: trailing-whitespace, end-of-file-fixer, check-yaml, check-json, mypy, ruff, shellcheck, helmlint
 - **Bandit** — Python security static analysis
+- Preserve existing formatting and validate structured files with appropriate YAML or JSON parsers. Avoid unrelated formatting changes.
 
 ## Docker Patterns
 
-- Multi-stage Dockerfiles common across suites
+- Prefer multi-stage Dockerfiles where appropriate
 - Base images typically from `intel/` registry or `openvino/` images
 - `COPYLEFT_SOURCES` build arg pattern for including source of copyleft dependencies
 - `.env` files for credentials and configuration (never commit secrets)
@@ -67,11 +64,12 @@ Each suite directory has its own `README.md` with suite-level context. Each sub-
 
 ## CI/CD Workflows
 
-- GitHub Actions in `.github/workflows/`
-- Per-suite and per-component workflows triggered on path-based changes
+- GitHub Actions in [.github/workflows/](workflows/)
+- [fedaero.yaml](workflows/fedaero.yaml) packages components and publishes releases; component path filters select PR builds
 - Common patterns: path filtering with `dorny/paths-filter`, pinned action SHAs, `persist-credentials: false`
-- Scans: Trivy (container + filesystem), Gitleaks (secrets), Bandit (Python security), ClamAV (antivirus), ShellCheck
-- Dependabot configured for dependency updates
+- [fedaero-scan.yaml](workflows/fedaero-scan.yaml) runs Trivy filesystem/SBOM scanning, Bandit, and ShellCheck
+- [zizmor-scan.yaml](workflows/zizmor-scan.yaml) checks GitHub Actions security; [skill-scan.yaml](workflows/skill-scan.yaml) scans and validates skills
+- [dependabot.yml](dependabot.yml) configures dependency updates; keep configured paths aligned with manifests in this repository
 
 ## License Conventions
 
@@ -88,12 +86,12 @@ Each suite directory has its own `README.md` with suite-level context. Each sub-
 ## Agent Behavior
 
 ### Scope
-- **Stay within the component being asked about.** Do not modify files outside the active suite or sub-project unless explicitly instructed.
+- **Stay within the component being asked about.** Do not modify other components or shared repository configuration unless the task requires it.
 - Before editing, read the target file and the local `README.md`. If a local `AGENTS.md` exists, treat it as the authoritative override for that component.
 - Do not add features, refactor code, introduce new dependencies, or change APIs beyond what was directly requested.
 
 ### Context management
-- This is a large monorepo. Load only files relevant to the current task; do not speculatively read files from other suites.
+- Load only files relevant to the current task; do not speculatively read unrelated components.
 - Prefer `make help` to discover available targets rather than listing all Makefiles.
 - Prefer targeted `grep`/search over reading entire directories.
 
@@ -103,12 +101,12 @@ Each suite directory has its own `README.md` with suite-level context. Each sub-
 2. **Intel GPU support** — code should handle GPU/CPU/NPU device selection via env vars (e.g., `VLM_TARGET_DEVICE`)
 3. **OpenVINO** is the inference runtime — models are typically in IR format (.xml/.bin)
 4. **OVMS** (OpenVINO Model Server) serves models via OpenAI-compatible API
-5. **Docker is required** — all apps run containerized; `make deploy` is the standard entry point
-6. **Security scanning** is mandatory — Trivy, Bandit, Gitleaks, ShellCheck run in CI
+5. **Docker is required for application deployment** — use the active component's documented setup and deployment targets
+6. **Security scanning** is mandatory — preserve the Trivy, Bandit, ShellCheck, workflow, and skill checks configured in CI
 7. **No `:latest` tags** in production Docker image references — pin versions
 8. **Proxy awareness** — many scripts support `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`
 9. **Shell strict mode** — use `set -euo pipefail` for Bash scripts (`#!/usr/bin/env bash`), and POSIX-safe strict mode (`set -eu`) for `sh` scripts
-10. **HuggingFace models** downloaded at runtime via `HF_TOKEN` environment variable
+10. **HuggingFace models** — follow the component's documented download procedure; pass `HF_TOKEN` through the environment when authentication is required
 
 ## Security
 
@@ -127,7 +125,7 @@ Each suite directory has its own `README.md` with suite-level context. Each sub-
 **Python**
 - Never use `subprocess(..., shell=True)` with any external or user-controlled input; always pass a list: `subprocess.run([cmd, arg], shell=False)`.
 - Never use `eval()`, `exec()`, or `pickle.loads()` on untrusted data.
-- In FastAPI services, validate all request bodies with Pydantic models — never accept raw `dict` or unvalidated JSON.
+- In HTTP services, validate request bodies and parameters against explicit schemas before processing; never trust raw dictionaries or unvalidated JSON.
 - Use `secrets` module or environment variables for token generation; never use `random` for security-sensitive values.
 
 **Docker / Containers**
@@ -139,10 +137,6 @@ Each suite directory has its own `README.md` with suite-level context. Each sub-
 **Shell scripts**
 - Never construct shell commands by interpolating unvalidated variables; quote all variables: `"$var"`.
 - Use `set -euo pipefail` (bash) or `set -eu` (sh); never use `set +e` to swallow errors silently.
-
-**Helm / Kubernetes**
-- Never set `hostNetwork: true`, `privileged: true`, or `runAsUser: 0` in pod specs without a documented exception.
-- Pin all image tags in Helm `values.yaml`; avoid `:latest`.
 
 **CI/CD**
 - Pin all GitHub Actions to full commit SHAs, not tags.
@@ -158,4 +152,4 @@ Load [`./skills/security-review/SKILL.md`](./skills/security-review/SKILL.md) wh
 ## Contributing
 
 See [`CONTRIBUTING.md`](../CONTRIBUTING.md) for PR guidelines and commit signing requirements.
-Partial cloning is supported — you can clone just the suite you're working on (see [Contributing to Open Edge Platform](https://docs.openedgeplatform.intel.com/canonical/OEP-articles/contribution-guide.html#repository-cloning-partial-cloning)).
+For component-only sparse checkout, use paths relative to this repository root, as shown in the [UAV SDK README](../uav-mission-compute-sdk/README.md).
