@@ -117,11 +117,10 @@ make test-history
 ```
 
 The selected camera is authoritative. Stock Chat Q&A emits only a strict
-route/plan; Backend owns read-only SQL. The smoke records up to five
-independent generations because the stock model sometimes emits malformed
-JSON, but it accepts no repaired/prefix JSON: malformed plans must return the
-explicit safe failure and at least one request must pass the complete live
-ten-minute contract.
+route/plan; Backend owns read-only SQL. Each live question must pass on its
+first submission (the smoke never retries into a pass) and no repaired/prefix
+JSON is accepted: malformed plans must return the explicit safe failure. The
+target runs inside the `handheld/backend:dev` image (which provides `pypdf`).
 
 Optional `aiortc`-based WHEP client (H264-only fallback, see gotcha above)
 requires Python and pinned `aiortc`:

@@ -5,7 +5,7 @@ Pinned image `intel/alert-agent-service:2026.2.0`
 Deployed via `compose/handheld-multi-modal.yaml` (`alert-agent` service) w/
 `AGENT_MODE=false` (rule/action-dispatch only, no ADK/LLM in critical
 path — confirmed by startup log `Starting Alert Agent Service | ADK=off
-MCP=off`) and `MCP_ENABLED=false` (no approved backend MCP tool exists yet).
+MCP=off`) and `MCP_ENABLED=false` (the Backend arbitrates speech itself; no MCP tool is used).
 Reuses this repo's own pinned Mosquitto broker (`mqtt` service), not
 stock Compose's floating `eclipse-mosquitto:2`.
 
@@ -65,17 +65,15 @@ Manually confirmed beyond script's scope (all real, not stubbed):
 - **`GET /api/v1/mcp/status`** → `{"enabled":false,"servers":[],
   "total_tools":0}`, confirming MCP actually off, not just configured off.
 
-## `backend.speak_alert`: still not resolvable in this application
+## Speech: arbitrated by the Backend, not an MCP tool
 
-No backend service exists yet to advertise real `speak_alert` MCP tool, so
-this can't be end-to-end proven here — remains explicit build-agent
-work. Registration/invocation *contract*, however, is fully resolved and
-documented in `docs/application/service-contracts.md` §"`backend.speak_alert`":
-future backend advertises `speak_alert` over MCP (`transport:"http"`,
-enabled `servers` entry named `backend`); discovery would register it as
-`mcp_backend_speak_alert`; manual invocation would be
-`POST /api/v1/mcp/tools/mcp_backend_speak_alert/invoke`. Don't implement
-that backend tool here — explicit build-agent scope.
+The Backend posts rule matches to `/api/v1/actions/execute`, follows SSE
+`/api/v1/events`, and arbitrates speech itself (`backend/app/speech.py`)
+through stock TTS. No Backend MCP server is registered (`MCP_ENABLED=false`).
+The stock MCP route — a server named `backend` advertising `speak_alert`,
+registered as `mcp_backend_speak_alert` — is documented as an unused
+alternative in `docs/application/service-contracts.md`
+§"`backend.speak_alert`".
 
 ## Known limitations / gotchas
 
