@@ -38,9 +38,15 @@ copies a prepared device; see
 [Copy to another device](docs/application/application-operations.md#copy-to-another-device-offline).
 
 ```sh
+export HF_TOKEN=hf_...   # optional: Hugging Face token for model downloads
 make demo-up        # demo: pinned sample videos as looping cameras
 make up             # or: no demo cameras; add your own in the console under Cameras
 ```
+
+The pinned models are public, so `HF_TOKEN` is optional; set it if Hugging
+Face rate-limits or refuses the first download. It is the only token variable:
+every service (Chat Q&A, Audio Analyzer, TTS) receives it. It is read from the
+environment only; never write it into a tracked file.
 
 Open `https://localhost:8443/` on the device after trusting
 `config/tls/server.crt`. The application listens on `127.0.0.1` only; to use
