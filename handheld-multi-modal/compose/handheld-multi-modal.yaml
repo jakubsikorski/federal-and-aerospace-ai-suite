@@ -61,7 +61,7 @@ services:
     restart: "no"
     security_opt:
       - no-new-privileges:true
-    # Localhost-only profile (docs/design/SECURITY_ARCHITECTURE_REVIEW.md):
+    # Localhost-only profile (AGENTS.md Architectural boundaries):
     # every host binding is loopback. WHIP/WHEP signaling (8889) has no host
     # port; DLSPS reaches it on the bridge and the browser only via the proxy's
     # WHEP route. ICE media uses 127.0.0.1:8189/udp, directly or through the

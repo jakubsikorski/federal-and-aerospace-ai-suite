@@ -75,8 +75,7 @@ Coturn <-> MediaMTX WebRTC only
 
 Backend not in video path, doesn't crop images, doesn't reconfigure DLSPS
 at runtime. UI never touches SQLite or snip filesystem paths directly.
-Localhost-only profile (owner direction, 2026-10-13; see
-`docs/design/THREAT_MODEL.md`): every host port binds to `127.0.0.1`; the
+Localhost-only profile (owner direction, 2026-10-13): every host port binds to `127.0.0.1`; the
 browser runs on the device at `https://localhost:8443`. MediaMTX WHIP/WHEP
 signaling has no host port; ICE media uses `127.0.0.1:8189/udp` directly.
 Coturn stays, loopback-only: listens and relays on `127.0.0.1`, peers limited

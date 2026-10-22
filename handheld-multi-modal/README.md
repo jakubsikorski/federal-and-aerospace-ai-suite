@@ -93,8 +93,7 @@ interactive architecture page at `/architecture.html`.
 | Components, versions, endpoints | [COMPONENTS.md](COMPONENTS.md), [MANIFEST.yaml](MANIFEST.yaml) |
 | Status | [STATUS.md](STATUS.md) |
 | Model provenance | [MODEL_PROVENANCE.md](MODEL_PROVENANCE.md) |
-| Design and threat model | [docs/design/APPLICATION_DESIGN.md](docs/design/APPLICATION_DESIGN.md), [docs/design/THREAT_MODEL.md](docs/design/THREAT_MODEL.md) |
-| Handheld touch requirements | [docs/design/HANDHELD_TOUCH_REQUIREMENTS.md](docs/design/HANDHELD_TOUCH_REQUIREMENTS.md) |
+| Design | [docs/design/APPLICATION_DESIGN.md](docs/design/APPLICATION_DESIGN.md) |
 | Contributor and agent rules | [AGENTS.md](AGENTS.md) |
 
 Demo videos: intel-iot-devkit sample (CC BY 4.0) and Pexels video 34622113
