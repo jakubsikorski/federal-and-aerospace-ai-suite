@@ -1,0 +1,46 @@
+# Stock Chat Q&A Core model configuration.
+# Mounted read-only at /tmp/model_config/config.yaml (MODEL_CONFIG_PATH).
+# Schema and validation: app/config.py, app/runtime_validators.py in the
+# pinned edge-ai-libraries commit c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9.
+model_settings:
+  MODEL_RUNTIME: "openvino"
+  EMBEDDING_MODEL_ID: "ibm-granite/granite-embedding-125m-english"
+  RERANKER_MODEL_ID: "cross-encoder/ms-marco-electra-base"
+  LLM_MODEL_ID: "Intel/neural-chat-7b-v3-3"
+  # Stock default (app/prompt.py) tells the model "Do not make up an answer
+  # if there is no context provided" — retrieval always runs and always
+  # supplies *some* context, so on a plain general question with no relevant
+  # match, the stock instruction pushes the model toward refusing instead of
+  # answering from its own knowledge (owner-accepted use case: retrieval-
+  # enabled general chat, not a retrieval bypass). This override keeps the
+  # required {context}/{question} placeholders (app/config.py validates both
+  # are present). neural-chat-7b-v3-3 (Intel; Mistral-7B-v0.1 base) uses a
+  # different chat format than Phi-3.5 — no <|system|>/<|end|> control
+  # tokens; its documented format is a plain
+  # "### System:\n...\n### User:\n...\n### Assistant:\n" block (see model
+  # card "How To Use"). Context is folded into the System section since the
+  # model has no dedicated context slot.
+  PROMPT_TEMPLATE: |
+    ### System:
+    You are a helpful assistant. Retrieved context may or may not be relevant
+    to the question below. If the context is relevant, use it to give a
+    grounded answer and do not invent details beyond what it states. If the
+    context is not relevant to the question, ignore it completely and answer
+    from your own general knowledge instead — do not refuse to answer, and
+    never mention the context, documents, or mission material in your reply
+    when they are not relevant; just answer the question directly with no
+    caveats about what the context does or does not cover.
+
+    Context:
+    ---------
+    {context}
+    ---------
+    ### User:
+    Question: {question}
+    ### Assistant:
+    Answer:
+device_settings:
+  EMBEDDING_DEVICE: "CPU"
+  RERANKER_DEVICE: "CPU"
+  LLM_DEVICE: "GPU"
+

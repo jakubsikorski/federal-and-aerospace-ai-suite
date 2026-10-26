@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "models": {
+    "llm": {
+      "id": "Intel/neural-chat-7b-v3-3",
+      "revision": "7506dfc5fb325a8a8e0c4f9a6a001671833e5b8e",
+      "license": "Apache-2.0",
+      "provenance": "Intel (NeuralChat team); fine-tuned from Intel/neural-chat-7b-v3-1, itself fine-tuned from mistralai/Mistral-7B-v0.1 (Mistral AI, France); DPO-aligned on Intel/orca_dpo_pairs; SFT on meta-math/MetaMathQA (meta-math, US). No PRC-trained family/derivative in the lineage. See MODEL_PROVENANCE.md. Owner-directed replacement for microsoft/Phi-3.5-mini-instruct (2026-09-14)."
+    },
+    "embedding": {
+      "id": "ibm-granite/granite-embedding-125m-english",
+      "revision": "4ab61ffd423be45cd932b21a7c696063d82bf45f",
+      "license": "Apache-2.0",
+      "provenance": "IBM Research AI (US); base WatBERT trained internally at IBM; distilled from Mistral-7B-Instruct-v0.2 (Mistral AI, France). No PRC-trained family identified in the primary technical report. See MODEL_PROVENANCE.md."
+    },
+    "reranker": {
+      "id": "cross-encoder/ms-marco-electra-base",
+      "revision": "8b9301757513f8a695920c334c3a9f365ebeb357",
+      "license": "Apache-2.0",
+      "provenance": "Base google/electra-base-discriminator (Stanford/Google Brain authors, US institutions); Sentence-Transformers/UKPLab MS MARCO fine-tune. See MODEL_PROVENANCE.md."
+    }
+  }
+}

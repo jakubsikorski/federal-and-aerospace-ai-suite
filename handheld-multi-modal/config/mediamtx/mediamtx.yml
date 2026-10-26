@@ -1,0 +1,49 @@
+# Schema: bluenviron/mediamtx v1.11.3. Localhost-only profile: Compose binds
+# RTSP, API and ICE UDP to host loopback; WHIP/WHEP signaling has no host port.
+# Coturn listens and relays on loopback only.
+logLevel: info
+api: yes
+apiAddress: :9997
+rtsp: yes
+rtspAddress: :8554
+rtspTransports: [tcp]
+# Per-reader send queue in packets (default 512). A 1080p keyframe arrives as
+# a burst of several hundred RTP packets; when DLSPS reads a little slowly
+# the default overflowed ("write queue is full"), packets were dropped, and
+# the video froze until the next keyframe.
+writeQueueSize: 8192
+rtmp: no
+hls: no
+srt: no
+webrtc: yes
+webrtcAddress: :8889
+webrtcLocalUDPAddress: :8189
+webrtcIPsFromInterfaces: no
+# The only advertised ICE host candidate: the browser on this device reaches
+# 127.0.0.1:8189/udp directly.
+webrtcAdditionalHosts: [127.0.0.1]
+# Loopback Coturn (config/coturn/turnserver.conf), offered to browsers only
+# (clientOnly: MediaMTX itself gathers no relay candidates). TURN over TCP so a
+# browser behind an SSH tunnel (-L 3478:127.0.0.1:3478) can relay media.
+# Dev-only static credential, reachable from this host only.
+webrtcICEServers2:
+  - url: turn:127.0.0.1:3478?transport=tcp
+    username: handheld
+    password: handheldmultimodal
+    clientOnly: true
+# Regex paths (D13): a `~` prefix makes `path` a regular expression, so the
+# config does not grow per camera. camN carries the clean RTSP feed, annotatedN
+# the DLSPS WHIP push. Adding a camera needs no change here.
+authInternalUsers:
+  - user: any
+    permissions:
+      - action: publish
+        path: ~^(cam|annotated)[0-9]+$
+      - action: read
+        path: ~^(cam|annotated)[0-9]+$
+      - action: api
+paths:
+  ~^cam[0-9]+$:
+    source: publisher
+  ~^annotated[0-9]+$:
+    source: publisher

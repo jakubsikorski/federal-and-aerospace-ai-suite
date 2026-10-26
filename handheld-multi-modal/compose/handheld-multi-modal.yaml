@@ -1,0 +1,409 @@
+name: handheld-multi-modal
+
+# Shared fragments (native YAML anchors, not a compose feature) to avoid
+# repeating identical blocks across services. `x-*` keys are ignored by
+# Compose itself; only referenced via `<<: *anchor` merge below.
+x-proxy-env-blocked: &proxy-env-blocked
+  # Proxy vars must be explicitly cleared; a stale proxy causes local
+  # peer-to-peer calls (MQTT, host-to-host) to fail.
+  http_proxy: ""
+  https_proxy: ""
+  no_proxy: "localhost,127.0.0.1"
+  HTTP_PROXY: ""
+  HTTPS_PROXY: ""
+  NO_PROXY: "localhost,127.0.0.1"
+x-proxy-env-real: &proxy-env-real
+  # Real proxy needed here (unlike locally-scoped services) — first-run
+  # model export must reach huggingface.co over the internet.
+  # Lowercase first, then uppercase, so either shell convention works.
+  http_proxy: "${http_proxy:-${HTTP_PROXY:-}}"
+  https_proxy: "${https_proxy:-${HTTPS_PROXY:-}}"
+  no_proxy: "localhost,127.0.0.1"
+  HTTP_PROXY: "${http_proxy:-${HTTP_PROXY:-}}"
+  HTTPS_PROXY: "${https_proxy:-${HTTPS_PROXY:-}}"
+  NO_PROXY: "localhost,127.0.0.1"
+x-gpu-healthcheck: &gpu-healthcheck
+  # Model warmup on GPU can take a while; stock generous health-check.
+  interval: 15s
+  timeout: 10s
+  start_period: 240s
+  retries: 5
+
+# DLSPS is a real, smoke-tested service (see STATUS.md and
+# docs/application/video-contracts.md). This is still NOT the complete
+# application stack; other AI services remain separate.
+# The DLSPS static config is selected by mounting one of
+# ../config/dlsps/{cpu,gpu,npu}/config.json (default: npu, per spec).
+# Per-object snip/crop generation IS wired here (corrected 2026-09-14, S1).
+# No stock DLSPS destination writes cropped tracked-object images, so the
+# documented extension point is used: a custom gvapython element in the
+# pipeline. scripts/dlsps/crop_candidates.py is present in the shipped
+# `pipeline` string of all three variants (cpu/gpu/npu) and runs on every
+# launch; the mounts below are what it needs, not an optional extra.
+# See docs/application/video-contracts.md and docs/design/APPLICATION_DESIGN.md.
+services:
+  model-downloader:
+    image: intel/model-download:2026.2.0
+    profiles: [assets]
+    command: ["--plugins", "ultralytics"]
+    restart: "no"
+    group_add: ["${ASSET_GID:-1000}"]
+    environment:
+      <<: *proxy-env-real
+      MODEL_PATH: ${ASSET_ROOT:-..}/data/model-download
+    ports:
+      - "127.0.0.1:8200:8000"
+    volumes:
+      - ${ASSET_ROOT:-..}/data/model-download:/opt/models
+    networks: [handheld]
+  mediamtx:
+    image: bluenviron/mediamtx:1.11.3
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    # Localhost-only profile (AGENTS.md Architectural boundaries):
+    # every host binding is loopback. WHIP/WHEP signaling (8889) has no host
+    # port; DLSPS reaches it on the bridge and the browser only via the proxy's
+    # WHEP route. ICE media uses 127.0.0.1:8189/udp, directly or through the
+    # loopback-only Coturn relay for SSH-tunnelled browsers.
+    depends_on: [coturn]
+    ports:
+      - "127.0.0.1:8554:8554/tcp"
+      - "127.0.0.1:8189:8189/udp"
+      - "127.0.0.1:9997:9997/tcp"
+    volumes:
+      - ../config/mediamtx/mediamtx.yml:/mediamtx.yml:ro
+    networks: [handheld]
+  coturn:
+    image: coturn/coturn:4.18.0
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    # Assists MediaMTX WebRTC ICE only (handheld-architecture boundary:
+    # "Coturn <-> MediaMTX WebRTC only"). No DLSPS->Coturn path.
+    # Host networking so the relay reaches MediaMTX's loopback-published ICE
+    # port; turnserver.conf binds listener and relay to 127.0.0.1 only and
+    # allows only that peer (localhost-only profile, threat model TM05).
+    network_mode: host
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+    volumes:
+      - ../config/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+  mqtt:
+    image: eclipse-mosquitto:2.0.22
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:1883:1883/tcp"
+    volumes:
+      - ../config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    networks: [handheld]
+  dlsps:
+    image: intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24
+    restart: "no"
+    depends_on: [mediamtx, mqtt]
+    security_opt:
+      - no-new-privileges:true
+    # Make supplies detected render, accelerator and asset groups via devices.yaml.
+    group_add: ["${RENDER_GID:-992}"]
+    devices:
+      - /dev/dri/renderD128:/dev/dri/renderD128
+      - /dev/accel/accel0:/dev/accel/accel0
+    tmpfs:
+      - /var/cache/pipeline_root:uid=1999,gid=1999
+    ports:
+      - "127.0.0.1:8080:8080/tcp"
+    environment:
+      REST_SERVER_PORT: "8080"
+      ENABLE_RTSP: "false"
+      ENABLE_WEBRTC: "true"
+      WEBRTC_SIGNALING_SERVER: http://mediamtx:8889
+      MQTT_HOST: mqtt
+      MQTT_PORT: "1883"
+      ADD_UTCTIME_TO_METADATA: "true"
+      LOG_LEVEL: INFO
+      <<: *proxy-env-blocked
+      no_proxy: "localhost,127.0.0.1,mediamtx,mqtt"
+      NO_PROXY: "localhost,127.0.0.1,mediamtx,mqtt"
+    volumes:
+      # Variant selection at deployment time, NPU default per spec. Copying a
+      # file into an unmounted /tmp path and restarting does NOT change this
+      # bind mount's source — set DLSPS_CONFIG_VARIANT and recreate instead:
+      #   DLSPS_CONFIG_VARIANT=cpu docker compose -f compose/handheld-multi-modal.yaml up -d --force-recreate dlsps
+      - ../config/dlsps/${DLSPS_CONFIG_VARIANT:-npu}/config.json:/home/pipeline-server/config.json:ro
+      - ${ASSET_ROOT:-..}/data/dlsps/yolo_export/yolo26s_int8_openvino_model:/home/pipeline-server/yolo_models/yolo26s/INT8:ro
+      # Demo source copied from the pinned edge-ai-libraries commit's own
+      # microservices/dlstreamer-pipeline-server/resources/videos/classroom.avi
+      # (sha256 ca6d1b53d54a40ffda9d4ca1d0ab0cc43f744583324aaf97146c820e2b62a2fa,
+      # confirmed identical); reproduction runbook for both this file and the
+      # detector IR above: docs/application/video-contracts.md "Detector IR and
+      # demo video" section.
+      - ${ASSET_ROOT:-..}/data/dlsps/demo-video:/home/pipeline-server/resources/videos:ro
+      # Crop mechanism, active on every launch (corrected 2026-09-14, S2):
+      # the gvapython callback (scripts/dlsps/README.md) read-only, plus a
+      # shared writable output volume for produced crop JPEGs/sidecars.
+      - ../scripts/dlsps:/opt/handheld-crops:ro
+      # Per-camera crop configs (D13): the DIRECTORY, not one file. Each
+      # camera gets its own output_dir because the producer takes an exclusive
+      # lock per store. See config/dlsps/crops/README.md.
+      - ../config/dlsps/crops:/opt/handheld-crops-config:ro
+      - ${ASSET_ROOT:-..}/data/dlsps/crops:/opt/handheld-crops-output
+    networks: [handheld]
+  metrics:
+    image: intel/metrics-manager:2026.2.0
+    container_name: handheld-multi-modal-metrics
+    restart: "no"
+    # Stock upstream compose.yaml defaults (microservices/metrics-manager,
+    # edge-ai-libraries@3b44c78, see docs/application/service-contracts.md):
+    # privileged + pid:host + apparmor:unconfined are the source's own
+    # required settings for host CPU/GPU/NPU sysfs telemetry, not an invented
+    # application addition. GPU_RENDER_GID 992 observed on this host.
+    privileged: true
+    pid: host
+    security_opt:
+      - apparmor:unconfined
+    group_add:
+      - "${RENDER_GID:-992}"
+    devices:
+      - "/dev/dri:/dev/dri"
+    environment:
+      METRICS_PORT: "9090"
+      TELEGRAF_PORT: "9273"
+      LOG_LEVEL: INFO
+      CORS_ORIGINS: "*"
+      CUSTOM_METRICS_DIR: /app/custom-metrics
+      TELEGRAF_CONFIG_PATH: /etc/telegraf/telegraf.conf
+      METRICS_RETENTION_SECONDS: "300"
+      MAX_METRICS_BATCH_SIZE: "1000"
+      HARDWARE_TELEMETRY_ENABLED: "true"
+      # Must be set explicitly (S8): unset does NOT fall back to the kernel
+      # hostname, it leaks the literal "${METRICS_MANAGER_HOSTNAME}" as the
+      # host tag on Telegraf series while the Python GPU/NPU readers use the
+      # real hostname, leaving the two sets unjoinable. See
+      # config/metrics/telegraf.conf.
+      METRICS_MANAGER_HOSTNAME: "${METRICS_MANAGER_HOSTNAME:-handheld}"
+      <<: *proxy-env-blocked
+    ports:
+      - "127.0.0.1:9090:9090/tcp"
+      - "127.0.0.1:9273:9273/tcp"
+      - "127.0.0.1:8186:8186/tcp"
+    volumes:
+      - /sys:/sys:ro
+      - /run:/run:ro
+      - ../config/metrics/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      # Telegraf inputs.docker: per-container CPU/memory for the Resources tab.
+      # Docker API access is root-equivalent; this container is already
+      # privileged with pid: host, and only Telegraf's read-only stats calls use it.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [handheld]
+  alert-agent:
+    image: intel/alert-agent-service:2026.2.0
+    container_name: handheld-multi-modal-alert-agent
+    restart: "no"
+    depends_on: [mqtt]
+    ports:
+      - "127.0.0.1:8010:8000/tcp"
+    environment:
+      PORT: "8000"
+      LOG_LEVEL: INFO
+      # Rule/action-dispatch mode only — no ADK/LLM in the critical path.
+      AGENT_MODE: "false"
+      # No approved backend MCP tool exists yet; keep MCP off until one does.
+      MCP_ENABLED: "false"
+      SNAPSHOT_DIR: /app/snapshots
+      WEBHOOK_URL: "http://host.docker.internal:8999/webhook"
+      MQTT_BROKER: mqtt
+      MQTT_PORT: "1883"
+      MQTT_BASE_TOPIC: alerts
+      ACTION_WORKERS: "2"
+      <<: *proxy-env-blocked
+      no_proxy: "localhost,127.0.0.1,mqtt"
+      NO_PROXY: "localhost,127.0.0.1,mqtt"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ../config/alert-agent/resources:/app/resources:ro
+    networks: [handheld]
+  audio-analyzer:
+    image: intel/audio-analyzer:2026.2.0
+    container_name: handheld-multi-modal-audio-analyzer
+    restart: "no"
+    # Hardcoded to match the image's baked-in app user and the ownership of
+    # the named volumes (stock docker-compose.yml requirement).
+    user: "1000:1000"
+    ports:
+      - "127.0.0.1:8011:8010/tcp"
+    group_add:
+      - video
+      - "${RENDER_GID:-992}"
+    environment:
+      HF_HOME: /app/audio_analyzer/.cache/huggingface
+      HF_TOKEN: "${HF_TOKEN:-${HF_ACCESS_TOKEN:-}}"
+      <<: *proxy-env-real
+    volumes:
+      - ../config/audio-analyzer/config.yaml:/app/audio_analyzer/config.yaml:ro
+      - audio_analyzer_models:/app/audio_analyzer/models
+      - audio_analyzer_chunks:/app/audio_analyzer/chunks
+      - audio_analyzer_storage:/app/audio_analyzer/storage
+      - audio_analyzer_cache:/app/audio_analyzer/.cache
+    devices:
+      - "/dev/dri:/dev/dri"
+    healthcheck:
+      <<: *gpu-healthcheck
+      test: ["CMD", "python3", "-c",
+             "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/health', timeout=5).read()"]
+    networks: [handheld]
+  # NOTE: owner-approved switch to the stock default SpeechT5 model
+  # (2026-09-10): Parler-TTS is provenance-approved but blocked by a real
+  # packaging gap in this pinned image (missing parler-tts pip package, see
+  # docs/application/ai-contracts.md §3 and config/tts/README.md for the full
+  # writeup and the earlier attempt). SpeechT5 was previously rejected for
+  # Microsoft Research Asia institutional authorship on the original paper;
+  # the owner explicitly reviewed that finding and confirmed SpeechT5 is a
+  # Microsoft product, not PRC, and approved deploying it. See
+  # config/tts/README.md for the full record of both decisions.
+  tts:
+    image: intel/text-to-speech:2026.2.0
+    container_name: handheld-multi-modal-tts
+    restart: "no"
+    # Hardcoded to match the image's baked-in app user and the ownership of
+    # the named volumes (stock docker-compose.yml requirement).
+    user: "1000:1000"
+    ports:
+      - "127.0.0.1:8012:8011/tcp"
+    # CPU by default (D56); TTS_DEVICE=GPU (config/devices.yaml) moves it to the GPU.
+    # The cap keeps DLSPS decode/track headroom when it runs on CPU.
+    cpus: 4
+    group_add:
+      - video
+      - "${RENDER_GID:-992}"
+    environment:
+      HF_HOME: /app/text-to-speech/.cache/huggingface
+      # Keep the Intel GPU kernel cache in the persistent cache volume (the
+      # runtime needs an existing directory). In the container home every
+      # recreated GPU container recompiled for minutes.
+      NEO_CACHE_DIR: /app/text-to-speech/.cache
+      HF_TOKEN: "${HF_TOKEN:-${HF_ACCESS_TOKEN:-}}"
+      <<: *proxy-env-real
+    volumes:
+      - ../config/tts/config.yaml:/app/text-to-speech/config.yaml:ro
+      - tts_models:/app/text-to-speech/models
+      - tts_storage:/app/text-to-speech/storage
+      - tts_cache:/app/text-to-speech/.cache
+    devices:
+      - "/dev/dri:/dev/dri"
+    healthcheck:
+      <<: *gpu-healthcheck
+      test: ["CMD", "python3", "-c",
+             "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8011/health', timeout=5).read()"]
+    networks: [handheld]
+  # Stock Chat Q&A Core backend only (OpenVINO GPU variant, Intel/neural-chat-7b-v3-3
+  # per AGENTS.md/MODEL_PROVENANCE.md) — no stock UI is deployed, per manifest.
+  # Upstream reference: edge-ai-libraries sample-applications/chat-question-
+  # and-answer-core/docker/compose.yaml, service chatqna-core-ov-gpu (its
+  # MODEL_CACHE_PATH/MODEL_CONFIG_PATH/HF_ACCESS_TOKEN env-var contract is
+  # reused as-is; profile/build/UI/nginx machinery is dropped since this
+  # the application only needs the running backend, not upstream's dev workflow).
+  chatqna:
+    image: intel/chatqna:core_gpu_2026.2.0
+    container_name: handheld-multi-modal-chatqna-core-gpu
+    restart: "no"
+    group_add:
+      - "${RENDER_GID:-992}" # resolved from renderD128 by Make
+    devices:
+      - /dev/dri/renderD128:/dev/dri/renderD128
+    ports:
+      - "127.0.0.1:8888:8888/tcp"
+    environment:
+      # Public model download; token stays optional/env-supplied, never baked in.
+      # One host variable, HF_TOKEN, serves every service; the stock Chat Q&A
+      # image reads it as HF_ACCESS_TOKEN (the old host name still works).
+      HF_ACCESS_TOKEN: "${HF_TOKEN:-${HF_ACCESS_TOKEN:-}}"
+      # snapshot_download and Optimum must share the mounted cache.
+      HF_HUB_CACHE: /tmp/model_cache
+      HUGGINGFACE_HUB_CACHE: /tmp/model_cache # pinned Optimum uses the legacy name
+      # Make sets 1 once every model is cached and exported, so restarts need no internet.
+      HF_HUB_OFFLINE: "${CHATQNA_HF_HUB_OFFLINE:-0}"
+      <<: *proxy-env-real
+    volumes:
+      - ${ASSET_ROOT:-..}/data/chatqna/model_cache:/tmp/model_cache
+      - ../config/chatqna/config.yaml:/tmp/model_config/config.yaml:ro
+    healthcheck:
+      <<: *gpu-healthcheck
+      test: ["CMD", "python3", "-c",
+             "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8888/health', timeout=5).read()"]
+    networks: [handheld]
+  # --- application services (docs/design/APPLICATION_DESIGN.md) ---
+  backend:
+    build:
+      context: ../backend
+      # Lets an offline start reuse the existing image only if it was built
+      # from these exact sources (see start_application in the Makefile).
+      labels:
+        handheld.source: "${BACKEND_SOURCE_HASH:-unknown}"
+    image: handheld/backend:dev
+    # Allow bounded HTTP calls and verified pipeline cleanup before SIGKILL.
+    stop_grace_period: 120s
+    container_name: handheld-multi-modal-backend
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    # Root without root's powers: DAC_OVERRIDE for host-owned /data and the
+    # DLSPS-owned crop store, SETUID/SETGID to run the per-camera reset CLI as
+    # the store's owner (backend/app/reset.py). Everything else is dropped.
+    cap_drop: [ALL]
+    cap_add: [DAC_OVERRIDE, SETUID, SETGID]
+    # No published port: the loopback-bound proxy is the only entry point (D15).
+    environment:
+      BACKEND_CONFIG: /config/backend.yaml
+      # Every call Backend makes is to a sibling container. Without this the
+      # inherited corporate proxy intercepts them and returns 504 immediately.
+      <<: *proxy-env-blocked
+    volumes:
+      - ../config/backend/backend.yaml:/config/backend.yaml:ro
+      - ../config/dlsps/detector-profile.json:/config/detector-profile.json:ro
+      # Display configured model placement without copying model/device values.
+      - ../config/chatqna/config.yaml:/config/model-placement/chatqna.yaml:ro
+      - ../config/audio-analyzer/config.yaml:/config/model-placement/audio-analyzer.yaml:ro
+      - ../config/tts/config.yaml:/config/model-placement/tts.yaml:ro
+      - ../config/dlsps/${DLSPS_CONFIG_VARIANT:-npu}/config.json:/config/model-placement/dlsps.json:ro
+      - ${ASSET_ROOT:-..}/data/dlsps/yolo_export/yolo26s_int8_openvino_model:/config/detector:ro
+      - ${ASSET_ROOT:-..}/data/backend:/data
+      # Read-write, but only one call site writes: the stopped-producer cleanup
+      # of design section 9.2, which must hold the producer's own exclusive lock.
+      # Image serving is read-only in code. No Docker socket is mounted.
+      - ${ASSET_ROOT:-..}/data/dlsps/crops:/crops
+      - ../scripts/dlsps/crop_candidates.py:/opt/handheld-crops/crop_candidates.py:ro
+    depends_on: [mediamtx, mqtt, dlsps, chatqna, audio-analyzer, tts, alert-agent, metrics]
+    networks: [handheld]
+
+  proxy:
+    image: nginx:1.27-alpine
+    container_name: handheld-multi-modal-proxy
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    # The only browser entry point, bound to IPv4 loopback (localhost-only
+    # profile). TLS terminates here and nowhere else: MediaMTX keeps
+    # webrtcEncryption: no so DLSPS's WHIP publish stays plain HTTP
+    # (design 15.5, D15). Routes ...whep to MediaMTX, denies ...whip.
+    ports:
+      - "127.0.0.1:8443:8443/tcp"
+    volumes:
+      - ../config/proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ${ASSET_ROOT:-..}/config/tls:/etc/tls:ro
+    depends_on: [backend, mediamtx]
+    networks: [handheld]
+
+networks:
+  handheld:
+    driver: bridge
+
+volumes:
+  audio_analyzer_models:
+  audio_analyzer_chunks:
+  audio_analyzer_storage:
+  audio_analyzer_cache:
+  tts_models:
+  tts_storage:
+  tts_cache:
