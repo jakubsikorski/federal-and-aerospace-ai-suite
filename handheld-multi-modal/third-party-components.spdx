@@ -1,0 +1,503 @@
+SPDXVersion: SPDX-2.3
+DataLicense: CC0-1.0
+SPDXID: SPDXRef-DOCUMENT
+DocumentName: handheld-multi-modal
+DocumentNamespace: https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/tree/main/handheld-multi-modal
+Creator: Organization: Intel Corporation
+Creator: Tool: manual-curation
+Created: 2026-10-26T00:00:00Z
+CreatorComment: <text>
+SPDX SBOM for the handheld-multi-modal application
+(federal-and-aerospace-ai-suite/handheld-multi-modal), v2 operator console.
+
+Scope: third-party open-source components consumed by the application —
+container images referenced by compose/handheld-multi-modal.yaml and
+compose/cameras.yaml, the base image and Python pip dependencies of the
+locally built backend service (backend/Dockerfile, backend/requirements.txt),
+and the AI models deployed by the stack (MODEL_PROVENANCE.md,
+config/chatqna/models.lock.json). Only direct, pinned pip requirements are
+listed; their transitive dependencies are not enumerated. Models rejected or
+not deployed in MODEL_PROVENANCE.md are not listed.
+
+Intel-authored sources in this repository (including the handheld/backend
+image built from backend/) are NOT enumerated as packages; only third-party
+dependencies are listed, per the SBOM request.
+</text>
+
+##############################################################################
+# Top-level package describing the application itself
+##############################################################################
+
+PackageName: handheld-multi-modal
+SPDXID: SPDXRef-Package-handheld-multi-modal
+PackageVersion: 2026.2
+PackageSupplier: Organization: Intel Corporation
+PackageDownloadLocation: https://github.com/open-edge-platform/federal-and-aerospace-ai-suite
+PackageHomePage: https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/tree/main/handheld-multi-modal
+FilesAnalyzed: false
+PackageLicenseConcluded: Apache-2.0
+PackageLicenseDeclared: Apache-2.0
+PackageCopyrightText: <text>Copyright (C) 2026 Intel Corporation</text>
+PackageSummary: <text>Local operator console for handheld edge devices built from Open Edge Platform 2026.2.0 containers and a FastAPI backend: live camera analytics with DL Streamer Pipeline Server, evidence history, mission documents via Chat Q&A, alerts, speech-to-text and text-to-speech, and hardware telemetry, packaged as a Docker Compose deployment.</text>
+
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-handheld-multi-modal
+
+
+##############################################################################
+# Intel Open Edge Platform container images (pulled from registries)
+##############################################################################
+
+PackageName: dlstreamer-pipeline-server
+SPDXID: SPDXRef-Package-dlstreamer-pipeline-server
+PackageVersion: 2026.2.0-ubuntu24
+PackageSupplier: Organization: Intel Corporation
+PackageDownloadLocation: https://hub.docker.com/r/intel/dlstreamer-pipeline-server
+PackageHomePage: https://github.com/open-edge-platform/edge-ai-libraries/tree/main/microservices/dlstreamer-pipeline-server
+PackageLicenseConcluded: Apache-2.0
+PackageLicenseDeclared: Apache-2.0
+PackageCopyrightText: <text>Copyright (C) Intel Corporation</text>
+PackageSummary: <text>Intel DL Streamer Pipeline Server (DLSPS); runs the YOLO26s detection and tracking pipelines on NPU/GPU/CPU, publishes annotated WebRTC video to MediaMTX, detection metadata over MQTT, and evidence crops.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:docker/intel/dlstreamer-pipeline-server@2026.2.0-ubuntu24
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-dlstreamer-pipeline-server
+
+PackageName: chatqna
+SPDXID: SPDXRef-Package-chatqna
+PackageVersion: core_gpu_2026.2.0
+PackageSupplier: Organization: Intel Corporation
+PackageDownloadLocation: https://hub.docker.com/r/intel/chatqna
+PackageHomePage: https://github.com/open-edge-platform/edge-ai-libraries/tree/main/sample-applications/chat-question-and-answer-core
+PackageLicenseConcluded: Apache-2.0
+PackageLicenseDeclared: Apache-2.0
+PackageCopyrightText: <text>Copyright (C) Intel Corporation</text>
+PackageSummary: <text>Chat Question-and-Answer Core; ingests mission documents and answers operator questions with retrieval-augmented generation on the OpenVINO GPU runtime.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:docker/intel/chatqna@core_gpu_2026.2.0
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-chatqna
+
+PackageName: audio-analyzer
+SPDXID: SPDXRef-Package-audio-analyzer
+PackageVersion: 2026.2.0
+PackageSupplier: Organization: Intel Corporation
+PackageDownloadLocation: https://hub.docker.com/r/intel/audio-analyzer
+PackageHomePage: https://github.com/open-edge-platform/edge-ai-libraries/tree/main/microservices/audio-analyzer
+PackageLicenseConcluded: Apache-2.0
+PackageLicenseDeclared: Apache-2.0
+PackageCopyrightText: <text>Copyright (C) Intel Corporation</text>
+PackageSummary: <text>Audio Analyzer microservice providing speech-to-text with the Whisper-medium model on OpenVINO GPU.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:docker/intel/audio-analyzer@2026.2.0
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-audio-analyzer
+
+PackageName: text-to-speech
+SPDXID: SPDXRef-Package-text-to-speech
+PackageVersion: 2026.2.0
+PackageSupplier: Organization: Intel Corporation
+PackageDownloadLocation: https://hub.docker.com/r/intel/text-to-speech
+PackageHomePage: https://github.com/open-edge-platform/edge-ai-libraries/tree/main/microservices/text-to-speech
+PackageLicenseConcluded: Apache-2.0
+PackageLicenseDeclared: Apache-2.0
+PackageCopyrightText: <text>Copyright (C) Intel Corporation</text>
+PackageSummary: <text>Text-to-speech microservice that synthesizes spoken alerts and answers with the SpeechT5 model on OpenVINO GPU.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:docker/intel/text-to-speech@2026.2.0
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-text-to-speech
+
+PackageName: alert-agent-service
+SPDXID: SPDXRef-Package-alert-agent-service
+PackageVersion: 2026.2.0
+PackageSupplier: Organization: Intel Corporation
+PackageDownloadLocation: https://hub.docker.com/r/intel/alert-agent-service
+PackageHomePage: https://github.com/open-edge-platform/edge-ai-libraries/tree/main/microservices/alert-agent-service
+PackageLicenseConcluded: Apache-2.0
+PackageLicenseDeclared: Apache-2.0
+PackageCopyrightText: <text>Copyright (C) Intel Corporation</text>
+PackageSummary: <text>Alert Agent service used in rule mode (no LLM) to dispatch operator alerts.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:docker/intel/alert-agent-service@2026.2.0
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-alert-agent-service
+
+PackageName: metrics-manager
+SPDXID: SPDXRef-Package-metrics-manager
+PackageVersion: 2026.2.0
+PackageSupplier: Organization: Intel Corporation
+PackageDownloadLocation: https://hub.docker.com/r/intel/metrics-manager
+PackageHomePage: https://github.com/open-edge-platform/edge-ai-libraries/tree/main/microservices/metrics-manager
+PackageLicenseConcluded: Apache-2.0
+PackageLicenseDeclared: Apache-2.0
+PackageCopyrightText: <text>Copyright (C) Intel Corporation</text>
+PackageSummary: <text>Edge metrics collector (Telegraf-based) that gathers CPU/GPU/NPU/temperature hardware telemetry shown in the operator console.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:docker/intel/metrics-manager@2026.2.0
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-metrics-manager
+
+PackageName: model-download
+SPDXID: SPDXRef-Package-model-download
+PackageVersion: 2026.2.0
+PackageSupplier: Organization: Intel Corporation
+PackageDownloadLocation: https://hub.docker.com/r/intel/model-download
+PackageHomePage: https://github.com/open-edge-platform/edge-ai-libraries/tree/main/microservices/model-download
+PackageLicenseConcluded: Apache-2.0
+PackageLicenseDeclared: Apache-2.0
+PackageCopyrightText: <text>Copyright (C) Intel Corporation</text>
+PackageSummary: <text>Model Download service; its Ultralytics plugin exports the YOLO26s INT8 OpenVINO IR on first start (assets profile).</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:docker/intel/model-download@2026.2.0
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-model-download
+
+##############################################################################
+# Third-party container images (pulled from registries)
+##############################################################################
+
+PackageName: mediamtx
+SPDXID: SPDXRef-Package-mediamtx
+PackageVersion: 1.11.3
+PackageSupplier: Organization: bluenviron
+PackageDownloadLocation: https://hub.docker.com/r/bluenviron/mediamtx
+PackageHomePage: https://github.com/bluenviron/mediamtx
+PackageLicenseConcluded: MIT
+PackageLicenseDeclared: MIT
+PackageCopyrightText: <text>Copyright (c) 2019 aler9</text>
+PackageSummary: <text>Real-time media server providing RTSP camera input and the WHIP/WHEP WebRTC relay between DLSPS and the browser.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:docker/bluenviron/mediamtx@1.11.3
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-mediamtx
+
+PackageName: coturn
+SPDXID: SPDXRef-Package-coturn
+PackageVersion: 4.18.0
+PackageSupplier: Organization: coturn project
+PackageDownloadLocation: https://hub.docker.com/r/coturn/coturn
+PackageHomePage: https://github.com/coturn/coturn
+PackageLicenseConcluded: BSD-3-Clause
+PackageLicenseDeclared: BSD-3-Clause
+PackageCopyrightText: <text>Copyright (C) 2011-2013 Citrix Systems; Copyright (C) 2011-2013 Oleg Moskalenko; Copyright (C) coturn contributors</text>
+PackageSummary: <text>TURN/STUN server bound to loopback that assists MediaMTX WebRTC ICE for SSH-tunnelled browsers.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:docker/coturn/coturn@4.18.0
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-coturn
+
+PackageName: eclipse-mosquitto
+SPDXID: SPDXRef-Package-eclipse-mosquitto
+PackageVersion: 2.0.22
+PackageSupplier: Organization: Eclipse Foundation
+PackageDownloadLocation: https://hub.docker.com/_/eclipse-mosquitto
+PackageHomePage: https://mosquitto.org/
+PackageLicenseConcluded: EPL-2.0 OR BSD-3-Clause
+PackageLicenseDeclared: EPL-2.0 OR BSD-3-Clause
+PackageCopyrightText: <text>Copyright (c) Roger Light and Eclipse Mosquitto contributors</text>
+PackageSummary: <text>MQTT broker carrying detection metadata between DLSPS and the backend.</text>
+PackageComment: <text>Dual licensed under the Eclipse Public License 2.0 and the Eclipse Distribution License 1.0; EDL-1.0 is a BSD-3-Clause license and is recorded with that SPDX identifier.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:docker/library/eclipse-mosquitto@2.0.22
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-eclipse-mosquitto
+
+PackageName: nginx
+SPDXID: SPDXRef-Package-nginx
+PackageVersion: 1.27-alpine
+PackageSupplier: Organization: NGINX, Inc. / F5
+PackageDownloadLocation: https://hub.docker.com/_/nginx
+PackageHomePage: https://nginx.org/
+PackageLicenseConcluded: BSD-2-Clause
+PackageLicenseDeclared: BSD-2-Clause
+PackageCopyrightText: <text>Copyright (C) 2002-2024 Igor Sysoev, Nginx, Inc. and contributors</text>
+PackageSummary: <text>HTTP reverse proxy serving the operator console over TLS on 127.0.0.1:8443 in front of the backend and the WHEP route.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:docker/library/nginx@1.27-alpine
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-nginx
+
+PackageName: ffmpeg
+SPDXID: SPDXRef-Package-ffmpeg
+PackageVersion: 6.1-ubuntu2404
+PackageSupplier: Person: Julien Rottenberg
+PackageDownloadLocation: https://hub.docker.com/r/jrottenberg/ffmpeg
+PackageHomePage: https://github.com/jrottenberg/ffmpeg
+PackageLicenseConcluded: GPL-3.0-or-later AND FDK-AAC
+PackageLicenseDeclared: GPL-3.0-or-later AND FDK-AAC
+PackageCopyrightText: <text>Copyright (c) 2000-2023 the FFmpeg developers; Copyright Fraunhofer-Gesellschaft (FDK AAC)</text>
+PackageSummary: <text>FFmpeg 6.1 image used only by the removable demo camera publishers (compose/cameras.yaml) to loop sample videos into MediaMTX over RTSP.</text>
+PackageComment: <text>The image's ffmpeg -buildconf reports --enable-gpl --enable-version3 --enable-nonfree --enable-libfdk-aac --enable-libx264 --enable-libx265, so the binary is GPL-3.0-or-later and includes the Fraunhofer FDK AAC library; ffmpeg itself reports that this nonfree build is not legally redistributable. The image is pulled by the user from Docker Hub for demo use only and is not redistributed with this application.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:docker/jrottenberg/ffmpeg@6.1-ubuntu2404
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-ffmpeg
+
+PackageName: python
+SPDXID: SPDXRef-Package-python-image
+PackageVersion: 3.12-slim
+PackageSupplier: Organization: Docker Official Images / Python Software Foundation
+PackageDownloadLocation: https://hub.docker.com/_/python
+PackageHomePage: https://www.python.org/
+PackageLicenseConcluded: PSF-2.0
+PackageLicenseDeclared: PSF-2.0
+PackageCopyrightText: <text>Copyright (C) Python Software Foundation</text>
+PackageSummary: <text>Debian-slim based Python 3.12 image used as the build/runtime base for the locally built backend service (handheld/backend).</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:docker/library/python@3.12-slim
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-python-image
+
+##############################################################################
+# Python (pip) dependencies of the locally built backend service
+# Source: backend/requirements.txt
+##############################################################################
+
+PackageName: fastapi
+SPDXID: SPDXRef-Package-fastapi
+PackageVersion: 0.151.0
+PackageSupplier: Person: Sebastián Ramírez
+PackageDownloadLocation: https://pypi.org/project/fastapi/0.151.0/
+PackageHomePage: https://fastapi.tiangolo.com/
+PackageLicenseConcluded: MIT
+PackageLicenseDeclared: MIT
+PackageCopyrightText: <text>Copyright (c) 2018 Sebastián Ramírez</text>
+PackageSummary: <text>ASGI web framework implementing the backend REST API and serving the operator console UI.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:pypi/fastapi@0.151.0
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-fastapi
+
+PackageName: starlette
+SPDXID: SPDXRef-Package-starlette
+PackageVersion: 1.9.0
+PackageSupplier: Person: Tom Christie
+PackageDownloadLocation: https://pypi.org/project/starlette/1.9.0/
+PackageHomePage: https://www.starlette.io/
+PackageLicenseConcluded: BSD-3-Clause
+PackageLicenseDeclared: BSD-3-Clause
+PackageCopyrightText: <text>Copyright © 2018, Encode OSS Ltd.</text>
+PackageSummary: <text>ASGI toolkit underlying FastAPI (routing, requests/responses, static files).</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:pypi/starlette@1.9.0
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-starlette
+
+PackageName: uvicorn
+SPDXID: SPDXRef-Package-uvicorn
+PackageVersion: 0.34.0
+PackageSupplier: Organization: Encode OSS Ltd.
+PackageDownloadLocation: https://pypi.org/project/uvicorn/0.34.0/
+PackageHomePage: https://www.uvicorn.org/
+PackageLicenseConcluded: BSD-3-Clause
+PackageLicenseDeclared: BSD-3-Clause
+PackageCopyrightText: <text>Copyright © 2017-present, Encode OSS Ltd.</text>
+PackageSummary: <text>ASGI server running the backend application; installed with the [standard] extra.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:pypi/uvicorn@0.34.0
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-uvicorn
+
+PackageName: httpx
+SPDXID: SPDXRef-Package-httpx
+PackageVersion: 0.28.1
+PackageSupplier: Organization: Encode OSS Ltd.
+PackageDownloadLocation: https://pypi.org/project/httpx/0.28.1/
+PackageHomePage: https://www.python-httpx.org/
+PackageLicenseConcluded: BSD-3-Clause
+PackageLicenseDeclared: BSD-3-Clause
+PackageCopyrightText: <text>Copyright © 2019, Encode OSS Ltd.</text>
+PackageSummary: <text>HTTP client the backend uses to call the stock Open Edge Platform service APIs.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:pypi/httpx@0.28.1
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-httpx
+
+PackageName: PyYAML
+SPDXID: SPDXRef-Package-pyyaml
+PackageVersion: 6.0.2
+PackageSupplier: Organization: The YAML Project
+PackageDownloadLocation: https://pypi.org/project/PyYAML/6.0.2/
+PackageHomePage: https://pyyaml.org/
+PackageLicenseConcluded: MIT
+PackageLicenseDeclared: MIT
+PackageCopyrightText: <text>Copyright (c) 2017-2021 Ingy döt Net; Copyright (c) 2006-2016 Kirill Simonov</text>
+PackageSummary: <text>YAML parser used to load backend and service configuration files.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:pypi/pyyaml@6.0.2
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-pyyaml
+
+PackageName: paho-mqtt
+SPDXID: SPDXRef-Package-paho-mqtt
+PackageVersion: 2.1.0
+PackageSupplier: Organization: Eclipse Foundation
+PackageDownloadLocation: https://pypi.org/project/paho-mqtt/2.1.0/
+PackageHomePage: https://eclipse.dev/paho/
+PackageLicenseConcluded: EPL-2.0 OR BSD-3-Clause
+PackageLicenseDeclared: EPL-2.0 OR BSD-3-Clause
+PackageCopyrightText: <text>Copyright (c) Roger Light and Eclipse Paho contributors</text>
+PackageSummary: <text>MQTT client the backend uses to subscribe to DLSPS detection metadata.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:pypi/paho-mqtt@2.1.0
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-paho-mqtt
+
+PackageName: python-multipart
+SPDXID: SPDXRef-Package-python-multipart
+PackageVersion: 0.0.32
+PackageSupplier: Person: Andrew Dunham
+PackageDownloadLocation: https://pypi.org/project/python-multipart/0.0.32/
+PackageHomePage: https://github.com/Kludex/python-multipart
+PackageLicenseConcluded: Apache-2.0
+PackageLicenseDeclared: Apache-2.0
+PackageCopyrightText: <text>Copyright 2012, Andrew Dunham</text>
+PackageSummary: <text>Multipart form parser enabling file uploads (mission documents, audio) in FastAPI.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:pypi/python-multipart@0.0.32
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-python-multipart
+
+PackageName: pypdf
+SPDXID: SPDXRef-Package-pypdf
+PackageVersion: 6.21.1
+PackageSupplier: Person: Mathieu Fenniak
+PackageDownloadLocation: https://pypi.org/project/pypdf/6.21.1/
+PackageHomePage: https://github.com/py-pdf/pypdf
+PackageLicenseConcluded: BSD-3-Clause
+PackageLicenseDeclared: BSD-3-Clause
+PackageCopyrightText: <text>Copyright (c) 2006-2008, Mathieu Fenniak and pypdf contributors</text>
+PackageSummary: <text>PDF library used by the backend to inspect uploaded mission documents.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:pypi/pypdf@6.21.1
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-pypdf
+
+##############################################################################
+# AI models deployed by the application
+# Sources: MODEL_PROVENANCE.md, config/chatqna/models.lock.json, config/model-download/yolo26s.json
+##############################################################################
+
+PackageName: yolo26s
+SPDXID: SPDXRef-Package-yolo26s
+PackageSupplier: Organization: Ultralytics
+PackageDownloadLocation: https://github.com/ultralytics/ultralytics
+PackageHomePage: https://www.ultralytics.com/
+PackageLicenseConcluded: AGPL-3.0-only
+PackageLicenseDeclared: AGPL-3.0-only
+PackageCopyrightText: <text>Copyright Ultralytics, Inc.</text>
+PackageSummary: <text>Ultralytics YOLO26s COCO-80 object detector exported to INT8 OpenVINO IR (Ultralytics 8.4.57, OpenVINO 2026.2.0, NNCF 2.19.0) by the Model Download service and run by DLSPS.</text>
+PackageComment: <text>Generated Ultralytics metadata declares AGPL-3.0; Ultralytics also offers a separate commercial Enterprise license. The weights carry no immutable upstream revision; the accepted artifact is pinned by hash in config/dlsps/detector-profile.json (yolo26s.xml sha256 a1631d3d8467717acd7eda84c05932e867c5dec866f154593542b7315fb74f28, yolo26s.bin sha256 f29147d95ef439b1efdd9aa0952dfd24088980dd2e4dd558e8efb9dbf6eadbd1). The purl identifies the exporting Ultralytics package version.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:pypi/ultralytics@8.4.57
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-yolo26s
+
+PackageName: Intel/neural-chat-7b-v3-3
+SPDXID: SPDXRef-Package-neural-chat-7b-v3-3
+PackageVersion: 7506dfc5fb325a8a8e0c4f9a6a001671833e5b8e
+PackageSupplier: Organization: Intel Corporation
+PackageDownloadLocation: https://huggingface.co/Intel/neural-chat-7b-v3-3
+PackageHomePage: https://huggingface.co/Intel/neural-chat-7b-v3-3
+PackageLicenseConcluded: Apache-2.0
+PackageLicenseDeclared: Apache-2.0
+PackageCopyrightText: <text>Copyright (C) Intel Corporation</text>
+PackageSummary: <text>Large language model (Mistral-7B-v0.1 derivative) used by Chat Q&A on GPU to answer operator questions.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:huggingface/Intel/neural-chat-7b-v3-3@7506dfc5fb325a8a8e0c4f9a6a001671833e5b8e
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-neural-chat-7b-v3-3
+
+PackageName: ibm-granite/granite-embedding-125m-english
+SPDXID: SPDXRef-Package-granite-embedding-125m-english
+PackageVersion: 4ab61ffd423be45cd932b21a7c696063d82bf45f
+PackageSupplier: Organization: IBM
+PackageDownloadLocation: https://huggingface.co/ibm-granite/granite-embedding-125m-english
+PackageHomePage: https://huggingface.co/ibm-granite/granite-embedding-125m-english
+PackageLicenseConcluded: Apache-2.0
+PackageLicenseDeclared: Apache-2.0
+PackageCopyrightText: <text>Copyright IBM Corp.</text>
+PackageSummary: <text>Text embedding model used by Chat Q&A on CPU to index mission documents for retrieval.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:huggingface/ibm-granite/granite-embedding-125m-english@4ab61ffd423be45cd932b21a7c696063d82bf45f
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-granite-embedding-125m-english
+
+PackageName: cross-encoder/ms-marco-electra-base
+SPDXID: SPDXRef-Package-ms-marco-electra-base
+PackageVersion: 8b9301757513f8a695920c334c3a9f365ebeb357
+PackageSupplier: Organization: Sentence-Transformers / UKPLab
+PackageDownloadLocation: https://huggingface.co/cross-encoder/ms-marco-electra-base
+PackageHomePage: https://huggingface.co/cross-encoder/ms-marco-electra-base
+PackageLicenseConcluded: Apache-2.0
+PackageLicenseDeclared: Apache-2.0
+PackageCopyrightText: <text>Copyright Nils Reimers and Sentence-Transformers contributors</text>
+PackageSummary: <text>Cross-encoder reranker used by Chat Q&A on CPU to rank retrieved mission document passages.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:huggingface/cross-encoder/ms-marco-electra-base@8b9301757513f8a695920c334c3a9f365ebeb357
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-ms-marco-electra-base
+
+PackageName: openai/whisper-medium
+SPDXID: SPDXRef-Package-whisper-medium
+PackageSupplier: Organization: OpenAI
+PackageDownloadLocation: https://huggingface.co/openai/whisper-medium
+PackageHomePage: https://huggingface.co/openai/whisper-medium
+PackageLicenseConcluded: Apache-2.0
+PackageLicenseDeclared: Apache-2.0
+PackageCopyrightText: <text>Copyright (c) 2022 OpenAI</text>
+PackageSummary: <text>Whisper-medium speech recognition model exported to OpenVINO and run by Audio Analyzer on GPU for speech-to-text.</text>
+PackageComment: <text>Stock exporters do not enforce a revision; the deployed revision is recorded per deployment (see MODEL_PROVENANCE.md, Model ownership).</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:huggingface/openai/whisper-medium
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-whisper-medium
+
+PackageName: microsoft/speecht5_tts
+SPDXID: SPDXRef-Package-speecht5-tts
+PackageSupplier: Organization: Microsoft
+PackageDownloadLocation: https://huggingface.co/microsoft/speecht5_tts
+PackageHomePage: https://huggingface.co/microsoft/speecht5_tts
+PackageLicenseConcluded: MIT
+PackageLicenseDeclared: MIT
+PackageCopyrightText: <text>Copyright (c) Microsoft Corporation</text>
+PackageSummary: <text>SpeechT5 text-to-speech model exported to OpenVINO and run by the Text To Speech service on GPU.</text>
+PackageComment: <text>Stock exporters do not enforce a revision; the deployed revision is recorded per deployment (see MODEL_PROVENANCE.md, Model ownership).</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:huggingface/microsoft/speecht5_tts
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-speecht5-tts
+
+PackageName: microsoft/speecht5_hifigan
+SPDXID: SPDXRef-Package-speecht5-hifigan
+PackageSupplier: Organization: Microsoft
+PackageDownloadLocation: https://huggingface.co/microsoft/speecht5_hifigan
+PackageHomePage: https://huggingface.co/microsoft/speecht5_hifigan
+PackageLicenseConcluded: MIT
+PackageLicenseDeclared: MIT
+PackageCopyrightText: <text>Copyright (c) Microsoft Corporation</text>
+PackageSummary: <text>HiFi-GAN vocoder used with SpeechT5 to produce output waveforms.</text>
+PackageComment: <text>Stock exporters do not enforce a revision; the deployed revision is recorded per deployment (see MODEL_PROVENANCE.md, Model ownership). License taken from the Hugging Face model card.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:huggingface/microsoft/speecht5_hifigan
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-speecht5-hifigan
+
+PackageName: Matthijs/cmu-arctic-xvectors
+SPDXID: SPDXRef-Package-cmu-arctic-xvectors
+PackageSupplier: Person: Matthijs Hollemans
+PackageDownloadLocation: https://huggingface.co/datasets/Matthijs/cmu-arctic-xvectors
+PackageHomePage: https://huggingface.co/datasets/Matthijs/cmu-arctic-xvectors
+PackageLicenseConcluded: MIT
+PackageLicenseDeclared: MIT
+PackageCopyrightText: <text>NOASSERTION</text>
+PackageSummary: <text>CMU ARCTIC speaker x-vectors used as the SpeechT5 named voices in the Text To Speech service.</text>
+PackageComment: <text>License taken from the Hugging Face dataset card; the underlying CMU ARCTIC recordings are distributed by Carnegie Mellon University under their own permissive terms.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:generic/huggingface-datasets/Matthijs/cmu-arctic-xvectors
+FilesAnalyzed: false
+
+Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-cmu-arctic-xvectors
+
+##############################################################################
+# End of document
+##############################################################################
