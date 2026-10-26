@@ -38,12 +38,14 @@ Image `intel/metrics-manager:2026.2.0`, source `edge-ai-libraries`
 - Memory: `mem_used_percent`, `mem_available_percent` (%), `mem_total`,
   `mem_used` (bytes). CPU package temperature: `temp_temp` (°C).
 - GPU: `gpu_engine_usage_usage` (%) labelled by engine;
-  `gpu_frequency_value{type="cur_freq"}` (MHz);
-  `gpu_power_value{type="gpu_cur_power"}` and `{type="pkg_cur_power"}` (W).
+  `gpu_frequency{type="cur_freq"}` (MHz);
+  `gpu_power{type="gpu_cur_power"}` and `{type="pkg_cur_power"}` (W).
+  Some collector versions add a `_value` suffix; `backend/app/telemetry.py`
+  accepts both.
   There is no GPU memory utilization series and no `gpu_usage_percent`.
 - NPU: `npu_utilization` (%), `npu_power` (W), `npu_temperature` (°C),
   `npu_memory_mb` (actually MiB; `-1` means unavailable). Utilization can
-  read 0 when `npu_busy_time_us` is unavailable.
+  read 0 when the driver does not expose NPU busy time.
 - Containers: `docker_container_cpu_usage_percent{cpu="cpu-total"}` (100 =
   one core), `docker_container_mem_usage`, `docker_container_mem_limit`
   (bytes), `docker_container_mem_usage_percent`, and `docker_n_cpus`, which

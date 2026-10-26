@@ -25,7 +25,8 @@ The container needs `/dev/dri` and the host `video` and render groups
 `models`, `chunks`, `storage` and `.cache` under `/app/audio_analyzer`.
 
 On first start the service downloads `openai/whisper-medium` from
-Hugging Face and exports it to `models/openvino/whisper-medium`. It needs
+Hugging Face and exports it to `models/openvino/whisper-medium-fp16` (Docker volume
+`audio_analyzer_models`). It needs
 outbound access (and the proxy settings, if any); pass `HF_TOKEN` through the
 environment when required, and never persist it.
 

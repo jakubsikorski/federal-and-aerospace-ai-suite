@@ -6,10 +6,10 @@ description: Use when changing the handheld DL Streamer Pipeline Server integrat
 # DL Streamer Pipeline Server Integration
 
 Image `intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24`, Compose service
-`dlsps`, REST API on `127.0.0.1:8080`. For stock APIs see the `dlsps-user`
-skill and the upstream
-[`dlstreamer-coding-agent`](https://github.com/open-edge-platform/dlstreamer/tree/main/.github/skills/dlstreamer-coding-agent)
-skill; for the crop element see
+`dlsps`, REST API on `127.0.0.1:8080`. For stock APIs see the upstream
+[`dlsps-user`](https://github.com/open-edge-platform/skills/tree/main/.agents/skills/dlsps-user) and
+[`dlstreamer-coding-agent`](https://github.com/open-edge-platform/skills/tree/main/.agents/skills/dlstreamer-coding-agent)
+skills; for the crop element see
 `scripts/dlsps/README.md`.
 
 ## Pipeline Variants

@@ -24,7 +24,7 @@ Read [README.md](README.md) before changing the deployment.
 | `config/proxy/`, `config/coturn/`, `config/mediamtx/` | TLS proxy, loopback TURN relay, and RTSP/WebRTC relay |
 | `config/model-download/` | YOLO26s download and export request |
 | `scripts/` | Demo asset preparation, live checks, and per-service smoke tests |
-| `.agents/skills/` | Agent skills: application skills and copies of upstream skills from `open-edge-platform/skills` |
+| `.agents/skills/` | Application agent skills; generic service skills are in [open-edge-platform/skills](https://github.com/open-edge-platform/skills) |
 
 ## Useful Commands
 
@@ -86,5 +86,5 @@ Coturn <-> MediaMTX          WebRTC relay only
 - Detect device groups and addresses instead of hard-coding a host.
 - Smoke tests in `scripts/smoke/` exit `0` on pass, non-zero on failure, and `2` when blocked.
   A blocked test is not a pass.
-- Do not edit upstream skill copies in `.agents/skills/`; application-specific guidance belongs
-  in the `handheld-*` skills and this file.
+- Application-specific guidance belongs in `.agents/skills/` and this file; it overrides the
+  generic [open-edge-platform/skills](https://github.com/open-edge-platform/skills).

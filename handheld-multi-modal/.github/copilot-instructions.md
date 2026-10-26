@@ -12,9 +12,9 @@ Use the stock Chat Q&A `/chat` endpoint for general and document questions with 
 prompt template. Do not clear the mission document corpus for general chat and do not claim
 conversation memory that the service does not provide.
 
-Use the pinned skills in `.agents/skills/`, but do not apply their default models or
-floating-tag examples. The model choices and provenance rules in `AGENTS.md`
-override generic upstream examples.
+Use the skills in `.agents/skills/`. When using the upstream
+[open-edge-platform/skills](https://github.com/open-edge-platform/skills), do not apply their
+default models or floating-tag examples; the model choices in `AGENTS.md` override them.
 
 Smoke commands and their scope are listed in `scripts/smoke/README.md`. Never replace missing
 service contracts with plausible APIs or mark blocked scripts as working integrations.
