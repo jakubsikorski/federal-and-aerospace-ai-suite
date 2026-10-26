@@ -4,8 +4,8 @@
 at `/tmp/model_config/config.yaml` (`MODEL_CONFIG_PATH`). Replaces
 prohibited stock BAAI defaults w/ provenance-approved pair:
 
-- LLM: `Intel/neural-chat-7b-v3-3` (required; owner-directed replacement
-  for `microsoft/Phi-3.5-mini-instruct`, 2026-09-14 — fine-tuned from
+- LLM: `Intel/neural-chat-7b-v3-3` (required; replaces
+  `microsoft/Phi-3.5-mini-instruct` — fine-tuned from
   `mistralai/Mistral-7B-v0.1`, non-PRC lineage, see `MODEL_PROVENANCE.md`), GPU.
 - Embedding: `ibm-granite/granite-embedding-125m-english` (IBM Research AI,
   US; distilled from Mistral-7B-Instruct-v0.2), CPU.
@@ -17,7 +17,7 @@ Pinned revisions/licenses: `config/chatqna/models.lock.json` and
 model download/conversion into `MODEL_CACHE_PATH` via its own HF/Optimum
 export path; no custom exporter or config rewriting used.
 
-Owner accepts stock `/chat` for general and document questions.
+Stock `/chat` serves both general and document questions.
 Retrieval-enabled chat, not clean retrieval bypass: retrieval still runs
 against ingested documents. Keep documents intact during general chat.
 FAISS corpus state in memory; retain source documents externally for
@@ -53,8 +53,8 @@ step is required. The token comes from the caller's `HF_TOKEN` (the same
 variable Audio Analyzer and TTS use; a legacy `HF_ACCESS_TOKEN` still works)
 and reaches the image as `HF_ACCESS_TOKEN`; never hardcoded/committed.
 
-Adoption note for this dev environment specifically: this container was
-originally started by hand, by name, before it was declared in Compose. A
+Adoption note: if a `chatqna` container was started by hand, by name,
+before it was declared in Compose, the
 same-named container already existing causes `docker compose up -d chatqna`
 to report a name conflict rather than deploying cleanly, because Compose
 won't silently take over/replace a container it didn't create. Model
@@ -85,6 +85,4 @@ Known limitation: the stock backend downloads model revision `main` and does
 not read `models.lock.json` to pin/enforce a revision — the lock file records
 the approved revision for audit only, it is not consumed at runtime. No
 patch to backend code or external exporter is added to force enforcement.
-
-Source contracts: `docs/application/ai-contracts.md`.
 

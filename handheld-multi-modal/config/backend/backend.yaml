@@ -1,11 +1,11 @@
 # Backend configuration. Values here override backend/app/core.py DEFAULTS.
 #
-# Cameras (D13): multi-camera from the start. Adding one is a list entry here
+# Cameras: multi-camera from the start. Adding one is a list entry here
 # plus an RTSP publisher; no MediaMTX, proxy or UI configuration changes.
 # `annotated_path` and `source_uri` are derived from `stream_id` unless set.
 #
 # These are *deployment* cameras, re-applied on every start. The operator can
-# also add cameras at runtime in the console's Cameras panel (D53); those live
+# also add cameras at runtime in the console's Cameras panel; those live
 # only in SQLite, and deployment cameras there can be renamed but not turned
 # off or removed. There is no camera limit; each enabled camera runs its own
 # DLSPS pipeline, so the device's capacity is the practical limit.
@@ -127,13 +127,13 @@ takeover_seconds: 30.0
 timeout_seconds: 5.0
 log_level: INFO
 
-# Alerts (section 16). Rules themselves live in SQLite and are managed from the
+# Alerts. Rules themselves live in SQLite and are managed from the
 # UI Rules panel. Tools are stock Alert Agent tools applied to every dispatch.
 alert_tools:
   - log_alert
 alert_dispatch_timeout_seconds: 15.0
-# Speech: the audio arbiter is the only TTS producer (section 16.4).
-# A 30-word utterance takes ~18 s on the Lunar Lake host; a timed-out request
+# Speech: the audio arbiter is the only TTS producer.
+# A 30-word utterance takes ~18 s on an Intel Core Ultra (Series 2) test device; a timed-out request
 # still occupies the stock service until it finishes.
 tts_timeout_seconds: 30.0
 alert_speech_floor_seconds: 3.0
@@ -147,7 +147,7 @@ tts_voice: Miles
 # Optional JSONL arbiter trace for evidence; unset keeps only the in-memory ring.
 # arbiter_trace_path: /data/arbiter_trace.jsonl
 
-# History windows (section 6). Measured 2026-09-15 by timestamping messages at
+# History windows. Measured 2026-09-15 by timestamping messages at
 # the broker against the producer's own observed_at: observations arrive a
 # median 3.8s (max 4.6s) after the frame is stamped, and that delay is inside
 # the stock DLSPS pipeline, before Backend sees anything. A 3s freshness window

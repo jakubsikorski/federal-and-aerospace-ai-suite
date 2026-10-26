@@ -1,4 +1,4 @@
-"""Track history reads: `tracks_current` (section 6.5) and the recent list.
+"""Track history reads: `tracks_current` and the recent list.
 
 Two rules drive everything here and both exist to stop the UI stating more than
 the data supports:
@@ -16,7 +16,7 @@ import sqlite3
 import time
 from urllib.parse import quote
 
-# Section 6.5 condition 4. Feed health is per camera, so one camera going dark
+# Feed health is per camera, so one camera going dark
 # never makes another camera's answer unknown.
 UNKNOWN = "unknown"
 
@@ -55,7 +55,7 @@ def _track_payload(row, *, state_source: str, snip: str | None = None,
         "last_observed_utc": row["last_observed_utc"],
         "observation_count": row["observation_count"],
         "peak_confidence": row["peak_confidence"],
-        # D10: the pinned tracker never says whether a confidence is a fresh
+        # The pinned tracker never says whether a confidence is a fresh
         # detection or a prediction, so it is always carried with its caveat.
         "confidence_freshness": row["confidence_freshness"],
         "closure_reason": row["closure_reason"] if "closure_reason" in row.keys() else None,
@@ -72,7 +72,7 @@ def _candidate_count(conn: sqlite3.Connection, track_id: int) -> int:
 
 
 def current(conn: sqlite3.Connection, ingest, cfg: dict, stream_id: str) -> dict:
-    """Section 6.5. All four conditions, not the insufficient v20 predicate."""
+    """All four conditions, not the insufficient v20 predicate."""
     window = float(cfg.get("freshness_window_seconds", 3.0))
     now = time.time()
     cutoff_epoch = now - window
@@ -100,7 +100,7 @@ def current(conn: sqlite3.Connection, ingest, cfg: dict, stream_id: str) -> dict
         payload["candidate_count"] = _candidate_count(conn, row["track_id"])
         merged[row["track_id"]] = payload
 
-    # Section 6.3: overlay tracks the writer has not checkpointed yet. Keyed by
+    # Overlay tracks the writer has not checkpointed yet. Keyed by
     # tracker id because a live track may have no committed row - and therefore
     # no track_id - at all.
     seen_trackers = {}
@@ -244,7 +244,7 @@ def recent(conn: sqlite3.Connection, ingest, cfg: dict, stream_id: str,
             for i in conn.execute(
                 """SELECT started_utc, ended_utc, observation_count FROM track_intervals
                    WHERE track_id = ? ORDER BY interval_index""", (row["track_id"],))]
-        # Section 6.3 again: an object that is still visible has its current
+        # As above: an object that is still visible has its current
         # interval buffered, not committed. Merge it rather than reporting a
         # live track as having been seen zero times.
         open_interval = live_intervals.get(row["tracker_id"]) if not row["closed_at"] else None
@@ -268,7 +268,7 @@ def recent(conn: sqlite3.Connection, ingest, cfg: dict, stream_id: str,
 
 
 def candidates(conn: sqlite3.Connection, track_id: int) -> list[dict]:
-    """Alternative crops for one track, best first (section 19.3)."""
+    """Alternative crops for one track, best first."""
     rows = conn.execute(
         """SELECT candidate_id, observed_at_utc, quality_score, sharpness, image_state,
                   image_width, image_height, label, confidence, confidence_freshness,
@@ -295,7 +295,7 @@ def candidates(conn: sqlite3.Connection, track_id: int) -> list[dict]:
 
 
 def alerts(conn: sqlite3.Connection, *, limit: int = 50) -> list[dict]:
-    """Recent persisted rule matches with their dispatch state (section 16.3)."""
+    """Recent persisted rule matches with their dispatch state."""
     limit = max(1, min(int(limit), 100))
     rows = conn.execute(
         """SELECT m.match_id, m.rule_id, m.track_id, m.matched_utc,

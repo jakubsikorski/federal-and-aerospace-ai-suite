@@ -1,25 +1,25 @@
 # Smoke commands
 
-Run from repository root. See `STATUS.md` for current results. Exit 0 means scope
+Run from repository root. Exit 0 means scope
 printed by a real test passed; functional failure is nonzero; explicit blocked
 entry points exit 2 and are **not implemented smoke tests**.
 
-| Entry point | Current scope |
+| Entry point | What it checks |
 |---|---|
-| `bash scripts/smoke/01_mediamtx.sh` | **PASS.** Decodes one real RTSP frame from `/cam1`; verifies a real WHEP pull session against a per-run `/annotated9NNNN` path via in-container `whepclientsrc` (H.264 for NPU/GPU; `SMOKE_WHEP_CODEC=VP9` for CPU), confirmed by MediaMTX's own "is reading from path" log line |
-| `bash scripts/smoke/02_dlsps_cpu.sh` | **PASS.** Starts `config/dlsps/cpu/config.json` (must be the mounted config), confirms real ~23-30fps detection via `gvafpscounter` |
-| `bash scripts/smoke/03_dlsps_gpu.sh` | **PASS.** Starts `config/dlsps/gpu/config.json` (must be the mounted config), confirms real ~29fps detection via `gvafpscounter` |
-| `bash scripts/smoke/04_dlsps_npu.sh` | **PASS.** Starts `config/dlsps/npu/config.json` — the shipped default (must be the mounted config) — confirms real ~30fps detection, no NPU compile/plugin errors in logs |
-| `bash scripts/smoke/05_mqtt.sh` | **PASS.** Starts the NPU pipeline, subscribes to `detections/live` for 10s, requires 5+ real messages (297 observed) via the documented `appsink`+`mqtt_publisher` mechanism |
-| `bash scripts/smoke/06_snip.sh` | **PASS.** Starts the shipped crop-enabled NPU pipeline (`gvapython` callback wired into `config/dlsps/npu/config.json`, config passed via `crop-config`→`kwarg` pipeline parameter), asserts new matched `.jpg`+`.json` crop pairs appear in the mounted output volume (23+ observed in one run) |
-| `bash scripts/smoke/07_chatqna_ingest.sh` | PASS against deployed stock container; uploads unique synthetic PDF/DOCX through `/documents`, saves fixture state |
-| `bash scripts/smoke/08_chatqna_rag.sh` | PASS against deployed stock container; recovers random document-only identifiers and generates a grounded mission brief |
-| `bash scripts/smoke/09_chat_general.sh` | PASS against deployed stock container; asks stock `/chat` about RTSP with mission corpus intact; checks general-knowledge answer and unchanged document list. One transient empty-completion run was observed and correctly failed nonzero (see `COMPONENTS.md`) |
-| `bash scripts/smoke/10_audio_analyzer.sh` | PASS; needs `AUDIO_ANALYZER_URL` + `AUDIO_ANALYZER_SAMPLE_WAV`; posts real speech WAV to `/v1/audio/transcriptions`, checks `/health` and non-empty text |
-| `bash scripts/smoke/11_tts.sh` | PASS (SpeechT5, owner-approved); needs `TTS_URL`; checks `/health`, `device=${TTS_DEVICE:-CPU}` via `/v1/model-info` (D56), and validates real synthesis returns a non-trivial WAV |
-| `bash scripts/smoke/12_alert_agent.sh` | **PASS**, executed against deployed `intel/alert-agent-service:2026.2.0` (`ALERT_URL=http://127.0.0.1:8010`). Confirms rule-based mode, one real `log_alert` dispatch, one real dedup skip. Webhook/snapshot/MQTT/SSE and `backend.speak_alert` verified/documented manually — see `config/alert-agent/README.md`, `docs/application/evidence/alert-agent/smoke.log` |
-| `bash scripts/smoke/13_metrics.sh` | **PASS**, executed against deployed `intel/metrics-manager:2026.2.0` (2026-09-29; earlier runs on 2026.1.0). Script scope is CPU/RAM-only by design; real GPU/NPU/temperature data additionally confirmed manually (see `config/metrics/README.md`, `docs/application/evidence/metrics/smoke.log`) |
-| `make test-history` | **PASS.** Runs strict route/plan, interval-overlap, read-only budget, aggregate, completeness and stable-paging tests, then a live typed ten-minute query through stock Chat Q&A. Records independent malformed-plan safe failures rather than repairing model output; evidence under `docs/application/evidence/history/` |
+| `bash scripts/smoke/01_mediamtx.sh` | Decodes one real RTSP frame from `/cam1`; verifies a real WHEP pull session against a per-run `/annotated9NNNN` path via in-container `whepclientsrc` (H.264 for NPU/GPU; `SMOKE_WHEP_CODEC=VP9` for CPU), confirmed by MediaMTX's own "is reading from path" log line |
+| `bash scripts/smoke/02_dlsps_cpu.sh` | Starts `config/dlsps/cpu/config.json` (must be the mounted config), confirms real detection throughput via `gvafpscounter` |
+| `bash scripts/smoke/03_dlsps_gpu.sh` | Starts `config/dlsps/gpu/config.json` (must be the mounted config), confirms real detection throughput via `gvafpscounter` |
+| `bash scripts/smoke/04_dlsps_npu.sh` | Starts `config/dlsps/npu/config.json` — the shipped default (must be the mounted config) — confirms real detection throughput, no NPU compile/plugin errors in logs |
+| `bash scripts/smoke/05_mqtt.sh` | Starts the NPU pipeline, subscribes to `detections/live` for 10s, requires 5+ real messages via the documented `appsink`+`mqtt_publisher` mechanism |
+| `bash scripts/smoke/06_snip.sh` | Starts the shipped crop-enabled NPU pipeline (`gvapython` callback wired into `config/dlsps/npu/config.json`, config passed via `crop-config`→`kwarg` pipeline parameter), asserts new matched `.jpg`+`.json` crop pairs appear in the mounted output volume |
+| `bash scripts/smoke/07_chatqna_ingest.sh` | Against the deployed stock container; uploads unique synthetic PDF/DOCX through `/documents`, saves fixture state |
+| `bash scripts/smoke/08_chatqna_rag.sh` | Against the deployed stock container; recovers random document-only identifiers and generates a grounded mission brief |
+| `bash scripts/smoke/09_chat_general.sh` | Against the deployed stock container; asks stock `/chat` about RTSP with mission corpus intact; checks general-knowledge answer and unchanged document list. An empty completion fails nonzero |
+| `bash scripts/smoke/10_audio_analyzer.sh` | Needs `AUDIO_ANALYZER_URL` + `AUDIO_ANALYZER_SAMPLE_WAV`; posts real speech WAV to `/v1/audio/transcriptions`, checks `/health` and non-empty text |
+| `bash scripts/smoke/11_tts.sh` | SpeechT5; needs `TTS_URL`; checks `/health`, `device=${TTS_DEVICE:-CPU}` via `/v1/model-info`, and validates real synthesis returns a non-trivial WAV |
+| `bash scripts/smoke/12_alert_agent.sh` | Against deployed `intel/alert-agent-service:2026.2.0` (`ALERT_URL=http://127.0.0.1:8010`). Confirms rule-based mode, one real `log_alert` dispatch, one real dedup skip. Webhook/snapshot/MQTT/SSE and `backend.speak_alert` are checked manually — see `config/alert-agent/README.md` |
+| `bash scripts/smoke/13_metrics.sh` | Against deployed `intel/metrics-manager:2026.2.0`. Script scope is CPU/RAM-only by design; GPU/NPU/temperature data are checked manually (see `config/metrics/README.md`) |
+| `make test-history` | Runs strict route/plan, interval-overlap, read-only budget, aggregate, completeness and stable-paging tests, then a live typed ten-minute query through stock Chat Q&A. Records independent malformed-plan safe failures rather than repairing model output; output is written under `docs/application/evidence/history/` (local, gitignored) |
 
 ## DLSPS / MediaMTX / MQTT (video pipeline)
 
@@ -96,7 +96,7 @@ If ignored assets live outside the checkout, pass their repository root
 explicitly, for example `make demo-up CAMERAS=2 ASSET_ROOT=/path/to/assets`.
 Use `make demo-status` to inspect it, `make demo-stop` to stop every service,
 `make demo-up` again to restart, or `make demo-down` to remove containers.
-See [device setup](../../docs/application/application-operations.md) for a new host.
+See [device setup](../../docs/user-guide/application-operations.md) for a new host.
 
 The publisher definitions remain in `compose/cameras.yaml`. Prefer this target
 over a hand-run `ffmpeg`: a manual publisher dies with its shell and silently
@@ -144,13 +144,12 @@ Stop only this project's infrastructure when finished:
 docker compose -f compose/handheld-multi-modal.yaml down
 ```
 
-Don't automatically rewrite `verified` fields from script exit codes. Review
+Don't treat a script exit code alone as verification. Review
 scope, source stream provenance, device evidence and physical host identity.
 
 ## Chat Q&A
 
-Start the backend from checked-in Compose (now declared as service `chatqna`,
-previously a live-but-undeclared container):
+Start the backend from checked-in Compose (service `chatqna`):
 
 ```sh
 docker compose -f compose/handheld-multi-modal.yaml up -d chatqna
@@ -158,8 +157,8 @@ docker compose -f compose/handheld-multi-modal.yaml up -d chatqna
 
 Run 07, then 08, then 09 against configured headless service.
 `CHATQNA_URL` defaults to `http://127.0.0.1:8888`;
-`CHATQNA_EVIDENCE` defaults to `docs/application/evidence/chatqna/smoke`.
+`CHATQNA_EVIDENCE` defaults to `docs/application/evidence/chatqna/smoke` (local, gitignored).
 Tests never delete documents; uploads use unique fixture names.
-General conversation is owner-approved retrieval-enabled `/chat` path,
+General conversation uses the retrieval-enabled `/chat` path,
 not retrieval bypass. Successful API test alone doesn't identify actual
 LLM execution device; retain deployment/runtime evidence too.

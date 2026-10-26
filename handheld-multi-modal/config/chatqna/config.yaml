@@ -11,7 +11,7 @@ model_settings:
   # if there is no context provided" — retrieval always runs and always
   # supplies *some* context, so on a plain general question with no relevant
   # match, the stock instruction pushes the model toward refusing instead of
-  # answering from its own knowledge (owner-accepted use case: retrieval-
+  # answering from its own knowledge (intended use case: retrieval-
   # enabled general chat, not a retrieval bypass). This override keeps the
   # required {context}/{question} placeholders (app/config.py validates both
   # are present). neural-chat-7b-v3-3 (Intel; Mistral-7B-v0.1 base) uses a

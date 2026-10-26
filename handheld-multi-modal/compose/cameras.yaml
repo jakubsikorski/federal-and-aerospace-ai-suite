@@ -1,4 +1,4 @@
-# Demo camera publishers - REMOVABLE DEMO ASSETS (design section 22).
+# Demo camera publishers - REMOVABLE DEMO ASSETS.
 #
 # Only `make demo-up` starts them. `make up` starts with no cameras; the operator
 # adds network or on-device publisher cameras in the console's Cameras panel.
@@ -9,7 +9,7 @@
 #   make clean-demo            remove these publishers and their videos
 #
 # -c copy: every .ts is already H.264, so this remuxes rather than re-encodes. Publishing costs ~1% CPU per camera and leaves the measured
-# per-camera pipeline cost (design 3.4) attributable to DLSPS, not to the
+# per-camera pipeline cost attributable to DLSPS, not to the
 # simulator. -re paces at real time; -stream_loop -1 loops forever.
 #
 # Sources (pinned in scripts/demo_assets.py, re-encoded to <stem>.maxN.ts by make demo-prereq):

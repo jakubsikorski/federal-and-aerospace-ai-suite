@@ -1,5 +1,5 @@
--- Schema per docs/design/APPLICATION_DESIGN.md section 7.
--- Stream-scoped by construction (D13): every history table leads with stream_id.
+-- Backend SQLite schema.
+-- Stream-scoped by construction: every history table leads with stream_id.
 -- There is deliberately no `sessions` table; rows carry their own scoped identity.
 
 CREATE TABLE IF NOT EXISTS streams (

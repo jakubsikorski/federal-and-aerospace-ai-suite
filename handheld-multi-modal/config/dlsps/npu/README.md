@@ -1,4 +1,4 @@
-# NPU default variant: PASS (shipped/default, real ~30fps, NPU confirmed)
+# NPU default variant (shipped/default, ~30fps on NPU)
 
 **This is the shipped/default variant per application spec.** Real,
 smoke-tested pipeline. `config.json` pipeline name: `handheld_npu_detect`.
@@ -9,7 +9,7 @@ stock WebRTC frame destination.
 **Snip (per-object crop) generation is wired into this pipeline** via a
 `gvapython` callback (`scripts/dlsps/crop_candidates.py`), validated
 end-to-end at ~30fps producing matched crop+metadata pairs; see
-"Known gotchas" below and `docs/application/video-contracts.md`.
+"Known gotchas" below and `scripts/dlsps/README.md`.
 
 ## Run
 
@@ -60,17 +60,17 @@ MQTT publish uses static `mqtt_publisher` plus `MQTT_HOST`/`MQTT_PORT`. WebRTC
 uses the REST `destination.frame` request. Both consume raw VA frames from
 `appsink name=destination`; neither replaces the other.
 
-## Evidence
+## Expected behavior
 
-Current YOLO26s NPU path ran on 2026-09-24; NPU device requested, no
-NPU compile/plugin error observed in logs (IR hashes pinned in
-`MANIFEST.yaml`). Confirmed running simultaneously w/ real MQTT
+The YOLO26s NPU path runs with the NPU device requested and no
+NPU compile/plugin error in logs (IR provenance in
+`MODEL_PROVENANCE.md`). Confirmed running simultaneously w/ real MQTT
 publish (`detections/live`, ~30 msg/s), no fps degradation on either leg.
 
 ## Known gotchas
 
 - Requires `/dev/accel/accel0` (NPU) and `/dev/dri/renderD128` (decode)
-  device mappings, render GID (992 observed), and
+  device mappings, render GID (e.g. 992), and
   `--tmpfs /var/cache/pipeline_root:uid=1999,gid=1999`.
 - **WHEP codec is H264 here, not VP9.** Raw VAMemory reaches the stock WebRTC
   manager, which selects its `vah264enc ! h264parse ! whipclientsink` path.
@@ -101,9 +101,9 @@ publish (`detections/live`, ~30 msg/s), no fps degradation on either leg.
 - **No stock per-object crop destination exists in DLSPS.** `destination.frame`
   supports `rtsp`, `webrtc`, `s3_write`, `application` — all whole-frame only.
   An earlier iteration used `s3_write` to self-hosted
-  SeaweedFS S3 store as whole-frame "frame-saver"; **owner rejected
-  this, fully backed out** (no SeaweedFS container, no
-  `s3_write` requested anywhere in this repo). Owner-directed correct
+  SeaweedFS S3 store as whole-frame "frame-saver"; **this was rejected
+  and fully backed out** (no SeaweedFS container, no
+  `s3_write` requested anywhere in this repo). Chosen
   approach: custom `gvapython` element inserted into pipeline (no
   `ADDITIONAL_GST_PLUGIN_PATH` needed — `gvapython` is stock) that reads
   `GstVideoRegionOfInterestMeta` per tracked object and crops before any
@@ -111,5 +111,5 @@ publish (`detections/live`, ~30 msg/s), no fps degradation on either leg.
   runs as a `gvapython` element in this config (see the pipeline string
   above), its config path passed via the `crop-config`→`kwarg` pipeline
   `parameter`, not embedded in the pipeline string — see
-  `docs/application/video-contracts.md` §"Snip mechanism" and
-  `scripts/smoke/06_snip.sh` (validated PASS against this shipped config).
+  `scripts/dlsps/README.md` and `scripts/smoke/06_snip.sh` (which checks this
+  shipped config).

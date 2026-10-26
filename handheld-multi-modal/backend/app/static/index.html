@@ -2966,7 +2966,7 @@ document.addEventListener("keydown", (event) => {
   else if (!$("cameras-panel").hidden) closeCameras();
   else if (state.alertView && !state.drawerTrack) exitAlertView();
 });
-// -- Cameras: add, rename, turn on/off, remove at runtime (D53) --------------
+// -- Cameras: add, rename, turn on/off, remove at runtime --------------------
 async function cameraMutation(path, method, payload) {
   const response = await fetch(path, {method, headers: {"content-type": "application/json", accept: "application/json"},
     body: payload === undefined ? undefined : JSON.stringify(payload)});

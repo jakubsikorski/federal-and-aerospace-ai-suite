@@ -12,8 +12,8 @@ models:
     # Inference device. Permitted values: CPU | GPU
     #   SpeechT5: CPU or GPU
     #   Qwen:     CPU or GPU
-    # Default CPU (owner-directed 2026-09-28, D56: GPU speech had long gaps between
-    # sentences). `make ... TTS_DEVICE=GPU` overrides it through the stock
+    # Default CPU (GPU speech had long gaps between sentences).
+    # `make ... TTS_DEVICE=GPU` overrides it through the stock
     # TEXT_TO_SPEECH__MODELS__TTS__DEVICE variable (config/devices.yaml).
     device: CPU
     # Model precision. Permitted values: int8 | int4 | fp16 | fp32
@@ -30,7 +30,7 @@ models:
     #             (CMU Arctic ids bdl/jmk/rms/clb/slt/ksp/awb are accepted as aliases)
     #   Qwen custom_voice example: Ryan
     #   Qwen voice_design: speaker can be omitted
-    default_speaker: Miles  # owner-directed (D57; D64 kept Miles after trying Aaron and Ryan); stock default Ryan
+    default_speaker: Miles  # chosen after trying Aaron and Ryan; stock default Ryan
     # Default language. Permitted values: English (the service currently supports English only)
     default_language: English
     # Shared cache/output settings used by both models

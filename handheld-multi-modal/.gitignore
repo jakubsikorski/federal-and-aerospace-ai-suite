@@ -10,10 +10,10 @@ data/
 .venv/
 __pycache__/
 *.pyc
-# Runtime evidence stays local to keep the repository small (owner direction 2026-09-29).
+# Runtime evidence stays local.
 docs/application/evidence/
 
-# TLS material is generated on the device and never committed (design 15.4).
+# TLS material is generated on the device and never committed.
 config/tls/
 
 # Ultralytics INT8 calibration dataset, downloaded by the model export step.

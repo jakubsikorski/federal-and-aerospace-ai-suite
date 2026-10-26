@@ -25,13 +25,13 @@ webrtcAdditionalHosts: [127.0.0.1]
 # Loopback Coturn (config/coturn/turnserver.conf), offered to browsers only
 # (clientOnly: MediaMTX itself gathers no relay candidates). TURN over TCP so a
 # browser behind an SSH tunnel (-L 3478:127.0.0.1:3478) can relay media.
-# Dev-only static credential, reachable from this host only.
+# Dev-only static credential, reachable from the local host only.
 webrtcICEServers2:
   - url: turn:127.0.0.1:3478?transport=tcp
     username: handheld
     password: handheldmultimodal
     clientOnly: true
-# Regex paths (D13): a `~` prefix makes `path` a regular expression, so the
+# Regex paths: a `~` prefix makes `path` a regular expression, so the
 # config does not grow per camera. camN carries the clean RTSP feed, annotatedN
 # the DLSPS WHIP push. Adding a camera needs no change here.
 authInternalUsers:

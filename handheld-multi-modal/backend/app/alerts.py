@@ -1,4 +1,4 @@
-"""Rules, per-logical-track matching and verified Alert Agent dispatch (section 16).
+"""Rules, per-logical-track matching and verified Alert Agent dispatch.
 
 SQLite is the authority. The Alert Agent's own dedup is an in-memory second
 layer; its SSE stream is observability only and is never treated as the record.
@@ -20,7 +20,7 @@ import httpx
 
 log = logging.getLogger("backend.alerts")
 
-# Initial attempt plus three retries at 2, 4 and 8 s (section 16.3).
+# Initial attempt plus three retries at 2, 4 and 8 s.
 BACKOFF_SECONDS = (2.0, 4.0, 8.0)
 MAX_ATTEMPTS = 1 + len(BACKOFF_SECONDS)
 MAX_RULES = 50
@@ -154,7 +154,7 @@ class Alerts:
         self.timeout = float(cfg.get("alert_dispatch_timeout_seconds", 15.0))
         self.client = client or httpx.Client(timeout=self.timeout)
         self.conn = connect(db_path)
-        # Section 7: one writer. main.py points this at Ingest.write so dispatch
+        # One writer. main.py points this at Ingest.write so dispatch
         # updates never contend with the ingest transaction for the WAL lock.
         self.writer = self._write
         self.names = {s["stream_id"]: s.get("display_name") or s["stream_id"]

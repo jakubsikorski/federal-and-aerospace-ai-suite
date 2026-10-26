@@ -1,4 +1,4 @@
-# Alert Agent: PASS (rule-based dispatch, real on this host)
+# Alert Agent (rule-based dispatch)
 
 Pinned image `intel/alert-agent-service:2026.2.0`
 (digest `sha256:4d9426486d00062e0805245b2d27e1107a014296eae65d38fa29318a5284880b`).
@@ -13,8 +13,7 @@ stock Compose's floating `eclipse-mosquitto:2`.
 unmodified copies of upstream example resources (edge-ai-libraries
 `microservices/alert-agent-service/resources/`), except `mcp_servers.json`
 has every server's `enabled` flipped to `false` (shipped `prometheus`
-entry is placeholder URL, not real backend integration — see
-`docs/application/service-contracts.md`).
+entry is placeholder URL, not real backend integration).
 
 ## Run
 
@@ -23,15 +22,14 @@ docker compose -f compose/handheld-multi-modal.yaml up -d alert-agent
 ALERT_URL=http://127.0.0.1:8010 bash scripts/smoke/12_alert_agent.sh
 ```
 
-## Evidence
+## What the smoke test checks
 
-Full session in `docs/application/evidence/alert-agent/smoke.log`.
-`scripts/smoke/12_alert_agent.sh` PASS: health (`adk_enabled:false`),
+`scripts/smoke/12_alert_agent.sh` checks health (`adk_enabled:false`),
 `log_alert` registered, one real dispatch (`actions_taken:["log_alert"]`),
 one real `field_hash` dedup skip on an immediate repeat
 (`actions_taken:[]`, log line `Duplicate alert: key=dedup:LOITERING:...`).
 
-Manually confirmed beyond script's scope (all real, not stubbed):
+Manual checks beyond the script's scope (all real, not stubbed):
 
 - **`trigger_webhook`**: CONCEALMENT alert → real HTTP POST reached local
   listener on `host.docker.internal:8999` w/ actual alert JSON body;
@@ -71,9 +69,8 @@ The Backend posts rule matches to `/api/v1/actions/execute`, follows SSE
 `/api/v1/events`, and arbitrates speech itself (`backend/app/speech.py`)
 through stock TTS. No Backend MCP server is registered (`MCP_ENABLED=false`).
 The stock MCP route — a server named `backend` advertising `speak_alert`,
-registered as `mcp_backend_speak_alert` — is documented as an unused
-alternative in `docs/application/service-contracts.md`
-§"`backend.speak_alert`".
+registered as `mcp_backend_speak_alert` — is an unused
+alternative.
 
 ## Known limitations / gotchas
 

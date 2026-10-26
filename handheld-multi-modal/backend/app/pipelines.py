@@ -58,7 +58,7 @@ def resolve_pipeline_name(path: str = PIPELINE_CONFIG_PATH, override: str | None
 
 
 # Stock short-term gvatrack writes exactly 1.0 on boxes it predicted without
-# inference (evidence/phase8/tracker_confidence_probe.txt). Only then is 1.0 a
+# inference (verified with a tracker confidence probe). Only then is 1.0 a
 # marker rather than a score; zero-term tracking never predicts, so nothing is
 # discarded there. Set by configure() from the selected pipeline definition.
 PREDICTED_CONFIDENCE: float | None = None
@@ -203,8 +203,7 @@ def _request_body(stream: dict) -> dict:
             # any one pipeline then tears that instance down and aborts every
             # camera using it; reusing a camera's own id is just as bad, because
             # the leaked pipeline it is replacing still holds that instance and
-            # the replacement hangs in preroll waiting for it. Measured
-            # 2026-09-14, docs/application/evidence/phase2/model_instance_isolation.txt.
+            # the replacement hangs in preroll waiting for it (measured).
             "model_instance": f"inst_{stream['stream_id']}_{uuid.uuid4().hex[:8]}",
         },
     }
@@ -217,8 +216,7 @@ def evict_stale_media(client: httpx.Client, mediamtx: str, stream: dict) -> None
     keeps its WebRTC publisher and its RTSP reader alive. MediaMTX allows one
     publisher per path, so the zombie holds `annotatedN` and the replacement
     never leaves QUEUED; the orphaned readers also keep decoding. Both were
-    observed 2026-09-14 (five stale readers on cam1) - see
-    docs/application/evidence/phase2/model_instance_isolation.txt.
+    observed (five stale readers on cam1).
 
     Only this camera's own sessions are touched: its annotated publisher, and
     readers of its source. The source publisher itself is the camera and is

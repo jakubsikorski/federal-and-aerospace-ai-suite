@@ -41,12 +41,11 @@ Historical YOLO11s result: ~29fps sustained via `gvafpscounter`, confirmed concu
 ## Known gotchas
 
 - Requires `/dev/dri/renderD128` device mapping and host render group
-  (GID 992 observed this host — confirm per-device).
+  (992 is only an example — confirm per-device).
 - **VA-memory to system-memory for JPEG encode requires `vapostproc`, not
   plain `videoconvert`.** `vapostproc ! video/x-raw ! jpegenc` is the
   documented, working pattern (see
-  `configs/sample_gpu_decode_and_inference/config.json` upstream and
-  `docs/application/video-contracts.md`). Plain `videoconvert` fails linking
+  `configs/sample_gpu_decode_and_inference/config.json` upstream). Plain `videoconvert` fails linking
   against `video/x-raw(memory:VAMemory)` even w/ explicit caps.
 - See also shared MQTT-mechanism and quantization-warning gotchas in
   `config/dlsps/cpu/README.md`.

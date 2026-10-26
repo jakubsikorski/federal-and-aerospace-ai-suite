@@ -10,7 +10,7 @@ dlsps_require_container "$MQTT_CONTAINER"
 
 # Requires config.json currently mounted in the DLSPS container to use the
 # documented appsink+mqtt_publisher mechanism (NOT the raw gvametapublish
-# element, which is broken in this 2026.2.0 image — see docs/application/video-contracts.md).
+# element, which is broken in this 2026.2.0 image — see config/dlsps/npu/README.md).
 echo "Starting NPU pipeline for this test..." >&2
 DLSPS_PIPELINE_NAME=handheld_npu_detect
 iid=$(dlsps_start_pipeline)

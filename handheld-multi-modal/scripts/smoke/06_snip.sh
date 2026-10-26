@@ -7,7 +7,7 @@ source "$root/scripts/smoke/_dlsps_lib.sh"
 # (scripts/dlsps/crop_candidates.py) actually produces per-tracked-object
 # snip files through the SHIPPED config/dlsps/{cpu,gpu,npu}/config.json +
 # compose/handheld-multi-modal.yaml wiring — not a scripts docker-cp'd into a
-# bare container. See docs/application/video-contracts.md "Snip mechanism".
+# bare container. See scripts/dlsps/README.md.
 #
 # Requires: the mounted config.json declares a `cropcandidates`-named
 # gvapython element and a `crop-config` parameter mapped to its `kwarg`

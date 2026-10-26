@@ -112,5 +112,5 @@ variant sends VP9.
   (`ssh -g`, `GatewayPorts`). Fix remote viewing on the client side.
 - Do not route video through the Backend, edit DLSPS pipelines at runtime, or
   store camera credentials in the Backend database.
-- Contracts: `docs/application/video-contracts.md`; MediaMTX details:
+- Video pipeline: `scripts/dlsps/README.md`; MediaMTX details:
   `mediamtx-integration`; DLSPS variants: `handheld-dlsps-contract`.

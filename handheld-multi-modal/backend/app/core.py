@@ -51,21 +51,21 @@ DEFAULTS: dict[str, Any] = {
     # The crop producer announces finished snapshots on a separate topic; it is
     # the same demultiplexing rule, so one subscription covers every camera.
     "snips_topic": "detections/snips",
-    # Section 6.2: a gap longer than this starts a new visibility interval
+    # A gap longer than this starts a new visibility interval
     # rather than implying the object was visible across it.
     "absence_split_seconds": 5.0,
-    # Section 6.4: no observation for this long closes the track as `timeout`.
+    # No observation for this long closes the track as `timeout`.
     # Design's initial value is 10s of real silence, but observations reach the
     # broker ~3.8s after the producer stamps them (measured), and that delay is
     # inside the stock pipeline, so the threshold carries it to keep the
     # intended ~10s of actual silence.
     "track_timeout_seconds": 14.0,
-    # Section 6.5 condition 3: how recently a track must have been seen to count
+    # How recently a track must have been seen to count
     # as current. The design's initial 3s is shorter than the measured delivery
     # latency below, which would make every camera permanently "absent"; this is
-    # set from measurement, not preference. See docs/application/evidence/phase3.
+    # set from measurement, not preference.
     "freshness_window_seconds": 8.0,
-    # Section 8.1: a crop that arrives before its observation waits this long for
+    # A crop that arrives before its observation waits this long for
     # a track to attach to. Bounded by age alone.
     "pending_association_seconds": 120.0,
     "detector_profile_path": "/config/detector-profile.json",
@@ -79,7 +79,7 @@ DEFAULTS: dict[str, Any] = {
     "feed_stale_seconds": 90.0,
     "takeover_seconds": 30.0,  # must match crop config takeover_seconds
     "telemetry_host": "handheld",
-    # Section 16: rule dispatch and speech. Tools are stock Alert Agent tools.
+    # Rule dispatch and speech. Tools are stock Alert Agent tools.
     "alert_tools": ["log_alert"],
     "alert_dispatch_timeout_seconds": 15.0,
     "tts_timeout_seconds": 30.0,
@@ -290,7 +290,7 @@ STORAGE_KEY = re.compile(r"^[a-f0-9]{32}\.jpg$")
 def resolve_crop_path(crop_dir: str, stream_id: str, storage_key: str) -> Path:
     """Map (camera, storage_key) to a real file, or raise ValueError.
 
-    Section 8.3. The regex alone would be enough today, but it is the *pair* that
+    The regex alone would be enough today, but it is the *pair* that
     holds: the pattern rejects separators and traversal, and the realpath check
     below still refuses a symlink planted inside the store that points out of it.
     Defence is cheap here and the blast radius of getting it wrong is the host

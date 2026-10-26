@@ -9,7 +9,7 @@ models:
     provider: openvino  # openai | openvino | whispercpp
     name: whisper-medium  # PINNED per application spec: whisper-medium only
     device: GPU # PINNED per application spec: GPU only
-    weight_format: fp16 # owner-directed 2026-09-28 (D57): stock default null exports FP32 weights (2.9 GB). OpenVINO: int8 | fp16 | null. whispercpp: null | q5 | q5_0 | q5_1 | q8 | q8_0 | int5 | int8
+    weight_format: fp16 # stock default null exports FP32 weights (2.9 GB). OpenVINO: int8 | fp16 | null. whispercpp: null | q5 | q5_0 | q5_1 | q8 | q8_0 | int5 | int8
     temperature: 0.0
     diarization: False  # True or False, applicable for provider: openvino
     hf_token: None  # needed only if diarization=true

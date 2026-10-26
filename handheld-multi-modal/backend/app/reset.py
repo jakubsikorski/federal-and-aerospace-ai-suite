@@ -1,4 +1,4 @@
-"""Per-camera history reset (section 9.2, D16).
+"""Per-camera history reset.
 
 The producer owns its crop files, so Backend does not delete them directly. It
 stops that camera's pipeline, waits for the exclusive lock to be released, and
@@ -24,7 +24,7 @@ from .core import crop_store_busy
 log = logging.getLogger("backend.reset")
 
 # Step 4 of the handshake. This must outlast the *takeover* threshold, not
-# merely match it: gvapython has no teardown hook (D19), so stopping a pipeline
+# merely match it: gvapython has no teardown hook, so stopping a pipeline
 # does not release the crop lock -- the store only becomes free once its
 # heartbeat has been stale for `takeover_seconds`. A wait equal to that
 # threshold is a race the reset loses whenever the producer was alive at step 3,
@@ -39,7 +39,7 @@ class ResetError(RuntimeError):
 
 
 def _write(ingest, conn, operation):
-    """Apply a write through the single writer (section 7).
+    """Apply a write through the single writer.
 
     The ingest thread commits roughly every second. A bulk DELETE issued on a
     second connection loses that race and fails with `database is locked`, so
@@ -209,7 +209,7 @@ def _clear_camera(conn, cfg: dict, client, ingest, stream_id: str) -> dict:
 
 
 def resume_interrupted(conn, cfg: dict, client, ingest) -> list[str]:
-    """Finish clears that a crash interrupted (section 9.2, crash behaviour).
+    """Finish clears that a crash interrupted.
 
     Runs before the startup reconcile, so a camera caught mid-reset is not
     restarted with half its history still present.

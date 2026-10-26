@@ -1,5 +1,5 @@
 # Handheld operator application. Run `make` for the command list and
-# docs/application/application-operations.md for details.
+# docs/user-guide/application-operations.md for details.
 SHELL := /bin/bash
 .SHELLFLAGS := -Eeuo pipefail -c
 .ONESHELL:
@@ -277,7 +277,7 @@ demo-prereq: prereq
 	# here: keyframe every second, no B-frames, same resolution, at most 30 fps.
 	# Detection runs on every frame (zero-term tracking); a 60 fps source outran
 	# the detector and its pipeline ended every ~90 s. cam2 is capped at 25 fps
-	# (owner-directed) to leave detector headroom. The .maxN name keeps a cache
+	# to leave detector headroom. The .maxN name keeps a cache
 	# made with another cap from being reused.
 	for clip in $(DEMO_CLIPS); do
 	  source=$${clip%:*} fps=$${clip##*:}
@@ -518,8 +518,17 @@ bundle: preflight
 	mkdir -p "$$BUNDLE"
 	rm -f "$$BUNDLE/images.tar"
 	printf '%s\n' $$images > "$$BUNDLE/images.txt"
-	git archive --format=tar --prefix=handheld-multi-modal/ -o "$$BUNDLE/source.tar" HEAD
-	[[ -z $$(git status --porcelain --untracked-files=no) ]] || echo 'note: uncommitted changes are not in source.tar' >&2
+	# Run from this directory, git archive packs only this application.
+	if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+	  git archive --format=tar --prefix=handheld-multi-modal/ -o "$$BUNDLE/source.tar" HEAD
+	  [[ -z $$(git status --porcelain --untracked-files=no -- .) ]] || echo 'note: uncommitted changes are not in source.tar' >&2
+	else
+	  # Release ZIP install: no Git metadata, so skip per-device and runtime files.
+	  tar --transform 's,^\.,handheld-multi-modal,' -cf "$$BUNDLE/source.tar" \
+	    --exclude=./data --exclude=./datasets --exclude=./config/tls \
+	    --exclude=./config/devices.yaml --exclude=./config/mediamtx.yml \
+	    --exclude=./docs/application/evidence --exclude=./.env --exclude=./.demo-assets.lock .
+	fi
 	if [[ "$(IMAGES)" != no ]]; then
 	  echo "Saving $$(wc -l < "$$BUNDLE/images.txt") images (takes several minutes)"
 	  docker save -o "$$BUNDLE/images.tar" $$images

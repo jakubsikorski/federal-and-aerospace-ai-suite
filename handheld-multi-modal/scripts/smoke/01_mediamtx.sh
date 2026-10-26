@@ -27,8 +27,8 @@ echo "Started instance $iid" >&2
 trap 'dlsps_stop_pipeline "$iid" || echo "WARN: instance $iid may still be running, check manually" >&2' EXIT
 dlsps_wait_pipeline "$iid" 15 5 >/dev/null
 
-# Annotated feed is native DLSPS WebRTC (WHIP) push, not RTSP, per owner
-# direction. Pull it back with a real WHEP client and prove MediaMTX served
+# Annotated feed is native DLSPS WebRTC (WHIP) push, not RTSP, by design.
+# Pull it back with a real WHEP client and prove MediaMTX served
 # real, decodable media — not just a 201/SDP exchange or a log line.
 #
 # The shipped NPU/GPU variants push VA-memory frames that DLSPS encodes as

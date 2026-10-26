@@ -1,7 +1,4 @@
-"""Backend application: services, camera history, telemetry and live UI state.
-
-Phases 1-9 of docs/design/APPLICATION_DESIGN.md, Appendix A.
-"""
+"""Backend application: services, camera history, telemetry and live UI state."""
 from __future__ import annotations
 
 import asyncio
@@ -337,7 +334,7 @@ async def lifespan(app: FastAPI):
     app.state.ingest.predicted_confidence = pipelines.PREDICTED_CONFIDENCE
     app.state.ingest.alerts = app.state.alerts
     app.state.alerts.writer = app.state.ingest.write
-    # Section 6.4: a previous process's open tracks are closed before anything
+    # A previous process's open tracks are closed before anything
     # can query current state, so a restart cannot present them as live.
     app.state.ingest.recover()
     app.state.ingest.start()
@@ -484,7 +481,7 @@ def create_app() -> FastAPI:
                     "stream_id": row["stream_id"],
                     "display_name": row["display_name"],
                     "sort_order": row["sort_order"],
-                    # Relative on purpose (D15): the UI resolves it against its own
+                    # Relative on purpose: the UI resolves it against its own
                     # origin, so no host or address is ever baked into the bundle.
                     "whep_path": f"/{row['annotated_path']}/whep",
                     "clear_state": row["clear_state"],
@@ -502,7 +499,7 @@ def create_app() -> FastAPI:
 
     @app.get("/api/streams/{stream_id}/current")
     def current(request: Request, stream_id: str):
-        """Section 6.5. Never answers "nothing there" on a feed that is not advancing."""
+        """Never answers "nothing there" on a feed that is not advancing."""
         _known(request, stream_id)
         state = request.app.state
         with read_connection(request) as conn:
@@ -611,7 +608,7 @@ def create_app() -> FastAPI:
             return envelope(incident)
         return await asyncio.to_thread(apply)
 
-    # -- camera registry (runtime cameras, D53) ---------------------------------
+    # -- camera registry (runtime cameras) --------------------------------------
     def _camera_view(request: Request) -> dict:
         with read_connection(request) as conn:
             return cameras.view(conn, request.app.state.cfg, request.app.state.ingest.snapshot())
@@ -1080,7 +1077,7 @@ def create_app() -> FastAPI:
             "X-Accel-Buffering": "no",
         })
 
-    # -- images (section 8.3) ----------------------------------------------
+    # -- images ------------------------------------------------------------
     def _serve(request: Request, conn: sqlite3.Connection, row) -> Response:
         cfg = request.app.state.cfg
         if row is None:
@@ -1147,7 +1144,7 @@ def create_app() -> FastAPI:
 
     @app.post("/api/streams/{stream_id}/clear")
     def clear_history(request: Request, stream_id: str, confirm: str = ""):
-        """Section 9.2. Destructive and scoped to one camera.
+        """Destructive and scoped to one camera.
 
         `confirm` must repeat the camera id, so a mis-aimed request clears
         nothing rather than the wrong camera's evidence.

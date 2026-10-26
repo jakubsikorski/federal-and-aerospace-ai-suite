@@ -1,18 +1,18 @@
-# Metrics Manager: PASS (CPU/RAM/GPU/NPU/temp confirmed on this Lunar Lake host)
+# Metrics Manager (CPU/RAM/GPU/NPU/temp telemetry)
 
 Pinned image `intel/metrics-manager:2026.2.0`
-(digest `sha256:95721fba4300c9778a0d6b133602f19a331ac3d3b0578510269ae19350a8465e`,
-2026-09-29; the smoke evidence below was recorded on the earlier 2026.1.0 image
-and re-run in `../../docs/application/evidence/release-2026.2.0-final/image-update-2026-09-29.txt`). Deployed via `compose/handheld-multi-modal.yaml` (`metrics`
+(digest `sha256:95721fba4300c9778a0d6b133602f19a331ac3d3b0578510269ae19350a8465e`;
+the observations below were first recorded on the earlier 2026.1.0 image
+and re-checked on 2026.2.0). Deployed via `compose/handheld-multi-modal.yaml` (`metrics`
 service), using upstream source's own `compose.yaml` defaults
 (`microservices/metrics-manager`, edge-ai-libraries commit `3b44c78`, dated
 2026-09-01): `privileged: true`, `pid: host`, `apparmor:unconfined`,
-`/dev/dri` device, `group_add: 992` (this host's real `render` GID), `/sys`
+`/dev/dri` device, `group_add: 992` (example `render` GID; resolved per device), `/sys`
 and `/run` read-only bind mounts. These are source's own required
 settings for host CPU/GPU/NPU telemetry, not an invented application addition.
 
 `config/metrics/telegraf.conf` is copy of upstream `telegraf.conf` from same
-commit with one local edit (2026-10-26): upstream's commented
+commit with one local edit: upstream's commented
 `[[inputs.docker]]` example enabled, scoped to running `handheld-*`
 containers, 2 s interval, labels dropped, CPU/memory fields only. Compose
 mounts `/var/run/docker.sock` read-only into `metrics` for it. Docker API
@@ -23,8 +23,7 @@ Series: `docker_container_cpu_usage_percent{container_name,cpu="cpu-total"}`
 excludes page cache), `docker_container_mem_usage_percent`, and the engine's
 host CPU count `docker_n_cpus`. Backend returns them as `containers` in
 `/api/metrics` with `cpu_host_percent` (CPU / `n_cpus`, same scale as the CPU
-tile) and `cpu_cores`; UI Resources tab shows them as Services cards. Verified on this host 2026-10-26: 13 containers, 52 series
-on `/api/v1/metrics/latest`.
+tile) and `cpu_cores`; UI Resources tab shows them as Services cards.
 
 ## Run
 
@@ -34,10 +33,9 @@ METRICS_URL=http://127.0.0.1:9090 METRICS_TELEGRAF_URL=http://127.0.0.1:9273 \
   bash scripts/smoke/13_metrics.sh
 ```
 
-## Evidence
+## Expected behavior
 
-Full session captured in `docs/application/evidence/metrics/smoke.log`. Confirmed
-on this Lunar Lake host:
+Observed on an Intel Core Ultra (Series 2, Lunar Lake) test device:
 
 - `GET :9090/health` → `{"status":"healthy","version":"2026.1.0",...}` (2026.2.0 reports the same).
 - `scripts/smoke/13_metrics.sh` PASS: two fresh, advancing CPU/RAM samples
@@ -78,7 +76,7 @@ on this Lunar Lake host:
   against pinned image; routes this application actually exercises
   (`/health`, `/api/v1/metrics/latest`, `/metrics`, `/metrics/stream`) all
   work as documented.
-- `npu_memory_mb` is `-1` on this host by design (Lunar Lake, not PTL+); not
+- `npu_memory_mb` is `-1` on Lunar Lake by design (source only reads it on PTL+); not
   a failure.
 - All GPU/NPU values observed here are **idle-state** readings (no DLSPS
   pipeline running detection/tracking during this metrics smoke). Values

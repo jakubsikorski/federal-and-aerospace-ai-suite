@@ -137,7 +137,7 @@ def test_migrate_is_idempotent_and_sync_preserves_run_state():
         row = conn.execute("SELECT * FROM streams WHERE stream_id='cam1'").fetchone()
 
         assert row["display_name"] == "Front door", "config must win for descriptive fields"
-        # D16: a config reload must never lose pipeline ownership or an in-flight
+        # A config reload must never lose pipeline ownership or an in-flight
         # clear, or crash recovery cannot tell what it owns.
         assert row["history_generation"] == "abc", row["history_generation"]
         assert row["dlsps_instance_id"] == "i-1", row["dlsps_instance_id"]
@@ -385,7 +385,7 @@ def _send(ing, payload, topic="detections/snips"):
 
 
 def test_crop_arriving_before_its_observation_is_parked_then_attached():
-    """Section 8.1: the crop-first race must not lose evidence or invent a track."""
+    """The crop-first race must not lose evidence or invent a track."""
     cid = "a" * 32
     with tempfile.TemporaryDirectory() as tmp:
         ing = _ingest(tmp, cameras=("cam1",))
@@ -476,7 +476,7 @@ def test_sidecar_read_failure_is_retried():
 
 
 def test_expired_candidates_are_reflected_not_deleted():
-    """Section 9.1: the track fact outlives its image."""
+    """The track fact outlives its image."""
     with tempfile.TemporaryDirectory() as tmp:
         ing = _ingest(tmp, cameras=("cam1",))
         _send(ing, _observation("cam1", 1), topic="detections/live")
@@ -546,7 +546,7 @@ def test_history_filters_before_limit_and_reports_scope():
 
 
 def test_tracks_are_closed_on_timeout_and_startup():
-    """Section 6.4: a restart must not present a dead process's tracks as live."""
+    """A restart must not present a dead process's tracks as live."""
     with tempfile.TemporaryDirectory() as tmp:
         ing = _ingest(tmp, cameras=("cam1",))
         _send(ing, _observation("cam1", 1, observed_at=time.time() - 3600),
@@ -565,7 +565,7 @@ def test_tracks_are_closed_on_timeout_and_startup():
 
 
 def test_current_is_unknown_when_the_feed_is_not_advancing():
-    """Section 6.5: a successful query on a dead feed never says "nobody there"."""
+    """A successful query on a dead feed never says "nobody there"."""
     from app import history
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -588,7 +588,7 @@ def test_current_is_unknown_when_the_feed_is_not_advancing():
 
 
 def test_a_track_is_queryable_before_it_is_committed():
-    """Section 6.3: reads merge the in-memory map, so no query waits for a commit."""
+    """Reads merge the in-memory map, so no query waits for a commit."""
     from app import history
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -611,7 +611,7 @@ def test_a_track_is_queryable_before_it_is_committed():
 
 
 def test_storage_keys_cannot_escape_the_crop_root():
-    """Section 8.3. The regex and the realpath check both have to hold."""
+    """The regex and the realpath check both have to hold."""
     from app.core import resolve_crop_path
 
     with tempfile.TemporaryDirectory() as tmp:

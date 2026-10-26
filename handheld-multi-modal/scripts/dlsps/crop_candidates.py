@@ -454,7 +454,7 @@ class Store:
 
     @owned_operation
     def heartbeat(self, stats=None, observed_at=None):
-        """Liveness plus the counters that never reach MQTT (D17)."""
+        """Liveness plus the counters that never reach MQTT."""
         stamp = time.time() if observed_at is None else observed_at
         atomic_write(self.status, json.dumps({
             "stream_id": self.settings.stream_id,

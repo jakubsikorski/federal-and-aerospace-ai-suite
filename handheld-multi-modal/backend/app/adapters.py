@@ -86,7 +86,7 @@ class Services:
         return "health ok", body
 
     def tts(self) -> tuple[str, dict | None]:
-        """/v1/model-info proves both provenance-approved model and the selected placement (D56)."""
+        """/v1/model-info proves both provenance-approved model and the selected placement."""
         body = self._get("tts", "/v1/model-info").json()
         expected = os.environ.get("TTS_DEVICE") or "CPU"
         if body.get("device") != expected:

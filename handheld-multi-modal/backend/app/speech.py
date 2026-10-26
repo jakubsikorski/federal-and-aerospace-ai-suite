@@ -1,4 +1,4 @@
-"""Audio arbiter (design section 16.4): the only producer of TTS requests.
+"""Audio arbiter: the only producer of TTS requests.
 
 One utterance at a time. Backend decides what is "current"; the UI plays what
 the arbiter reports, preloads the ready next answer chunk and starts it the

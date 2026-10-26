@@ -1,7 +1,5 @@
 # Audio Analyzer — deployed and smoke-tested
 
-Status: **PASS** on this Lunar Lake host (Intel Core Ultra 9 288V), 2026-09-10.
-
 Image `intel/audio-analyzer:2026.2.0`
 (`sha256:b2c5cacb2073e89ecc07af211169e8c705f673bcb6980d503fff54a7e25581f1`),
 source `microservices/audio-analyzer/` (edge-ai-libraries).
@@ -25,8 +23,8 @@ matches application requirement (sentiment/diarization both disabled).
   for Alert Agent's host mapping in this compose file — distinct host
   port required.)
 - `user: 1000:1000` (hardcoded upstream, matches named-volume ownership).
-- `group_add: [video, 992]` for `/dev/dri` GPU access (`992` is this host's
-  real `render` GID, confirmed via `getent group render`).
+- `group_add: [video, 992]` for `/dev/dri` GPU access (`992` is only an
+  example; use the device's real `render` GID from `getent group render`).
 - Named volumes for `/app/audio_analyzer/{models,chunks,storage,.cache}`
   persist exported OpenVINO IR and HF cache across restarts.
 - **Real proxy required.** First container start runs
@@ -34,14 +32,14 @@ matches application requirement (sentiment/diarization both disabled).
   download+convert model. Needs outbound access to
   `huggingface.co`. Unlike other application services (which only talk to
   local peers and can safely blank `http_proxy`/`https_proxy`), this
-  container must receive host's actual corporate proxy
-  (`http://proxy.example.com:911` / `:912` on this host) or export
+  container must receive the host's actual corporate proxy
+  (your corporate proxy's `http_proxy`/`https_proxy` values) or export
   silently stalls forever, no error, no retry log. Only `no_proxy`
   should list local addresses.
 - `HF_TOKEN` (or legacy `HF_ACCESS_TOKEN`) passed through but not required for this public checkpoint
   (only needed if diarization were enabled).
 
-## Evidence
+## Expected behavior
 
 - Startup log: `optimum-cli` export completes
   (`utils.ensure_model: Export successful`), then
@@ -55,7 +53,6 @@ matches application requirement (sentiment/diarization both disabled).
   (`tests/philosophy_10_russell_128kb.mp3`) returned recognizable
   transcription of spoken content, proving real GPU whisper-medium
   inference (not a stub).
-- Full log: `docs/application/evidence/audio-analyzer/smoke.log`.
 
 ## Smoke test
 

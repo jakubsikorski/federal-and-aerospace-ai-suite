@@ -5,7 +5,7 @@
       "id": "Intel/neural-chat-7b-v3-3",
       "revision": "7506dfc5fb325a8a8e0c4f9a6a001671833e5b8e",
       "license": "Apache-2.0",
-      "provenance": "Intel (NeuralChat team); fine-tuned from Intel/neural-chat-7b-v3-1, itself fine-tuned from mistralai/Mistral-7B-v0.1 (Mistral AI, France); DPO-aligned on Intel/orca_dpo_pairs; SFT on meta-math/MetaMathQA (meta-math, US). No PRC-trained family/derivative in the lineage. See MODEL_PROVENANCE.md. Owner-directed replacement for microsoft/Phi-3.5-mini-instruct (2026-09-14)."
+      "provenance": "Intel (NeuralChat team); fine-tuned from Intel/neural-chat-7b-v3-1, itself fine-tuned from mistralai/Mistral-7B-v0.1 (Mistral AI, France); DPO-aligned on Intel/orca_dpo_pairs; SFT on meta-math/MetaMathQA (meta-math, US). No PRC-trained family/derivative in the lineage. See MODEL_PROVENANCE.md. Replacement for microsoft/Phi-3.5-mini-instruct."
     },
     "embedding": {
       "id": "ibm-granite/granite-embedding-125m-english",

@@ -153,7 +153,7 @@ Stop the owning pipeline first; the lock rejects a live owner. Clear Backend his
 
 ## Checks in the current running container
 
-Takeover cleanup (2026-09-22): a worker checks ownership while idle and retires
+Takeover cleanup: a worker checks ownership while idle and retires
 when its lock inode is replaced, even if DLSPS retains the callback object.
 Takeover and store operations share a directory lock: displaced workers cannot
 write, expire or announce the replacement's files. Retirement closes the crop
@@ -185,38 +185,36 @@ docker exec handheld-multi-modal-dlsps-1 python3 /tmp/handheld-crop-scripts/test
 
 Use an absent destination for the first docker cp; for subsequent updates copy individual files to avoid nested directories. `--live` uses the already mounted classroom video, pinned YOLO26s model and existing MQTT broker. It runs isolated finite pipelines inside the container, requires NPU and VA access, and does not stop any DLSPS REST instance. It publishes real crop events on detections/snips with stream_id `crop_validation`; run it when that test traffic is acceptable to consumers.
 
-Copy the printed evidence directory and logs to `docs/application/evidence/dlsps-crops/`. Inspect representative crops visually as well as decoding them. Hardware identity in evidence is the actual Lunar Lake / Intel Core Ultra 9 288V host; do not relabel it Panther Lake.
+Keep the printed evidence directory and logs locally. Inspect representative crops visually as well as decoding them. Record the actual hardware the check ran on.
 
-Corrected 2026-09-14 (S3): these scripts **are** enabled in Compose and in the fixed production configs — `crop_candidates.py` is in the shipped `pipeline` string of all three variants and runs on every launch — and `06_snip.sh` is implemented and PASSes (see `scripts/smoke/README.md`). The earlier claim here that they were not enabled and that `06_snip.sh` stayed blocked contradicted the rest of this same file. The live check proves actual crop/metadata/MQTT behavior; it is not a whole-app or sustained WHEP/telemetry benchmark. CPU/GPU variants and difficult-angle/occlusion footage require separate measurements.
+These scripts **are** enabled in Compose and in the fixed production configs — `crop_candidates.py` is in the shipped `pipeline` string of all three variants and runs on every launch — and `06_snip.sh` checks them end to end (see `scripts/smoke/README.md`). The live check proves actual crop/metadata/MQTT behavior; it is not a whole-app or sustained WHEP/telemetry benchmark. CPU/GPU variants and difficult-angle/occlusion footage require separate measurements.
 
-## Recorded validation (2026-09-11)
+## Recorded validation
 
-On the accepted Lunar Lake host, the pinned image passed the deterministic checks.
+On an Intel Core Ultra (Series 2) test device, the pinned image passed the deterministic checks.
 A real NPU/VA run saved three probe images and independently received 13 crop MQTT
 messages correlated against 161 observation frames. Images decoded with the
-expected dimensions. Evidence: `docs/application/evidence/dlsps-crops/npu-va/` and
-`live-check.log` (local, gitignored). The existing exporter/runtime version warning
+expected dimensions. The existing exporter/runtime version warning
 was present; no model was changed. This is a short compatibility check, not a
 sustained-load or camera-angle acceptance claim.
 
 ### Probe sampling correction
 
-The original `npu-va/probe/` evidence sampled tracker ID 1 three times because
+The original probe run sampled tracker ID 1 three times because
 the probe always chose the first ROI. That demonstrated mapping, not track
-coverage. The producer's separate `npu-va/crops/` directory contained different
+coverage. The producer's separate crop output contained different
 track IDs. The probe now rotates across least-attempted tracked ROIs, with the
 same image/attempt limits. Regression checks require IDs 1,2,3,1,2,3 for a stable
 three-track fixture; the live classroom check requires three distinct probe IDs
-and at least three producer IDs. New evidence is saved separately under
-`docs/application/evidence/dlsps-crops/diversity/`; the original run is preserved.
+and at least three producer IDs.
 
 The corrected real NPU/VA run passed with probe IDs **1, 2, 3**, producer IDs
 **1 through 12**, 12 correlated MQTT events and 160 observation frames.
 The three probe JPEGs were also inspected visually and show different subjects
 in different parts of the source frame. These IDs still represent tracks, not
-re-identified individuals. See `diversity/result.json` and `diversity-live.log`.
+re-identified individuals.
 
-### Region-only worker conversion (2026-09-25)
+### Region-only worker conversion
 
 The producer maps each admitted frame once and copies only selected crop
 regions. NV12/I420 regions expand to complete 2×2 chroma blocks on the callback
@@ -230,7 +228,7 @@ The measurement probe retains its original full-frame conversion. Correctness
 tests compare regional output against that conversion, including odd coordinates
 and frame edges. No FPS gain is claimed without controlled measurement.
 
-### Stride and failure handling (2026-09-23)
+### Stride and failure handling
 
 The producer uses bounds-checked read-only plane views from the raw mapped
 GStreamer buffer. GstVideoMeta supplies offsets and row strides; negotiated

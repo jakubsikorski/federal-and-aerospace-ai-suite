@@ -1,4 +1,4 @@
-# Crop producer configuration (D13, D53)
+# Crop producer configuration
 
 One template, `template.json`, serves every camera. Backend passes the camera's
 `stream_id` with each pipeline request (`crop-config` parameter), and the
@@ -6,15 +6,15 @@ producer stores that camera's crops in `<output_dir>/<stream_id>`. The producer
 takes an exclusive `flock` on that directory's `.lock`, so **two cameras never
 share a store** — the second pipeline would fail to start with `Resource
 temporarily unavailable`. That lock is also what makes the clear-history
-handshake safe (design 9.2, D16). A camera added in the console at runtime
+handshake safe. A camera added in the console at runtime
 therefore needs no new file here.
 
 `stream_id` is what the callback injects into every observation, so Backend
 demultiplexes one shared MQTT topic back to the right camera. It is the
 MediaMTX path name (`camN`) and must be 1–64 characters of `[A-Za-z0-9_-]`.
 
-Budgets are **per camera**, and the store is a **rolling window, not an archive**
-(D23). Once `store_candidates` (1500) or `store_bytes` (256 MiB) is reached, the
+Budgets are **per camera**, and the store is a **rolling window, not an archive**.
+Once `store_candidates` (1500) or `store_bytes` (256 MiB) is reached, the
 producer evicts the oldest candidates to make room for each new one. Eviction
 order comes from an in-memory creation-ordered index, so rotation is a pop and
 not a directory scan; `maintain()` rebuilds that index on the walk it already

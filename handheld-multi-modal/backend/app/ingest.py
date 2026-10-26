@@ -31,15 +31,15 @@ COMMIT_INTERVAL_SECONDS = 1.0
 # Expiry reflection and the sidecar recovery scan are directory walks, so they
 # run on their own slower cadence than the 1 s health tick.
 HOUSEKEEPING_SECONDS = 30.0
-# Section 4 / D10: the pinned tracker does not say whether a confidence is
+# The pinned tracker does not say whether a confidence is
 # detector-fresh or predicted, so it is never presented as fresh inference.
 FRESHNESS = "tracker_metadata_unverified"
 # Stock short-term gvatrack writes exactly 1.0 on objects it predicts rather
-# than detects (evidence/phase8/tracker_confidence_probe.txt). The marker is
+# than detects (verified with a tracker confidence probe). The marker is
 # only applied when the selected pipeline uses such a tracker (pipelines.
 # PREDICTED_CONFIDENCE); zero-term detects every frame and keeps every score.
 
-# Section 8.1. Columns copied straight off the producer's sidecar. Listed once
+# Columns copied straight off the producer's sidecar. Listed once
 # so the INSERT, the reconciliation scan and the tests cannot drift apart.
 CANDIDATE_COLUMNS = (
     "candidate_id", "stream_id", "tracking_session_id", "history_generation",
@@ -108,7 +108,7 @@ class Ingest:
         self.started_at = time.monotonic()
         # Cameras added after startup get their own "starting" grace period.
         self.known_since: dict[str, float] = {}
-        # Section 6.2/6.4/8.1. Held as attributes rather than module constants so
+        # Held as attributes rather than module constants so
         # a deployment can retune them without a code change.
         self.gap = float(cfg.get("absence_split_seconds", INTERVAL_GAP_SECONDS))
         self.track_timeout = float(cfg.get("track_timeout_seconds", 10.0))
@@ -134,21 +134,21 @@ class Ingest:
         self.newest_frame: dict[str, float] = {}
         self.health: dict[str, tuple[bool, str]] = {}
         self.open_intervals: dict[tuple, dict] = {}
-        # Section 6.3: active track state, checkpointed to SQLite but readable
+        # Active track state, checkpointed to SQLite but readable
         # immediately. Reads merge this over the committed result set so a query
         # never has to wait for the next commit to see a track that exists.
         self.active: dict[tuple, dict] = {}
         # Tracks seen fewer than min_track_observations times. Held in memory
         # only: they are never written, shown, matched by rules or given crops.
         self.tentative: dict[tuple, dict] = {}
-        # Scoped identity -> monotonic deadline. Section 8.1: a crop can arrive
+        # Scoped identity -> monotonic deadline. A crop can arrive
         # before the observation that creates its track, so the row is parked
         # with track_id NULL and attached later. Bounded by age alone.
         self.parked: dict[tuple, float] = {}
         # Scoped identity -> wall time a crop arrived before its track was
         # admitted; moved onto the track entry for the alert latency readout.
         self.first_crop: dict[tuple, float] = {}
-        # Cameras mid-clear (section 9.2 step 2). Their messages are discarded
+        # Cameras mid-clear. Their messages are discarded
         # so a drain cannot repopulate the history being deleted.
         self.draining: set[str] = set()
         # stream_id -> sidecar stems seen on the last reconciliation scan, so a
@@ -165,7 +165,7 @@ class Ingest:
 
     # -- lifecycle ---------------------------------------------------------
     def recover(self) -> int:
-        """Close tracks a previous process left open (section 6.4).
+        """Close tracks a previous process left open.
 
         Must run before any current-state query is served, otherwise a restart
         would present a dead process's open tracks as currently visible.
@@ -410,7 +410,7 @@ class Ingest:
         entry["attribute_sample"] = (signature, sample_id, observed_at)
 
     def _apply_crop(self, event: dict) -> None:
-        """Section 8.1: attach a finished crop to its track, or park it."""
+        """Attach a finished crop to its track, or park it."""
         stream_id = event.get("stream_id")
         if stream_id not in self.known:
             self.counters["crop_unregistered_camera"] += 1
@@ -494,7 +494,7 @@ class Ingest:
                 self.parked.pop(key, None)
                 self.counters["crop_parked_expired"] += 1
 
-    # -- closure (section 6.4) ---------------------------------------------
+    # -- closure -----------------------------------------------------------
     def _close_tracks(self, stream_id: str, reason: str, *, before_utc: str | None = None,
                       identity: tuple[str, str] | None = None) -> int:
         """Close open tracks. Valid history is never deleted, only closed."""
@@ -539,7 +539,7 @@ class Ingest:
                     self.open_intervals.pop(key, None)
 
     def _reflect_expiry(self) -> None:
-        """Section 9.1: the producer expires files; Backend reflects that.
+        """The producer expires files; Backend reflects that.
 
         Track facts survive their image. A candidate whose retention has passed
         becomes `expired`, which the image API turns into a typed 404 so the UI
@@ -565,7 +565,7 @@ class Ingest:
 
         The cutoff is twice the parking window, not the window itself: the
         in-memory deadline is set when the crop *arrives*, while this compares
-        the producer's `observed_at`, which is already ~20 s older (D24).
+        the producer's `observed_at`, which is already ~20 s older.
         Reaping on the window alone would delete rows ~20 s before
         `_attach_parked` stops trying to use them.
         """
@@ -668,7 +668,7 @@ class Ingest:
             if due:
                 self.reconcile_sidecars()
 
-    # -- reconciliation (section 8.2) --------------------------------------
+    # -- reconciliation ----------------------------------------------------
     def reconcile_sidecars(self) -> int:
         """Recover crops the broker never delivered.
 
@@ -737,7 +737,7 @@ class Ingest:
     def write(self, operation):
         """Run a write through the single writer, serialized with ingest.
 
-        Section 7 says one writer task. A second connection issuing a bulk
+        There is one writer task. A second connection issuing a bulk
         DELETE while this one commits every second does not merely contend, it
         fails: WAL allows one writer, and the loser gets `database is locked`
         as soon as the delete outlives busy_timeout. Callers that mutate history
@@ -752,7 +752,7 @@ class Ingest:
                 self.conn.rollback()
                 raise
 
-    # -- reset handshake (section 9.2) -------------------------------------
+    # -- reset handshake ---------------------------------------------------
     def set_draining(self, stream_id: str, draining: bool) -> None:
         """While draining, this camera's messages are discarded and counted."""
         with self.lock:
@@ -816,7 +816,7 @@ class Ingest:
 
     # -- reads -------------------------------------------------------------
     def live_tracks(self, stream_id: str, cutoff: float) -> list[dict]:
-        """Active tracks seen since `cutoff` (epoch), for the section 6.3 merge.
+        """Active tracks seen since `cutoff` (epoch), for the in-memory merge.
 
         A copy under the lock: the caller is an API thread and the ingest thread
         mutates these dicts in place on every frame.
