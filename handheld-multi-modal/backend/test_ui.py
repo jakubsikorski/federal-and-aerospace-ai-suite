@@ -168,7 +168,13 @@ class Fixture(BaseHTTPRequestHandler):
                 specs += [(f'diagnostic_{i}', f'Diagnostic {i}', i, 'MHz') for i in range(12)]
                 data = dict(status='ok', sampled_utc=now, history_seconds=300, metrics=[
                     dict(id=i, label=label, value=value, unit=unit, state='unavailable' if value is None else 'ok',
-                         sampled_utc=now, source='test_fixture', note=None) for i, label, value, unit in specs])
+                         sampled_utc=now, source='test_fixture', note=None) for i, label, value, unit in specs],
+                    containers=[dict(name=name, cpu_percent=cpu, memory_bytes=mem, memory_limit_bytes=32 * 1024 ** 3,
+                                     memory_percent=mem / (32 * 1024 ** 3) * 100, state='ok', sampled_utc=now)
+                                for name, cpu, mem in [('handheld-multi-modal-dlsps-1', 106.7, 1.4 * 1024 ** 3),
+                                                       ('handheld-multi-modal-backend', 6.9, 95 * 1024 ** 2),
+                                                       ('handheld-multi-modal-chatqna-core-gpu', 0.2, 6.5 * 1024 ** 3),
+                                                       ('handheld-demo-cam1', 0.4, 9 * 1024 ** 2)]])
             else:
                 data = {}
             payload, kind = json.dumps({'data': data}).encode(), 'application/json'
@@ -325,6 +331,18 @@ def main():
               state.telemetry.metrics.forEach(m=>m.state="stale");renderTelemetry();const stale=gpu.dataset.state==="stale";
               state.telemetry.metrics.forEach(m=>{m.state="unavailable";m.value=null});renderTelemetry();
               const missing=gpu.querySelector("strong").textContent==="Unavailable";
+              state.telemetry=structuredClone(original);
+              state.telemetry.containers.forEach(row=>{row.sampled_utc=new Date(serverNow()).toISOString();row.state="ok";});
+              state.resource="containers";renderTelemetry();const tile=document.querySelector('[data-resource="containers"]');
+              const rows=[...document.querySelectorAll("#container-view tbody tr")];
+              const containers=!tile.hidden && tile.querySelector("strong").textContent==="107%"
+                && tile.querySelector("small").textContent==="dlsps · 4 running"
+                && rows.length===4 && rows[0].cells[0].textContent==="dlsps" && rows[0].cells[0].title==="handheld-multi-modal-dlsps-1"
+                && rows[0].cells[1].textContent==="107%" && rows[0].cells[2].textContent.startsWith("1.4 GiB")
+                && rows.at(-1).cells[1].textContent==="0.2%" && rows.some(r=>r.cells[2].textContent.startsWith("95 MiB"))
+                && getComputedStyle($("chart")).display==="none" && getComputedStyle($("container-view")).display==="block";
+              state.telemetry.containers=[];renderTelemetry();
+              const noContainers=tile.hidden && state.resource!=="containers" && getComputedStyle($("chart")).display!=="none";
               state.telemetry=original;state.resource=resource;renderTelemetry();
               state.mission={mode:"ready",sources:[{filename:"a.pdf"}],brief:{stale:true,corpus_version:1}};
               $("mission-answer").textContent="Keep my answer";renderMission();
@@ -337,7 +355,7 @@ def main():
               const fonts = size(turn.lastChild) === size($("assistant-answer")) && size(turn.lastChild) === "15px"
                 && size(turn.firstChild) === size($("assistant-submitted")) && size(turn.firstChild) === "14px";
               turn.remove();
-              return {priority,newest,noPeople,cars,maximum,partial,zero,stale,missing,mission,fonts};
+              return {priority,newest,noPeople,cars,maximum,partial,zero,stale,missing,containers,noContainers,mission,fonts};
             })()'''
             checks=js('return window.eval(' + json.dumps(regression) + ')')
             assert all(checks.values()), checks
@@ -1192,6 +1210,7 @@ def main():
                 # tiles are measured without the "Stale" line.
                 check('''(() => { state.resource = "gpu"; const fresh = new Date(serverNow()).toISOString();
                   state.telemetry.metrics.forEach(m => { m.sampled_utc = fresh; }); state.telemetry.sampled_utc = fresh;
+                  (state.telemetry.containers || []).forEach(row => { row.sampled_utc = fresh; });
                   renderTelemetry(); return true; })()''')
                 # Overlay panels stay inside the viewport and keep their title/Close
                 # visible when their body scrolls (1280x800 is the test display).
@@ -1305,6 +1324,10 @@ def main():
                     check('renderChart(); true')
                     data = request('GET', base + '/screenshot')
                     (args.screenshots / f'fixture-{width}x{height}.png').write_bytes(base64.b64decode(data))
+                    check('state.resource = "containers"; renderTelemetry(); true')
+                    data = request('GET', base + '/screenshot')
+                    (args.screenshots / f'fixture-{width}x{height}-containers.png').write_bytes(base64.b64decode(data))
+                    check('state.resource = "gpu"; renderTelemetry(); true')
             # Small upward wheel steps (smooth scrolling) must not snap the conversation back to the latest reply.
             result = async_js(r'''const done = arguments[arguments.length - 1];
               window.eval(`(async () => {

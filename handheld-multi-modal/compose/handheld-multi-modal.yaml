@@ -191,6 +191,10 @@ services:
       - /sys:/sys:ro
       - /run:/run:ro
       - ../config/metrics/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      # Telegraf inputs.docker: per-container CPU/memory for the Resources tab.
+      # Docker API access is root-equivalent; this container is already
+      # privileged with pid: host, and only Telegraf's read-only stats calls use it.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     networks: [handheld]
   alert-agent:
     image: intel/alert-agent-service:2026.2.0

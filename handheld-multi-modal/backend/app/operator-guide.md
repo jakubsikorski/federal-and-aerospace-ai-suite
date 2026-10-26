@@ -89,7 +89,9 @@ mission material. Application capabilities do not establish mission facts.
 - Storage, all on the device: SQLite holds detections and tracks (kept 7 days), rules, alert incidents, the mission document list and the Mission Brief. Chat Q&A Core holds the indexed mission documents. Cropped images sit on disk.
 - The Architecture page shows the diagram, every API and step-by-step flows.
 ## Resources, services and limitations
-Resources shows CPU, memory, GPU/NPU and power telemetry when available. Details
+Resources shows CPU, memory, GPU/NPU and power telemetry when available, plus a
+Containers table with current CPU (100% = one core) and memory per application
+container. Details
 shows component readings; Expand enlarges the chart. Stale or unavailable readings
 are not zero. Models & devices shows model, device and host information; configured
 placement is different from service-reported execution. Starting means a model

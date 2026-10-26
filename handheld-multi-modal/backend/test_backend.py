@@ -280,6 +280,45 @@ def test_telemetry_preserves_zero_unavailable_and_real_units():
     assert mismatch["metrics"] == []
 
 
+def test_telemetry_reports_per_container_cpu_and_memory():
+    from app.telemetry import normalize
+
+    def metric(name, value, ts=2_000_000_000_000_000_000, **tags):
+        return {"name": name, "tags": {"host": "handheld", **tags},
+                "fields": {"value": value}, "timestamp": ts}
+
+    payload = {"metrics": {
+        "u": metric("cpu_usage_user", 10, cpu="cpu-total"),
+        "c1": metric("docker_container_cpu_usage_percent", 106.5,
+                     container_name="handheld-multi-modal-dlsps-1", cpu="cpu-total"),
+        "c1x": metric("docker_container_cpu_usage_percent", 50,
+                      container_name="handheld-multi-modal-dlsps-1", cpu="cpu0"),
+        "m1": metric("docker_container_mem_usage", 1_500_000_000,
+                     container_name="handheld-multi-modal-dlsps-1"),
+        "l1": metric("docker_container_mem_limit", 32_000_000_000,
+                     container_name="handheld-multi-modal-dlsps-1"),
+        "p1": metric("docker_container_mem_usage_percent", 4.5,
+                     container_name="handheld-multi-modal-dlsps-1"),
+        "c2": metric("docker_container_cpu_usage_percent", 0,
+                     ts=1_999_999_980_000_000_000, container_name="handheld-demo-cam1",
+                     cpu="cpu-total"),
+    }}
+    answer = normalize(payload, "handheld", now=2_000_000_000)
+    rows = {row["name"]: row for row in answer["containers"]}
+    assert list(rows) == ["handheld-demo-cam1", "handheld-multi-modal-dlsps-1"]
+    dlsps = rows["handheld-multi-modal-dlsps-1"]
+    assert dlsps["cpu_percent"] == 106.5, "per-CPU series must not override cpu-total"
+    assert dlsps["memory_bytes"] == 1_500_000_000
+    assert dlsps["memory_limit_bytes"] == 32_000_000_000
+    assert dlsps["memory_percent"] == 4.5
+    assert dlsps["state"] == "ok"
+    cam = rows["handheld-demo-cam1"]
+    assert cam["cpu_percent"] == 0 and cam["memory_bytes"] is None
+    assert cam["state"] == "stale"
+    assert answer["status"] == "ok"
+    assert not any(m["id"].startswith("docker") for m in answer["metrics"])
+
+
 def test_alert_feed_is_global_and_camera_labelled():
     from app import history
 

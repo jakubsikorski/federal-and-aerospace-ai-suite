@@ -11,8 +11,19 @@ service), using upstream source's own `compose.yaml` defaults
 and `/run` read-only bind mounts. These are source's own required
 settings for host CPU/GPU/NPU telemetry, not an invented application addition.
 
-`config/metrics/telegraf.conf` is unmodified copy of upstream
-`telegraf.conf` from same commit (no local edits).
+`config/metrics/telegraf.conf` is copy of upstream `telegraf.conf` from same
+commit with one local edit (2026-10-26): upstream's commented
+`[[inputs.docker]]` example enabled, scoped to running `handheld-*`
+containers, 2 s interval, labels dropped, CPU/memory fields only. Compose
+mounts `/var/run/docker.sock` read-only into `metrics` for it. Docker API
+access is root-equivalent; `metrics` already runs privileged with `pid: host`.
+Series: `docker_container_cpu_usage_percent{container_name,cpu="cpu-total"}`
+(Docker stats %, 100 = one core, may exceed 100),
+`docker_container_mem_usage` / `docker_container_mem_limit` (bytes, usage
+excludes page cache), `docker_container_mem_usage_percent`. Backend returns them
+as `containers` in `/api/metrics`; UI Resources tab shows them in the
+Containers table. Verified on this host 2026-10-26: 13 containers, 52 series
+on `/api/v1/metrics/latest`.
 
 ## Run
 

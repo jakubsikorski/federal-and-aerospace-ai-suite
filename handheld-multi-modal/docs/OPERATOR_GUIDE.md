@@ -435,9 +435,11 @@ vehicles walk; an object counts by where its feet touch the ground.
 
 ![Resources](images/guide-resources.jpg)
 
-1. **Tiles** — CPU, Memory, GPU engines, NPU and Package power. Click one to
-   chart it.
-2. **Chart** — last 5 minutes of the selected tile.
+1. **Tiles** — CPU, Memory, GPU engines, NPU, Package power and Containers.
+   Click one to chart it.
+2. **Chart** — last 5 minutes of the selected tile. **Containers** shows a
+   table instead: current CPU (Docker stats, 100% = one core) and memory per
+   application container, busiest first.
 3. **Expand** — larger chart.
 4. **Details** — raw readings.
 

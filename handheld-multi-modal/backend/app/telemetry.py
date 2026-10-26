@@ -8,6 +8,8 @@ import time
 log = logging.getLogger("backend.telemetry")
 
 STALE_AFTER_SECONDS = 5.0
+# inputs.docker runs every 2 s and Docker stats add ~1-2 s; 6 s ages observed.
+CONTAINER_STALE_AFTER_SECONDS = 10.0
 
 
 def _epoch_ms(value) -> int | None:
@@ -165,6 +167,40 @@ def normalize(payload: dict, host: str, *, now: float | None = None) -> dict:
         metric_state="unavailable" if found == -1 else None,
         note="source -1 means unsupported on this host" if found == -1 else None)
 
+    # Telegraf inputs.docker series; Docker CPU percent uses 100 = one core.
+    container_fields = (
+        ("docker_container_cpu_usage_percent", "cpu_percent"),
+        ("docker_container_mem_usage", "memory_bytes"),
+        ("docker_container_mem_limit", "memory_limit_bytes"),
+        ("docker_container_mem_usage_percent", "memory_percent"),
+    )
+    rows: dict[str, dict] = {}
+    for source, key in container_fields:
+        for item in by_name.get(source, []):
+            tags = item.get("tags") or {}
+            name = tags.get("container_name")
+            if not name or tags.get("cpu", "cpu-total") != "cpu-total":
+                continue
+            found = (item.get("fields") or {}).get("value")
+            if not isinstance(found, (int, float)) or isinstance(found, bool):
+                continue
+            row = rows.setdefault(str(name), {
+                "name": str(name), "cpu_percent": None, "memory_bytes": None,
+                "memory_limit_bytes": None, "memory_percent": None, "_ms": 0,
+            })
+            row[key] = float(found)
+            row["_ms"] = max(row["_ms"], _epoch_ms(item.get("timestamp")) or 0)
+    containers = []
+    for row in sorted(rows.values(), key=lambda entry: entry["name"]):
+        item_ms = row.pop("_ms")
+        row["state"] = ("stale" if not item_ms
+                        or now_ms - item_ms > CONTAINER_STALE_AFTER_SECONDS * 1000 else "ok")
+        row["sampled_utc"] = (
+            time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(item_ms / 1000))
+            if item_ms else None
+        )
+        containers.append(row)
+
     sampled_utc = (
         time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(newest_ms / 1000))
         if newest_ms else None
@@ -177,6 +213,7 @@ def normalize(payload: dict, host: str, *, now: float | None = None) -> dict:
         "sampled_utc": sampled_utc,
         "history_seconds": 300,
         "metrics": metrics,
+        "containers": containers,
     }
 
 
@@ -206,6 +243,7 @@ class Telemetry:
             return {
                 **self.latest,
                 "metrics": [dict(metric) for metric in self.latest.get("metrics", [])],
+                "containers": [dict(row) for row in self.latest.get("containers", [])],
             }
 
     def _run(self) -> None:
