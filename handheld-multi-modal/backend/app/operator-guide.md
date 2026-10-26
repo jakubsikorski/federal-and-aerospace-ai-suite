@@ -90,8 +90,8 @@ mission material. Application capabilities do not establish mission facts.
 - The Architecture page shows the diagram, every API and step-by-step flows.
 ## Resources, services and limitations
 Resources shows CPU, memory, GPU/NPU and power telemetry when available, plus a
-Containers table with current CPU (100% = one core) and memory per application
-container. Details
+Services view with a card per application service (share of total CPU, memory
+used; collapsed shows the busiest plus "+N more · Expand"); the Memory tile shows free RAM. Details
 shows component readings; Expand enlarges the chart. Stale or unavailable readings
 are not zero. Models & devices shows model, device and host information; configured
 placement is different from service-reported execution. Starting means a model

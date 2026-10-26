@@ -124,6 +124,10 @@ def normalize(payload: dict, host: str, *, now: float | None = None) -> dict:
     add("memory_used_bytes", "Memory used", found, item, "bytes")
     found, item = value("mem_total")
     add("memory_total_bytes", "Memory total", found, item, "bytes")
+    available, available_item = value("mem_available_percent")
+    if item is not None and available_item is not None:
+        add("memory_available_bytes", "Memory available", found * available / 100.0,
+            available_item, "bytes", note="mem_total × mem_available_percent", derived=True)
     for item in by_name.get("temp_temp", []):
         sensor = str((item.get("tags") or {}).get("sensor", ""))
         if sensor.startswith("coretemp_package_id_"):
@@ -190,9 +194,14 @@ def normalize(payload: dict, host: str, *, now: float | None = None) -> dict:
             })
             row[key] = float(found)
             row["_ms"] = max(row["_ms"], _epoch_ms(item.get("timestamp")) or 0)
+    host_cpus, _ = value("docker_n_cpus")
+    host_cpus = host_cpus if host_cpus and host_cpus > 0 else None
     containers = []
     for row in sorted(rows.values(), key=lambda entry: entry["name"]):
         item_ms = row.pop("_ms")
+        cpu = row["cpu_percent"]
+        row["cpu_cores"] = None if cpu is None else cpu / 100.0
+        row["cpu_host_percent"] = None if cpu is None or not host_cpus else cpu / host_cpus
         row["state"] = ("stale" if not item_ms
                         or now_ms - item_ms > CONTAINER_STALE_AFTER_SECONDS * 1000 else "ok")
         row["sampled_utc"] = (
@@ -214,6 +223,7 @@ def normalize(payload: dict, host: str, *, now: float | None = None) -> dict:
         "history_seconds": 300,
         "metrics": metrics,
         "containers": containers,
+        "host_cpus": int(host_cpus) if host_cpus else None,
     }
 
 

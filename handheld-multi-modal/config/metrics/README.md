@@ -20,9 +20,10 @@ access is root-equivalent; `metrics` already runs privileged with `pid: host`.
 Series: `docker_container_cpu_usage_percent{container_name,cpu="cpu-total"}`
 (Docker stats %, 100 = one core, may exceed 100),
 `docker_container_mem_usage` / `docker_container_mem_limit` (bytes, usage
-excludes page cache), `docker_container_mem_usage_percent`. Backend returns them
-as `containers` in `/api/metrics`; UI Resources tab shows them in the
-Containers table. Verified on this host 2026-10-26: 13 containers, 52 series
+excludes page cache), `docker_container_mem_usage_percent`, and the engine's
+host CPU count `docker_n_cpus`. Backend returns them as `containers` in
+`/api/metrics` with `cpu_host_percent` (CPU / `n_cpus`, same scale as the CPU
+tile) and `cpu_cores`; UI Resources tab shows them as Services cards. Verified on this host 2026-10-26: 13 containers, 52 series
 on `/api/v1/metrics/latest`.
 
 ## Run

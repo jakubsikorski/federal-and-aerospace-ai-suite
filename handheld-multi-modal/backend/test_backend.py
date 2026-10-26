@@ -250,6 +250,8 @@ def test_telemetry_preserves_zero_unavailable_and_real_units():
         "u": metric("cpu_usage_user", 10, cpu="cpu-total"),
         "s": metric("cpu_usage_system", 5, cpu="cpu-total"),
         "f": metric("cpu_frequency_avg_frequency", 1_250_000),
+        "mt": metric("mem_total", 32_000_000_000),
+        "ma": metric("mem_available_percent", 75),
         "g": metric("gpu_frequency", 450, type="cur_freq"),
         "p": metric("gpu_power", 12.5, type="pkg_cur_power"),
         "n": metric("npu_utilization", 0),
@@ -260,6 +262,8 @@ def test_telemetry_preserves_zero_unavailable_and_real_units():
     assert metrics["cpu_load_percent"]["value"] == 15
     assert metrics["cpu_frequency_mhz"]["value"] == 1250
     assert metrics["cpu_frequency_mhz"]["unit"] == "MHz"
+    assert metrics["memory_available_bytes"]["value"] == 24_000_000_000
+    assert metrics["memory_available_bytes"]["derived"] is True
     assert metrics["gpu_frequency_mhz"]["source"] == "gpu_frequency"
     assert metrics["package_power_w"]["value"] == 12.5
     assert metrics["npu_utilization_percent"]["value"] == 0
@@ -302,12 +306,16 @@ def test_telemetry_reports_per_container_cpu_and_memory():
         "c2": metric("docker_container_cpu_usage_percent", 0,
                      ts=1_999_999_980_000_000_000, container_name="handheld-demo-cam1",
                      cpu="cpu-total"),
+        "n": metric("docker_n_cpus", 8),
     }}
     answer = normalize(payload, "handheld", now=2_000_000_000)
     rows = {row["name"]: row for row in answer["containers"]}
+    assert answer["host_cpus"] == 8
     assert list(rows) == ["handheld-demo-cam1", "handheld-multi-modal-dlsps-1"]
     dlsps = rows["handheld-multi-modal-dlsps-1"]
     assert dlsps["cpu_percent"] == 106.5, "per-CPU series must not override cpu-total"
+    assert dlsps["cpu_cores"] == 1.065
+    assert dlsps["cpu_host_percent"] == 106.5 / 8
     assert dlsps["memory_bytes"] == 1_500_000_000
     assert dlsps["memory_limit_bytes"] == 32_000_000_000
     assert dlsps["memory_percent"] == 4.5
@@ -317,6 +325,11 @@ def test_telemetry_reports_per_container_cpu_and_memory():
     assert cam["state"] == "stale"
     assert answer["status"] == "ok"
     assert not any(m["id"].startswith("docker") for m in answer["metrics"])
+    del payload["metrics"]["n"]
+    unknown = normalize(payload, "handheld", now=2_000_000_000)
+    assert unknown["host_cpus"] is None
+    assert unknown["containers"][1]["cpu_host_percent"] is None
+    assert unknown["containers"][1]["cpu_cores"] == 1.065
 
 
 def test_alert_feed_is_global_and_camera_labelled():

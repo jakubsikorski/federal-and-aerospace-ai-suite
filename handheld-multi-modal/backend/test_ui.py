@@ -164,17 +164,30 @@ class Fixture(BaseHTTPRequestHandler):
                          ('gpu_engine_vcs_percent', 'GPU vcs engine', 22, '%'), ('gpu_engine_ccs_percent', 'GPU ccs engine', 16, '%'),
                          ('gpu_engine_bcs_percent', 'GPU bcs engine', 2, '%'), ('gpu_engine_rcs_percent', 'GPU rcs engine', 0, '%'),
                          ('gpu_engine_vecs_percent', 'GPU vecs engine', 38, '%'), ('npu_utilization_percent', 'NPU utilization', 35, '%'), ('package_power_w', 'Package power', 17.9, 'W'),
-                         ('npu_memory_mib', 'NPU memory', None, 'MiB')]
+                         ('npu_memory_mib', 'NPU memory', None, 'MiB'),
+                         ('memory_total_bytes', 'Memory total', 32 * 1024 ** 3, 'bytes'),
+                         ('memory_available_bytes', 'Memory available', 23 * 1024 ** 3, 'bytes')]
                 specs += [(f'diagnostic_{i}', f'Diagnostic {i}', i, 'MHz') for i in range(12)]
                 data = dict(status='ok', sampled_utc=now, history_seconds=300, metrics=[
                     dict(id=i, label=label, value=value, unit=unit, state='unavailable' if value is None else 'ok',
                          sampled_utc=now, source='test_fixture', note=None) for i, label, value, unit in specs],
-                    containers=[dict(name=name, cpu_percent=cpu, memory_bytes=mem, memory_limit_bytes=32 * 1024 ** 3,
+                    host_cpus=8,
+                    containers=[dict(name=name, cpu_percent=cpu, cpu_cores=cpu / 100, cpu_host_percent=cpu / 8,
+                                     memory_bytes=mem, memory_limit_bytes=32 * 1024 ** 3,
                                      memory_percent=mem / (32 * 1024 ** 3) * 100, state='ok', sampled_utc=now)
                                 for name, cpu, mem in [('handheld-multi-modal-dlsps-1', 106.7, 1.4 * 1024 ** 3),
                                                        ('handheld-multi-modal-backend', 6.9, 95 * 1024 ** 2),
                                                        ('handheld-multi-modal-chatqna-core-gpu', 0.2, 6.5 * 1024 ** 3),
-                                                       ('handheld-demo-cam1', 0.4, 9 * 1024 ** 2)]])
+                                                       ('handheld-demo-cam1', 0.4, 9 * 1024 ** 2),
+                                                       ('handheld-demo-cam2', 1.3, 11 * 1024 ** 2),
+                                                       ('handheld-multi-modal-metrics', 11.0, 140 * 1024 ** 2),
+                                                       ('handheld-multi-modal-mediamtx-1', 6.0, 22 * 1024 ** 2),
+                                                       ('handheld-multi-modal-tts', 0.15, 700 * 1024 ** 2),
+                                                       ('handheld-multi-modal-audio-analyzer', 0.21, 27 * 1024 ** 2),
+                                                       ('handheld-multi-modal-alert-agent', 0.27, 13 * 1024 ** 2),
+                                                       ('handheld-multi-modal-mqtt-1', 0.5, 7 * 1024 ** 2),
+                                                       ('handheld-multi-modal-coturn-1', 0.03, 10 * 1024 ** 2),
+                                                       ('handheld-multi-modal-proxy', 0, 4 * 1024 ** 2)]])
             else:
                 data = {}
             payload, kind = json.dumps({'data': data}).encode(), 'application/json'
@@ -334,13 +347,23 @@ def main():
               state.telemetry=structuredClone(original);
               state.telemetry.containers.forEach(row=>{row.sampled_utc=new Date(serverNow()).toISOString();row.state="ok";});
               state.resource="containers";renderTelemetry();const tile=document.querySelector('[data-resource="containers"]');
-              const rows=[...document.querySelectorAll("#container-view tbody tr")];
-              const containers=!tile.hidden && tile.querySelector("strong").textContent==="107%"
-                && tile.querySelector("small").textContent==="dlsps · 4 running"
-                && rows.length===4 && rows[0].cells[0].textContent==="dlsps" && rows[0].cells[0].title==="handheld-multi-modal-dlsps-1"
-                && rows[0].cells[1].textContent==="107%" && rows[0].cells[2].textContent.startsWith("1.4 GiB")
-                && rows.at(-1).cells[1].textContent==="0.2%" && rows.some(r=>r.cells[2].textContent.startsWith("95 MiB"))
+              if(!$("workspace").classList.contains("resources-expanded"))$("expand-telemetry").click();
+              const rows=[...document.querySelectorAll("#container-view .service-card")];
+              const cell=(r,c)=>r.querySelector("."+c).textContent;
+              const containers=!tile.hidden && tile.querySelector("strong").textContent==="13%"
+                && tile.querySelector("small").textContent==="Vision pipeline"
+                && rows.length===13 && cell(rows[0],"name")==="Vision pipeline" && rows[0].title.includes("handheld-multi-modal-dlsps-1")
+                && cell(rows[0],"cpu")==="13%" && rows[0].title.includes("1.07 cores busy")
+                && cell(rows[0],"mem")==="1.4 GiB" && rows[0].style.getPropertyValue("--cpu")==="13.3375%"
+                && cell(rows[1],"name")==="Metrics" && cell(rows[1],"cpu")==="1.4%"
+                && cell(rows.at(-1),"name")==="Web proxy" && cell(rows.at(-1),"cpu")==="0.0%"
+                && rows.some(r=>cell(r,"name")==="LLM chat" && cell(r,"cpu")==="<0.1%")
+                && rows.some(r=>cell(r,"name")==="Demo cam 1" && cell(r,"mem")==="9 MiB")
+                && $("chart-note").textContent.startsWith("CPU = share of all 8 cores")
+                && $("chart-note").textContent.includes("RAM 23.0 GiB free of 32.0 GiB")
+                && document.querySelector('[data-resource="memory"] small').textContent==="23 GiB free"
                 && getComputedStyle($("chart")).display==="none" && getComputedStyle($("container-view")).display==="block";
+              $("expand-telemetry").click();
               state.telemetry.containers=[];renderTelemetry();
               const noContainers=tile.hidden && state.resource!=="containers" && getComputedStyle($("chart")).display!=="none";
               state.telemetry=original;state.resource=resource;renderTelemetry();
@@ -1228,6 +1251,27 @@ def main():
                 for expanded in (False, True):
                     check(f'''(() => {{
                       if ($("workspace").classList.contains("resources-expanded") !== {str(expanded).lower()}) $("expand-telemetry").click();
+                      state.resource = "gpu"; renderTelemetry();
+                      const chartScroll = $("workspace").scrollHeight, chartNote = $("chart-note").getBoundingClientRect().bottom;
+                      state.resource = "containers"; renderTelemetry();
+                      const view = $("container-view").getBoundingClientRect(), panel = $("telemetry").getBoundingClientRect();
+                      const ok = document.body.scrollHeight === innerHeight && document.body.scrollWidth === innerWidth
+                        && $("workspace").scrollHeight <= chartScroll
+                        && view.height >= 40 && view.bottom <= panel.bottom + 1
+                        && [...document.querySelectorAll("#container-view .service-card")].every(card => card.scrollWidth <= card.clientWidth + 1
+                          && ({str(expanded).lower()} || card.getBoundingClientRect().bottom <= view.bottom + 1))
+                        && ({str(expanded).lower()} ? document.querySelectorAll("#container-view div.service-card").length === 13
+                          : document.querySelectorAll("#container-view .service-card").length >= 1
+                            && document.querySelector("#container-view .service-card").textContent.startsWith("Vision pipeline")
+                            && (document.querySelectorAll("#container-view div.service-card").length === 13
+                              || document.querySelector("#container-view button.service-card").textContent.endsWith("more · Expand")));
+                      const cards = document.querySelectorAll("#container-view .service-card").length;
+                      state.resource = "gpu"; renderTelemetry();
+                      return ok || {{viewport: [innerWidth, innerHeight], expanded: {str(expanded).lower()}, view: view.toJSON(),
+                        panel: panel.toJSON(), body: document.body.scrollHeight, workspace: [$("workspace").scrollHeight, $("workspace").clientHeight, chartScroll], cards}};
+                    }})()''')
+                    check(f'''(() => {{
+                      if ($("workspace").classList.contains("resources-expanded") !== {str(expanded).lower()}) $("expand-telemetry").click();
                       renderChart();
                       const chart = $("chart").getBoundingClientRect();
                       const panel = $("telemetry").getBoundingClientRect();
@@ -1327,6 +1371,10 @@ def main():
                     check('state.resource = "containers"; renderTelemetry(); true')
                     data = request('GET', base + '/screenshot')
                     (args.screenshots / f'fixture-{width}x{height}-containers.png').write_bytes(base64.b64decode(data))
+                    check('$("expand-telemetry").click(); renderTelemetry(); true')
+                    data = request('GET', base + '/screenshot')
+                    (args.screenshots / f'fixture-{width}x{height}-containers-expanded.png').write_bytes(base64.b64decode(data))
+                    check('$("expand-telemetry").click(); renderTelemetry(); true')
                     check('state.resource = "gpu"; renderTelemetry(); true')
             # Small upward wheel steps (smooth scrolling) must not snap the conversation back to the latest reply.
             result = async_js(r'''const done = arguments[arguments.length - 1];

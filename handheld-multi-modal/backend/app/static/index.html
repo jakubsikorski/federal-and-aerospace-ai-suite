@@ -343,16 +343,22 @@
   #workspace:not(.resources-expanded) #trend { padding: 4px 12px 4px; }
   #workspace:not(.resources-expanded) #telemetry-grid { padding-top: 6px; }
   #workspace:not(.resources-expanded) #chart-legend { flex-wrap: nowrap; overflow: hidden; white-space: nowrap; }
-  #container-view { display: none; grid-row: 2; min-height: 0; overflow: auto; }
+  #container-view { display: none; grid-row: 2; min-height: 0; overflow: auto; contain: size; }
   #trend.containers-mode #chart, #trend.containers-mode #chart-legend { display: none; }
   #trend.containers-mode #container-view { display: block; }
-  #container-view table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
-  #container-view th { position: sticky; top: 0; background: var(--panel); color: var(--muted); font-weight: 600; text-align: left; padding: 2px 6px; }
-  #container-view td { padding: 2px 6px; border-top: 1px solid var(--line); white-space: nowrap; }
-  #container-view td:nth-child(2) { display: flex; align-items: center; gap: 6px; }
-  #container-view td:nth-child(2) span { min-width: 4ch; text-align: right; }
-  #container-view meter { appearance: none; border: 0; border-radius: 3px; background: var(--line); flex: 1; min-width: 40px; height: 6px; }
-  #container-view tr[data-state="stale"] td { color: var(--warn); }
+  #container-view .service-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 5px 8px; }
+  #container-view .service-card { --cpu: 0%; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: baseline; gap: 8px;
+    padding: 5px 10px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 6px;
+    background: linear-gradient(90deg, rgba(114, 228, 223, .18) var(--cpu), rgba(255, 255, 255, .03) var(--cpu));
+    font: inherit; font-size: 15px; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text); }
+  #container-view .service-card .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+  #container-view .service-card .cpu { font-weight: 700; min-width: 4.5ch; text-align: right; }
+  #container-view .service-card .mem { color: var(--muted); min-width: 6.5ch; text-align: right; }
+  #container-view .service-card[data-state="stale"] { border-left-color: var(--warn); color: var(--warn); }
+  #container-view button.service-card { display: flex; justify-content: center; align-items: center; cursor: pointer;
+    border-left-color: var(--line); background: transparent; color: var(--muted); font-weight: 600; }
+  #container-view button.service-card:hover { color: var(--text); border-color: var(--accent); }
+  #workspace:not(.resources-expanded) #container-view { overflow: hidden; }
   #chart-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; }
   .legend-item { display: inline-flex; align-items: center; gap: 5px; }
   .swatch { width: 16px; border-top: 3px solid; }
@@ -600,7 +606,7 @@
   .resource { background: #162b41; border-color: #435d7a; }
   .resource[aria-pressed="true"] { background: #1f4b5c; box-shadow: inset 0 2px 0 var(--accent); }
   .resource strong { letter-spacing: -.4px; }
-  .resource meter, #container-view meter { background: #3c5974; }
+  .resource meter { background: #3c5974; }
   #chart .gridline { stroke: #38506c; }
   #assistant-panel { background: #16273d; }
   #assistant-head strong { font-size: 16px; letter-spacing: -.2px; }
@@ -3550,7 +3556,7 @@ const resourceGroups = [
   {id: "gpu", label: "GPU engines", prefix: "gpu_engine_"},
   {id: "npu", label: "NPU", ids: ["npu_utilization_percent"]},
   {id: "power", label: "Package", ids: ["package_power_w"]},
-  {id: "containers", label: "Containers", containers: true},
+  {id: "containers", label: "Services", containers: true},
 ];
 const chartColors = ["#99c5f5", "#efc580", "#bdb1ed", "#91c9a5", "#f2a5a5"];
 
@@ -3566,8 +3572,28 @@ function containerRows() {
   return rows.filter((row) => row && typeof row.name === "string");
 }
 
+const containerLabels = {
+  "dlsps": "Vision pipeline", "chatqna-core": "LLM chat", "audio-analyzer": "Transcription",
+  "tts": "Speech", "backend": "Backend", "mediamtx": "Video relay", "alert-agent": "Alert agent",
+  "metrics": "Metrics", "mqtt": "MQTT broker", "coturn": "TURN relay", "proxy": "Web proxy",
+};
+
 function containerName(name) {
-  return name.replace(/^handheld-multi-modal-/, "").replace(/^handheld-/, "").replace(/-\d+$/, "");
+  const base = name.replace(/^handheld-multi-modal-/, "").replace(/^handheld-/, "").replace(/-\d+$/, "");
+  const camera = base.match(/^demo-cam(\d+)$/);
+  if (camera) return "Demo cam " + camera[1];
+  const key = Object.keys(containerLabels).find((prefix) => base === prefix || base.startsWith(prefix + "-"));
+  return key ? containerLabels[key] : base;
+}
+
+// Share of the whole machine (same scale as the CPU tile); falls back to cores.
+function containerCpu(row) {
+  if (Number.isFinite(row.cpu_host_percent)) {
+    const value = row.cpu_host_percent;
+    return {value, text: value > 0 && value < 0.1 ? "<0.1%" : value.toFixed(value < 10 ? 1 : 0) + "%"};
+  }
+  if (Number.isFinite(row.cpu_cores)) return {value: null, text: row.cpu_cores.toFixed(2) + " cores"};
+  return {value: null, text: "--"};
 }
 
 function containerState(row) {
@@ -3578,6 +3604,19 @@ function containerState(row) {
 function bytesText(value) {
   if (!Number.isFinite(value)) return "--";
   return value >= 1024 ** 3 ? (value / 1024 ** 3).toFixed(1) + " GiB" : Math.round(value / 1024 ** 2) + " MiB";
+}
+
+function memoryReading(id) {
+  const metric = (state.telemetry?.metrics || []).find((m) => m.id === id);
+  return metric && metricState(metric) === "live" && Number.isFinite(metric.value) ? metric.value : null;
+}
+
+function gib(value) { return (value / 1024 ** 3).toFixed(1); }
+
+// Linux "available" RAM (reclaimable cache counts as free), as reported by Telegraf.
+function memoryFreeText() {
+  const free = memoryReading("memory_available_bytes"), total = memoryReading("memory_total_bytes");
+  return free === null || total === null ? "" : gib(free) + " GiB free of " + gib(total);
 }
 
 function groupAvailable(group) {
@@ -3593,47 +3632,69 @@ function renderContainerTile(button) {
   const status = top ? "live" : "stale";
   button.dataset.state = status;
   button.setAttribute("aria-pressed", String(state.resource === "containers"));
-  button.querySelector("span").textContent = "Containers";
-  button.querySelector("strong").textContent = top ? Math.round(top.cpu_percent) + "%" : "Stale";
-  button.querySelector("small").textContent = (top ? containerName(top.name) + " · " : "") + rows.length + " running"
-    + (status === "live" && live.length < rows.length ? " · Partial" : "");
-  button.title = (top ? "Highest container CPU: " + top.name + "; " : "")
-    + "Docker CPU, 100% = one core. Select to view per-container CPU and memory.";
-  button.querySelector("meter").hidden = true;
+  button.querySelector("span").textContent = "Services";
+  button.querySelector("strong").textContent = top ? containerCpu(top).text : "Stale";
+  button.querySelector("small").textContent = top ? containerName(top.name) : rows.length + " services";
+  button.title = top ? "Busiest service: " + containerName(top.name) + " uses " + containerCpu(top).text
+    + " of total CPU. Select to see CPU and memory for every service." : "No current service readings.";
+  const meter = button.querySelector("meter");
+  const share = top ? containerCpu(top).value : null;
+  meter.hidden = !Number.isFinite(share);
+  meter.value = share ?? 0;
+  meter.setAttribute("aria-label", "Busiest service CPU");
+}
+
+function serviceCard(row, hostMemory) {
+  const card = document.createElement("div"); card.className = "service-card";
+  const status = containerState(row), reading = containerCpu(row), label = containerName(row.name);
+  card.dataset.state = status;
+  card.style.setProperty("--cpu", Math.min(100, Math.max(0, reading.value ?? 0)) + "%");
+  const name = document.createElement("span"); name.className = "name";
+  name.textContent = label + (status === "live" ? "" : " · " + titleCase(status));
+  const cpu = document.createElement("span"); cpu.className = "cpu"; cpu.textContent = reading.text;
+  const mem = document.createElement("span"); mem.className = "mem"; mem.textContent = bytesText(row.memory_bytes);
+  // A container limit only matters when it is tighter than host RAM.
+  const limited = Number.isFinite(row.memory_limit_bytes) && (!hostMemory || row.memory_limit_bytes < hostMemory * 0.95);
+  if (limited) mem.textContent += " of " + bytesText(row.memory_limit_bytes);
+  const cores = state.telemetry?.host_cpus;
+  card.title = [label + " (" + row.name + ")",
+    "CPU " + reading.text + (cores ? " of all " + cores + " cores" : "")
+      + (Number.isFinite(row.cpu_cores) ? " (" + row.cpu_cores.toFixed(2) + " cores busy)" : ""),
+    "Memory " + bytesText(row.memory_bytes) + (limited ? " of " + bytesText(row.memory_limit_bytes) + " limit" : " used")].join("\n");
+  card.append(name, cpu, mem);
+  return card;
 }
 
 function renderContainers() {
   const box = $("container-view");
   const rows = containerRows().slice().sort((a, b) => (b.cpu_percent ?? -1) - (a.cpu_percent ?? -1)
     || a.name.localeCompare(b.name));
-  const scale = Math.max(100, ...rows.map((row) => row.cpu_percent ?? 0));
-  const table = document.createElement("table");
-  const head = table.createTHead().insertRow();
-  for (const text of ["Container", "CPU", "Memory"]) {
-    const th = document.createElement("th"); th.scope = "col"; th.textContent = text; head.append(th);
+  const hostMemory = memoryReading("memory_total_bytes");
+  const grid = document.createElement("div"); grid.className = "service-grid";
+  grid.setAttribute("role", "list");
+  const cards = rows.map((row) => serviceCard(row, hostMemory));
+  cards.forEach((card) => card.setAttribute("role", "listitem"));
+  grid.append(...cards);
+  box.replaceChildren(grid);
+  // Collapsed: keep only cards that fit and point to the rest instead of clipping them.
+  if (!$("workspace").classList.contains("resources-expanded") && cards.length) {
+    const limit = box.getBoundingClientRect().bottom + 1;
+    let fit = cards.findIndex((card) => card.getBoundingClientRect().bottom > limit);
+    if (fit !== -1) {
+      fit = Math.max(0, fit - 1);
+      cards.slice(fit).forEach((card) => card.remove());
+      const more = document.createElement("button"); more.type = "button"; more.className = "service-card";
+      more.textContent = "+" + (rows.length - fit) + " more · Expand";
+      more.setAttribute("aria-label", "Show all " + rows.length + " services");
+      more.onclick = () => $("expand-telemetry").click();
+      grid.append(more);
+    }
   }
-  const body = table.createTBody();
-  for (const row of rows) {
-    const tr = body.insertRow();
-    const status = containerState(row);
-    tr.dataset.state = status;
-    const name = tr.insertCell(); name.textContent = containerName(row.name);
-    name.title = row.name + (status === "live" ? "" : " · " + titleCase(status));
-    const cpu = tr.insertCell();
-    const cpuText = document.createElement("span");
-    cpuText.textContent = Number.isFinite(row.cpu_percent) ? row.cpu_percent.toFixed(row.cpu_percent < 10 ? 1 : 0) + "%" : "--";
-    const meter = document.createElement("meter"); meter.min = 0; meter.max = scale; meter.value = row.cpu_percent ?? 0;
-    meter.setAttribute("aria-label", containerName(row.name) + " CPU");
-    cpu.append(cpuText, meter);
-    const memory = tr.insertCell();
-    memory.textContent = bytesText(row.memory_bytes)
-      + (Number.isFinite(row.memory_percent) ? " · " + row.memory_percent.toFixed(1) + "%" : "");
-    if (Number.isFinite(row.memory_limit_bytes)) memory.title = "Limit " + bytesText(row.memory_limit_bytes);
-  }
-  box.replaceChildren(table);
+  const cores = state.telemetry?.host_cpus;
   const stale = rows.filter((row) => containerState(row) !== "live").length;
-  $("chart-note").textContent = !rows.length ? "Container statistics unavailable."
-    : ["Docker stats · CPU 100% = one core · memory excludes page cache", stale ? stale + " stale" : ""].filter(Boolean).join(" · ");
+  $("chart-note").textContent = !rows.length ? "Service statistics unavailable."
+    : [cores ? "CPU = share of all " + cores + " cores" : "CPU in cores (core count unknown)", "memory used",
+      memoryFreeText() ? "RAM " + memoryFreeText() + " GiB" : "", stale ? stale + " stale" : ""].filter(Boolean).join(" · ");
 }
 
 function groupMetrics(group) {
@@ -3673,8 +3734,10 @@ function renderTelemetry() {
       ? status === "unavailable" ? "Unavailable" : formatted(primary) + " " + engine : formatted(primary);
     button.querySelector("small").textContent = group.id === "gpu"
       ? metrics.length + " engines · " + (status === "live" ? (live.length < metrics.length ? "Partial · View" : "View") : titleCase(status))
+      : group.id === "memory" && status === "live" && memoryFreeText() ? Math.round(memoryReading("memory_available_bytes") / 1024 ** 3) + " GiB free"
       : status === "live" ? "Live" : titleCase(status);
-    button.title = group.id === "gpu" ? (status === "live" ? "Highest current engine usage" : "No current engine readings")
+    button.title = group.id === "memory" && memoryFreeText() ? memoryFreeText() + " GiB (Linux available memory)"
+      : group.id === "gpu" ? (status === "live" ? "Highest current engine usage" : "No current engine readings")
       + "; " + live.length + " of " + metrics.length + " engines current. Select to view all engines." : "";
     const meter = button.querySelector("meter");
     meter.hidden = primary.unit !== "%" || status !== "live" || group.id === "gpu";

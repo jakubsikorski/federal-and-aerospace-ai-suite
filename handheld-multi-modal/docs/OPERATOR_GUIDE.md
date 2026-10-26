@@ -435,11 +435,13 @@ vehicles walk; an object counts by where its feet touch the ground.
 
 ![Resources](images/guide-resources.jpg)
 
-1. **Tiles** — CPU, Memory, GPU engines, NPU, Package power and Containers.
+1. **Tiles** — CPU, Memory, GPU engines, NPU, Package power and Services.
    Click one to chart it.
-2. **Chart** — last 5 minutes of the selected tile. **Containers** shows a
-   table instead: current CPU (Docker stats, 100% = one core) and memory per
-   application container, busiest first.
+2. **Chart** — last 5 minutes of the selected tile. **Services** shows one
+   card per application service instead: name, share of total CPU (same scale
+   as the CPU tile; the card fill shows it) and memory used, busiest first.
+   Collapsed shows the cards that fit plus **+N more · Expand**. The Memory
+   tile shows free RAM.
 3. **Expand** — larger chart.
 4. **Details** — raw readings.
 
