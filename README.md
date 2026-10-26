@@ -6,16 +6,13 @@ AI-enabled applications and supporting components for aerospace and defense edge
 
 ### Handheld Multi-Modal
 
-The Handheld Multi-Modal application is a full-stack AI inference and observability
-platform for handheld scenarios. It is deployed on top of the
+The Handheld Multi-Modal application is an operator console for Intel edge devices that fuses
+live camera analytics, evidence search, mission documents, alerts, and speech. It is built from
+Open Edge Platform microservices — DL Streamer Pipeline Server with YOLO26s detection on the NPU,
+Chat Q&A with a local LLM on the GPU, Audio Analyzer (Whisper) for speech-to-text, and Text To
+Speech (SpeechT5) — and runs entirely on the device. It can be deployed on top of the
 Edge Node Infrastructure software - an edge computing platform, which enables hardware
 acceleration capabilities. See [Infrastructure Setup](handheld-multi-modal/docs/user-guide/infrastructure-setup.md) for build and provisioning steps.
-
-The application combines LLM inference capability served through the OpenVINO
-Model Server platform, speech-to-text transcription through the Whisper service,
-a chat UI through the Open WebUI software, and metrics information through
-the Grafana dashboard; and runs with the
-[Visual Pipeline and Platform Evaluation Tool](https://github.com/open-edge-platform/edge-ai-libraries/tree/main/tools/visual-pipeline-and-platform-evaluation-tool) for pipeline visualization.
 
 See [`handheld-multi-modal/`](handheld-multi-modal/README.md).
 
@@ -36,7 +33,7 @@ See [`/uav-vision-analytics/docs/user-guide`](./uav-vision-analytics/docs/user-g
 
 | Directory                               | Description                                |
 |-----------------------------------------|--------------------------------------------|
-| `handheld-multi-modal/`            | Handheld multi-modal application           |
+| `handheld-multi-modal/`            | Handheld multi-modal operator console application |
 | `deterministic-threat-detection/`  | Deterministic threat detection application (Preview) |
 | `uav-vision-analytics/`            | UAV vision analytics application           |
 | `docs/`                                 | Documentation                              |
