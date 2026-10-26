@@ -1,525 +1,422 @@
+<!--
+SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Operator Guide
 
-This guide describes the operator console of the Handheld Multi-Modal application.
-Open `https://localhost:8443/` on the device (or through an SSH tunnel, see
-[Access Application User Interface](access-application.md)) and trust the
-self-signed certificate. Red numbers in the pictures match the numbered lists below.
+This guide describes how to use the operator console of the Handheld Multi-Modal application.
+To open the console, follow the steps in
+[Access Application User Interface](access-application.md). The red numbers in the screenshots
+match the numbered lists below them.
 
-The console is one fixed landscape screen: live camera and alerts on the left,
-evidence and the assistant on the right, resources below. It uses a dark navy
-theme with teal for primary actions (Talk, Ask, selected camera), amber for
-alerts and warnings, and red only for an alerted object on camera now, a
-recording Talk button or failures.
-The reference display is a 1280×800 handheld touch screen: everything fits
-without page scrolling, and the layout grows with larger screens. Main
-actions (Talk, Mission, Manage alerts, Audio, camera tabs, Acknowledge, View,
-Speak, Send) are 48 px tall and every other button at least 44 px, so they
-are easy to press by finger. Tapping a drop-down opens a list of large rows
-next to it; tap a row to choose it, or tap outside to keep the current value. Run the browser full screen (F11 or
-kiosk mode) on the handheld.
+The console shows the live camera and alerts on the left, the evidence and assistant on the
+right, and resources at the bottom. Amber marks alerts that need your attention; red marks an
+alerted object that is on camera now. On a handheld, run the browser in full screen (F11).
 
 ![Operator UI](_assets/operator-ui.jpg)
 
 ## Contents
 
-- [Top bar](#top-bar)
-  - [Architecture page](#architecture-page)
-  - [Model details](#model-details)
-- [All cameras](#all-cameras)
-- [Adding and removing cameras](#adding-and-removing-cameras)
-  - [Adding a camera](#adding-a-camera)
-  - [Network camera](#network-camera)
-  - [Publisher camera address](#publisher-camera-address)
-  - [Editing and removing](#editing-and-removing)
-- [Live camera and alerts](#live-camera-and-alerts)
-  - [Viewing an alert](#viewing-an-alert)
+- [Top Bar](#top-bar)
+  - [Architecture Page](#architecture-page)
+  - [Model Details](#model-details)
+- [All Cameras](#all-cameras)
+- [Adding and Removing Cameras](#adding-and-removing-cameras)
+  - [Adding a Camera](#adding-a-camera)
+  - [Network Camera](#network-camera)
+  - [Publisher Camera Address](#publisher-camera-address)
+  - [Editing and Removing a Camera](#editing-and-removing-a-camera)
+- [Live Camera and Alerts](#live-camera-and-alerts)
+  - [Viewing an Alert](#viewing-an-alert)
 - [Evidence](#evidence)
-  - [While you were away](#while-you-were-away)
-  - [Evidence details](#evidence-details)
-- [Ask (assistant)](#ask-assistant)
-  - [How the assistant answers](#how-the-assistant-answers)
+  - [While You Were Away](#while-you-were-away)
+  - [Evidence Details](#evidence-details)
+- [Ask (Assistant)](#ask-assistant)
+  - [How the Assistant Answers](#how-the-assistant-answers)
 - [Mission](#mission)
 - [Rules](#rules)
-  - [Creating an alert](#creating-an-alert)
-  - [How rules match](#how-rules-match)
-  - [Drawing a zone](#drawing-a-zone)
+  - [Creating an Alert](#creating-an-alert)
+  - [How Rules Match](#how-rules-match)
+  - [Drawing a Zone](#drawing-a-zone)
 - [Resources](#resources)
-- [Voice questions and spoken answers](#voice-questions-and-spoken-answers)
+- [Voice Questions and Spoken Answers](#voice-questions-and-spoken-answers)
   - [Listening](#listening)
-  - [Spoken answers](#spoken-answers)
-  - [How voice works](#how-voice-works)
-  - [Recovering a question](#recovering-a-question)
+  - [Spoken Answers](#spoken-answers)
+  - [Asking a Question by Voice](#asking-a-question-by-voice)
+  - [Recovering a Question](#recovering-a-question)
 
-## Top bar
+## Top Bar
 
 ![Top bar](_assets/guide-top-bar.jpg)
 
-1. **Camera tabs** — pick the live camera. The last camera you used is
-   restored on the next visit. **All cameras** shows the live grid (below).
-   A badge counts alerts that need attention: amber, or red while an
-   alerted object is on camera now. With many cameras the tab strip scrolls
-   sideways; a fade on the right means more tabs.
-2. **Talk** — ask a question by voice (see
-   [Voice questions](#voice-questions-and-spoken-answers)). While listening it
-   turns red and reads **Send question**.
-3. **Mission** — mission documents and brief (see [Mission](#mission)).
-4. **Manage alerts** — alert rules (see [Rules](#rules)).
-5. **Audio off / Audio on** — tap once so the browser may play spoken
-   alerts and answers. Amber means off; green means on. Speech is silent
-   until you tap it. Turning it on announces alerts that still need
-   attention (for example, ones that fired while it was off). Tapping
-   **Audio on** turns it off and silences any speech that is playing.
-6. **Clock** — local time; "live updates" means the UI is connected.
-   **Connection lost · retrying** means data may be stale until it reconnects.
-7. **Models & devices** — each model with its device and status (Vision on
-   NPU, LLM and Transcription on GPU, Speech on CPU). Click one for details.
-   Transcription uses whisper-medium with FP16 weights; Speech uses the voice Miles.
-8. **Architecture** — opens the architecture page (below) in place;
-   **Back to app** returns to the console.
+1. **Camera tabs** - select the live camera you want to watch. The console remembers the last
+   camera you used. **All cameras** shows the live grid described in
+   [All Cameras](#all-cameras). A badge on each tab counts the alerts that need attention. If
+   you have many cameras, you can scroll the tabs sideways; a fade on the right means that more
+   tabs are available.
+2. **Talk** - ask a question by voice. While the console is listening, the button turns red and
+   reads **Send question**. For details, see
+   [Voice Questions and Spoken Answers](#voice-questions-and-spoken-answers).
+3. **Mission** - open the mission documents and brief. See [Mission](#mission).
+4. **Manage alerts** - create and edit alert rules. See [Rules](#rules).
+5. **Audio off / Audio on** - the browser plays no speech until you tap this button. Amber
+   means off and green means on. When you turn audio on, you hear the alerts that still need
+   attention. Tap **Audio on** to turn audio off and stop any speech.
+6. **Clock** - the local time. **live updates** means that the console is connected.
+   **Connection lost · retrying** means that the data may be out of date until the console
+   reconnects.
+7. **Models & devices** - each model with the device it runs on and its status. By default,
+   Vision runs on the NPU, the LLM (large language model) and Transcription run on the GPU,
+   and Speech runs on the CPU. Tap a model to see its details.
+8. **Architecture** - open the architecture page. Tap **Back to app** to return to the
+   console.
 
-### Architecture page
+### Architecture Page
 
 ![Architecture](_assets/guide-architecture.jpg)
 
-A diagram of every service and how data moves between them, coloured by
-interface (RTSP, WebRTC WHIP/WHEP, TURN, MQTT, evidence images, HTTPS/REST/SSE).
-Each box is tagged by origin: **Intel Open Edge Platform** boxes have a solid
-blue title bar, are the stock Intel microservices and list the API endpoints the
-application calls; grey
-**Open source** boxes are the media, messaging and TLS infrastructure; the
-**Application** Backend is the only custom code. The three counters at the top
-highlight each group. Tap a service to highlight its connections and show its
-role, APIs, model, device, image and source; tap it again or tap anywhere
-outside the boxes (or press Escape) to return to the full view. Dots show live
-status.
-**Follow a flow** highlights a whole path step by step: live video, detection to
-alert, voice question or mission question. Below the diagram, **Where each model
-runs** groups the models by NPU, GPU and CPU, **Open Edge Platform APIs used**
-lists every endpoint called with source links, and the collapsed tables list
-every service image and interface. **Back to app** returns.
+The architecture page shows every service of the application and how data moves between them.
+Each box shows whether the service is an **Intel® Open Edge Platform** microservice, **Open
+source** infrastructure, or the custom **Application** Backend, and its dot shows live status.
+Tap a service to highlight its connections and see its role, APIs, model and device; tap it
+again or press Escape to return to the full view. Tap **Follow a flow** to step through a path,
+such as a voice question. Below the diagram, you can see **Where each model runs** and the
+**Open Edge Platform APIs used**. Tap **Back to app** to return to the console.
 
-### Model details
+### Model Details
 
 ![Model details](_assets/guide-model-details.jpg)
 
-1. Clicked model (click again to close).
-2. Status, model, device and host. **Close** hides it. **Starting** means the
-   service has not answered yet since the application started; it may still be
-   loading or downloading its model (the first start can take up to an hour).
-   Questions asked meanwhile say the model isn't ready yet; try again later.
+1. The model you selected. Tap it again to close the details.
+2. The status, model, device and host. Tap **Close** to hide the details. **Starting** means
+   that the service is still loading or downloading its model. The first start can take up to
+   an hour. If you ask a question during this time, the assistant tells you that the model is
+   not ready yet, so try again later.
 
-## All cameras
+## All Cameras
 
 ![Camera grid](_assets/guide-camera-grid.jpg)
 
-1. **Tile** — one camera, up to four per page. Tap to open that camera.
-   Tiles with open alerts glow: pulsing red while the alerted object is on
-   camera now, steady amber once it has left. Alert areas are drawn on each
-   tile in the same colours.
-2. **‹ / ›** — next or previous four cameras (shown only with more than four).
+1. **Tile** - one camera, with up to four cameras per page. Tap a tile to open that camera. A
+   tile with open alerts pulses red while the alerted object is on camera, and turns steady
+   amber after the object has left. Alert areas are drawn on each tile in the same colors.
+2. **‹ / ›** - show the next or previous four cameras. These buttons appear only when you have
+   more than four cameras.
 
-## Adding and removing cameras
+## Adding and Removing Cameras
 
 ![Manage cameras](_assets/guide-cameras.jpg)
 
-1. **Cameras** — in the top bar, right after the camera tabs. It shows how
-   many cameras are on (for example "2 on"). Tap it to open **Manage
-   cameras**.
-2. **Count** — how many cameras are on (for example "2 cameras on").
-3. **State** — **Live**, **Starting**, **No frames received**, **Signal
-   lost** or **Off**. **Deployment** marks cameras set by the deployment.
-4. **View** — show that camera's video and close the panel.
-5. **Edit** — rename, turn off or remove the camera.
-6. **+ Add camera** — opens the add form. There is no fixed camera limit; each
-   camera that is on adds processor load, so check the device metrics after
-   adding one.
+1. **Cameras** - in the top bar, next to the camera tabs, this button shows how many cameras
+   are on (for example, "2 on"). Tap it to open **Manage cameras**.
+2. **Count** - the number of cameras that are on (for example, "2 cameras on").
+3. **State** - one of **Live**, **Starting**, **No frames received**, **Signal lost** or
+   **Off**. **Deployment** marks cameras that were configured during deployment.
+4. **View** - show the video of that camera and close the panel.
+5. **Edit** - rename, turn off or remove the camera.
+6. **+ Add camera** - open the form for adding a camera. There is no fixed limit on the number
+   of cameras, but each active camera adds processor load, so check the
+   [Resources](#resources) after adding one.
 
-### Adding a camera
+### Adding a Camera
 
 ![Add a camera](_assets/guide-camera-add.jpg)
 
-1. **Name** — what the camera is called in tabs, alerts and evidence.
-2. **Publisher on this device** — an app or encoder on this handheld sends
-   the video. You get the address after adding.
-3. **Network camera** — an IP camera on the local network that this device
-   connects to.
-4. **Add camera** — or **Cancel** to close the form.
+1. **Name** - the name shown in the camera tabs, alerts and evidence.
+2. **Publisher on this device** - choose this option if an app or encoder on this handheld
+   sends the video. You receive the address to send it to after you add the camera.
+3. **Network camera** - choose this option for an IP camera on the local network.
+4. **Add camera** - add the camera, or tap **Cancel** to close the form.
 
-### Network camera
+### Network Camera
 
 For a network camera, enter its address:
 
 ![Network camera](_assets/guide-camera-network.jpg)
 
-1. **Camera RTSP address** — the camera's `rtsp://` address.
-2. **Note** — the allowed networks. Addresses outside them, or with a user
-   name or password, are refused; an administrator sets those cameras up in
-   MediaMTX instead.
+1. **Camera RTSP address** - the `rtsp://` address of the camera.
+2. **Note** - the networks that are allowed. The console refuses addresses outside these
+   networks and addresses that contain a user name or password. Ask your administrator to set
+   up such cameras.
 
-### Publisher camera address
+### Publisher Camera Address
 
-After adding a **publisher** camera, the panel shows where to send its video:
+After you add a **publisher** camera, the panel shows where to send its video:
 
 ![Camera added](_assets/guide-camera-added.jpg)
 
-1. **Waiting for video** — nothing has arrived yet.
-2. **Address** — send H.264 RTSP video here, for example
-   `rtsp://127.0.0.1:8554/cam4`. It works only on this device.
-3. **Copy** — copies the address for the publisher app.
-4. **Example** — a ready ffmpeg command that sends a video file.
-5. **View camera** — available once video arrives.
+1. **Waiting for video** - no video has arrived yet.
+2. **Address** - send H.264 RTSP video to this address, for example
+   `rtsp://127.0.0.1:8554/cam4`. The address works only on this device.
+3. **Copy** - copy the address so that you can paste it into the publisher app.
+4. **Example** - a ready-to-use ffmpeg command that sends a video file to the address.
+5. **View camera** - available after the video arrives.
 
-The card updates by itself when video arrives:
+The card updates automatically when the video arrives:
 
 ![Camera live](_assets/guide-camera-live.jpg)
 
-1. **Live** — video, detection and alerts are running.
-2. **View camera** — switch to it. **Done** closes the card.
+1. **Live** - the video, detection and alerts are running.
+2. **View camera** - switch to the camera. Tap **Done** to close the card.
 
-The address is also shown under **Edit** at any time.
+You can also find the address under **Edit** at any time.
 
-### Editing and removing
+### Editing and Removing a Camera
 
 ![Edit camera](_assets/guide-camera-edit.jpg)
 
-1. **Name** and **Save name** — rename the camera.
-2. **Address** and **Copy** — where to send video (publisher cameras).
-3. **Turn off / Turn on** — stops or restarts its video and detection.
-4. **Remove camera…** — asks to confirm:
+1. **Name** and **Save name** - rename the camera.
+2. **Address** and **Copy** - the address to send the video to (publisher cameras only).
+3. **Turn off / Turn on** - stop or restart the video and detection for the camera.
+4. **Remove camera…** - remove the camera. The console asks you to confirm:
 
 ![Remove camera](_assets/guide-camera-remove.jpg)
 
-1. **Remove** — removes the camera.
-2. **Keep camera** — cancels.
+1. **Remove** - remove the camera.
+2. **Keep camera** - cancel and keep the camera.
 
-Turning off or removing a camera keeps its recorded history and alerts. A
-removed camera's name can be reused; its id never is. **Deployment** cameras
-(`backend.yaml`, `make CAMERAS`) can only be renamed here. Alert rules on a
-camera that was turned off or removed show **(camera off or removed)**; they
-can be turned off or deleted, not turned back on.
+Turning off or removing a camera keeps its history and alerts. You can only rename
+**Deployment** cameras here. Alert rules for a camera that is off or removed show
+**(camera off or removed)**; you can turn them off or delete them, but not turn them back on.
+Changes take effect without a restart.
 
-No restart is needed; other open consoles pick up the change on their next
-update. Every change is written to an audit log on the device.
-
-## Live camera and alerts
+## Live Camera and Alerts
 
 ![Live camera and alerts](_assets/guide-video-alerts.jpg)
 
-Tap **Cameras** in the top bar to add, rename, turn off or remove cameras
-(see above). New alerts update camera badges and highlights, and show a
-banner over the top of the video ("Person in Gate area · Camera 2"). The banner
-stays until you tap **View** or **Acknowledge** on it, or the alert closes;
-several new alerts stack as "+N more". An alert that needs attention looks
-different depending on whether its object is still there:
+When a new alert is raised, the camera badges and highlights update, and a banner appears at
+the top of the video (for example, "Person in Gate area · Camera 2"). The banner stays until you
+tap **View** or **Acknowledge**, or until the alert closes. If several alerts arrive, they are
+stacked as "+N more". An alert that needs attention is shown in one of two ways:
 
-- **In view now** — the alerted object is on camera at this moment (and still
-  inside the alert's area, if it has one). Red: the banner starts with a red
-  dot and "In view now", the video border and the alert's area pulse red, and
-  the camera badge turns red.
-- **Needs attention** — the object has left, but nobody has acknowledged the
-  alert yet. Amber and steady, no pulsing; the banner says when the object
-  was last seen.
+- **In view now** - the alerted object is on camera at this moment (and inside the alert area,
+  if the alert has one). The banner starts with a red dot, the video border and the alert area
+  pulse red, and the camera badge turns red.
+- **Needs attention** - the object has left, but nobody has acknowledged the alert yet. The
+  alert is shown in steady amber, and the banner says when the object was last seen.
 
-"Now" follows the camera's own frames: the look turns amber within about a
-second or two of the object leaving the video. Any object the rule asks for
-counts, so the tracker renumbering the same dog does not flicker it. Once
-acknowledged, an alert shows
-neither.
+After you acknowledge an alert, it is shown in neither color. Tap the **Alerts** bar under the
+video to open or close the list of alerts.
 
-Tap **Alerts** (the bar under the video; amber, or red with "In view now"
-while an alerted object is on camera) to open the list; it opens over the
-lower part of the video and scrolls inside, so Resources stays in place. Tap
-**Alerts** again to close it. Incoming alerts do not automatically expand it
-or resize video.
+1. The annotated video of the selected camera, with boxes around the detected objects. The small
+   badge shows the estimated video delay, when available.
+2. **Fullscreen** - enlarge the video.
+3. **Alert** - the object, camera, number of sightings, first and last time, and state
+   (**In view now**, **Needs attention**, **Acknowledged** and so on). Tap the picture or text
+   to see the objects that raised the alert in Evidence. The ⏱ time under the picture shows how
+   many seconds passed between the first detection and the alert reaching you. Hover over it or
+   long-press it to see each step.
+4. **Acknowledge** - confirm that you have seen the alert. A new sighting reopens the alert.
+5. **View** - the same as tapping the alert.
+6. **Speak** - read the alert aloud now, after a short chime. Audio must be on.
+7. **More…** - **Snooze** for 5 or 15 minutes, **Dismiss**, **False alarm**,
+   **Retry delivery**, **Disable rule**, or **Remove from list** (asks you to confirm).
 
-1. Annotated video of the selected camera (boxes on detected objects). The
-   small badge shows estimated video delay when available.
-2. **Fullscreen** — enlarge the video.
-3. **Alert** — object, camera, sightings, first–last time, state (**In view
-   now** in red, **Needs attention**, **Acknowledged**, …). Tap the
-   picture or text to show the objects that raised it in Evidence. The small
-   ⏱ time under the picture is how many seconds after the detector first saw
-   the object the whole alert arrived (on screen, voice and picture). Hover
-   or long-press it for each step. Alerts from before a Backend restart have
-   no time. Video delay is the separate badge on the video.
-4. **Acknowledge** — "I've seen it". First button, amber border. A new
-   sighting reopens the alert.
-5. **View** — same as tapping the alert.
-6. **Speak** — say the alert now (needs Audio on). A soft chime plays first.
-7. **More…** — Snooze 5 / 15 min, Dismiss, False alarm, Retry delivery,
-   Disable rule, **Remove from list** (asks to confirm).
+Each alert also shows whether it was spoken: **spoken**, **not played (Audio off)**,
+**not spoken (cooldown)** or **text only (speech unavailable)**.
 
-Speech labels: **spoken**, **not played (Audio off)**, **not spoken
-(cooldown)**, **text only (speech unavailable)**.
+### Viewing an Alert
 
-### Viewing an alert
-
-After **View** the Evidence panel shows only that alert:
+After you tap **View**, the Evidence panel shows only that alert:
 
 ![Alert view](_assets/guide-alert-view.jpg)
 
-1. **Back to live evidence** — return to the normal list.
-2. Each object that matched the alert; click for images.
+1. **Back to live evidence** - return to the normal list.
+2. Each object that matched the alert. Tap one to see its images.
 
 ## Evidence
 
 ![Evidence](_assets/guide-evidence.jpg)
 
-1. **View** — **Current** (on screen now), **History · priority** or
-   **History · newest** (recorded tracks).
-2. **Show object type** — only persons, cars, …
-3. **Evidence** — **All records** or **Has image**.
-4. **Person only** — show only priority objects.
-5. **Compact / Cards** — switch between dense rows and image cards; the choice
-   is remembered.
-6. **Pause / Resume** — freeze the list; **Updates available** loads what
-   arrived meanwhile.
-7. **Object card / row** — click to open its images.
-8. **Ask** — open the assistant.
-9. **‹ Newer / Older ›** — History lists show 50 tracks per page; these
-   buttons appear below the list when there are more. With All cameras, each
-   page holds the next 50 tracks of every camera. Older pages are snapshots;
-   page 1 stays live. Changing camera, view or filters returns to page 1.
+1. **View** - choose **Current** (objects on screen now), **History · priority** or
+   **History · newest** (recorded objects).
+2. **Show object type** - show only one type of object, such as persons or cars.
+3. **Evidence** - show **All records** or only records that **Has image**.
+4. **Person only** - show only priority objects.
+5. **Compact / Cards** - switch between dense rows and image cards. The console remembers your
+   choice.
+6. **Pause / Resume** - freeze the list. Tap **Updates available** to load what arrived in the
+   meantime.
+7. **Object card / row** - tap to open the images of the object.
+8. **Ask** - open the assistant.
+9. **‹ Newer / Older ›** - page through the history, 50 objects per page. Only the first page
+   updates live. Changing the camera, view or filters returns you to the first page.
 
-### While you were away
+### While You Were Away
 
-A **While you were away** card appears after returning from five or more
-minutes away. It summarizes at least the new alerts and track counts visible
-through the existing history APIs; tap **View** to jump into them.
+If you return after five or more minutes away, a **While you were away** card summarizes the new
+alerts and objects. Tap **View** to see them.
 
-### Evidence details
+### Evidence Details
 
 ![Evidence details](_assets/guide-drawer.jpg)
 
-1. **Back** — close the details.
-2. The whole stored image (tap it for full screen), then camera, times and
-   confidence; thumbnails switch images.
+1. **Back** - close the details.
+2. The full stored image, followed by the camera, times and confidence. Tap the image to view
+   it in full screen, and tap the thumbnails to switch between images.
 
-## Ask (assistant)
+## Ask (Assistant)
 
 ![Assistant](_assets/guide-ask.jpg)
 
-1. Type a question.
-2. **Send**.
-3. **Camera scope** — which camera's records. Follows the camera on screen
-   (grid = **All cameras**), for typed and voice questions; pick another to
-   override until you switch cameras.
-4. **Answer mode** — **Ask anything** (records, mission or general) or
+1. Type your question.
+2. Tap **Send**.
+3. **Camera scope** - the camera whose records the assistant searches. By default, it follows
+   the camera on screen, or **All cameras** in the grid. You can pick another camera until you
+   switch cameras again.
+4. **Answer mode** - **Ask anything** (camera records, mission or general questions) or
    **General chat** (no camera records).
-5. **History filters** — object type and time range.
-6. **Find person** — recorded priority objects, last 10 minutes. Named after
-   the configured priority object type; hidden when none is set.
-7. **Mission objective** — from the loaded mission.
-8. **Explain a topic** — general conversation.
-9. **New conversation** — forget earlier questions.
-10. **Back** — close the assistant.
+5. **History filters** - limit the search by object type and time range.
+6. **Find person** - list the recorded priority objects from the last 10 minutes. The button
+   is named after the configured priority object type and is hidden when none is set.
+7. **Mission objective** - ask about the objective of the loaded mission.
+8. **Explain a topic** - start a general conversation.
+9. **New conversation** - make the assistant forget earlier questions.
+10. **Back** - close the assistant.
 
-### How the assistant answers
+### How the Assistant Answers
 
-General chat remembers the last few exchanges and mission answers the last
-three; camera answers do not. General answers never describe what is on camera.
+The assistant never asks you to rephrase a question. It answers with its closest match and
+first tells you what it assumed:
 
-Ask how the application itself works ("what runs on the NPU?", "how does video
-reach my screen?") and the Assistant answers from a verified description of
-the build: components, models, devices and APIs, plus live model placement.
-It keeps that description in
-[`backend/app/operator-guide.md`](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/blob/main/handheld-multi-modal/backend/app/operator-guide.md) under
-"How this application is built", one short fact line per topic. Each prompt
-carries the identity lines (purpose, device, custom code, services) plus the
-two lines whose words best match the question, so the 7B model is not asked
-to sift a long list; it is told to add nothing the facts do not state. The
-language model decides whether a question is about the application; no
-question list is coded. Check details against the **Architecture** page.
+- If you do not give a time, it searches the **last 10 minutes** and says so.
+- A camera named in your question takes priority over **Camera scope**.
+- The application does not detect details such as color, brand or license plates. If you ask
+  about them (for example, "What color is the bicycle?"), the assistant says so and shows the
+  matching objects so that you can check their images.
+- You can ask short follow-up questions about the mission, such as "Who receives it?". Tap
+  **New conversation**, change the mission documents, or stay idle for ten minutes to start
+  over.
+- General chat remembers the last few exchanges; answers about camera records do not. General
+  answers never describe what is on camera.
 
-The Assistant never asks you to rephrase. It answers with its closest search
-and says first what it assumed:
-
-- No time given → it searches the **last 10 minutes** and says so.
-- A camera named in the question wins over **Camera scope**.
-- A detail detections cannot check (for example a colour, when attributes are
-  unavailable) → it shows all matching tracks for that time and says
-  "I can't check … — check their images." Colour, brand and licence-plate
-  questions about a detected object ("What colour is the bicycle?") always get
-  "This application does not detect colour…" with the matching tracks; the
-  language model is not asked to guess.
-- Mission questions accept short follow-ups ("Who receives it?", "Can they
-  stop people?"); the last three mission exchanges are used only to work out
-  what the follow-up refers to. **New conversation**, changing the mission
-  documents or ten idle minutes forget them.
-- Questions about how this application works (for example "How does person
-  detection work here?") are answered from the built-in guide, not the
-  mission documents.
-
-Questions with no camera, object or time words are answered as general
-conversation, including **What model is this?** or **What hardware are you
-running on?**; the language model answers from the Models & devices facts, so
-check that panel for the exact device.
+You can also ask how the application works, for example "What runs on the NPU?" or "How does
+video reach my screen?". The assistant answers from a built-in description of the application.
+You can check the details on the **Architecture** page and in **Models & devices**.
 
 ## Mission
 
 ![Mission](_assets/guide-mission.jpg)
 
-1. **Browse… / Upload** — add a PDF or Word (.docx) mission document. The line
-   below shows the accepted types and limits (by default 25 MB and 200 PDF
-   pages). Only text is read: images, scanned pages and other file types are
-   not, and a document with no readable text is refused. Administrators can
-   change the limits in `config/backend/backend.yaml`
-   (`mission_max_upload_mb`, `mission_max_pdf_pages`,
-   `mission_max_docx_uncompressed_mb`).
-2. **Delete** — remove that document.
-3. **Re-ingest** — reload the documents and rebuild the brief.
-4. **Clear mission** — remove all mission documents (camera history stays).
-5. **Ask** — question about the mission documents only.
-6. **Brief** — objective, times, locations, units, restrictions and
-   resources extracted from the documents.
+1. **Browse… / Upload** - add a PDF or Word (.docx) mission document, by default up to 25 MB
+   and 200 PDF pages. Only text is read; images and scanned pages are ignored.
+2. **Delete** - remove the document.
+3. **Re-ingest** - reload the documents and rebuild the brief.
+4. **Clear mission** - remove all mission documents. The camera history is kept.
+5. **Ask** - ask a question about the mission documents only.
+6. **Brief** - the objective, times, locations, units, restrictions and resources taken from the
+   documents.
 
 ## Rules
 
-### Creating an alert
+### Creating an Alert
 
 ![Rules](_assets/guide-rules.jpg)
 
-1. Open **Manage alerts**. Choose **Appears** or **Stays too long**.
-2. Check **Camera** (defaults to the camera being viewed) and **Watch for**.
-   **Anything detected** includes all object types detected by the configured pipeline.
-3. **Stays for** (only for **Stays too long**) — 10 seconds, 30 seconds, 1 minute or a custom duration.
-4. **Area** defaults to the whole camera view. Choose **Draw an area** to limit it.
-   You can draw an area for any camera, not only the one on screen: in
-   **All cameras** the frame comes from that camera's tile; otherwise the app
-   switches to it and waits up to 20 s for a frame. The chosen camera and
-   area are kept if you close and reopen **Manage alerts** before saving.
-5. **More options** contains confidence, repeat, active hours and speech settings.
-   **Announce again after** (default 5 s for **Anything**, 30 s for one kind
-   of object; 5–3600 s): while an alert is open,
-   a new object is announced again once this many seconds have passed since
-   the last announcement, even in a busy scene. A kind of object the alert has
-   not announced yet (a person after a car on an **Anything** alert) and the
-   same alert on another camera are announced at once. After **Acknowledge**,
-   the next sighting is announced at once. Objects cut off by any edge of the
-   picture count in an area like any other detection.
-6. Read the plain-language preview above it, then **Create alert**.
-7. Existing alerts show their conditions. **Edit**, **Turn off / Turn on** or **Delete**
-   are available beside each. Editing finishes with **Save changes**.
+1. Open **Manage alerts** and choose **Appears** or **Stays too long**.
+2. Check the **Camera** (by default, the camera you are viewing) and **Watch for**.
+   **Anything detected** includes every object type that the application detects.
+3. **Stays for** (only for **Stays too long**) - choose 10 seconds, 30 seconds, 1 minute or a
+   custom duration.
+4. **Area** - by default, the whole camera view. Choose **Draw an area** to limit the alert to
+   part of the view of any camera.
+5. **More options** - set confidence, repeat, active hours and speech. **Announce again after**
+   (5 to 3600 seconds) sets how long to wait before announcing new objects for an open alert.
+6. Read the plain-language preview, then tap **Create alert**.
+7. Existing alerts show their conditions, with **Edit**, **Turn off / Turn on** and **Delete**
+   beside each. Tap **Save changes** to finish editing.
 
-### How rules match
+### How Rules Match
 
-Switching to **Appears** removes the dwell requirement. **Remove area** returns to
-whole-view monitoring after saving. Each object's dwell timer is independent;
-different objects never contribute to a shared timer.
+An alert fires once for each tracked object, not for each video frame. For **Stays too long**,
+each object has its own timer, which restarts if the object is not seen for a while or if you
+change or re-enable the alert. To monitor the whole view again, tap **Remove area** and save.
 
-A rule fires once per tracked object, not once per frame.
-Dwell requires continuing qualifying observations; missing zone geometry or a
-long observation gap restarts the timer. Changing matching conditions or turning
-a rule off and back on also restarts pending dwell. Editing a scheduled rule
-preserves its displayed timezone, even from a device in another timezone.
-
-### Drawing a zone
+### Drawing a Zone
 
 ![Draw zone](_assets/guide-zone.jpg)
 
-Full-screen frozen frame of the camera. Outline the ground where people or
-vehicles walk; an object counts by where its feet touch the ground.
+The console shows a full-screen still image from the camera. Outline the ground where people or
+vehicles move, because an object counts by where its feet or wheels touch the ground.
 
-1. **Corners** — 3 to 5. Turns amber at 5.
-2. **Next step** — what to do now. A sixth tap shows an amber warning.
-3. **Corner** — tap the picture to add, drag to move. Each new corner gets
-   the next number and joins the last corner to the first. Only if that
-   would make the edges cross does it go into the nearest edge instead; the
-   step line then says where it went and which corners were renumbered.
-4. **Cancel** — leave without changes. Closing Rules also cancels.
-5. **Undo point** — remove the corner tapped last.
-6. **Clear all** — start again.
-7. **Use this area** — enabled from 3 corners. If dragging makes the outline
-   cross itself it turns red and this button waits until you fix it; then tap **Create alert** or **Save changes**.
-   To remove a zone, tap **Remove area** in the alert form, then **Save changes**.
+1. **Corners** - you can use 3 to 5 corners. The counter turns amber at 5.
+2. **Next step** - tells you what to do next. If you tap a sixth time, an amber warning
+   appears.
+3. **Corner** - tap the picture to add a corner, and drag a corner to move it. If a new corner
+   would make the edges cross, it is placed on the nearest edge instead, and the step line tells
+   you which corners were renumbered.
+4. **Cancel** - leave without changes. Closing **Manage alerts** also cancels.
+5. **Undo point** - remove the last corner you added.
+6. **Clear all** - start again.
+7. **Use this area** - available from 3 corners. If the outline crosses itself, it turns red,
+   and you must fix it before you can use it. Then tap **Create alert** or **Save changes**.
+   To remove a zone, tap **Remove area** in the alert form and then **Save changes**.
 
 ## Resources
 
 ![Resources](_assets/guide-resources.jpg)
 
-1. **Tiles** — CPU, Memory, GPU engines, NPU, Package power and Services.
-   Click one to chart it.
-2. **Chart** — last 5 minutes of the selected tile. **Services** shows one
-   card per application service instead: name, share of total CPU (same scale
-   as the CPU tile; the card fill shows it) and memory used, busiest first.
-   Collapsed shows the cards that fit plus **+N more · Expand**. The Memory
-   tile shows free RAM.
-3. **Expand** — larger chart.
-4. **Details** — raw readings.
+1. **Tiles** - CPU, Memory (free RAM), GPU engines, NPU, Package power and Services. Tap a tile
+   to show its chart.
+2. **Chart** - the last 5 minutes of the selected tile. For **Services**, you see one card per
+   application service instead, with its share of CPU and memory use, busiest first. Tap
+   **+N more · Expand** to see all of them.
+3. **Expand** - show a larger chart.
+4. **Details** - show the raw readings.
 
-## Voice questions and spoken answers
+## Voice Questions and Spoken Answers
 
 ### Listening
 
 ![Listening](_assets/guide-voice-listening.jpg)
 
-1. **Send question** — the Talk button while listening (red); tap to send.
-2. **Status** — Listening, Transcribing, or what went wrong.
-3. **Cancel** — discard the recording.
+1. **Send question** - the red Talk button while the console is listening. Tap it to send your
+   question.
+2. **Status** - **Listening**, **Transcribing**, or a description of what went wrong.
+3. **Cancel** - discard the recording.
 
-### Spoken answers
+### Spoken Answers
 
 ![Spoken answer](_assets/guide-voice-answer.jpg)
 
-1. **Answer** — full text, always shown.
-2. **Speech line** — what is being spoken now. A green **Speaking:** tag
-   marks audio playing; an amber tag (**Preparing speech:**, **Starting
-   speech:**) means it is not audible yet. The spoken sentence follows in
-   italics. Text only if speech is unavailable.
-3. **Audio on → off** — silences the rest of the answer; the text stays.
+1. **Answer** - the full text of the answer, which is always shown.
+2. **Speech line** - the sentence being spoken now, in italics. A green **Speaking:** tag means
+   that audio is playing. An amber tag (**Preparing speech:** or **Starting speech:**) means
+   that it is not audible yet. If speech is unavailable, only the text is shown.
+3. **Audio on → off** - stop the rest of the spoken answer. The text stays on screen.
 
-### How voice works
+### Asking a Question by Voice
 
-Tap **Talk** in the top bar from any console view. It opens Assistant and
-starts recording after microphone permission is granted. Tap **Send question**
-when finished; holding the button is not required.
-Use trusted HTTPS. **Listening** means the browser microphone is active. Capture
-ends when you tap Send question, after 15 seconds, or after a pause following speech. **Cancel**
-or Escape discards the voice request, even while it is transcribing: you will not hear
-"Checking." or an answer for it. Queued alert announcements are kept. The microphone
-closes when capture ends.
+1) Tap **Talk** in the top bar from any view. The assistant opens and starts recording after
+   you allow the browser to use the microphone. The console must be opened over trusted HTTPS.
+2) Ask your question. You do not need to hold the button. Recording stops when you tap
+   **Send question**, after a 1.5-second pause, or after 15 seconds.
+3) The status changes to **Transcribing**, and then your recognized question and the answer
+   appear. Voice questions use the same camera scope and answer mode as typed questions.
 
-**Transcribing** is followed by the recognized question and the normal answer
-progress. Voice uses the same camera scope and answer mode as typing. If capture
-or transcription fails, type your question; no camera settings are changed.
+To discard a voice question, tap **Cancel** or press Escape. If recording or transcription
+fails, type your question instead. With **Audio on**, you hear "Checking." when your question is
+recognized, and the spoken answer starts within a few seconds. Alert announcements wait until
+the answer finishes, but alerts appear on screen at once. If several tabs or devices have audio
+on, each plays the answer, so close extra tabs to hear it once.
 
-With **Audio on**, you hear "Checking." as soon as your question is recognized,
-then the answer starts within a few seconds. Answers are spoken by the voice
-**Miles**, in short parts (long sentences split into bounded clauses;
-acronyms such as CPU and GPU are spelled out letter by letter). The first
-part starts before the model has finished writing. Each part plays to its end,
-then the next starts without a gap once ready. If several tabs or devices
-have Audio on, each plays the answer at its own pace. Close extra tabs to hear
-it once. The complete text stays visible. Turning **Audio off** cancels the
-remaining speech without deleting the answer. Tapping Talk interrupts
-playback immediately. Your answer is spoken first: alert announcements that
-arrive while you ask or listen wait until the answer finishes, while the alert
-itself appears on screen at once. Audio off, synthesis errors or browser playback restrictions
-leave the text available. Tablet microphone and autoplay behavior still require
-verification on the target browser.
-
-### Recovering a question
+### Recovering a Question
 
 ![Answer running](_assets/guide-answer-running.jpg)
 
-1. **Cancel question** — abandons the running question and stops its speech.
-   The stock inference service may still finish its in-flight work, so the
-   next answer can be slower. Finish or cancel a question before starting
-   another with Talk.
-2. **Streaming answer** — text appears as it is generated.
+1. **Cancel question** - stop the running question and its speech. The next answer may be
+   slower while the model finishes its previous work, so finish or cancel one question before
+   you ask another with **Talk**.
+2. **Streaming answer** - the text appears as it is generated.
 
 ![Answer recovery](_assets/guide-answer-recovery.jpg)
 
-1. **Edit and resend** — puts the recognized question, with its original
-   camera scope, back in the box for correction.
-2. **Answer** — the complete text. An interrupted answer stays on screen
-   marked incomplete, with **Retry question**.
-3. **Replay answer** — reads the completed answer again (about the first
-   1,500 characters) without asking the model again. Refused while an answer
-   is still in progress.
-4. **Replies as text · Enable audio** — shown when Audio is off; enable audio
-   before Replay.
-
-Turning **Audio off** silences speech while the text request keeps running. Failed
-playback stays visible. While recording, a hint shows the 1.5-second silence
-auto-send and 15-second limit.
+1. **Edit and resend** - put the recognized question, with its original camera scope, back in
+   the text box so that you can correct it.
+2. **Answer** - the complete text. If an answer is interrupted, it stays on screen marked as
+   incomplete, with a **Retry question** button.
+3. **Replay answer** - read the completed answer aloud again (about the first 1,500 characters)
+   without asking the model again. You cannot replay an answer that is still in progress.
+4. **Replies as text · Enable audio** - shown when audio is off. Enable audio before you tap
+   **Replay answer**.

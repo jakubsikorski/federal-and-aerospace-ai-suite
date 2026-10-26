@@ -26,7 +26,7 @@ speech-to-text models run on the GPU, and text-to-speech runs on the CPU. Models
 dependencies are downloaded from the Internet on the first start. After that, all
 inference runs locally and data does not leave the device.
 
-![Operator console: live camera with detection boxes, object tracks with evidence images, open alerts, model placement and resource telemetry](./_assets/operator-ui.jpg)
+![Operator console: live camera with detection boxes, object tracks with evidence images, open alerts, model placement, and resource telemetry with per-service CPU and memory use](./_assets/operator-ui.jpg)
 
 The Handheld Multi-Modal application is deployed on top of the Edge Node Infrastructure
 software - an edge computing platform, which enables hardware acceleration capabilities.
