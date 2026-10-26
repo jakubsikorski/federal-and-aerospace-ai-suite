@@ -58,7 +58,7 @@ third-party-components.spdx  Software bill of materials of third-party component
 | Coturn | `coturn/coturn:4.18.0` | Loopback-only TURN for tunneled browsers |
 | Mosquitto | `eclipse-mosquitto:2.0.22` | MQTT between DLSPS and Backend |
 | NGINX | `nginx:1.27-alpine` | TLS reverse proxy on `127.0.0.1:8443` |
-| FFmpeg | `jrottenberg/ffmpeg:6.1-ubuntu2404` | Demo cameras only |
+| FFmpeg | `bluenviron/mediamtx:1.11.3-ffmpeg` | Demo cameras only |
 | Backend + UI | `handheld/backend:dev` (built from `backend/`) | Application logic; calls the microservice APIs only |
 
 [![Architecture diagram](docs/user-guide/_assets/architecture.svg)](docs/user-guide/_assets/architecture.svg)

@@ -285,7 +285,7 @@ demo-prereq: prereq
 	  codec=(-c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -bf 0 -sc_threshold 0 \
 	         -fpsmax "$$fps" -force_key_frames 'expr:gte(t,n_forced*1)')
 	  [[ -f "$$video/$$stem.ts" ]] && continue
-	  docker run --rm --user "$$(id -u):$$(id -g)" -v "$$video:/video" jrottenberg/ffmpeg:6.1-ubuntu2404 \
+	  docker run --rm --user "$$(id -u):$$(id -g)" -v "$$video:/video" --entrypoint ffmpeg bluenviron/mediamtx:1.11.3-ffmpeg \
 	    -hide_banner -loglevel warning -y -fflags +genpts -i "/video/$$source" \
 	    -map 0:v:0 "$${codec[@]}" -f mpegts "/video/$$stem.part.ts"
 	  mv "$$video/$$stem.part.ts" "$$video/$$stem.ts"

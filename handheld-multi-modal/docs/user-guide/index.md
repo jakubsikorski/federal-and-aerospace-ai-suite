@@ -83,7 +83,7 @@ an interactive architecture page at `/architecture.html`.
 | Coturn | `coturn/coturn:4.18.0` | Loopback-only TURN relay for tunnelled browsers |
 | Mosquitto | `eclipse-mosquitto:2.0.22` | MQTT between the pipeline server and the Backend |
 | NGINX | `nginx:1.27-alpine` | TLS reverse proxy on `127.0.0.1:8443` |
-| FFmpeg | `jrottenberg/ffmpeg:6.1-ubuntu2404` | Demo camera publishers only |
+| FFmpeg | `bluenviron/mediamtx:1.11.3-ffmpeg` | Demo camera publishers only |
 | Backend and UI | `handheld/backend:dev` (built locally) | Application logic; calls stock microservice APIs only |
 
 Model sources and licenses are listed in

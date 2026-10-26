@@ -219,16 +219,16 @@ Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-ng
 
 PackageName: ffmpeg
 SPDXID: SPDXRef-Package-ffmpeg
-PackageVersion: 6.1-ubuntu2404
-PackageSupplier: Person: Julien Rottenberg
-PackageDownloadLocation: https://hub.docker.com/r/jrottenberg/ffmpeg
-PackageHomePage: https://github.com/jrottenberg/ffmpeg
-PackageLicenseConcluded: GPL-3.0-or-later AND FDK-AAC
-PackageLicenseDeclared: GPL-3.0-or-later AND FDK-AAC
-PackageCopyrightText: <text>Copyright (c) 2000-2023 the FFmpeg developers; Copyright Fraunhofer-Gesellschaft (FDK AAC)</text>
-PackageSummary: <text>FFmpeg 6.1 image used only by the removable demo camera publishers (compose/cameras.yaml) to loop sample videos into MediaMTX over RTSP.</text>
-PackageComment: <text>The image's ffmpeg -buildconf reports --enable-gpl --enable-version3 --enable-nonfree --enable-libfdk-aac --enable-libx264 --enable-libx265, so the binary is GPL-3.0-or-later and includes the Fraunhofer FDK AAC library; ffmpeg itself reports that this nonfree build is not legally redistributable. The image is pulled by the user from Docker Hub for demo use only and is not redistributed with this application.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:docker/jrottenberg/ffmpeg@6.1-ubuntu2404
+PackageVersion: 6.1.1-r8
+PackageSupplier: Organization: bluenviron
+PackageDownloadLocation: https://hub.docker.com/r/bluenviron/mediamtx
+PackageHomePage: https://github.com/bluenviron/mediamtx
+PackageLicenseConcluded: GPL-3.0-or-later AND MIT
+PackageLicenseDeclared: GPL-3.0-or-later AND MIT
+PackageCopyrightText: <text>Copyright (c) 2000-2023 the FFmpeg developers; Copyright (c) 2019 aler9 (MediaMTX)</text>
+PackageSummary: <text>MediaMTX 1.11.3 image with the Alpine 3.20 FFmpeg 6.1.1 package, used only by the removable demo camera publishers (compose/cameras.yaml) and the demo video re-encode in make demo-prereq.</text>
+PackageComment: <text>The image's ffmpeg -buildconf reports --enable-gpl --enable-version3 --enable-libx264 without --enable-nonfree, so the FFmpeg binary is GPL-3.0-or-later. The image is pulled by the user from Docker Hub.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:docker/bluenviron/mediamtx@1.11.3-ffmpeg
 FilesAnalyzed: false
 
 Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-ffmpeg
