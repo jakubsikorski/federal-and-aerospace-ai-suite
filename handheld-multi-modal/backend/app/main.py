@@ -18,7 +18,7 @@ import uuid
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile
+from fastapi import FastAPI, File, HTTPException, Path as ApiPath, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -521,7 +521,7 @@ def create_app() -> FastAPI:
                                            has_image=has_image, prioritize=prioritize))
 
     @app.get("/api/tracks/{track_id}/candidates")
-    def track_candidates(request: Request, track_id: int):
+    def track_candidates(request: Request, track_id: int = ApiPath(ge=1, le=2**63 - 1)):
         with read_connection(request) as conn:
             if not conn.execute(
                     "SELECT 1 FROM tracks WHERE track_id = ?", (track_id,)).fetchone():
@@ -592,10 +592,7 @@ def create_app() -> FastAPI:
 
     @app.post("/api/incidents/{incident_id}/{action}")
     async def incident_action(request: Request, incident_id: str, action: str):
-        try:
-            body = await request.json() if await request.body() else {}
-        except json.JSONDecodeError:
-            body = None
+        body = await _json_body(request) if await request.body() else {}
         if not isinstance(body, dict) or set(body) - {"minutes"}:
             return JSONResponse(status_code=422, content=envelope(error={
                 "code": "invalid_action", "message": "Provide an action object with optional minutes."}))
@@ -635,7 +632,7 @@ def create_app() -> FastAPI:
     async def _json_body(request: Request):
         try:
             return await request.json()
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
             return None
 
     @app.get("/api/cameras")
@@ -677,10 +674,7 @@ def create_app() -> FastAPI:
 
     @app.post("/api/rules", status_code=201)
     async def create_rule(request: Request):
-        try:
-            body = await request.json()
-        except json.JSONDecodeError:
-            body = None
+        body = await _json_body(request)
         def create():
             with read_connection(request) as conn:
                 try:
@@ -691,10 +685,7 @@ def create_app() -> FastAPI:
 
     @app.patch("/api/rules/{rule_id}")
     async def update_rule(request: Request, rule_id: str):
-        try:
-            body = await request.json()
-        except json.JSONDecodeError:
-            body = None
+        body = await _json_body(request)
         def update():
             with read_connection(request) as conn:
                 try:
@@ -726,10 +717,7 @@ def create_app() -> FastAPI:
 
     @app.post("/api/speech/{speech_id}/playback")
     async def speech_playback(request: Request, speech_id: str):
-        try:
-            body = await request.json()
-        except json.JSONDecodeError:
-            body = None
+        body = await _json_body(request)
         event = body.get("event") if isinstance(body, dict) else None
         try:
             current = request.app.state.arbiter.ack(speech_id, event)
@@ -741,10 +729,7 @@ def create_app() -> FastAPI:
 
     @app.post("/api/speech/talk")
     async def speech_talk(request: Request):
-        try:
-            body = await request.json()
-        except json.JSONDecodeError:
-            body = None
+        body = await _json_body(request)
         if (not isinstance(body, dict) or "held" not in body or not set(body) <= {"held", "answer_pending"}
                 or not all(isinstance(v, bool) for v in body.values())
                 or (body.get("answer_pending") and body["held"])):
@@ -763,10 +748,7 @@ def create_app() -> FastAPI:
 
     @app.post("/api/speech/replay")
     async def replay_answer(request: Request):
-        try:
-            body = await request.json()
-        except json.JSONDecodeError:
-            body = None
+        body = await _json_body(request)
         if (not isinstance(body, dict) or set(body) != {"text"}
                 or not isinstance(body["text"], str) or not body["text"].strip()
                 or len(body["text"]) > 8000):
@@ -916,10 +898,7 @@ def create_app() -> FastAPI:
 
     @app.post("/api/mission/ask")
     async def ask_mission(request: Request):
-        try:
-            body = await request.json()
-        except json.JSONDecodeError:
-            body = None
+        body = await _json_body(request)
         if not isinstance(body, dict) or set(body) != {"text"}:
             return JSONResponse(status_code=422, content=envelope(error={
                 "code": "invalid_request", "message": "provide one mission question as text",
@@ -938,10 +917,7 @@ def create_app() -> FastAPI:
 
     @app.post("/api/ask")
     async def ask(request: Request):
-        try:
-            body = await request.json()
-        except json.JSONDecodeError:
-            body = None
+        body = await _json_body(request)
         if not isinstance(body, dict) or set(body) - {"text", "plan", "selected_stream", "page_token", "timezone", "conversation_id", "mode", "speak"}:
             return JSONResponse(status_code=422, content=envelope(error={
                 "code": "invalid_request", "message": "invalid assistant request",
@@ -1147,7 +1123,7 @@ def create_app() -> FastAPI:
             return _serve(request, conn, row)
 
     @app.get("/api/tracks/{track_id}/snip")
-    def track_snip(request: Request, track_id: int):
+    def track_snip(request: Request, track_id: int = ApiPath(ge=1, le=2**63 - 1)):
         """The track's selected candidate, else the best one still on disk.
 
         Crops rotate out from under the index (the producer caps its store), so

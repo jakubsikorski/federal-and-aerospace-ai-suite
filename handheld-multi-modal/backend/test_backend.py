@@ -5047,6 +5047,27 @@ def test_architecture_page_names_every_deployed_service():
     assert 'href="/architecture.html"' in (repo / "backend/app/static/index.html").read_text()
 
 
+def test_api_rejects_invalid_json_encoding_and_sqlite_id_overflow():
+    import asyncio
+    from app.main import create_app
+
+    async def check():
+        app = create_app()
+        # These invalid requests must be rejected before any service/state access.
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                     base_url="http://test") as client:
+            for path in ("/api/ask", "/api/mission/ask", "/api/speech/talk", "/api/speech/replay"):
+                for body in (b'\xff', b'{"text":"\xff"}', b'[' * 10000 + b']' * 10000):
+                    response = await client.post(path, content=body,
+                                                 headers={"content-type": "application/json"})
+                    assert response.status_code == 422, (path, response.text)
+            for suffix in ("candidates", "snip"):
+                for track_id in (-1, 0, 2**63, 2**100):
+                    response = await client.get(f"/api/tracks/{track_id}/{suffix}")
+                    assert response.status_code == 422, response.text
+    asyncio.run(check())
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

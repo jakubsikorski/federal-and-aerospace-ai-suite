@@ -73,7 +73,7 @@ help:
 	@echo '  make clean-all CONFIRM=yes      All of the above + downloaded models, caches and TLS keys'
 	@echo
 	@echo 'Checks: make check          Images, models and demo videos complete; once started, every service answers'
-	@echo '        make test | test-ui | test-assets | test-history (needs demo-up)'
+	@echo '        make test | test-ui | test-assets | test-fuzz | test-history (needs demo-up)'
 	@echo
 	@echo 'Options: CAMERAS=1..2 demo cameras (default 2)  TTS_DEVICE=CPU|GPU (default CPU)'
 	@echo '         ASSET_ROOT=<path>'
@@ -619,6 +619,11 @@ check: preflight
 
 test:
 	docker run --rm --network none -v "$(CURDIR):/srv" -w /srv/backend handheld/backend:dev python3 test_backend.py
+
+.PHONY: test-fuzz
+test-fuzz:
+	mkdir -p docs/application/evidence/SDL504-api-fuzz
+	docker run --rm --user "$$(id -u):$$(id -g)" --network none --read-only --cap-drop ALL --security-opt no-new-privileges --memory 1g --cpus 2 --pids-limit 128 --tmpfs /tmp:rw,nosuid,nodev,size=256m -e PYTHONDONTWRITEBYTECODE=1 -v "$(CURDIR):/srv:ro" -v "$(CURDIR)/docs/application/evidence/SDL504-api-fuzz:/evidence" -w /srv/backend handheld/backend:dev python3 fuzz_api.py --output /evidence --seed "$(or $(FUZZ_SEED),504)" --mutations "$(or $(FUZZ_MUTATIONS),32)"
 
 test-assets:
 	python3 scripts/test_demo_assets.py
