@@ -40,7 +40,6 @@ config/                      Per-service configuration: DLSPS pipelines and dete
 scripts/                     Demo asset preparation, live readiness checks, and smoke tests.
 examples/                    Synthetic demo mission packet and an Intel® RealSense™ RTSP publisher script.
 .agents/skills/              AI agent skills for the application and its Open Edge Platform microservices.
-MODEL_PROVENANCE.md          Source, license, and verification of every model.
 third-party-components.spdx  Software bill of materials of third-party components.
 ```
 
@@ -138,7 +137,6 @@ make test / test-ui / test-assets / test-fuzz / test-history
 - [Access Application User Interface](docs/user-guide/access-application.md)
 - [Operator Guide](docs/user-guide/operator-guide.md)
 - [Application Operations](docs/user-guide/application-operations.md)
-- [Model Provenance](MODEL_PROVENANCE.md)
 - [Release Notes](docs/user-guide/release-notes.md)
 
 Demo videos: intel-iot-devkit sample (CC BY 4.0) and Pexels video 34622113 (Pexels License).

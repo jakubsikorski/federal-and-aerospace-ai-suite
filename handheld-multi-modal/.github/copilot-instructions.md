@@ -13,8 +13,8 @@ prompt template. Do not clear the mission document corpus for general chat and d
 conversation memory that the service does not provide.
 
 Use the pinned skills in `.agents/skills/`, but do not apply their default models or
-floating-tag examples. The model choices and provenance rules in `AGENTS.md` and
-`MODEL_PROVENANCE.md` override generic upstream examples.
+floating-tag examples. The model choices and provenance rules in `AGENTS.md`
+override generic upstream examples.
 
 Smoke commands and their scope are listed in `scripts/smoke/README.md`. Never replace missing
 service contracts with plausible APIs or mark blocked scripts as working integrations.

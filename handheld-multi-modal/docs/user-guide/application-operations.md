@@ -132,7 +132,7 @@ To swap the detector model:
 2. Update `config/dlsps/detector-profile.json`: `pipeline_model`, the approved XML/BIN digests
    in `artifact_sets`, and the ordered `classes`.
 3. Update the model path in each `config/dlsps/*/config.json`.
-4. Record the model source and license in `MODEL_PROVENANCE.md`.
+4. Record the model source and license in `third-party-components.spdx`.
 5. Restart. The Backend refuses to start if the pipeline model path, IR digests, or exported
    class metadata disagree with the profile.
 

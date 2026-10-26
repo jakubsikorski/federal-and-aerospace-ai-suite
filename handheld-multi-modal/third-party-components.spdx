@@ -14,10 +14,10 @@ Scope: third-party open-source components consumed by the application —
 container images referenced by compose/handheld-multi-modal.yaml and
 compose/cameras.yaml, the base image and Python pip dependencies of the
 locally built backend service (backend/Dockerfile, backend/requirements.txt),
-and the AI models deployed by the stack (MODEL_PROVENANCE.md,
-config/chatqna/models.lock.json). Only direct, pinned pip requirements are
-listed; their transitive dependencies are not enumerated. Models rejected or
-not deployed in MODEL_PROVENANCE.md are not listed.
+and the AI models deployed by the stack (config/chatqna/models.lock.json,
+config/model-download/yolo26s.json). Only direct, pinned pip requirements are
+listed; their transitive dependencies are not enumerated. Models that are
+not deployed are not listed.
 
 Intel-authored sources in this repository (including the handheld/backend
 image built from backend/) are NOT enumerated as packages; only third-party
@@ -375,7 +375,7 @@ Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-py
 
 ##############################################################################
 # AI models deployed by the application
-# Sources: MODEL_PROVENANCE.md, config/chatqna/models.lock.json, config/model-download/yolo26s.json
+# Sources: config/chatqna/models.lock.json, config/model-download/yolo26s.json
 ##############################################################################
 
 PackageName: yolo26s
@@ -447,7 +447,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: Apache-2.0
 PackageCopyrightText: <text>Copyright (c) 2022 OpenAI</text>
 PackageSummary: <text>Whisper-medium speech recognition model exported to OpenVINO and run by Audio Analyzer on GPU for speech-to-text.</text>
-PackageComment: <text>Stock exporters do not enforce a revision; the deployed revision is recorded per deployment (see MODEL_PROVENANCE.md, Model ownership).</text>
+PackageComment: <text>Stock exporters do not enforce a revision; the deployed revision is recorded per deployment.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:huggingface/openai/whisper-medium
 FilesAnalyzed: false
 
@@ -462,7 +462,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: MIT
 PackageCopyrightText: <text>Copyright (c) Microsoft Corporation</text>
 PackageSummary: <text>SpeechT5 text-to-speech model exported to OpenVINO and run by the Text To Speech service on GPU.</text>
-PackageComment: <text>Stock exporters do not enforce a revision; the deployed revision is recorded per deployment (see MODEL_PROVENANCE.md, Model ownership).</text>
+PackageComment: <text>Stock exporters do not enforce a revision; the deployed revision is recorded per deployment.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:huggingface/microsoft/speecht5_tts
 FilesAnalyzed: false
 
@@ -477,7 +477,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: MIT
 PackageCopyrightText: <text>Copyright (c) Microsoft Corporation</text>
 PackageSummary: <text>HiFi-GAN vocoder used with SpeechT5 to produce output waveforms.</text>
-PackageComment: <text>Stock exporters do not enforce a revision; the deployed revision is recorded per deployment (see MODEL_PROVENANCE.md, Model ownership). License taken from the Hugging Face model card.</text>
+PackageComment: <text>Stock exporters do not enforce a revision; the deployed revision is recorded per deployment. License taken from the Hugging Face model card.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:huggingface/microsoft/speecht5_hifigan
 FilesAnalyzed: false
 

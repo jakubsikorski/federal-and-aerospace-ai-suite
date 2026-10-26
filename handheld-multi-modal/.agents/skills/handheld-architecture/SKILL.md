@@ -6,7 +6,7 @@ description: Use when planning handheld integration boundaries or reviewing an a
 # Handheld architecture
 
 These are fixed application requirements, not claims that components are running.
-Read `AGENTS.md` and `README.md` first; model pins are in `MODEL_PROVENANCE.md`.
+Read `AGENTS.md` and `README.md` first; model sources and licenses are in `third-party-components.spdx`.
 
 ```text
 MediaMTX -> DLSPS clean RTSP

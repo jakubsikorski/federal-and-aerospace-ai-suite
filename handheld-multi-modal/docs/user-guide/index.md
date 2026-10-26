@@ -87,7 +87,7 @@ an interactive architecture page at `/architecture.html`.
 | Backend and UI | `handheld/backend:dev` (built locally) | Application logic; calls stock microservice APIs only |
 
 Model sources and licenses are listed in
-[MODEL_PROVENANCE.md](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/blob/main/handheld-multi-modal/MODEL_PROVENANCE.md).
+[third-party-components.spdx](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/blob/main/handheld-multi-modal/third-party-components.spdx).
 
 ## AI Playground
 

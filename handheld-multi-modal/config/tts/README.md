@@ -11,7 +11,7 @@ Two candidates fully investigated:
 1. **Parler-TTS mini-v1** — provenance chain resolved and approved (base
    model, `google/flan-t5-large` text encoder, Descript DAC codec, and
    `mistralai/Mistral-7B-Instruct-v0.2` synthetic-annotation teacher all
-   confirmed non-PRC — see `MODEL_PROVENANCE.md`). **Blocked by real packaging bug**: this pinned
+   confirmed non-PRC). **Blocked by real packaging bug**: this pinned
    image's own `requirements.txt` never lists `parler-tts` pip package
    its own source (`utils/ensure_parler.py`) requires — confirmed via
    direct deploy attempt crashing w/ `RuntimeError: parler-tts is

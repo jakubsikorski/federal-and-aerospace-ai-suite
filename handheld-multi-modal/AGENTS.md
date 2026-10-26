@@ -8,8 +8,7 @@ SPDX-License-Identifier: Apache-2.0
 The Handheld Multi-Modal application is an operator console for Intel® edge devices. It is
 built from unmodified Open Edge Platform `release-2026.2.0` microservices, an application
 Backend (FastAPI), and a browser UI, orchestrated with Docker Compose and a Make lifecycle.
-Read [README.md](README.md) and [MODEL_PROVENANCE.md](MODEL_PROVENANCE.md) before changing
-the deployment.
+Read [README.md](README.md) before changing the deployment.
 
 ## Component Map
 
@@ -72,11 +71,11 @@ Coturn <-> MediaMTX          WebRTC relay only
 - Detector: YOLO26s OpenVINO™ IR INT8, NPU by default; CPU and GPU are fixed alternative
   pipeline configurations. To change the model, update `config/model-download/`,
   `config/dlsps/detector-profile.json`, every `config/dlsps/*/config.json`, and
-  `MODEL_PROVENANCE.md`.
+  `third-party-components.spdx`.
 - Language model: `Intel/neural-chat-7b-v3-3` on GPU through Chat Q&A. Speech-to-text:
   Whisper-medium on GPU through Audio Analyzer. Text-to-speech: SpeechT5 on CPU by default.
 - Alerts use rule-based dispatch without an LLM in the critical path.
-- Every model needs a recorded source, license, and lineage in `MODEL_PROVENANCE.md`. Uncertain
+- Every model needs a recorded source, license, and lineage in `third-party-components.spdx`. Uncertain
   provenance blocks use.
 - Never persist `HF_TOKEN` or other access tokens in configuration, logs, or Git.
 

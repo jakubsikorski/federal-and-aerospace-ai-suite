@@ -63,8 +63,8 @@ uses the REST `destination.frame` request. Both consume raw VA frames from
 ## Expected behavior
 
 The YOLO26s NPU path runs with the NPU device requested and no
-NPU compile/plugin error in logs (IR provenance in
-`MODEL_PROVENANCE.md`). Confirmed running simultaneously w/ real MQTT
+NPU compile/plugin error in logs (IR digests in
+`config/dlsps/detector-profile.json`). Confirmed running simultaneously w/ real MQTT
 publish (`detections/live`, ~30 msg/s), no fps degradation on either leg.
 
 ## Known gotchas

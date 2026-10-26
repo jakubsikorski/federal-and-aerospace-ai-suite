@@ -136,7 +136,7 @@ services:
       # microservices/dlstreamer-pipeline-server/resources/videos/classroom.avi
       # (sha256 ca6d1b53d54a40ffda9d4ca1d0ab0cc43f744583324aaf97146c820e2b62a2fa,
       # confirmed identical); `make demo-prereq` provisions both this file and
-      # the detector IR above (see MODEL_PROVENANCE.md).
+      # the detector IR above.
       - ${ASSET_ROOT:-..}/data/dlsps/demo-video:/home/pipeline-server/resources/videos:ro
       # Crop mechanism, active on every launch:
       # the gvapython callback (scripts/dlsps/README.md) read-only, plus a
@@ -259,8 +259,8 @@ services:
   # full writeup and the earlier attempt). SpeechT5 was previously flagged for
   # Microsoft Research Asia institutional authorship on the original paper;
   # that finding was reviewed, SpeechT5 was confirmed as a Microsoft product,
-  # not PRC, and approved for deployment. See config/tts/README.md and
-  # MODEL_PROVENANCE.md for the full record of both decisions.
+  # not PRC, and approved for deployment. See config/tts/README.md for
+  # the full record of both decisions.
   tts:
     image: intel/text-to-speech:2026.2.0
     container_name: handheld-multi-modal-tts
@@ -297,7 +297,7 @@ services:
              "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8011/health', timeout=5).read()"]
     networks: [handheld]
   # Stock Chat Q&A Core backend only (OpenVINO GPU variant, Intel/neural-chat-7b-v3-3
-  # per AGENTS.md/MODEL_PROVENANCE.md) — no stock UI is deployed, per manifest.
+  # per AGENTS.md) — no stock UI is deployed, per manifest.
   # Upstream reference: edge-ai-libraries sample-applications/chat-question-
   # and-answer-core/docker/compose.yaml, service chatqna-core-ov-gpu (its
   # MODEL_CACHE_PATH/MODEL_CONFIG_PATH/HF_ACCESS_TOKEN env-var contract is

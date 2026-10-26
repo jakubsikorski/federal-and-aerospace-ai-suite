@@ -6,14 +6,14 @@ prohibited stock BAAI defaults w/ provenance-approved pair:
 
 - LLM: `Intel/neural-chat-7b-v3-3` (required; replaces
   `microsoft/Phi-3.5-mini-instruct` — fine-tuned from
-  `mistralai/Mistral-7B-v0.1`, non-PRC lineage, see `MODEL_PROVENANCE.md`), GPU.
+  `mistralai/Mistral-7B-v0.1`, non-PRC lineage), GPU.
 - Embedding: `ibm-granite/granite-embedding-125m-english` (IBM Research AI,
   US; distilled from Mistral-7B-Instruct-v0.2), CPU.
 - Reranker: `cross-encoder/ms-marco-electra-base` (base Google ELECTRA,
   Stanford/Google Brain authors), CPU.
 
 Pinned revisions/licenses: `config/chatqna/models.lock.json` and
-`MODEL_PROVENANCE.md`. Stock backend (`app/openvino_backend.py`) owns
+`third-party-components.spdx`. Stock backend (`app/openvino_backend.py`) owns
 model download/conversion into `MODEL_CACHE_PATH` via its own HF/Optimum
 export path; no custom exporter or config rewriting used.
 
