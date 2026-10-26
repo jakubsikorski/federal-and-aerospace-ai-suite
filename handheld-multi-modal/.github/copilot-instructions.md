@@ -1,24 +1,20 @@
-# Repository instructions
+<!--
+SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+SPDX-License-Identifier: Apache-2.0
+-->
 
-Follow `AGENTS.md` and consult `STATUS.md` before starting work.
-This is the handheld multi-modal application, built on stock Open Edge
-Platform `release-2026.2.0` components.
+# Repository Instructions
 
-`MANIFEST.yaml` separates requested settings from resolved facts.
-Null means unresolved; false means no accepted-target smoke pass. The owner
-accepts the current Lunar Lake machine as the execution target. Preserve its
-actual identity without treating its name as a blocker.
+Follow [AGENTS.md](../AGENTS.md). This is the Handheld Multi-Modal application, built on
+unmodified Open Edge Platform `release-2026.2.0` microservices.
 
-Use stock `/chat` for general and document questions with an appropriate
-configured prompt. The owner accepts retrieval-enabled general answers;
-clean retrieval bypass is no longer a requirement. Do not clear the corpus
-for general chat or fabricate conversation-memory support.
+Use the stock Chat Q&A `/chat` endpoint for general and document questions with the configured
+prompt template. Do not clear the mission document corpus for general chat and do not claim
+conversation memory that the service does not provide.
 
-Use pinned official copies in `.agents/skills/`, but never execute their
-prohibited model defaults or floating-tag examples. Model provenance and the
-fixed Phi/Whisper/YOLO choices in `AGENTS.md` override generic upstream examples.
+Use the pinned skills in `.agents/skills/`, but do not apply their default models or
+floating-tag examples. The model choices and provenance rules in `AGENTS.md` and
+`MODEL_PROVENANCE.md` override generic upstream examples.
 
-Component integration details live in `COMPONENTS.md` and
-`docs/application/*-contracts.md`; smoke commands and their actual scope live in
-`scripts/smoke/README.md`. Never replace missing contracts with plausible APIs
-or mark blocked scripts as working integrations.
+Smoke commands and their scope are listed in `scripts/smoke/README.md`. Never replace missing
+service contracts with plausible APIs or mark blocked scripts as working integrations.

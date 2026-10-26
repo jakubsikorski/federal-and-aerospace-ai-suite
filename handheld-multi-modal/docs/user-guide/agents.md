@@ -15,6 +15,10 @@ and thermal tuning) to application-level pipeline generation with Intel DL Strea
 - [Infrastructure AI Agent Integration](infrastructure/agent-skills.md) — Available
   agent skills for building images, provisioning, and power/thermal tuning, and how to run them
   from a developer host or directly on a provisioned target.
+- Application skills — the `handheld-multi-modal/.agents/skills` directory bundles skills for
+  the application architecture, camera connection, the DL Streamer Pipeline Server contract,
+  and the Open Edge Platform microservices it uses. Versions of the upstream skills are pinned
+  in `skills-lock.json`.
 
 <!--hide_directive
 :::{toctree}

@@ -1,7 +1,9 @@
-# Operator guide
+# Operator Guide
 
-Open `https://<device>:8443` and accept the self-signed certificate.
-Red numbers in the pictures match the numbered lists below.
+This guide describes the operator console of the Handheld Multi-Modal application.
+Open `https://localhost:8443/` on the device (or through an SSH tunnel, see
+[Access Application User Interface](access-application.md)) and trust the
+self-signed certificate. Red numbers in the pictures match the numbered lists below.
 
 The console is one fixed landscape screen: live camera and alerts on the left,
 evidence and the assistant on the right, resources below. It uses a dark navy
@@ -16,7 +18,7 @@ are easy to press by finger. Tapping a drop-down opens a list of large rows
 next to it; tap a row to choose it, or tap outside to keep the current value. Run the browser full screen (F11 or
 kiosk mode) on the handheld.
 
-![Operator UI](images/operator-ui.jpg)
+![Operator UI](_assets/operator-ui.jpg)
 
 ## Contents
 
@@ -50,7 +52,7 @@ kiosk mode) on the handheld.
 
 ## Top bar
 
-![Top bar](images/guide-top-bar.jpg)
+![Top bar](_assets/guide-top-bar.jpg)
 
 1. **Camera tabs** — pick the live camera. The last camera you used is
    restored on the next visit. **All cameras** shows the live grid (below).
@@ -77,7 +79,7 @@ kiosk mode) on the handheld.
 
 ### Architecture page
 
-![Architecture](images/guide-architecture.jpg)
+![Architecture](_assets/guide-architecture.jpg)
 
 A diagram of every service and how data moves between them, coloured by
 interface (RTSP, WebRTC WHIP/WHEP, TURN, MQTT, evidence images, HTTPS/REST/SSE).
@@ -98,7 +100,7 @@ every service image and interface. **Back to app** returns.
 
 ### Model details
 
-![Model details](images/guide-model-details.jpg)
+![Model details](_assets/guide-model-details.jpg)
 
 1. Clicked model (click again to close).
 2. Status, model, device and host. **Close** hides it. **Starting** means the
@@ -108,7 +110,7 @@ every service image and interface. **Back to app** returns.
 
 ## All cameras
 
-![Camera grid](images/guide-camera-grid.jpg)
+![Camera grid](_assets/guide-camera-grid.jpg)
 
 1. **Tile** — one camera, up to four per page. Tap to open that camera.
    Tiles with open alerts glow: pulsing red while the alerted object is on
@@ -118,7 +120,7 @@ every service image and interface. **Back to app** returns.
 
 ## Adding and removing cameras
 
-![Manage cameras](images/guide-cameras.jpg)
+![Manage cameras](_assets/guide-cameras.jpg)
 
 1. **Cameras** — in the top bar, right after the camera tabs. It shows how
    many cameras are on (for example "2 on"). Tap it to open **Manage
@@ -134,7 +136,7 @@ every service image and interface. **Back to app** returns.
 
 ### Adding a camera
 
-![Add a camera](images/guide-camera-add.jpg)
+![Add a camera](_assets/guide-camera-add.jpg)
 
 1. **Name** — what the camera is called in tabs, alerts and evidence.
 2. **Publisher on this device** — an app or encoder on this handheld sends
@@ -147,7 +149,7 @@ every service image and interface. **Back to app** returns.
 
 For a network camera, enter its address:
 
-![Network camera](images/guide-camera-network.jpg)
+![Network camera](_assets/guide-camera-network.jpg)
 
 1. **Camera RTSP address** — the camera's `rtsp://` address.
 2. **Note** — the allowed networks. Addresses outside them, or with a user
@@ -158,7 +160,7 @@ For a network camera, enter its address:
 
 After adding a **publisher** camera, the panel shows where to send its video:
 
-![Camera added](images/guide-camera-added.jpg)
+![Camera added](_assets/guide-camera-added.jpg)
 
 1. **Waiting for video** — nothing has arrived yet.
 2. **Address** — send H.264 RTSP video here, for example
@@ -169,7 +171,7 @@ After adding a **publisher** camera, the panel shows where to send its video:
 
 The card updates by itself when video arrives:
 
-![Camera live](images/guide-camera-live.jpg)
+![Camera live](_assets/guide-camera-live.jpg)
 
 1. **Live** — video, detection and alerts are running.
 2. **View camera** — switch to it. **Done** closes the card.
@@ -178,14 +180,14 @@ The address is also shown under **Edit** at any time.
 
 ### Editing and removing
 
-![Edit camera](images/guide-camera-edit.jpg)
+![Edit camera](_assets/guide-camera-edit.jpg)
 
 1. **Name** and **Save name** — rename the camera.
 2. **Address** and **Copy** — where to send video (publisher cameras).
 3. **Turn off / Turn on** — stops or restarts its video and detection.
 4. **Remove camera…** — asks to confirm:
 
-![Remove camera](images/guide-camera-remove.jpg)
+![Remove camera](_assets/guide-camera-remove.jpg)
 
 1. **Remove** — removes the camera.
 2. **Keep camera** — cancels.
@@ -201,7 +203,7 @@ update. Every change is written to an audit log on the device.
 
 ## Live camera and alerts
 
-![Live camera and alerts](images/guide-video-alerts.jpg)
+![Live camera and alerts](_assets/guide-video-alerts.jpg)
 
 Tap **Cameras** in the top bar to add, rename, turn off or remove cameras
 (see above). New alerts update camera badges and highlights, and show a
@@ -254,14 +256,14 @@ Speech labels: **spoken**, **not played (Audio off)**, **not spoken
 
 After **View** the Evidence panel shows only that alert:
 
-![Alert view](images/guide-alert-view.jpg)
+![Alert view](_assets/guide-alert-view.jpg)
 
 1. **Back to live evidence** — return to the normal list.
 2. Each object that matched the alert; click for images.
 
 ## Evidence
 
-![Evidence](images/guide-evidence.jpg)
+![Evidence](_assets/guide-evidence.jpg)
 
 1. **View** — **Current** (on screen now), **History · priority** or
    **History · newest** (recorded tracks).
@@ -287,7 +289,7 @@ through the existing history APIs; tap **View** to jump into them.
 
 ### Evidence details
 
-![Evidence details](images/guide-drawer.jpg)
+![Evidence details](_assets/guide-drawer.jpg)
 
 1. **Back** — close the details.
 2. The whole stored image (tap it for full screen), then camera, times and
@@ -295,7 +297,7 @@ through the existing history APIs; tap **View** to jump into them.
 
 ## Ask (assistant)
 
-![Assistant](images/guide-ask.jpg)
+![Assistant](_assets/guide-ask.jpg)
 
 1. Type a question.
 2. **Send**.
@@ -321,7 +323,7 @@ Ask how the application itself works ("what runs on the NPU?", "how does video
 reach my screen?") and the Assistant answers from a verified description of
 the build: components, models, devices and APIs, plus live model placement.
 It keeps that description in
-[`backend/app/operator-guide.md`](../backend/app/operator-guide.md) under
+[`backend/app/operator-guide.md`](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/blob/main/handheld-multi-modal/backend/app/operator-guide.md) under
 "How this application is built", one short fact line per topic. Each prompt
 carries the identity lines (purpose, device, custom code, services) plus the
 two lines whose words best match the question, so the 7B model is not asked
@@ -355,7 +357,7 @@ check that panel for the exact device.
 
 ## Mission
 
-![Mission](images/guide-mission.jpg)
+![Mission](_assets/guide-mission.jpg)
 
 1. **Browse… / Upload** — add a PDF or Word (.docx) mission document. The line
    below shows the accepted types and limits (by default 25 MB and 200 PDF
@@ -375,7 +377,7 @@ check that panel for the exact device.
 
 ### Creating an alert
 
-![Rules](images/guide-rules.jpg)
+![Rules](_assets/guide-rules.jpg)
 
 1. Open **Manage alerts**. Choose **Appears** or **Stays too long**.
 2. Check **Camera** (defaults to the camera being viewed) and **Watch for**.
@@ -413,7 +415,7 @@ preserves its displayed timezone, even from a device in another timezone.
 
 ### Drawing a zone
 
-![Draw zone](images/guide-zone.jpg)
+![Draw zone](_assets/guide-zone.jpg)
 
 Full-screen frozen frame of the camera. Outline the ground where people or
 vehicles walk; an object counts by where its feet touch the ground.
@@ -433,7 +435,7 @@ vehicles walk; an object counts by where its feet touch the ground.
 
 ## Resources
 
-![Resources](images/guide-resources.jpg)
+![Resources](_assets/guide-resources.jpg)
 
 1. **Tiles** — CPU, Memory, GPU engines, NPU, Package power and Services.
    Click one to chart it.
@@ -449,7 +451,7 @@ vehicles walk; an object counts by where its feet touch the ground.
 
 ### Listening
 
-![Listening](images/guide-voice-listening.jpg)
+![Listening](_assets/guide-voice-listening.jpg)
 
 1. **Send question** — the Talk button while listening (red); tap to send.
 2. **Status** — Listening, Transcribing, or what went wrong.
@@ -457,7 +459,7 @@ vehicles walk; an object counts by where its feet touch the ground.
 
 ### Spoken answers
 
-![Spoken answer](images/guide-voice-answer.jpg)
+![Spoken answer](_assets/guide-voice-answer.jpg)
 
 1. **Answer** — full text, always shown.
 2. **Speech line** — what is being spoken now. A green **Speaking:** tag
@@ -498,7 +500,7 @@ verification on the target browser.
 
 ### Recovering a question
 
-![Answer running](images/guide-answer-running.jpg)
+![Answer running](_assets/guide-answer-running.jpg)
 
 1. **Cancel question** — abandons the running question and stops its speech.
    The stock inference service may still finish its in-flight work, so the
@@ -506,7 +508,7 @@ verification on the target browser.
    another with Talk.
 2. **Streaming answer** — text appears as it is generated.
 
-![Answer recovery](images/guide-answer-recovery.jpg)
+![Answer recovery](_assets/guide-answer-recovery.jpg)
 
 1. **Edit and resend** — puts the recognized question, with its original
    camera scope, back in the box for correction.

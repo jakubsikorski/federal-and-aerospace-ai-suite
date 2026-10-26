@@ -1,109 +1,91 @@
-# Handheld multi-modal application contract
+<!--
+SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+SPDX-License-Identifier: Apache-2.0
+-->
 
-Handheld multi-modal application built on stock Open Edge Platform integrations.
-Read `STATUS.md`, `MANIFEST.yaml`, `COMPONENTS.md`,
-`MODEL_PROVENANCE.md` before deployment.
+# Handheld Multi-Modal Application — Agent Context File
 
-## Release and evidence
+The Handheld Multi-Modal application is an operator console for Intel® edge devices. It is
+built from unmodified Open Edge Platform `release-2026.2.0` microservices, an application
+Backend (FastAPI), and a browser UI, orchestrated with Docker Compose and a Make lifecycle.
+Read [README.md](README.md) and [MODEL_PROVENANCE.md](MODEL_PROVENANCE.md) before changing
+the deployment.
 
-- Baseline: `release-2026.2.0`. Pin source commits + exact container tags.
-  No floating image tags, no silent model swap.
-- Manifest `requirements` = owner asks, not resolved facts. Null = unresolved.
-  Source-verified interface ≠ smoke pass.
-- Host: **Lunar Lake**, Intel Core Ultra 9 288V. 2026-09-09 owner accepted
-  this machine as execution/acceptance target. Hardware naming not a blocker.
-  Record actual identity in evidence; passing tests here satisfy acceptance —
-  don't mislabel silicon or claim separate Panther Lake measurements.
-- Scaffold-only phase superseded for authorized integration work. Public
-  registries/models may work without creds; never persist tokens or assume
-  auth required before trying public access.
-- Save component logs + actual outputs under `docs/application/evidence/`.
-  That directory is git-ignored (owner direction 2026-09-29): evidence stays
-  on the device; older files remain in Git history only.
-  JSON parsing, port open, device node exists, or env var says `GPU`/`NPU`
-  ≠ smoke pass.
-- Official skills copied under `.agents/skills/` w/ `skills-lock.json`.
-  Generic examples there don't override these constraints. No default model
-  downloads, floating tags, or alt architectures from them.
+## Component Map
 
-## Models and stock components
+| Path | Purpose |
+| ---- | ------- |
+| `Makefile` | All lifecycle, readiness, bundle, and test targets (run `make` for the list) |
+| `compose/handheld-multi-modal.yaml` | Application services; every host port binds to `127.0.0.1` |
+| `compose/cameras.yaml` | FFmpeg publishers for the demo cameras (`make demo-up` only) |
+| `backend/` | Backend (`app/`), browser UI (`app/static/`), Dockerfile, tests, and API fuzzing |
+| `config/dlsps/` | Pipeline configurations per device (`cpu/`, `gpu/`, `npu/`) and `detector-profile.json` |
+| `config/backend/backend.yaml` | Cameras, evidence classes, mission limits, and Backend settings |
+| `config/chatqna/` | Chat Q&A prompt template and model configuration |
+| `config/proxy/`, `config/coturn/`, `config/mediamtx/` | TLS proxy, loopback TURN relay, and RTSP/WebRTC relay |
+| `config/model-download/` | YOLO26s download and export request |
+| `scripts/` | Demo asset preparation, live checks, and per-service smoke tests |
+| `.agents/skills/` | Agent skills; upstream copies are pinned in `skills-lock.json` |
 
-- No PRC-trained model families/derivatives. Prohibited: Qwen, DeepSeek, GLM,
-  Yi, InternLM, MiniCPM. Audit embedding/reranking defaults too. Uncertain
-  provenance blocks use.
-- Chat Q&A Core (required): OpenVINO, GPU, `Intel/neural-chat-7b-v3-3`
-  (owner-directed replacement for `microsoft/Phi-3.5-mini-instruct`,
-  2026-09-14; fine-tuned from mistralai/Mistral-7B-v0.1, non-PRC lineage —
-  see `MODEL_PROVENANCE.md`);
-  no stock UI in final stack. Owner accepts stock `/chat` + doc endpoints for
-  general answers. Use supported `PROMPT_TEMPLATE` answering general Qs from
-  model knowledge, mission context only when relevant. Retrieval may still
-  run — not a retrieval bypass; don't delete mission docs for general Qs or
-  claim stateless `/chat` has conversation memory. Use unmodified stock Chat
-  Q&A backend's own model download/conversion/loading path — no separate Phi
-  exporter, no config rewrite, no one-off inference script replacing backend.
-- Audio Analyzer (required): OpenVINO, `whisper-medium`, GPU; sentiment +
-  diarization disabled. Browser captures mic audio; Backend validates/forwards bounded audio; service transcribes (owner-confirmed 2026-09-25).
-- OEP TTS (required): stock-supported, provenance-approved model, CPU
-  default (D56, fluent speech); `make speech-device TTS_DEVICE=GPU` switches
-  (owner-directed 2026-09-28, replacing GPU: SpeechT5 on the shared GPU queued
-  behind LLM generation and delayed first answer audio to 5–14 s; see D52).
-- Detector: YOLO26s OpenVINO IR, INT8 preferred, NPU default, CPU `gvatrack`,
-  Intel HW decode/encode (owner-directed 2026-09-24 replacement for YOLO11s).
-  CPU/GPU = fixed alternatives, not dynamically edited pipelines.
-  Never substitute nano.
-- Alerts: rule/action dispatch, no ADK/LLM in critical path.
-- Resolve actual model owners/caches; don't force all downloads through
-  Model Download. Never persist access tokens in configs/logs/Git.
-- Report incompatibilities incl. missing stock interfaces. No forking Chat
-  Q&A or hiding gaps behind custom model servers.
+## Useful Commands
 
-## Architectural boundaries
-
-```text
-MediaMTX -> DLSPS clean RTSP
-DLSPS -> MediaMTX annotated WebRTC (WHIP push; owner-approved amendment,
-    supersedes the original RTSP-for-annotated draft — see
-    docs/application/video-contracts.md)
-MediaMTX -> UI WebRTC/WHEP
-DLSPS -> MQTT -> Backend observations
-DLSPS -> shared snips -> Backend static evidence images
-Metrics Manager -> Backend -> UI
-Backend -> UI HTTP/SSE/WebSocket
-Coturn <-> MediaMTX WebRTC only
+```bash
+make demo-up            # start with demo cameras (also restarts)
+make up                 # start without cameras
+make status             # services and per-camera feed health
+make check              # read-only readiness check
+make pipelines-restart  # restart Backend and DLSPS only
+make stop               # stop every service
+make down               # remove containers; keep models, history, and TLS
+make test               # Backend checks in the Backend image
 ```
 
-Backend not in video path, doesn't crop images, doesn't reconfigure DLSPS
-at runtime. UI never touches SQLite or snip filesystem paths directly.
-Localhost-only profile (owner direction, 2026-10-13): every host port binds to `127.0.0.1`; the
-browser runs on the device at `https://localhost:8443`. MediaMTX WHIP/WHEP
-signaling has no host port; ICE media uses `127.0.0.1:8189/udp` directly.
-Coturn stays, loopback-only: listens and relays on `127.0.0.1`, peers limited
-to `127.0.0.1` (MediaMTX ICE), TURN over TCP so a remote browser can use an
-SSH tunnel (`-L 8443 -L 3478`). No DLSPS-to-Coturn path. Never reintroduce
-all-interface bindings or host networking beyond loopback-bound Coturn.
-Business rules, speech arbitration and telemetry
-aggregation belong to the application Backend, never to stock components.
+`clean-history` and `clean-all` are destructive and require `CONFIRM=yes`.
 
-## Commands and integration work
+## Architectural Boundaries
 
-Run commands from repo root. `scripts/smoke/README.md` splits implemented
-smoke tests from blocked entry points; blocked entry point exits 2, never
-success. Run one component: `bash scripts/smoke/01_mediamtx.sh`. Don't
-confuse scaffolding/schema validation with service execution.
+```text
+MediaMTX -> DLSPS            clean RTSP
+DLSPS -> MediaMTX            annotated WebRTC (WHIP)
+MediaMTX -> UI               WebRTC (WHEP)
+DLSPS -> MQTT -> Backend     observations
+DLSPS -> shared crops        Backend static evidence images
+Metrics Manager -> Backend   hardware telemetry
+Backend -> UI                HTTP, SSE, WebSocket
+Coturn <-> MediaMTX          WebRTC relay only
+```
 
-Reinstall official copies via pinned command in
-`docs/application/release-and-host.md`. Don't edit upstream skill copies;
-repo-specific overrides belong in local skills + this contract.
+- The Backend is not in the video path, does not crop images, and does not reconfigure DLSPS
+  pipelines at runtime. It starts and stops pipelines through the DLSPS REST API.
+- The UI never accesses SQLite or crop file paths directly.
+- Every host port binds to `127.0.0.1`. Do not introduce all-interface bindings or host
+  networking. Remote access is through an SSH tunnel (`-L 8443 -L 3478`).
+- Business rules, speech arbitration, and telemetry aggregation belong to the Backend, never to
+  the Open Edge Platform microservices.
 
-## Application operations and UX (owner direction, 2026-09-21)
+## Models and Microservices
 
-Prioritize repeatability across devices. Keep application setup, start, stop,
-restart, and readiness checks in the root Makefile; do not add custom scripts
-just to launch pipelines. Backend owns pipeline REST lifecycle. Use
-`make demo-up` (also restarts), `demo-stop`, and `demo-down`; keep the
-target list small (owner, 2026-09-29); document asset
-prerequisites and detect device groups/network addresses instead of hardcoding
-this host. Stop DLSPS with the application to release stuck instances.
-Keep model/device UI concise: status, model, device, host; distinguish configured
-placement from service-reported execution without verbose technical diagnostics.
+- Pin exact container tags and model digests. No floating image tags and no silent model swaps;
+  a failed startup must stop, not fall back to another model or device.
+- Use the microservices unmodified: Chat Q&A downloads, converts, and loads its own models; do
+  not add separate exporters, configuration rewrites, or custom model servers.
+- Detector: YOLO26s OpenVINO™ IR INT8, NPU by default; CPU and GPU are fixed alternative
+  pipeline configurations. To change the model, update `config/model-download/`,
+  `config/dlsps/detector-profile.json`, every `config/dlsps/*/config.json`, and
+  `MODEL_PROVENANCE.md`.
+- Language model: `Intel/neural-chat-7b-v3-3` on GPU through Chat Q&A. Speech-to-text:
+  Whisper-medium on GPU through Audio Analyzer. Text-to-speech: SpeechT5 on CPU by default.
+- Alerts use rule-based dispatch without an LLM in the critical path.
+- Every model needs a recorded source, license, and lineage in `MODEL_PROVENANCE.md`. Uncertain
+  provenance blocks use.
+- Never persist `HF_TOKEN` or other access tokens in configuration, logs, or Git.
+
+## Development Rules
+
+- Keep setup, start, stop, restart, and readiness checks in the Makefile; do not add scripts
+  only to launch pipelines.
+- Detect device groups and addresses instead of hard-coding a host.
+- Smoke tests in `scripts/smoke/` exit `0` on pass, non-zero on failure, and `2` when blocked.
+  A blocked test is not a pass.
+- Do not edit upstream skill copies in `.agents/skills/`; application-specific guidance belongs
+  in the `handheld-*` skills and this file.
