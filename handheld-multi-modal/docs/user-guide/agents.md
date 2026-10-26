@@ -17,8 +17,8 @@ and thermal tuning) to application-level pipeline generation with Intel DL Strea
   from a developer host or directly on a provisioned target.
 - Application skills — the `handheld-multi-modal/.agents/skills` directory bundles skills for
   the application architecture, camera connection, the DL Streamer Pipeline Server contract,
-  and the Open Edge Platform microservices it uses. The `chatqna-docker-deploy`, `dlsps-user`,
-  `dlstreamer-coding-agent` and `model-download-user` skills are copies from
+  and the Open Edge Platform microservices it uses. The `chatqna-docker-deploy` and `dlsps-user`
+  skills are copies from
   [open-edge-platform/skills](https://github.com/open-edge-platform/skills).
 
 <!--hide_directive
