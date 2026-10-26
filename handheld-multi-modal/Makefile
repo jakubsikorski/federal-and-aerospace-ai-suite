@@ -327,9 +327,8 @@ speech_warm := curl -fsS --max-time 300 -o /dev/null -H 'Content-Type: applicati
 
 # The Backend image is labelled with a hash of backend/, so an older checkout's
 # image is never reused after the sources change. BuildKit asks the registry for
-# the base image even when it is cached, so without internet the stale image is
-# updated in place from backend/Dockerfile.offline (same Python and packages,
-# new application code); a changed requirements.txt still needs internet.
+# the base image even when it is cached, so without internet the rebuild fails;
+# the previously built image is then started with a warning.
 backend_hash = $$(cd backend && find . -type f ! -path '*/__pycache__/*' -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -c1-16)
 backend_built = $$(docker image inspect -f '{{index .Config.Labels "handheld.source"}}' handheld/backend:dev 2>/dev/null || true)
 

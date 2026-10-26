@@ -1,78 +1,58 @@
 ---
 name: oep-metrics-manager
-description: Validate the pinned OEP Metrics Manager deployment and stock CPU GPU NPU RAM power telemetry contracts, preserving unavailable data and Lunar Lake versus Panther Lake evidence boundaries. Deployed and runtime-verified (CPU/RAM/GPU/NPU/temperature).
+description: Use when reading or extending handheld resource telemetry from the stock Open Edge Platform Metrics Manager (CPU, memory, GPU, NPU, power and per-service container metrics).
 ---
 
-# OEP Metrics Manager — repository override
+# Metrics Manager
 
-Read `AGENTS.md` and `docs/application/service-contracts.md` first.
-Locally authored; source baseline is `release-2026.2.0`, commit
-`c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9`,
-`microservices/metrics-manager/`. This is not an upstream official skill.
-**Deployed and runtime-verified** on this Lunar Lake host — see
-`STATUS.md` and `docs/application/evidence/metrics/smoke.log`.
+Image `intel/metrics-manager:2026.2.0`, source `edge-ai-libraries`
+`microservices/metrics-manager/` (release-2026.2.0). Compose service
+`metrics`; host ports `127.0.0.1:9090` (API), `9273` (Prometheus export) and
+`8186` (custom metrics input).
 
-## Required workflow
+## Deployment
 
-1. Pinned **`intel/metrics-manager:2026.2.0`** confirmed running.
-2. Stock mounts include `/sys:ro`, `/run:ro`, Telegraf configs and
-   custom-input storage; GPU uses `/dev/dri`, host PID namespace and render-
-   group access (`compose/handheld-multi-modal.yaml`, service `metrics`).
-   Privileged/AppArmor settings are the source's own required host
-   permissions for sysfs telemetry, not an invented application addition.
-3. Keep **Metrics Manager → Backend → UI**. Do not build an aggregator or wire
-   the browser directly to privileged host telemetry as part of the application.
-4. `:9090/health` confirmed healthy (liveness only). Real data confirmed via
-   `:9273/metrics`, `:9090/api/v1/metrics/latest`, and SSE
-   `:9090/metrics/stream`.
-5. Use `Accept:text/event-stream`. SSE samples contain `name`, `labels`,
-   `value`, `timestamp` in epoch milliseconds. Preserve labels and errors.
-   `/latest` merges custom second timestamps and scraped nanosecond timestamps;
-   normalize explicitly, not by assuming the whole endpoint has one unit.
+- `privileged`, `pid: host`, `apparmor:unconfined`, `/sys` and `/run`
+  read-only, `/dev/dri` and the render group are the upstream service's own
+  requirements for host sysfs telemetry.
+- `config/metrics/telegraf.conf` adds a `[[inputs.docker]]` block that reads
+  `/var/run/docker.sock` (read-only) for per-container CPU and memory of
+  running `handheld-*` containers.
+- Data flows **Metrics Manager → Backend → UI**
+  (`backend/app/telemetry.py`). Do not wire the browser to host telemetry or
+  build a separate aggregator.
 
-## Metric interpretation
+## API
 
-- CPU: `cpu_usage_user`, `cpu_usage_system`, `cpu_usage_idle` in percent,
-  aggregate only. `cpu_frequency_avg_frequency` is kHz, not MHz/per-core.
-- RAM: `mem_used_percent`, `mem_available_percent` (%), `mem_total`,
-  `mem_used` (bytes). CPU package temperature: `temp_temp` (°C), sensor-filtered.
-- GPU: `gpu_engine_usage_usage` (%) with engine/type/host/gpu_id labels;
-  `gpu_frequency_value{type="cur_freq"}` is MHz (current/requested).
-  `gpu_power_value{type="gpu_cur_power"}` and
-  `gpu_power_value{type="pkg_cur_power"}` are W — **confirmed real values,
-  ~10-18W idle**. Units were traced into pinned qmassa source.
-  Retain GPU versus package domains and verify counter availability. No
-  default GPU-memory utilization series. Do not invent `gpu_usage_percent`.
-- NPU: `npu_power` (W), `npu_utilization` (%), `npu_temperature` (°C,
-  **confirmed real ~50°C via PMT**), `npu_tile_config` (integer).
-  `npu_memory_mb` actually divides by 1024² (MiB); `-1` means unavailable,
-  **confirmed on this Lunar Lake host** (documented sentinel, not a bug).
-- NPU utilization can be false-zero when `npu_busy_time_us` is unavailable.
-  `npu_frequency` is documented Hz but requires scaling validation.
-  `npu_bandwidth` is documented MB/s but the reader omits elapsed-time division.
-- No dedicated default CPU-only, battery, or total-system power series.
-  Intel iGPU package RAPL may appear under the qmassa `pkg_cur_power` label,
-  conditional on counter support/permissions; it is not CPU-only power.
-  Do not sum overlapping GPU/package and NPU domains.
-- Treat missing, stale, unsupported, sentinel and real zero separately.
-  Recorded deployment values are **idle-state** (no concurrent DLSPS
-  load) — do not extrapolate idle metrics into loaded-workload behavior.
+- `GET :9090/health` is liveness only.
+- `GET :9090/api/v1/metrics/latest` mixes second and nanosecond timestamps
+  from different sources; normalize per series.
+- `GET :9090/metrics/stream` with `Accept: text/event-stream`: samples have
+  `name`, `labels`, `value` and `timestamp` (epoch ms).
+- `GET :9273/metrics`: Prometheus text export.
 
-## Target and evidence gates
+## Metrics
 
-The project host is Lunar Lake (Core Ultra 9 288V), not the requested Panther
-Lake. Owner accepts this Lunar Lake host as the execution target (2026-09-09);
-passing tests here satisfy acceptance — actual hardware identity stays
-recorded, not relabeled, and no separate Panther Lake measurement is claimed.
+- CPU: `cpu_usage_user`, `cpu_usage_system`, `cpu_usage_idle` (%, aggregate).
+  `cpu_frequency_avg_frequency` is kHz.
+- Memory: `mem_used_percent`, `mem_available_percent` (%), `mem_total`,
+  `mem_used` (bytes). CPU package temperature: `temp_temp` (°C).
+- GPU: `gpu_engine_usage_usage` (%) labelled by engine;
+  `gpu_frequency_value{type="cur_freq"}` (MHz);
+  `gpu_power_value{type="gpu_cur_power"}` and `{type="pkg_cur_power"}` (W).
+  There is no GPU memory utilization series and no `gpu_usage_percent`.
+- NPU: `npu_utilization` (%), `npu_power` (W), `npu_temperature` (°C),
+  `npu_memory_mb` (actually MiB; `-1` means unavailable). Utilization can
+  read 0 when `npu_busy_time_us` is unavailable.
+- Containers: `docker_container_cpu_usage_percent{cpu="cpu-total"}` (100 =
+  one core), `docker_container_mem_usage`, `docker_container_mem_limit`
+  (bytes), `docker_container_mem_usage_percent`, and `docker_n_cpus`, which
+  the Backend divides by to show a share of the whole machine.
+- There is no CPU-only, battery or total-system power series. `pkg_cur_power`
+  is package power, not CPU power. Do not add overlapping GPU, package and NPU
+  power domains.
+- Keep missing, stale, unsupported, sentinel and real-zero values distinct;
+  never synthesize a value.
 
-On any further run, save actual payloads and logs under application evidence.
-Report absent fields and source unit discrepancies rather than synthesizing
-telemetry or claiming a smoke pass beyond what was actually run.
-
-`scripts/smoke/13_metrics.sh` requires `METRICS_URL` (API) and
-`METRICS_TELEGRAF_URL` (collector) for the same operator-started instance. It
-is **PASS** for CPU/RAM (two original, fresh, advancing Prometheus export
-timestamps; `/latest` timestamps alone cannot prove freshness because that
-API can synthesize them) — its scope is CPU/RAM-only by design. Real
-GPU/NPU/temperature data was additionally confirmed manually at deployment
-(see evidence log above), not by this script.
+Smoke test: `scripts/smoke/13_metrics.sh` (set `METRICS_URL` and
+`METRICS_TELEGRAF_URL`). It checks CPU and memory freshness only.

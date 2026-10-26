@@ -119,7 +119,7 @@ on the first start.
 
 | Change | Edit |
 |---|---|
-| Detector device (CPU, GPU, or NPU) | `DLSPS_CONFIG_VARIANT` (default `npu`); see `config/dlsps/cpu/README.md` and `config/dlsps/gpu/README.md` |
+| Detector device (CPU, GPU, or NPU) | `DLSPS_CONFIG_VARIANT` (default `npu`) |
 | Chat prompt template | `config/chatqna/config.yaml` |
 | Evidence priority classes | `evidence_priority_classes` in `config/backend/backend.yaml` |
 | Concepts the detector cannot report | `unsupported_concept_terms` in `config/backend/backend.yaml` |

@@ -1,56 +1,52 @@
 ---
 name: oep-audio-analyzer
-description: Use when configuring the required stock Whisper-medium OpenVINO GPU transcription path or its Backend upload API.
+description: Use when configuring the stock Open Edge Platform Audio Analyzer (Whisper-medium on OpenVINO GPU) or the Backend voice upload path that calls it.
 ---
 
-# OEP Audio Analyzer
+# Audio Analyzer
 
-Pinned source/image: `edge-ai-libraries` commit
-`c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9`,
-`intel/audio-analyzer:2026.2.0`. **Deployed and runtime-verified** on
-this Lunar Lake host (see `STATUS.md`,
-`docs/application/evidence/audio-analyzer/smoke.log`), not source-only.
-Full API, model ownership and source references: `docs/application/ai-contracts.md`.
+Image `intel/audio-analyzer:2026.2.0`, source `edge-ai-libraries`
+(release-2026.2.0). Compose service `audio-analyzer`; host
+`127.0.0.1:8011` maps to container port `8010`.
 
-Repository config: `config/audio-analyzer/config.yaml` is mounted as a
-**direct read-only replacement** of the stock
-`/app/audio_analyzer/config.yaml` (`compose/handheld-multi-modal.yaml`), not an
-overlay via `AUDIO_ANALYZER_CONFIG_OVERRIDE_PATHS` — that env var is not set
-in this repo's Compose.
+## Configuration
 
-Required values: `app.use_ov_genai=true`,
-`models.asr.provider=openvino`, `models.asr.name=whisper-medium`,
-`models.asr.device=GPU`, `models.asr.diarization=false`,
-`sentiment.enabled=false`. Denoising is disabled too.
+`config/audio-analyzer/config.yaml` replaces the stock
+`/app/audio_analyzer/config.yaml` through a read-only mount.
+`AUDIO_ANALYZER_CONFIG_OVERRIDE_PATHS` is not used. Required values:
 
-GPU access `/dev/dri` plus actual render/video groups (`video`, GID 992
-observed on this host). No microphone or `/dev/snd` mapping: the browser
-captures; Backend validates and forwards bounded WAV (`backend/app/voice.py`).
-Stock persistent targets under `/app/audio_analyzer`: `models`, `chunks`,
-`storage`, `.cache`; HF cache `.cache/huggingface`.
-Service owns export of `openai/whisper-medium` to
-`models/openvino/whisper-medium` (confirmed via a real first-run
-`optimum-cli export openvino`; required a real corporate
-`http(s)_proxy` for the outbound HF download). Immutable model revision is
-not yet pinned.
+- `app.use_ov_genai=true`
+- `models.asr.provider=openvino`, `models.asr.name=whisper-medium`,
+  `models.asr.device=GPU`
+- `models.asr.diarization=false`, `sentiment.enabled=false`, denoising off
 
-**Container port 8010; host-mapped port is 8011** (`127.0.0.1:8011:8010` in
-Compose) — use the host port from outside the container:
+The container needs `/dev/dri` and the host `video` and render groups
+(`RENDER_GID`, often 992; confirm on the target). Persistent volumes cover
+`models`, `chunks`, `storage` and `.cache` under `/app/audio_analyzer`.
+
+On first start the service downloads `openai/whisper-medium` from
+Hugging Face and exports it to `models/openvino/whisper-medium`. It needs
+outbound access (and the proxy settings, if any); pass `HF_TOKEN` through the
+environment when required, and never persist it.
+
+## Data path
+
+The browser records the microphone. The Backend (`backend/app/voice.py`)
+validates and forwards a bounded WAV. The container has no `/dev/snd`.
+
+## API
 
 ```sh
-curl --fail --max-time 10 http://127.0.0.1:8011/health
-curl --fail --max-time 180 http://127.0.0.1:8011/v1/audio/transcriptions \
+curl -fsS --max-time 10 http://127.0.0.1:8011/health
+curl -fsS --max-time 180 http://127.0.0.1:8011/v1/audio/transcriptions \
   -F file=@utterance.wav -F model=whisper-1 -F response_format=json
 ```
 
-Confirmed at deployment: real transcription of a 15s spoken-philosophy
-WAV returned recognizable non-empty text.
-`whisper-1` is the required HTTP compatibility alias; sending
-`model=whisper-medium` fails DTO validation. The server config selects the
-actual checkpoint. Response is `{"text":"..."}` with `X-Session-ID`.
-Do not claim GPU execution from `/health` or config text alone — the export
-log and a real transcription result are the actual evidence.
-Do not start before artifact/provenance gates: startup can download/export
-models. Never persist tokens or enable sentiment/diarization defaults.
-`scripts/smoke/10_audio_analyzer.sh` is **PASS** (needs `AUDIO_ANALYZER_URL`
-and `AUDIO_ANALYZER_SAMPLE_WAV` set), not a blocked/exit-2 entry point.
+- `model` must be `whisper-1` (compatibility alias); `whisper-medium` fails
+  validation. The server configuration selects the real checkpoint.
+- The response is `{"text": "..."}` with an `X-Session-ID` header.
+- `/health` does not prove GPU execution. Check the export log and a real
+  transcription.
+
+Smoke test: `scripts/smoke/10_audio_analyzer.sh` (set `AUDIO_ANALYZER_URL`
+and `AUDIO_ANALYZER_SAMPLE_WAV`).

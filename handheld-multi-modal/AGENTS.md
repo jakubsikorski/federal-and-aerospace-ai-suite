@@ -24,7 +24,7 @@ Read [README.md](README.md) before changing the deployment.
 | `config/proxy/`, `config/coturn/`, `config/mediamtx/` | TLS proxy, loopback TURN relay, and RTSP/WebRTC relay |
 | `config/model-download/` | YOLO26s download and export request |
 | `scripts/` | Demo asset preparation, live checks, and per-service smoke tests |
-| `.agents/skills/` | Agent skills; upstream copies are pinned in `skills-lock.json` |
+| `.agents/skills/` | Agent skills: application skills and copies of upstream skills from `open-edge-platform/skills` |
 
 ## Useful Commands
 

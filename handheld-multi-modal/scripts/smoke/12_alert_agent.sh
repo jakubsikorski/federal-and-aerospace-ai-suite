@@ -77,7 +77,7 @@ print("PASS: Alert Agent rule-based dispatch (ADK/MCP off), one real log_alert a
       "and one real field_hash dedup skip on repeat.")
 print("NOT VERIFIED: backend.speak_alert delivery (no approved backend MCP server exists),",
       "trigger_webhook/capture_snapshot/publish_mqtt (require webhook target/image payload/",
-      "MQTT subscriber not set up by this script -- see config/alert-agent/README.md",
+      "MQTT subscriber not set up by this script",
       "for manual checks that exercise all four built-in tools), SSE/WebSocket",
       "fanout (manually verified separately, not by this script), image digest, Panther Lake.")
 PY

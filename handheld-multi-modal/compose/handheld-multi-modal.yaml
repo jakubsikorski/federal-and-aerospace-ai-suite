@@ -40,7 +40,7 @@ x-gpu-healthcheck: &gpu-healthcheck
 # pipeline. scripts/dlsps/crop_candidates.py is present in the shipped
 # `pipeline` string of all three variants (cpu/gpu/npu) and runs on every
 # launch; the mounts below are what it needs, not an optional extra.
-# See scripts/dlsps/README.md and config/dlsps/crops/README.md.
+# See scripts/dlsps/README.md.
 services:
   model-downloader:
     image: intel/model-download:2026.2.0
@@ -144,7 +144,7 @@ services:
       - ../scripts/dlsps:/opt/handheld-crops:ro
       # Per-camera crop configs: the DIRECTORY, not one file. Each
       # camera gets its own output_dir because the producer takes an exclusive
-      # lock per store. See config/dlsps/crops/README.md.
+      # lock per store.
       - ../config/dlsps/crops:/opt/handheld-crops-config:ro
       - ${ASSET_ROOT:-..}/data/dlsps/crops:/opt/handheld-crops-output
     networks: [handheld]
@@ -153,7 +153,7 @@ services:
     container_name: handheld-multi-modal-metrics
     restart: "no"
     # Stock upstream compose.yaml defaults (microservices/metrics-manager,
-    # edge-ai-libraries@3b44c78, see config/metrics/README.md):
+    # edge-ai-libraries@3b44c78):
     # privileged + pid:host + apparmor:unconfined are the source's own
     # required settings for host CPU/GPU/NPU sysfs telemetry, not an invented
     # application addition. The render GID varies per device; 992 is only the
@@ -253,14 +253,8 @@ services:
       test: ["CMD", "python3", "-c",
              "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/health', timeout=5).read()"]
     networks: [handheld]
-  # NOTE: uses the stock default SpeechT5 model: Parler-TTS is
-  # provenance-approved but blocked by a real packaging gap in this pinned
-  # image (missing parler-tts pip package, see config/tts/README.md for the
-  # full writeup and the earlier attempt). SpeechT5 was previously flagged for
-  # Microsoft Research Asia institutional authorship on the original paper;
-  # that finding was reviewed, SpeechT5 was confirmed as a Microsoft product,
-  # not PRC, and approved for deployment. See config/tts/README.md for
-  # the full record of both decisions.
+  # Uses the stock default SpeechT5 model. Parler-TTS is not used because the
+  # pinned image does not include the parler-tts pip package.
   tts:
     image: intel/text-to-speech:2026.2.0
     container_name: handheld-multi-modal-tts

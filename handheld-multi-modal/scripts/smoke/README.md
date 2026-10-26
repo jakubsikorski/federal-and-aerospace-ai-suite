@@ -17,8 +17,8 @@ entry points exit 2 and are **not implemented smoke tests**.
 | `bash scripts/smoke/09_chat_general.sh` | Against the deployed stock container; asks stock `/chat` about RTSP with mission corpus intact; checks general-knowledge answer and unchanged document list. An empty completion fails nonzero |
 | `bash scripts/smoke/10_audio_analyzer.sh` | Needs `AUDIO_ANALYZER_URL` + `AUDIO_ANALYZER_SAMPLE_WAV`; posts real speech WAV to `/v1/audio/transcriptions`, checks `/health` and non-empty text |
 | `bash scripts/smoke/11_tts.sh` | SpeechT5; needs `TTS_URL`; checks `/health`, `device=${TTS_DEVICE:-CPU}` via `/v1/model-info`, and validates real synthesis returns a non-trivial WAV |
-| `bash scripts/smoke/12_alert_agent.sh` | Against deployed `intel/alert-agent-service:2026.2.0` (`ALERT_URL=http://127.0.0.1:8010`). Confirms rule-based mode, one real `log_alert` dispatch, one real dedup skip. Webhook/snapshot/MQTT/SSE and `backend.speak_alert` are checked manually — see `config/alert-agent/README.md` |
-| `bash scripts/smoke/13_metrics.sh` | Against deployed `intel/metrics-manager:2026.2.0`. Script scope is CPU/RAM-only by design; GPU/NPU/temperature data are checked manually (see `config/metrics/README.md`) |
+| `bash scripts/smoke/12_alert_agent.sh` | Against deployed `intel/alert-agent-service:2026.2.0` (`ALERT_URL=http://127.0.0.1:8010`). Confirms rule-based mode, one real `log_alert` dispatch, one real dedup skip. Webhook/snapshot/MQTT/SSE and `backend.speak_alert` are checked manually |
+| `bash scripts/smoke/13_metrics.sh` | Against deployed `intel/metrics-manager:2026.2.0`. Script scope is CPU/RAM-only by design; GPU/NPU/temperature data are checked manually |
 | `make test-history` | Runs strict route/plan, interval-overlap, read-only budget, aggregate, completeness and stable-paging tests, then a live typed ten-minute query through stock Chat Q&A. Records independent malformed-plan safe failures rather than repairing model output; output is written under `docs/application/evidence/history/` (local, gitignored) |
 
 ## DLSPS / MediaMTX / MQTT (video pipeline)
@@ -103,9 +103,8 @@ over a hand-run `ffmpeg`: a manual publisher dies with its shell and silently
 breaks every later video test. If you publish `classroom.avi` by hand, remux it
 with `-fflags +genpts` first; its broken PTS cost ~132% extra CPU.
 
-Then start the DLSPS pipeline pushing native WebRTC to `/annotatedN` (see
-`config/dlsps/npu/README.md`, or just start the Backend, which owns pipeline
-lifecycle).
+Then start the DLSPS pipeline pushing native WebRTC to `/annotatedN` (or start the
+Backend, which owns the pipeline lifecycle).
 Media test must not be reported as DLSPS pass if synthetic publisher
 used instead. Software generation of synthetic demo is not hardware
 encode evidence.

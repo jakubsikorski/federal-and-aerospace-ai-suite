@@ -3,9 +3,9 @@ name: handheld-architecture
 description: Use when planning handheld integration boundaries or reviewing an application handoff; enforces the defined video, observation, evidence, speech, and metrics contracts.
 ---
 
-# Handheld architecture
+# Handheld Architecture
 
-These are fixed application requirements, not claims that components are running.
+These are fixed application boundaries.
 Read `AGENTS.md` and `README.md` first; model sources and licenses are in `third-party-components.spdx`.
 
 ```text
@@ -34,8 +34,8 @@ Snips must be cropped inside the DLSPS pipeline, never in Backend.
 CPU/GPU/NPU pipelines are predefined, NPU is the intended default. Do not
 introduce a dynamic pipeline-editing API or expose the stock Chat Q&A UI.
 
-Use verified component contracts for actual APIs, health checks, devices,
-volumes, and commands. Null runtime fields are not values to invent.
-Label actual hardware truthfully; its name is not an application blocker. Stock `/chat`
-is accepted for general conversation with retrieval allowed and a suitable
-prompt. Do not erase mission documents to implement general chat.
+For component APIs, devices and volumes, use the matching skill
+(`handheld-dlsps-contract`, `mediamtx-integration`, `oep-*`) and the Compose
+file; do not invent values. General conversation uses the stock Chat Q&A
+`/chat` endpoint with a suitable prompt; do not erase mission documents to
+implement it.
