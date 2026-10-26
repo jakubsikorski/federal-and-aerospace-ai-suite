@@ -14,7 +14,7 @@ it runs (it reaps unowned instances).
 ## Add a camera
 
 Operators use **Cameras > + Add camera** in the UI
-(`docs/OPERATOR_GUIDE.md`). The same API, through the TLS proxy:
+(`docs/user-guide/operator-guide.md`). The same API, through the TLS proxy:
 
 ```sh
 export NO_PROXY='*' no_proxy='*'
