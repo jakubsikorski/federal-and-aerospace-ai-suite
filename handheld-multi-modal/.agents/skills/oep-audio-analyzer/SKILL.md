@@ -48,6 +48,3 @@ curl -fsS --max-time 180 http://127.0.0.1:8011/v1/audio/transcriptions \
 - The response is `{"text": "..."}` with an `X-Session-ID` header.
 - `/health` does not prove GPU execution. Check the export log and a real
   transcription.
-
-Smoke test: `scripts/smoke/10_audio_analyzer.sh` (set `AUDIO_ANALYZER_URL`
-and `AUDIO_ANALYZER_SAMPLE_WAV`).

@@ -97,7 +97,7 @@ the Backend image has no pip, so use a stock Python container):
 ```sh
 docker run --rm --network host -e https_proxy -e http_proxy \
   -e no_proxy=localhost,127.0.0.1 -v "$PWD:/srv:ro" -w /srv python:3.12-slim sh -c \
-  'pip install -q -r scripts/smoke/requirements.txt && python3 scripts/smoke/whep_client.py \
+  'pip install -q aiortc==1.14.0 && python3 scripts/whep_client.py \
    --relay-only --cafile config/tls/server.crt https://localhost:8443/annotated1/whep'
 ```
 

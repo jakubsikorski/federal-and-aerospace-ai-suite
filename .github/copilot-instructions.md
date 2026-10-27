@@ -42,7 +42,7 @@ Read the [root README](../README.md) for suite-level context and the active comp
 
 - Follow the active component's documented checks and existing test conventions; do not assume a shared root-level test suite or uniform `tests/unit/` layout.
 - [uav-mission-compute-sdk/pyproject.toml](../uav-mission-compute-sdk/pyproject.toml) contains pytest configuration. Verify that configured test paths and dependencies are available before running tests.
-- [handheld-multi-modal/backend/](../handheld-multi-modal/backend/) contains Backend tests and REST API fuzzing; its Makefile provides `test`, `test-ui`, `test-assets`, `test-fuzz`, and `test-history` targets, plus smoke tests in `scripts/smoke/`.
+- [handheld-multi-modal/backend/](../handheld-multi-modal/backend/) contains Backend tests and REST API fuzzing; its Makefile provides `test`, `test-ui`, `test-assets`, `test-fuzz`, and `test-history` targets.
 - For pytest tests, use `test_*.py` files, `Test*` classes, and `test_*` functions. Reuse existing fixtures and markers where present, and use environment-based test configuration rather than hardcoding credentials.
 - Run the smallest relevant check after editing. Distinguish static checks from hardware-dependent or running-service validation, and report checks that could not be run.
 

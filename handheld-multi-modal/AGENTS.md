@@ -23,7 +23,7 @@ Read [README.md](README.md) before changing the deployment.
 | `config/chatqna/` | Chat Q&A prompt template and model configuration |
 | `config/proxy/`, `config/coturn/`, `config/mediamtx/` | TLS proxy, loopback TURN relay, and RTSP/WebRTC relay |
 | `config/model-download/` | YOLO26s download and export request |
-| `scripts/` | Demo asset preparation, live checks, and per-service smoke tests |
+| `scripts/` | Demo asset preparation, live checks, and the WHEP relay diagnostic |
 | `.agents/skills/` | Application agent skills; generic service skills are in [open-edge-platform/skills](https://github.com/open-edge-platform/skills) |
 
 ## Useful Commands
@@ -84,7 +84,5 @@ Coturn <-> MediaMTX          WebRTC relay only
 - Keep setup, start, stop, restart, and readiness checks in the Makefile; do not add scripts
   only to launch pipelines.
 - Detect device groups and addresses instead of hard-coding a host.
-- Smoke tests in `scripts/smoke/` exit `0` on pass, non-zero on failure, and `2` when blocked.
-  A blocked test is not a pass.
 - Application-specific guidance belongs in `.agents/skills/` and this file; it overrides the
   generic [open-edge-platform/skills](https://github.com/open-edge-platform/skills).

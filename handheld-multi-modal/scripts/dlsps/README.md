@@ -113,7 +113,6 @@ The command rotates the generation. Consumers must reject messages from the old 
   start the pipeline again.
 - **No crops for a stream** — check the DL Streamer Pipeline Server logs for callback errors
   and periodic `crop_stats` lines. Writer failures disable crops, but observations continue.
-  The `scripts/smoke/06_snip.sh` script checks crops end to end.
 
 ## Tests
 

@@ -56,5 +56,9 @@ Image `intel/metrics-manager:2026.2.0`, source `edge-ai-libraries`
 - Keep missing, stale, unsupported, sentinel and real-zero values distinct;
   never synthesize a value.
 
-Smoke test: `scripts/smoke/13_metrics.sh` (set `METRICS_URL` and
-`METRICS_TELEGRAF_URL`). It checks CPU and memory freshness only.
+Check that host and container series are fresh:
+
+```sh
+curl -fsS http://127.0.0.1:9273/metrics \
+  | grep -E '^(cpu_usage_idle|mem_used_percent|docker_container_cpu_usage_percent)'
+```

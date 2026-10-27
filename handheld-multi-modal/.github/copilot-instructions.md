@@ -16,5 +16,5 @@ Use the skills in `.agents/skills/`. When using the upstream
 [open-edge-platform/skills](https://github.com/open-edge-platform/skills), do not apply their
 default models or floating-tag examples; the model choices in `AGENTS.md` override them.
 
-Smoke commands and their scope are listed in `scripts/smoke/README.md`. Never replace missing
-service contracts with plausible APIs or mark blocked scripts as working integrations.
+Never replace missing service contracts with plausible APIs or report an unverified service as
+working.

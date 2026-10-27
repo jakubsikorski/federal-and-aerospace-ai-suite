@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Typed-history contract and live typed-query smoke."""
+"""Typed-history contract and live typed-query check."""
 
 import json
 import os
@@ -10,7 +10,7 @@ import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 import test_backend  # noqa: E402
@@ -20,7 +20,7 @@ EVIDENCE = Path(os.environ.get(
     "HISTORY_EVIDENCE", ROOT / "docs/application/evidence/history"))
 URL = os.environ.get("HISTORY_URL", "https://127.0.0.1:8443/api/ask")
 TLS_CERT = Path(os.environ.get("ASSET_ROOT", ROOT)) / "config/tls/server.crt"
-ATTEMPTS = 1  # first-submission reliability; never retry the smoke into a pass
+ATTEMPTS = 1  # first-submission reliability; never retry the check into a pass
 SAFE_FAILURE = "I could not turn that into a query I can answer."
 
 

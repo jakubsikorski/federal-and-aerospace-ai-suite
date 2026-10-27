@@ -62,5 +62,6 @@ MediaMTX), a unique `model_instance` and a `crop-config` with the camera's
 
 Configuration alone does not prove GPU or NPU execution. Check
 `gvafpscounter` output and the container logs for NPU compile or plugin
-errors. Standalone smoke tests `scripts/smoke/02`–`06` need the Backend
-stopped (they exit 2 while it runs).
+errors. `curl -fsS http://127.0.0.1:8080/pipelines/status` lists each
+instance with its state and `avg_fps`; crops appear under
+`data/dlsps/crops/<stream_id>`.

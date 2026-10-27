@@ -46,4 +46,3 @@ curl -fsS -o out.wav http://127.0.0.1:8012/v1/audio/speech \
 - `/health` does not prove synthesis works; check the `device` field from
   `/v1/model-info` and a real WAV.
 
-Smoke test: `scripts/smoke/11_tts.sh` (set `TTS_URL`).

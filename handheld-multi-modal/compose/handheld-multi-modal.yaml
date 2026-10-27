@@ -29,9 +29,6 @@ x-gpu-healthcheck: &gpu-healthcheck
   start_period: 240s
   retries: 5
 
-# DLSPS is a real, smoke-tested service (see scripts/smoke/README.md).
-# This is still NOT the complete application stack; other AI services
-# remain separate.
 # The DLSPS static config is selected by mounting one of
 # ../config/dlsps/{cpu,gpu,npu}/config.json (default: npu, per spec).
 # Per-object snip/crop generation IS wired here.

@@ -53,7 +53,7 @@ Configuration is mounted read-only from `config/alert-agent/resources`
 
 ```sh
 curl -fsS http://127.0.0.1:8010/api/v1/health
-ALERT_URL=http://127.0.0.1:8010 bash scripts/smoke/12_alert_agent.sh
+curl -fsS http://127.0.0.1:8010/api/v1/mcp/status
 ```
 
 The MQTT broker is `eclipse-mosquitto:2.0.22` from the application Compose

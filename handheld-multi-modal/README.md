@@ -37,7 +37,7 @@ AGENTS.md                    AI agent context file.
 compose/                     Docker Compose files: application services and demo camera publishers.
 backend/                     Application Backend (FastAPI) and browser UI; built locally as handheld/backend:dev.
 config/                      Per-service configuration: DLSPS pipelines and detector profile, Chat Q&A, proxy, TURN, MQTT, metrics, speech.
-scripts/                     Demo asset preparation, live readiness checks, and smoke tests.
+scripts/                     Demo asset preparation and live readiness checks.
 examples/                    Synthetic demo mission packet and an Intel® RealSense™ RTSP publisher script.
 .agents/skills/              AI agent skills for the application and its Open Edge Platform microservices.
 third-party-components.spdx  Software bill of materials of third-party components.

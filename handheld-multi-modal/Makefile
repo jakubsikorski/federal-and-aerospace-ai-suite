@@ -641,4 +641,4 @@ test-ui:
 
 test-history:
 	docker run --rm --network host -u "$$(id -u):$$(id -g)" -e ASSET_ROOT=/srv -e NO_PROXY='*' -e no_proxy='*' \
-	  -v "$(CURDIR):/srv" -w /srv handheld/backend:dev python3 scripts/smoke/14_history.py
+	  -v "$(CURDIR):/srv" -w /srv handheld/backend:dev python3 scripts/test_history.py

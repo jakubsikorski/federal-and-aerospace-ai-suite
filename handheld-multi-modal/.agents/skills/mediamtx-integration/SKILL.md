@@ -33,7 +33,6 @@ for browsers connected through an SSH tunnel. The UI reads it from the
 
 ```sh
 curl -fsS http://127.0.0.1:9997/v3/paths/list
-bash scripts/smoke/01_mediamtx.sh
 ```
 
 - `make demo-up` starts demo publishers (`compose/cameras.yaml`, `CAMERAS=N`)
@@ -42,9 +41,8 @@ bash scripts/smoke/01_mediamtx.sh
   `Content-Type: application/sdp`; expect `201`, an SDP answer and a
   `Location` header; DELETE that location when done.
 - A path showing `ready` is not proof of playback. Prove it by decoding real
-  frames on the client.
-- The smoke test needs a live `cam1` publisher and a stopped Backend, which
-  removes DLSPS instances it does not own.
+  frames on the client with `scripts/whep_client.py` (see the
+  `handheld-camera-connection` skill).
 
 ## Boundaries
 
