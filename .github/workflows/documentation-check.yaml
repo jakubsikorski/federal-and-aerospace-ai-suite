@@ -20,6 +20,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       deterministic-threat-detection_changed: ${{ steps.filter.outputs.deterministic-threat-detection }}
+      handheld-multi-modal_changed: ${{ steps.filter.outputs.handheld-multi-modal }}
+      uav-mission-compute-sdk_changed: ${{ steps.filter.outputs.uav-mission-compute-sdk }}
+      uav-vision-analytics_changed: ${{ steps.filter.outputs.uav-vision-analytics }}
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -32,6 +35,12 @@ jobs:
           filters: |
             deterministic-threat-detection:
               - 'deterministic-threat-detection/docs/user-guide/**'
+            handheld-multi-modal:
+              - 'handheld-multi-modal/docs/user-guide/**'
+            uav-mission-compute-sdk:
+              - 'uav-mission-compute-sdk/docs/user-guide/**'
+            uav-vision-analytics:
+              - 'uav-vision-analytics/docs/user-guide/**'
 
   build-deterministic-threat-detection:
     permissions:
@@ -41,3 +50,30 @@ jobs:
     uses: ./.github/workflows/docs-reusable-workflow.yaml
     with:
       docs_directory: deterministic-threat-detection
+
+  build-handheld-multi-modal:
+    permissions:
+      contents: read # needed for actions/checkout
+    needs: filter
+    if: ${{ needs.filter.outputs.handheld-multi-modal_changed == 'true' }}
+    uses: ./.github/workflows/docs-reusable-workflow.yaml
+    with:
+      docs_directory: handheld-multi-modal
+
+  build-uav-mission-compute-sdk:
+    permissions:
+      contents: read # needed for actions/checkout
+    needs: filter
+    if: ${{ needs.filter.outputs.uav-mission-compute-sdk_changed == 'true' }}
+    uses: ./.github/workflows/docs-reusable-workflow.yaml
+    with:
+      docs_directory: uav-mission-compute-sdk
+
+  build-uav-vision-analytics:
+    permissions:
+      contents: read # needed for actions/checkout
+    needs: filter
+    if: ${{ needs.filter.outputs.uav-vision-analytics_changed == 'true' }}
+    uses: ./.github/workflows/docs-reusable-workflow.yaml
+    with:
+      docs_directory: uav-vision-analytics
