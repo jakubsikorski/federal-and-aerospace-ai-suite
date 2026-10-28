@@ -1,4 +1,6 @@
 ---
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
 name: oep-text-to-speech
 description: Use when configuring the stock Open Edge Platform Text To Speech service (SpeechT5, CPU by default), switching its device, or changing how the Backend requests speech.
 ---

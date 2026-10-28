@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Release Notes: Handheld (Soldier System) Blueprint
 
 ## Version 2026.3.0

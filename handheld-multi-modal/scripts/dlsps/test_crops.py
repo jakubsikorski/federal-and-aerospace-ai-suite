@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Run inside the pinned DLSPS image: python3 test_crops.py."""
 from contextlib import contextmanager
 import gc

@@ -1,4 +1,6 @@
 ---
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
 name: handheld-architecture
 description: Use when planning handheld integration boundaries or reviewing an application handoff; enforces the defined video, observation, evidence, speech, and metrics contracts.
 ---

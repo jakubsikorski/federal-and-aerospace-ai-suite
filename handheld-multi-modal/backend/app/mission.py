@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Mission-document lifecycle on top of the stock Chat Q&A document APIs."""
 from __future__ import annotations
 

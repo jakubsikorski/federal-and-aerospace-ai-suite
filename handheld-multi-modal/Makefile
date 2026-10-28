@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 # Handheld operator application. Run `make` for the command list and
 # docs/user-guide/application-operations.md for details.
 SHELL := /bin/bash

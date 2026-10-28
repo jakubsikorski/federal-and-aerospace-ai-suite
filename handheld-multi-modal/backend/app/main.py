@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Backend application: services, camera history, telemetry and live UI state."""
 from __future__ import annotations
 

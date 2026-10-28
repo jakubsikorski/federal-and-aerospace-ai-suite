@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Handheld ops — operator guide
 
 This application is a local edge camera-evidence console. The operator watches live

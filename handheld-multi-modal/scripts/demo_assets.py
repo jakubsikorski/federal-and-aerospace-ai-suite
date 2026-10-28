@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Prepare demo assets through stock Model Download. No pipeline lifecycle here."""
 import argparse
 import fcntl

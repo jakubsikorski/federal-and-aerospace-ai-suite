@@ -1,3 +1,6 @@
+-- SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+-- SPDX-License-Identifier: Apache-2.0
+
 -- Backend SQLite schema.
 -- Stream-scoped by construction: every history table leads with stream_id.
 -- There is deliberately no `sessions` table; rows carry their own scoped identity.

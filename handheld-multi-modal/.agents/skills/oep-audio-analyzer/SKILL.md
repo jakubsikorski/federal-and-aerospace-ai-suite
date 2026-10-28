@@ -1,4 +1,6 @@
 ---
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
 name: oep-audio-analyzer
 description: Use when configuring the stock Open Edge Platform Audio Analyzer (Whisper-medium on OpenVINO GPU) or the Backend voice upload path that calls it.
 ---

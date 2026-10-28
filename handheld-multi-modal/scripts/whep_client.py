@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Minimal receive-only WHEP smoke; requires decoded video, not just SDP."""
 
 import argparse

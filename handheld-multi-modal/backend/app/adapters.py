@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Thin adapters for the seven stock services.
 
 Each adapter does exactly two things: report reachability, and make

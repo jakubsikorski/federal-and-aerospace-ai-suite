@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 # Demo camera publishers - REMOVABLE DEMO ASSETS.
 #
 # Only `make demo-up` starts them. `make up` starts with no cameras; the operator

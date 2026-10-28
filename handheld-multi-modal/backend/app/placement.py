@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Read-only model placement inventory; configuration is not execution evidence."""
 from __future__ import annotations
 

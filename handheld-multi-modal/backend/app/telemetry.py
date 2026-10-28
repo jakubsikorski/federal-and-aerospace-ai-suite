@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Normalize the pinned Metrics Manager payload without inventing series."""
 from __future__ import annotations
 

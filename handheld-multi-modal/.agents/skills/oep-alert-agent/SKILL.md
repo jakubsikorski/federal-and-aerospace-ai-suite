@@ -1,4 +1,6 @@
 ---
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
 name: oep-alert-agent
 description: Use when changing how the handheld Backend dispatches alerts through the stock Open Edge Platform Alert Agent (rule-dispatch mode, field_hash dedup, SSE events).
 ---

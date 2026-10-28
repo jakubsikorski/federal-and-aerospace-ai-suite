@@ -1,4 +1,6 @@
 ---
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
 name: oep-metrics-manager
 description: Use when reading or extending handheld resource telemetry from the stock Open Edge Platform Metrics Manager (CPU, memory, GPU, NPU, power and per-service container metrics).
 ---

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 # Backend configuration. Values here override backend/app/core.py DEFAULTS.
 #
 # Cameras: multi-camera from the start. Adding one is a list entry here

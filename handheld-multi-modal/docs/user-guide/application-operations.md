@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Application Operations
 
 Run the commands from the `handheld-multi-modal` directory. The Makefile owns setup and the

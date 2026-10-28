@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 # Schema: bluenviron/mediamtx v1.21.3. Localhost-only profile: Compose binds
 # RTSP, API and ICE UDP to host loopback; WHIP/WHEP signaling has no host port.
 # Coturn listens and relays on loopback only.

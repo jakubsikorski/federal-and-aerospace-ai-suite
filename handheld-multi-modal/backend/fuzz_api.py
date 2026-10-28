@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Seeded HTTP-boundary mutation fuzzing; run only via make test-fuzz (SDL504)."""
 import argparse
 import asyncio

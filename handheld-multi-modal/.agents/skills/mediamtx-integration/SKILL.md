@@ -1,4 +1,6 @@
 ---
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
 name: mediamtx-integration
 description: Use when configuring the handheld MediaMTX relay (camera RTSP input, DLSPS WHIP push of annotated video, browser WHEP playback) or its loopback-only network profile.
 ---

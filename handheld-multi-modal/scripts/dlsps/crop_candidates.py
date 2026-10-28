@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Bounded contextual crop callback for gvapython. See README.md for placement."""
 import argparse
 from collections import Counter, OrderedDict

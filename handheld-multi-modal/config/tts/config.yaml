@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 app:
   name: Text To Speech
   clear_storage_on_startup: true  # true | false — delete all session folders under storage/ at startup

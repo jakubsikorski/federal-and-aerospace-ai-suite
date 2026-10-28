@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 FROM python:3.12-slim
 # Pick up Debian security fixes released after the base image was published.
 RUN apt-get update && apt-get upgrade -y --no-install-recommends \

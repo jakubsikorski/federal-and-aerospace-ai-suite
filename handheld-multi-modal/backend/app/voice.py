@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Bounded browser PCM uploads forwarded to the stock Whisper service, and
 speech text preparation for the stock SpeechT5 service."""
 import io

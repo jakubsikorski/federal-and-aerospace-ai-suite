@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Frontend API fuzzing (SDL504)
 
 From the repository root, using the existing `handheld/backend:dev` image:

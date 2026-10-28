@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Self-check for Backend logic that can fail silently. Run: python3 backend/test_backend.py
 
 Deliberately framework-free and offline: it covers config derivation, the

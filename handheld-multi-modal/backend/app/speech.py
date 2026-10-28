@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Audio arbiter: the only producer of TTS requests.
 
 One utterance at a time. Backend decides what is "current"; the UI plays what

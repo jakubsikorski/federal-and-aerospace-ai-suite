@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Runtime camera registry: cameras added, renamed, turned off or removed in the console.
 
 The `streams` table is the live camera list. Config cameras (`origin = 'config'`)

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Rules, per-logical-track matching and verified Alert Agent dispatch.
 
 SQLite is the authority. The Alert Agent's own dedup is an in-memory second

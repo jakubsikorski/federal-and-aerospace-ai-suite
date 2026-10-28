@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 # Stock Chat Q&A Core model configuration.
 # Mounted read-only at /tmp/model_config/config.yaml (MODEL_CONFIG_PATH).
 # Schema and validation: app/config.py, app/runtime_validators.py in the

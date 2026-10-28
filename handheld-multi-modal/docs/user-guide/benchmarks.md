@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Benchmark — Handheld (Soldier System) Blueprint
 
 For platform-level benchmarking — vision AI inference, hardware-accelerated media processing,

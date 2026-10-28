@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-FileCopyrightText: (C) 2026 Intel Corporation -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 <svg viewBox="0 0 1240 784" width="1240" height="784" xmlns="http://www.w3.org/2000/svg" role="img"><style>svg { font-family: system-ui, 'Segoe UI', Roboto, sans-serif; }
 svg {  --bg: #0e1a2c; --panel: #16273c; --panel2: #1c3149; --line: #35506f; --text: #edf4ff; --muted: #a9bcd3; --accent: #72e4df; --video: #5fd4e8; --webrtc: #8be0b5; --mqtt: #c3a6ff; --rest: #7fb2ff; --files: #f4c779; --turn: #9fb0c4; --npu: #b99bff; --gpu: #6fd0a0; --cpu: #7fb2ff; --oep: #3fa0ff; --oep-fill: #0a63b8; --oss: #8a9db6; --app: #5aa7b0; }
 .lane rect { fill: rgba(255, 255, 255, 0.02); stroke: rgba(255, 255, 255, 0.07); }

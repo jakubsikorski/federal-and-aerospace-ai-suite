@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Per-camera history reset.
 
 The producer owns its crop files, so Backend does not delete them directly. It

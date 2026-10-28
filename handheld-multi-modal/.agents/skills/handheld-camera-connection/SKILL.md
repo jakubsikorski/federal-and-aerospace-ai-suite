@@ -1,4 +1,6 @@
 ---
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
 name: handheld-camera-connection
 description: Use when adding, publishing to, removing or troubleshooting a handheld camera (publisher or network RTSP), or when live video does not show in the browser locally or through the SSH tunnel (WHEP/TURN).
 ---

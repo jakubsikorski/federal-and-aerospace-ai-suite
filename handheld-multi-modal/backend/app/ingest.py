@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Observation ingest: one MQTT subscription, demultiplexed per camera.
 
 DLSPS publishes every pipeline instance to one topic, so `crop_context.stream_id`

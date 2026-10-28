@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """DLSPS pipeline lifecycle: one fixed instance per enabled camera.
 
 Backend owns start and stop; the DLSPS config ships `auto_start: false`. The

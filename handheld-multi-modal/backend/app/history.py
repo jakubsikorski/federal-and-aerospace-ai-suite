@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Track history reads: `tracks_current` and the recent list.
 
 Two rules drive everything here and both exist to stop the UI stating more than

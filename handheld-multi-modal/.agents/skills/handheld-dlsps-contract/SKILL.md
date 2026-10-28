@@ -1,4 +1,6 @@
 ---
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
 name: handheld-dlsps-contract
 description: Use when changing the handheld DL Streamer Pipeline Server integration - the fixed CPU/GPU/NPU pipeline variants, per-camera pipeline lifecycle, annotated WebRTC output, MQTT observations or tracked-object crops.
 ---

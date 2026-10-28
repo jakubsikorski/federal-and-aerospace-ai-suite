@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Handheld Multi-Modal Application Deployment
 
 This guide provides instructions on how to deploy the Handheld Multi-Modal application on a
