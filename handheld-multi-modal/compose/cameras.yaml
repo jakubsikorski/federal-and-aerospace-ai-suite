@@ -21,7 +21,7 @@
 name: handheld-multi-modal
 
 x-camera: &camera
-  image: bluenviron/mediamtx:1.11.3-ffmpeg
+  image: bluenviron/mediamtx:1.21.3-ffmpeg
   restart: unless-stopped
   network_mode: "container:handheld-multi-modal-mediamtx-1"
   volumes:

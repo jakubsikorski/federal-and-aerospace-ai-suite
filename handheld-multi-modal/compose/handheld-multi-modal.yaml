@@ -54,7 +54,7 @@ services:
       - ${ASSET_ROOT:-..}/data/model-download:/opt/models
     networks: [handheld]
   mediamtx:
-    image: bluenviron/mediamtx:1.11.3
+    image: bluenviron/mediamtx:1.21.3
     restart: "no"
     security_opt:
       - no-new-privileges:true
@@ -72,7 +72,7 @@ services:
       - ../config/mediamtx/mediamtx.yml:/mediamtx.yml:ro
     networks: [handheld]
   coturn:
-    image: coturn/coturn:4.18.0
+    image: coturn/coturn:4.18.0-alpine
     restart: "no"
     security_opt:
       - no-new-privileges:true
@@ -369,7 +369,7 @@ services:
     networks: [handheld]
 
   proxy:
-    image: nginx:1.27-alpine
+    image: nginx:1.30.6-alpine
     container_name: handheld-multi-modal-proxy
     restart: "no"
     security_opt:

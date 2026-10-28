@@ -158,7 +158,7 @@ Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-mo
 
 PackageName: mediamtx
 SPDXID: SPDXRef-Package-mediamtx
-PackageVersion: 1.11.3
+PackageVersion: 1.21.3
 PackageSupplier: Organization: bluenviron
 PackageDownloadLocation: https://hub.docker.com/r/bluenviron/mediamtx
 PackageHomePage: https://github.com/bluenviron/mediamtx
@@ -166,14 +166,14 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: MIT
 PackageCopyrightText: <text>Copyright (c) 2019 aler9</text>
 PackageSummary: <text>Real-time media server providing RTSP camera input and the WHIP/WHEP WebRTC relay between DLSPS and the browser.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:docker/bluenviron/mediamtx@1.11.3
+ExternalRef: PACKAGE-MANAGER purl pkg:docker/bluenviron/mediamtx@1.21.3
 FilesAnalyzed: false
 
 Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-mediamtx
 
 PackageName: coturn
 SPDXID: SPDXRef-Package-coturn
-PackageVersion: 4.18.0
+PackageVersion: 4.18.0-alpine
 PackageSupplier: Organization: coturn project
 PackageDownloadLocation: https://hub.docker.com/r/coturn/coturn
 PackageHomePage: https://github.com/coturn/coturn
@@ -181,7 +181,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: BSD-3-Clause
 PackageCopyrightText: <text>Copyright (C) 2011-2013 Citrix Systems; Copyright (C) 2011-2013 Oleg Moskalenko; Copyright (C) coturn contributors</text>
 PackageSummary: <text>TURN/STUN server bound to loopback that assists MediaMTX WebRTC ICE for SSH-tunnelled browsers.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:docker/coturn/coturn@4.18.0
+ExternalRef: PACKAGE-MANAGER purl pkg:docker/coturn/coturn@4.18.0-alpine
 FilesAnalyzed: false
 
 Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-coturn
@@ -204,7 +204,7 @@ Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-ec
 
 PackageName: nginx
 SPDXID: SPDXRef-Package-nginx
-PackageVersion: 1.27-alpine
+PackageVersion: 1.30.6-alpine
 PackageSupplier: Organization: NGINX, Inc. / F5
 PackageDownloadLocation: https://hub.docker.com/_/nginx
 PackageHomePage: https://nginx.org/
@@ -212,23 +212,23 @@ PackageLicenseConcluded: BSD-2-Clause
 PackageLicenseDeclared: BSD-2-Clause
 PackageCopyrightText: <text>Copyright (C) 2002-2024 Igor Sysoev, Nginx, Inc. and contributors</text>
 PackageSummary: <text>HTTP reverse proxy serving the operator console over TLS on 127.0.0.1:8443 in front of the backend and the WHEP route.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:docker/library/nginx@1.27-alpine
+ExternalRef: PACKAGE-MANAGER purl pkg:docker/library/nginx@1.30.6-alpine
 FilesAnalyzed: false
 
 Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-nginx
 
 PackageName: ffmpeg
 SPDXID: SPDXRef-Package-ffmpeg
-PackageVersion: 6.1.1-r8
+PackageVersion: 8.1.3-r0
 PackageSupplier: Organization: bluenviron
 PackageDownloadLocation: https://hub.docker.com/r/bluenviron/mediamtx
 PackageHomePage: https://github.com/bluenviron/mediamtx
 PackageLicenseConcluded: GPL-3.0-or-later AND MIT
 PackageLicenseDeclared: GPL-3.0-or-later AND MIT
 PackageCopyrightText: <text>Copyright (c) 2000-2023 the FFmpeg developers; Copyright (c) 2019 aler9 (MediaMTX)</text>
-PackageSummary: <text>MediaMTX 1.11.3 image with the Alpine 3.20 FFmpeg 6.1.1 package, used only by the removable demo camera publishers (compose/cameras.yaml) and the demo video re-encode in make demo-prereq.</text>
+PackageSummary: <text>MediaMTX 1.21.3 image with the Alpine 3.24 FFmpeg 8.1.3 package, used only by the removable demo camera publishers (compose/cameras.yaml) and the demo video re-encode in make demo-prereq.</text>
 PackageComment: <text>The image's ffmpeg -buildconf reports --enable-gpl --enable-version3 --enable-libx264 without --enable-nonfree, so the FFmpeg binary is GPL-3.0-or-later. The image is pulled by the user from Docker Hub.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:docker/bluenviron/mediamtx@1.11.3-ffmpeg
+ExternalRef: PACKAGE-MANAGER purl pkg:docker/bluenviron/mediamtx@1.21.3-ffmpeg
 FilesAnalyzed: false
 
 Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-ffmpeg

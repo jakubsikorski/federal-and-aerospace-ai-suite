@@ -5,7 +5,7 @@ description: Use when configuring the handheld MediaMTX relay (camera RTSP input
 
 # MediaMTX
 
-Image `bluenviron/mediamtx:1.11.3`, configuration
+Image `bluenviron/mediamtx:1.21.3`, configuration
 `config/mediamtx/mediamtx.yml` mounted at `/mediamtx.yml:ro`, Compose service
 `mediamtx`. No devices or media volumes are needed.
 

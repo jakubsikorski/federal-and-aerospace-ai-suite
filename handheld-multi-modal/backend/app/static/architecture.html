@@ -212,8 +212,8 @@ commit; documentation: <a href="https://docs.openedgeplatform.intel.com/2026.2/i
 <table id="services">
 <thead><tr><th>Service</th><th>Origin</th><th>Role</th><th>Model and device</th><th>Image</th></tr></thead>
 <tbody>
-<tr data-service="mediamtx"><td>MediaMTX</td><td><span class="badge oss">Open source</span></td><td>Video relay: camera RTSP in, annotated WebRTC (WHIP in, WHEP out to the UI)</td><td>—</td><td><code>bluenviron/mediamtx:1.11.3</code></td></tr>
-<tr data-service="coturn"><td>Coturn</td><td><span class="badge oss">Open source</span></td><td>Loopback-only TURN relay for WebRTC media (SSH-tunnelled browsers)</td><td>—</td><td><code>coturn/coturn:4.18.0</code></td></tr>
+<tr data-service="mediamtx"><td>MediaMTX</td><td><span class="badge oss">Open source</span></td><td>Video relay: camera RTSP in, annotated WebRTC (WHIP in, WHEP out to the UI)</td><td>—</td><td><code>bluenviron/mediamtx:1.21.3</code></td></tr>
+<tr data-service="coturn"><td>Coturn</td><td><span class="badge oss">Open source</span></td><td>Loopback-only TURN relay for WebRTC media (SSH-tunnelled browsers)</td><td>—</td><td><code>coturn/coturn:4.18.0-alpine</code></td></tr>
 <tr data-service="mqtt"><td>Mosquitto</td><td><span class="badge oss">Open source</span></td><td>MQTT broker for detections and snip events; also the Alert Agent's broker</td><td>—</td><td><code>eclipse-mosquitto:2.0.22</code></td></tr>
 <tr data-service="dlsps"><td>DL Streamer Pipeline Server</td><td><span class="badge oep">Open Edge Platform</span></td><td>Decode, detect, track, annotate and crop snips for each camera</td><td>YOLO26s OpenVINO INT8 on NPU (fixed CPU/GPU alternatives); <code>gvatrack</code> on CPU; Intel hardware decode/encode</td><td><code>intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24</code></td></tr>
 <tr data-service="chatqna"><td>Chat Q&amp;A Core</td><td><span class="badge oep">Open Edge Platform</span></td><td>Language model, mission-document retrieval (RAG) and history query planning</td><td><code>Intel/neural-chat-7b-v3-3</code> on GPU; embeddings <code>ibm-granite/granite-embedding-125m-english</code> and reranker <code>cross-encoder/ms-marco-electra-base</code> on CPU</td><td><code>intel/chatqna:core_gpu_2026.2.0</code></td></tr>
@@ -223,7 +223,7 @@ commit; documentation: <a href="https://docs.openedgeplatform.intel.com/2026.2/i
 <tr data-service="metrics"><td>Metrics Manager</td><td><span class="badge oep">Open Edge Platform</span></td><td>CPU, GPU, NPU, memory and temperature telemetry (system-wide)</td><td>—</td><td><code>intel/metrics-manager:2026.2.0</code></td></tr>
 <tr data-service="model-downloader"><td>Model Download</td><td><span class="badge oep">Open Edge Platform</span></td><td>Prepares the detector model during setup only</td><td>—</td><td><code>intel/model-download:2026.2.0</code></td></tr>
 <tr data-service="backend"><td>Application Backend</td><td><span class="badge app">Application</span></td><td>Rules, alerts, history, assistant routing, speech, telemetry, pipeline lifecycle; serves this UI</td><td>Uses the services above</td><td><code>handheld/backend</code> (built locally)</td></tr>
-<tr data-service="proxy"><td>nginx proxy</td><td><span class="badge oss">Open source</span></td><td>TLS for the UI, Backend API and WHEP signalling only</td><td>—</td><td><code>nginx:1.27-alpine</code></td></tr>
+<tr data-service="proxy"><td>nginx proxy</td><td><span class="badge oss">Open source</span></td><td>TLS for the UI, Backend API and WHEP signalling only</td><td>—</td><td><code>nginx:1.30.6-alpine</code></td></tr>
 </tbody>
 </table>
 </div>
@@ -291,7 +291,7 @@ const NODES = {
     kind: "Video source", role: "Each camera publishes plain RTSP video to MediaMTX.", apis: ["RTSP → MediaMTX"]},
   mediamtx: {p: "oss", x: 300, y: 62, w: 200, h: 96, icon: "relay", t: "MediaMTX", s: ["video relay", "RTSP in · WebRTC out"],
     kind: "Video relay", role: "Takes camera RTSP in, serves the clean stream to DL Streamer, receives the annotated stream over WebRTC WHIP and serves it to browsers over WHEP.",
-    image: "bluenviron/mediamtx:1.11.3", apis: ["RTSP from cameras and to DL Streamer", "WebRTC WHIP (in) and WHEP (out)",
+    image: "bluenviron/mediamtx:1.21.3", apis: ["RTSP from cameras and to DL Streamer", "WebRTC WHIP (in) and WHEP (out)",
       "REST /v3 control API — the Backend adds and removes camera paths and reads or closes sessions"]},
   dlsps: {p: "oep", x: 580, y: 42, w: 254, h: 150, icon: "chip", t: "DL Streamer", s: ["Pipeline Server", "detect · track · annotate · crop"],
     ep: ["POST·GET·DELETE /pipelines"], chips: [["npu", "YOLO26s"], ["cpu", "tracker"]], live: "dlsps", kind: "Vision pipeline service",
@@ -302,7 +302,7 @@ const NODES = {
       "DELETE /pipelines/{id} — stop", "MQTT publish detections/live, detections/snips", "WebRTC WHIP publish → MediaMTX"]},
   coturn: {p: "oss", x: 300, y: 262, w: 200, h: 76, icon: "turn", t: "Coturn", s: ["TURN relay, loopback only"],
     kind: "TURN relay", role: "Relays WebRTC media between the browser and MediaMTX when a direct path is not available, such as a browser reaching this device through an SSH tunnel. It listens and relays on 127.0.0.1 only and may reach MediaMTX only. It never talks to DL Streamer.",
-    image: "coturn/coturn:4.18.0", apis: ["TURN"]},
+    image: "coturn/coturn:4.18.0-alpine", apis: ["TURN"]},
   mqtt: {p: "oss", x: 580, y: 262, w: 180, h: 76, icon: "broker", t: "Mosquitto", s: ["MQTT broker"],
     kind: "MQTT broker", role: "Carries detection and evidence-image events from DL Streamer to the Backend. Also the Alert Agent's broker.",
     image: "eclipse-mosquitto:2.0.22", apis: ["MQTT detections/live", "MQTT detections/snips"]},
@@ -311,7 +311,7 @@ const NODES = {
     apis: ["WebRTC WHEP from MediaMTX", "HTTPS REST /api/… and SSE /api/stream"]},
   proxy: {p: "oss", x: 300, y: 470, w: 200, h: 86, icon: "shield", t: "nginx", s: ["TLS termination", "API + WHEP signalling"],
     kind: "TLS proxy", role: "Serves the UI over HTTPS on localhost only (127.0.0.1:8443) and forwards Backend API and WHEP signalling. Media itself goes over WebRTC on loopback.",
-    image: "nginx:1.27-alpine", apis: ["HTTPS"]},
+    image: "nginx:1.30.6-alpine", apis: ["HTTPS"]},
   backend: {p: "app", x: 580, y: 430, w: 254, h: 190, icon: "server", t: "Backend",
     s: ["application logic", "• alert rules & incidents", "• history (SQLite)", "• assistant routing", "• speech arbitration", "• pipeline lifecycle"],
     kind: "Custom service", role: "Owns business rules, history, speech arbitration and telemetry aggregation. Not in the video path; does not crop images or reconfigure running pipelines.",

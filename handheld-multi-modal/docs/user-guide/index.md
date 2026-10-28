@@ -79,11 +79,11 @@ an interactive architecture page at `/architecture.html`.
 | Alert Agent | `intel/alert-agent-service:2026.2.0` | Rule-mode alert dispatch, no LLM in the alert path |
 | Metrics Manager | `intel/metrics-manager:2026.2.0` | Hardware telemetry |
 | Model Download | `intel/model-download:2026.2.0` | Prepares the YOLO26s OpenVINO™ IR on the first start |
-| MediaMTX | `bluenviron/mediamtx:1.11.3` | RTSP input, WHIP/WHEP relay |
-| Coturn | `coturn/coturn:4.18.0` | Loopback-only TURN relay for tunnelled browsers |
+| MediaMTX | `bluenviron/mediamtx:1.21.3` | RTSP input, WHIP/WHEP relay |
+| Coturn | `coturn/coturn:4.18.0-alpine` | Loopback-only TURN relay for tunnelled browsers |
 | Mosquitto | `eclipse-mosquitto:2.0.22` | MQTT between the pipeline server and the Backend |
-| NGINX | `nginx:1.27-alpine` | TLS reverse proxy on `127.0.0.1:8443` |
-| FFmpeg | `bluenviron/mediamtx:1.11.3-ffmpeg` | Demo camera publishers only |
+| NGINX | `nginx:1.30.6-alpine` | TLS reverse proxy on `127.0.0.1:8443` |
+| FFmpeg | `bluenviron/mediamtx:1.21.3-ffmpeg` | Demo camera publishers only |
 | Backend and UI | `handheld/backend:dev` (built locally) | Application logic; calls stock microservice APIs only |
 
 Model sources and licenses are listed in
