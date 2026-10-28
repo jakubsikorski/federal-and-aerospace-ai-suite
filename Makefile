@@ -28,17 +28,13 @@ DTD_ZIP      := $(DIST_DIR)/deterministic-threat-detection.zip
 UAV_ZIP      := $(DIST_DIR)/uav-mission-apps.zip
 SOLUTION_ZIP := $(DIST_DIR)/federal-and-aerospace-ai-suite.zip
 
-# Forwarded to sub-Makefiles when overridden on the command line.
-override_vars := $(foreach v,VIPPET_REPO VIPPET_REF VIPPET_PATH,\
-	$(if $(filter command,$(origin $(v))),$(v)='$($(v))'))
-
 # --- Public targets ----------------------------------------------------------
 
 .PHONY: all
 all: handheld-multi-modal deterministic-threat-detection uav-mission-apps federal-and-aerospace-ai-suite ## Build every component ZIP
 
 .PHONY: handheld-multi-modal
-handheld-multi-modal: $(HANDHELD_ZIP) ## Build handheld-multi-modal.zip (includes vippet)
+handheld-multi-modal: $(HANDHELD_ZIP) ## Build handheld-multi-modal.zip
 
 .PHONY: deterministic-threat-detection
 deterministic-threat-detection: $(DTD_ZIP) ## Build deterministic-threat-detection.zip
@@ -52,30 +48,25 @@ federal-and-aerospace-ai-suite: $(SOLUTION_ZIP) ## Build federal-and-aerospace-a
 .PHONY: clean
 clean: ## Remove build and dist directories
 	rm -rf "$(BUILD_DIR)" "$(DIST_DIR)"
-	$(MAKE) --no-print-directory -C $(HANDHELD_SRC) clean
 
 .PHONY: help
 help: ## Show this help
 	@awk 'BEGIN{FS=":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  %-32s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-# --- handheld-multi-modal — delegate to the app's Makefile -------------------
+# --- Simple component ZIPs (just zip the source directory) -------------------
 
-HANDHELD_STAGE := $(BUILD_DIR)/handheld-multi-modal
-HANDHELD_STAMP := $(BUILD_DIR)/.handheld.stamp
+# Generated per-device files (models, history, TLS keys, detected settings) are
+# excluded so a ZIP built on a deployed checkout never ships device state.
+HANDHELD_EXCLUDES := 'handheld-multi-modal/data/*' 'handheld-multi-modal/datasets/*' \
+	'handheld-multi-modal/config/tls/*' 'handheld-multi-modal/config/devices.yaml' \
+	'handheld-multi-modal/config/mediamtx.yml' 'handheld-multi-modal/docs/application/*' \
+	'handheld-multi-modal/.env' 'handheld-multi-modal/.demo-assets.lock'
 
-$(HANDHELD_ZIP): $(HANDHELD_STAMP)
+$(HANDHELD_ZIP): $(shell find $(HANDHELD_SRC) -type f 2>/dev/null)
 	@mkdir -p "$(DIST_DIR)"
 	@rm -f "$@"
-	cd "$(BUILD_DIR)" && zip -rq "$(abspath $@)" handheld-multi-modal
+	zip -rq "$@" "$(HANDHELD_SRC)" -x $(HANDHELD_EXCLUDES)
 	@echo "Archive ready: $@"
-
-$(HANDHELD_STAMP): $(shell find $(HANDHELD_SRC) -type f 2>/dev/null)
-	$(MAKE) --no-print-directory -C $(HANDHELD_SRC) stage \
-		STAGE_DIR="$(ROOT)/$(HANDHELD_STAGE)" $(override_vars)
-	@mkdir -p "$(dir $@)"
-	touch "$@"
-
-# --- Simple component ZIPs (just zip the source directory) -------------------
 
 $(DTD_ZIP): $(shell find $(DTD_SRC) -type f 2>/dev/null)
 	@mkdir -p "$(DIST_DIR)"
@@ -91,24 +82,27 @@ $(UAV_ZIP): $(shell find $(UAVSDK_SRC) $(UAVVA_SRC) -type f 2>/dev/null)
 
 # --- Full solution ZIP -------------------------------------------------------
 #
-# Bundles the entire federal-and-aerospace-ai-suite tree, with handheld-multi-modal already
-# resolved (i.e. with its vippet sparse checkout dropped in).
+# Bundles the entire federal-and-aerospace-ai-suite tree.
 
 SOLUTION_STAGE := $(BUILD_DIR)/federal-and-aerospace-ai-suite
 
-$(SOLUTION_ZIP): $(HANDHELD_STAMP) \
-		$(shell find $(DTD_SRC) $(UAVSDK_SRC) $(UAVVA_SRC) docs -type f 2>/dev/null) \
+$(SOLUTION_ZIP): \
+		$(shell find $(HANDHELD_SRC) $(DTD_SRC) $(UAVSDK_SRC) $(UAVVA_SRC) docs -type f 2>/dev/null) \
 		README.md
 	@echo ">> Staging federal-and-aerospace-ai-suite (full solution)"
 	@rm -rf "$(SOLUTION_STAGE)"
 	@mkdir -p "$(SOLUTION_STAGE)/federal-and-aerospace-ai-suite"
 	rsync -a \
 		--exclude='build' --exclude='dist' --exclude='.git' \
-		--exclude='handheld-multi-modal/templates' \
-		--exclude='handheld-multi-modal/VIPPET_REF' \
-		--exclude='handheld-multi-modal/.work' \
+		--exclude='handheld-multi-modal/data' \
+		--exclude='handheld-multi-modal/datasets' \
+		--exclude='handheld-multi-modal/config/tls' \
+		--exclude='handheld-multi-modal/config/devices.yaml' \
+		--exclude='handheld-multi-modal/config/mediamtx.yml' \
+		--exclude='handheld-multi-modal/docs/application' \
+		--exclude='handheld-multi-modal/.env' \
+		--exclude='handheld-multi-modal/.demo-assets.lock' \
 		./ "$(SOLUTION_STAGE)/federal-and-aerospace-ai-suite/"
-	cp -a "$(HANDHELD_STAGE)/vippet-fedaero" "$(SOLUTION_STAGE)/federal-and-aerospace-ai-suite/handheld-multi-modal/"
 	@mkdir -p "$(DIST_DIR)"
 	@rm -f "$@"
 	cd "$(SOLUTION_STAGE)" && zip -rq "$(abspath $@)" federal-and-aerospace-ai-suite

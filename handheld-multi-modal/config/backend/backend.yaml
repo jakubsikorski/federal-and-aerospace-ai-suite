@@ -1,0 +1,166 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+# Backend configuration. Values here override backend/app/core.py DEFAULTS.
+#
+# Cameras: multi-camera from the start. Adding one is a list entry here
+# plus an RTSP publisher; no MediaMTX, proxy or UI configuration changes.
+# `annotated_path` and `source_uri` are derived from `stream_id` unless set.
+#
+# These are *deployment* cameras, re-applied on every start. The operator can
+# also add cameras at runtime in the console's Cameras panel; those live
+# only in SQLite, and deployment cameras there can be renamed but not turned
+# off or removed. There is no camera limit; each enabled camera runs its own
+# DLSPS pipeline, so the device's capacity is the practical limit.
+#
+# camera_source_allow (core.py default: the three RFC 1918 ranges) lists the
+# CIDRs and exact hostnames a console-added network camera may use. Loopback,
+# link-local, multicast and unspecified addresses are always refused.
+
+# Each camera gets an independent DLSPS pipeline. The stock MQTT publisher and
+# REST WebRTC destination use bounded queues to keep observations current
+# instead of retaining a multi-second backlog.
+# Optional per-camera description: real location, coverage, blind spots, live/replay.
+# Omit unknown details; the assistant reports unconfigured coverage honestly.
+streams:
+  - stream_id: cam1
+    display_name: Camera 1
+    sort_order: 0
+    enabled: true
+  - stream_id: cam2
+    display_name: Camera 2
+    sort_order: 1
+    enabled: true
+
+rtsp_base: rtsp://mediamtx:8554
+
+# Internal container ports, probed 2026-09-14. These are NOT the host-published
+# ports: audio-analyzer publishes 8011->8010 and tts 8012->8011, so using host
+# numbers here would silently target the wrong service.
+services:
+  chatqna: http://chatqna:8888
+  audio_analyzer: http://audio-analyzer:8010
+  tts: http://tts:8011
+  dlsps: http://dlsps:8080
+  mediamtx: http://mediamtx:9997
+  alert_agent: http://alert-agent:8000
+  metrics: http://metrics:9090
+
+# Must match METRICS_MANAGER_HOSTNAME in Compose. Mixing host tags would combine
+# unrelated collector identities into one dashboard.
+telemetry_host: handheld
+# Deployment label, not the container hostname or a measured device identity.
+execution_host: "Local edge host"
+
+mqtt:
+  host: mqtt
+  port: 1883
+  topic: handheld/observations
+
+detections_topic: detections/live
+
+db_path: /data/app.db
+mission_sources_dir: /data/mission_sources
+# Chat Q&A keeps its FAISS index in memory. Backend retains validated originals
+# here and polls the only supported stock document inventory after ingestion.
+mission_ingest_timeout_seconds: 60.0
+mission_ingest_poll_seconds: 0.25
+# Mission upload limits (whole numbers). Allowed ranges: upload 1-100 MB,
+# PDF 1-2000 pages, DOCX 1-500 MB uncompressed; other values stop startup.
+# Stock Chat Q&A embeds each upload synchronously on the CPU, so raise
+# mission_ingest_timeout_seconds with larger limits. Restart with make demo-up.
+mission_max_upload_mb: 25
+mission_max_pdf_pages: 200
+mission_max_docx_uncompressed_mb: 50
+crop_dir: /crops
+crop_cleanup_script: /opt/handheld-crops/crop_candidates.py
+detector_metadata_path: /config/detector/metadata.yaml
+# Reviewed weights and ordered taxonomy; shared with demo asset validation.
+detector_profile_path: /config/detector-profile.json
+# Both of the following are resolved from the deployed component configuration
+# at startup and only need setting to override that. Leaving them unset is the
+# supported path, because a value repeated here is a value that can drift.
+#
+# The pipeline definition Backend owns. Taken from the single pipeline declared
+# by the mounted DLSPS config (config/dlsps/${DLSPS_CONFIG_VARIANT}/config.json),
+# so switching variant switches the pipeline with no edit here. Set only when a
+# config declares more than one definition.
+# dlsps_pipeline_name: handheld_npu_detect
+#
+# The prompt tail the model echoes back before its answer. Taken from whatever
+# follows the last {question} placeholder in the deployed PROMPT_TEMPLATE, so a
+# model swap that changes the chat format needs no Backend change. Startup
+# fails with a named error if this is set and is not the template's tail.
+# chat_answer_marker: "\n### Assistant:\nAnswer:\n"
+#
+# Qualities the detector cannot establish on its own. A question naming one of
+# these is refused with an explanation instead of being answered from a filter
+# that silently ignored it. Extend this list rather than editing Backend when a
+# deployment's operators use different vocabulary. Entries are regex alternatives.
+# unsupported_concept_terms:
+#   - "weapons?"
+#   - "uniforms?"
+#   - "suspicious"
+#   - "behaviou?rs?"
+#   - "carrying"
+#   - "ownership"
+#   - "armed"
+history_retention_seconds: 604800
+# Classes listed first in the unfiltered evidence view, ahead of recency.
+# Static furniture is re-observed continuously and otherwise outranks people.
+# Ordering only; nothing is hidden and every class stays counted and filterable.
+evidence_priority_classes:
+  - person
+assistant_chat_timeout_seconds: 60
+assistant_queue_depth: 4
+# How often to replace pipelines that are no longer RUNNING.
+supervise_seconds: 15.0
+# DLSPS accepts POST before asynchronous pipeline construction consumes request
+# parameters. Serialize starts by waiting for RUNNING before sending next camera.
+pipeline_start_timeout_seconds: 180.0
+pipeline_start_poll_seconds: 2.0
+# Silence longer than this means the camera is replaced, not just reported down.
+# It also gates how long a fresh start is left alone. A replacement pipeline was
+# measured taking up to ~40s to reach RUNNING while contending with the leaked
+# sessions of the pipeline it replaces, so a window near that turns the
+# supervisor into a restart loop that never lets a camera finish starting.
+feed_stale_seconds: 90.0
+# Mirrors takeover_seconds in config/dlsps/crops/template.json.
+takeover_seconds: 30.0
+timeout_seconds: 5.0
+log_level: INFO
+
+# Alerts. Rules themselves live in SQLite and are managed from the
+# UI Rules panel. Tools are stock Alert Agent tools applied to every dispatch.
+alert_tools:
+  - log_alert
+alert_dispatch_timeout_seconds: 15.0
+# Speech: the audio arbiter is the only TTS producer.
+# A 30-word utterance takes ~18 s on an Intel Core Ultra (Series 2) test device; a timed-out request
+# still occupies the stock service until it finishes.
+tts_timeout_seconds: 30.0
+alert_speech_floor_seconds: 3.0
+# Spoken the moment a voice question is transcribed (Audio on), from the WAV
+# cache, so the operator hears a reply within about a second. Empty disables it.
+speech_ack_text: "Checking."
+# Talk press wakes TTS and Whisper at most this often (idle devices were 4-9 s slower).
+voice_warm_interval_seconds: 20.0
+# Optional stock voice name from GET /v1/model-info; unset uses the service default.
+tts_voice: Miles
+# Optional JSONL arbiter trace for evidence; unset keeps only the in-memory ring.
+# arbiter_trace_path: /data/arbiter_trace.jsonl
+
+# History windows. Measured 2026-09-15 by timestamping messages at
+# the broker against the producer's own observed_at: observations arrive a
+# median 3.8s (max 4.6s) after the frame is stamped, and that delay is inside
+# the stock DLSPS pipeline, before Backend sees anything. A 3s freshness window
+# would therefore report every camera as permanently "absent" while people are
+# visibly on screen, so it is set above the measured maximum with margin.
+freshness_window_seconds: 8.0
+# 14s so that ~10s of *real* silence closes a track, once delivery lag is paid.
+track_timeout_seconds: 14.0
+# A track is stored, shown, alerted on and cropped only after this many
+# observations; shorter tracker fragments are discarded in memory.
+min_track_observations: 3
+absence_split_seconds: 5.0
+pending_association_seconds: 120.0

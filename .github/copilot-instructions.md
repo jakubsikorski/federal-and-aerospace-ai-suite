@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0
 
 This repository contains AI-enabled applications and supporting components for aerospace and defense edge deployments. Component directories are directly under the repository root:
 
-- [handheld-multi-modal/](../handheld-multi-modal/README.md) — LLM inference, speech-to-text, chat UI, and observability
+- [handheld-multi-modal/](../handheld-multi-modal/README.md) — Localhost operator console fusing live video analytics, mission documents, alerts, and speech
 - [deterministic-threat-detection/](../deterministic-threat-detection/README.md) — Deterministic, low-latency AI video and sensor processing using Time-Sensitive Networking (preview)
 - [uav-mission-compute-sdk/](../uav-mission-compute-sdk/README.md) — UAV simulation, telemetry, camera streaming, and edge AI infrastructure
 - [uav-vision-analytics/](../uav-vision-analytics/README.md) — UAV object detection with correlated MAVLink telemetry overlays
@@ -23,18 +23,18 @@ Read the [root README](../README.md) for suite-level context and the active comp
 
 ## Languages & Frameworks
 
-- **Primary language:** Python (Flask services, inference, telemetry, and pipeline management)
+- **Primary language:** Python (Flask and FastAPI services, inference, telemetry, and pipeline management)
 - **Scripts:** Bash for deployment, setup, and validation
 - **UI and observability:** Open WebUI, Grafana, NGINX, and application HTML/JavaScript
 - **Infrastructure:** Docker and Docker Compose
-- **ML/AI:** OpenVINO, OVMS (OpenVINO Model Server), HuggingFace, Intel DL Streamer
+- **ML/AI:** OpenVINO, OVMS (OpenVINO Model Server), Open Edge Platform microservices (Chat Q&A, Audio Analyzer, Text To Speech), HuggingFace, Intel DL Streamer
 - **UAV and streaming:** PX4, Gazebo, MAVLink, MQTT, and RTSP
 
 ## Build Systems
 
 - **Make** orchestrates packaging and component lifecycle tasks. The [root Makefile](../Makefile) builds component and full-suite ZIP archives into `dist/`; it is not a deployment entry point. Run `make help` in the active component where available.
 - **Docker Compose** (`docker compose`) runs application services. Follow the component's documented Compose files, prerequisites, and `.env` configuration; filenames and deployment targets differ between components.
-- **Handheld deployment:** Follow [AGENTS.md](../handheld-multi-modal/AGENTS.md) for `make deploy`, `make deploy-cdi`, or `make up-standalone`. The standard and CDI modes require the Visual Pipeline and Platform Evaluation Tool network.
+- **Handheld deployment:** Follow [AGENTS.md](../handheld-multi-modal/AGENTS.md) for `make up` or `make demo-up`, and `make check` for readiness. Every host port binds to `127.0.0.1`.
 - **UAV deployment:** Follow the [SDK user guide](../uav-mission-compute-sdk/docs/user-guide/get-started.md) and [analytics user guide](../uav-vision-analytics/docs/user-guide/index.md) for the selected camera and telemetry mode.
 - **Python packaging:** Mix of `requirements.txt`, `pyproject.toml` (with setuptools or uv), and `pip`.
 
@@ -42,7 +42,7 @@ Read the [root README](../README.md) for suite-level context and the active comp
 
 - Follow the active component's documented checks and existing test conventions; do not assume a shared root-level test suite or uniform `tests/unit/` layout.
 - [uav-mission-compute-sdk/pyproject.toml](../uav-mission-compute-sdk/pyproject.toml) contains pytest configuration. Verify that configured test paths and dependencies are available before running tests.
-- [handheld-multi-modal/tests/](../handheld-multi-modal/tests/) contains speech-to-text API fuzzing assets; its Makefile also provides service connectivity checks.
+- [handheld-multi-modal/backend/](../handheld-multi-modal/backend/) contains Backend tests and REST API fuzzing; its Makefile provides `test`, `test-ui`, `test-assets`, `test-fuzz`, and `test-history` targets.
 - For pytest tests, use `test_*.py` files, `Test*` classes, and `test_*` functions. Reuse existing fixtures and markers where present, and use environment-based test configuration rather than hardcoding credentials.
 - Run the smallest relevant check after editing. Distinguish static checks from hardware-dependent or running-service validation, and report checks that could not be run.
 

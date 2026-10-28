@@ -1,58 +1,82 @@
+<!--
+SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Access Application User Interface
 
-This composite application exposes multiple endpoints through the NGINX TLS reverse proxy.
-They are bound to localhost only and are not exposed on any external IP address.
-Since the intended use is on handheld devices, the applications do not provide authentication
-or authorization.
+The operator console is served by the NGINX TLS reverse proxy at
+<https://localhost:8443/>. Every published port of the application binds to `127.0.0.1` only
+and is not exposed on any external IP address. Since the intended use is on handheld
+devices, the console does not provide authentication or authorization.
 
 > [!NOTE]
-> The "self-signed certificate" browser warning is expected.
-> Modern browsers require HTTPS to enable microphone input used by Open WebUI and
-> Speech To Text services, therefore, the NGINX reverse proxy uses the certificate to ensure
-> TLS transport on the `localhost` bound addresses.
+> The "self-signed certificate" browser warning is expected until the certificate is trusted.
+> Modern browsers require HTTPS to enable the microphone used for voice questions, therefore
+> the NGINX reverse proxy uses a certificate generated on the device for `localhost` and
+> `127.0.0.1`.
 
-To add a certificate to the trust pool, open a browser of your choice and navigate to `Settings->Certificates->Manage certificates` page. Next, select the `Authorities` tab and click `Import`. In file explorer, navigate to the folder that contains Handheld Multi-Modal Application and select the `data/nginx-certs/ca-cert.pem` file. Finally, select the `Trust this CA to identify websites` checkbox and click `Ok`.
+To add the certificate to the trust pool, open a browser of your choice and navigate to
+`Settings->Certificates->Manage certificates` page. Next, select the `Authorities` tab and
+click `Import`. In file explorer, navigate to the folder that contains the Handheld Multi-Modal
+application and select the `config/tls/server.crt` file. Finally, select the
+`Trust this CA to identify websites` checkbox and click `Ok`.
+
+Do not copy another device's TLS keys. If a certificate from an older version names a LAN
+address, delete `config/tls/server.*` and run `make demo-up` (or `make up`) again.
 
 | Service | URL | Notes |
 | ------- | --- | ----- |
-| Single pane page | <https://localhost:443> | via NGINX reverse proxy |
-| Visual Pipeline and Platform Evaluation Tool UI | <https://localhost:1443> | via NGINX reverse proxy |
-| Open WebUI | <https://localhost:8443> | Conversational Agent backed by LLM — browser microphone enabled (via NGINX reverse proxy) |
-| Whisper speech-to-text service | <https://localhost:5443> | Speech-to-text — browser microphone enabled (via NGINX reverse proxy) |
-| Grafana dashboard | <https://localhost:7443> | Pre-provisioned dashboards (via NGINX reverse proxy) |
+| Operator console | <https://localhost:8443/> | Live cameras, evidence, assistant, mission, alerts, voice, and resources |
+| Architecture page | <https://localhost:8443/architecture.html> | Interactive diagram of every service, model placement, and API used |
 
-<!--
-Source: [Endpoints](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/blob/main/handheld-multi-modal/README.md#endpoints)
--->
+The proxy answers `421` to other host names and `403` to a foreign `Origin`, so open the console
+as `localhost:8443` or `127.0.0.1:8443`. Run the browser full screen (F11 or kiosk mode) on the
+handheld. After deploying a new version, reload an already open browser tab once to load the
+updated client.
 
-## ViPPET
+## Remote Access Through an SSH Tunnel
 
-After opening the main page of ViPPET, you can select one of the several options available in ViPPET:
+To view the console from a laptop, forward the UI and TURN ports over SSH:
 
-1) Pipelines - to check and run one of the predefined pipelines and understand how it works. Predefined pipelines will provide a video output stream that shows how a model works, as well as a small subset of system metrics during execution of the pipeline. It also exposes an option to add a new custom pipeline for advanced users, but it might require additional input from other options.
-2) Benchmarks - allows you to compare performance of pipelines on different combinations of supported hardware (CPU/NPU/GPU/NPU+GPU) to find out the best device for a specific pipeline.
-3) Models - exposes a list of available models that can be used in a pipeline, as well as the import functionality for models.
-4) Video/Images/Cameras - allows configuration of data source that could be used in a pipeline.
+```bash
+ssh -N -L 8443:127.0.0.1:8443 -L 3478:127.0.0.1:3478 <user>@<device-address>
+```
 
-## Open WebUI
+Then open <https://localhost:8443/> on the laptop. Keep both local port numbers: the proxy
+accepts only `localhost:8443` origins, and live video is relayed over TURN/TCP on port 3478
+because SSH does not carry UDP.
 
-The main page exposes a chat with the default AI model, where you can ask questions. If an initial response is not sufficient, the chat with the AI model can be continued in the same window, which will keep context. If a question is related to attachment(s), such as a file, web-page or other chat, it could be added by clicking the `+` sign and selecting the corresponding option.
-It is recommended to open the `New Chat` window and start a new chat to change the topic and to keep the AI model context clean, as it improves results.
+If the page loads but camera tiles stay black:
 
-## Whisper
+- check the `ssh` output for `bind ... Address already in use` on port 3478;
+- on the laptop, `nc -vz 127.0.0.1 3478` (Windows: `Test-NetConnection 127.0.0.1 -Port 3478`)
+  must succeed;
+- `chrome://webrtc-internals` (Firefox: `about:webrtc`) must show a `relay` candidate; managed
+  browser policies can block it.
 
-On the main page of Whisper, there are two options to upload audio for the transcription:
+> [!WARNING]
+> The tunnel grants full, unauthenticated access to the console. Do not share the forwarded
+> ports (`ssh -g`, `GatewayPorts`) or forward them from a shared machine.
 
-1) By uploading an audio file in one of the supported audio formats ("flac", "m4a", "mp3", "mp4", "ogg", "wav", "webm") and clicking on the corresponding section in UI, and selecting a file in the file explorer, or by drag-and-dropping the file into the section.
-2) By recording audio from a microphone. Click the round `record` button, allow Whisper access to the microphone and start talking into the microphone.
-In both cases, the transcription text will appear on the lower part of the page in real-time, in parts, as soon as Whisper has completed the transcription of a part of the recording. Once the whole recording has been transcribed, an additional section will appear and show the duration and ratio of the transcription.
+## Adding Cameras
 
-## Grafana
+`make up` starts without cameras. Open **Cameras** in the top bar of the console to add:
 
-By default, the main page shows generic metrics from the system, such as CPU/NPU and power consumption. To switch to more detailed, per-application view, navigate to `Dashboards->Panther Lake Live Dashboard`. On this dashboard, most of the metrics will be either empty or will not display any values, since the metrics are gathered in real-time and other applications must execute a workload to generate metrics. The metrics map to other handheld applications as follows:
+- a **network camera** by its `rtsp://` address, or
+- a **publisher on this device** that sends H.264 RTSP video to the loopback-only address the
+  console shows, for example `rtsp://127.0.0.1:8554/cam3`.
 
-1) `Frame Rate Over Time` and `Latest Pipeline Frame Rate Average` are from ViPPET.
-2) `LLM Number of Responses Generated` and `LLM Number of Responses Generated` are from Open WebUI.
-3) `Speech to text Processing Ratio Last` and `Speech To Text Processing Ratio` are from Whisper.
+For example, publish a local video file as a camera with FFmpeg:
 
-Metrics do not persist in any database, so a refresh of the page will reset ALL gathered metrics.
+```bash
+ffmpeg -re -stream_loop -1 -i video.mp4 -an -c:v libx264 -preset veryfast -tune zerolatency \
+  -f rtsp -rtsp_transport tcp rtsp://127.0.0.1:8554/cam3
+```
+
+The console shows the same command, with the right address, after a publisher camera is added.
+
+The [`examples/realsense-rtsp.sh`](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/blob/main/handheld-multi-modal/examples/realsense-rtsp.sh)
+script publishes an Intel® RealSense™ camera the same way.
+
+See the [Operator Guide](operator-guide.md) for a description of every part of the console.

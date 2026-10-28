@@ -15,6 +15,15 @@ and thermal tuning) to application-level pipeline generation with Intel DL Strea
 - [Infrastructure AI Agent Integration](infrastructure/agent-skills.md) — Available
   agent skills for building images, provisioning, and power/thermal tuning, and how to run them
   from a developer host or directly on a provisioned target.
+- Application skills — the `handheld-multi-modal/.agents/skills` directory bundles skills for
+  the application architecture, camera connection, the DL Streamer Pipeline Server contract,
+  and the Open Edge Platform microservices it uses.
+- Upstream skills — for the stock services, use the Open Edge Platform skills directly:
+  [`chatqna-docker-deploy`](https://github.com/open-edge-platform/skills/tree/main/.agents/skills/chatqna-docker-deploy),
+  [`dlsps-user`](https://github.com/open-edge-platform/skills/tree/main/.agents/skills/dlsps-user),
+  [`dlstreamer-coding-agent`](https://github.com/open-edge-platform/skills/tree/main/.agents/skills/dlstreamer-coding-agent) and
+  [`model-download-user`](https://github.com/open-edge-platform/skills/tree/main/.agents/skills/model-download-user). The application skills take
+  precedence where they differ.
 
 <!--hide_directive
 :::{toctree}

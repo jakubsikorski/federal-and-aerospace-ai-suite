@@ -1,0 +1,65 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Length 1192 >>
+stream
+BT
+/F1 11 Tf
+14 TL
+54 760 Td
+(HANDHELD DEMONSTRATION MISSION PACKET) Tj T*
+(Synthetic content. Not a real operation, location, unit or order.) Tj T*
+() Tj T*
+(OBJECTIVE) Tj T*
+(Exercise AMBER FIELD is a daylight site-security watch of two camera sectors.) Tj T*
+(The operator reports unattended bags and any vehicle stopping in the car park.) Tj T*
+() Tj T*
+(TIMES) Tj T*
+(The watch runs from 09:00 to 09:30 local; the report is due at 09:35.) Tj T*
+() Tj T*
+(LOCATIONS) Tj T*
+(Sector 1 \(camera 1\): the car park, viewed from above.) Tj T*
+(Sector 2 \(camera 2\): the tree-lined park avenue with benches.) Tj T*
+() Tj T*
+(PEOPLE AND UNITS) Tj T*
+(One handheld operator. The range warden on duty is the safety officer.) Tj T*
+() Tj T*
+(RESTRICTIONS) Tj T*
+(Observe and report only; do not approach or stop anyone.) Tj T*
+(Do not record identities of members of the public in reports.) Tj T*
+() Tj T*
+(RESOURCES) Tj T*
+(One handheld device and two fixed cameras, one per sector.) Tj T*
+() Tj T*
+(DEPENDENCIES) Tj T*
+(The watch starts only when both cameras report a live feed.) Tj T*
+() Tj T*
+(RISKS) Tj T*
+(Crowds on the park avenue can hide people; moving vehicles in the car park.) Tj T*
+ET
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000311 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1555
+%%EOF

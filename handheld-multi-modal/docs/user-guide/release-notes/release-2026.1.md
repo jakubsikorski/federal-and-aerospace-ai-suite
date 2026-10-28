@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Release Notes: Handheld Multi-Modal Application
 
 **Release Date**: June 17, 2026

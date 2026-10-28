@@ -4,119 +4,144 @@ SPDX-License-Identifier: Apache-2.0
 -->
 # Handheld Multi-Modal Application
 
-The Handheld Multi-Modal application is a full-stack AI inference and observability platform for handheld scenarios, optimized for Intel® edge hardware. It is is deployed on top of the
-Edge Node Infrastructure software - an edge computing platform, which enables hardware acceleration capabilities. See [Infrastructure Setup](docs/user-guide/infrastructure-setup.md) for build and provisioning steps.
+The Handheld Multi-Modal application is an operator console for Intel® edge devices that fuses
+live camera analytics, evidence search, mission documents, alerts, and speech. It runs entirely
+on the device and is built from unmodified Open Edge Platform `release-2026.2.0` microservices,
+plus an application Backend and browser UI. Models are downloaded on the first start; after that,
+all inference runs locally, the application works offline, and data does not leave the device.
 
-The application combines LLM inference capability served through the OpenVINO™ Model Server platform, speech-to-text transcription through the Whisper service, a chat UI through the Open WebUI software, and metrics information through the Grafana dashboard; it runs with the [Visual Pipeline and Platform Evaluation Tool](https://github.com/open-edge-platform/edge-ai-libraries/tree/main/tools/visual-pipeline-and-platform-evaluation-tool) for pipeline visualization, sharing its Docker network. In the initial step models and dependencies are downloaded from Internet. After deployment all actions and inferences are performed locally on the device and data doesn't leave the device.
+The application can be deployed on top of the Edge Node Infrastructure software - an edge
+computing platform, which enables hardware acceleration capabilities. See
+[Infrastructure Setup](docs/user-guide/infrastructure-setup.md) for build and provisioning steps.
+
+![Operator console: live camera with detection boxes, object tracks with evidence images, open alerts, model placement, and resource telemetry with per-service CPU and memory use](docs/user-guide/_assets/operator-ui.jpg)
+
+## Features
+
+- **Live cameras**: YOLO26s INT8 detection (NPU) and tracking, annotated WebRTC video, and
+  evidence crops per track.
+- **History**: browse tracks and ask questions such as "how many people on camera 2 in the last
+  ten minutes?".
+- **Mission**: upload PDF/DOCX orders; brief and answers from `Intel/neural-chat-7b-v3-3` (GPU)
+  through Chat Q&A.
+- **Alerts**: operator rules dispatched by the Alert Agent and spoken by SpeechT5 (CPU; run
+  `make speech-device TTS_DEVICE=GPU` to switch).
+- **Voice**: push-to-talk questions transcribed by Whisper-medium (GPU).
+- **Resources**: CPU, memory, GPU, NPU, and power telemetry.
 
 ## Project Structure
 
 ```text
-docker-compose.yml            Defines and runs all services in the application using the standard GPU configuration.
-docker-compose-cdi.yml        Container Device Interface (CDI) and Single Root I/O Virtualization (SR-IOV) variant.
-docker-compose-standalone.yml Development or test. No Visual Pipeline and Platform Evaluation Tool required.
-Makefile                      Operational and packaging targets.
-AGENTS.md                     AI agent context file.
-collector/                    Telegraf configuration for Visual Pipeline and Platform Evaluation Tool metrics-manager.
-apps/
-  LLM-OpenWebUI/              OpenVINO model server and Open WebUI chat interface.
-  speech-to-text/             Whisper speech-to-text service.
-  grafana/provisioning/       Pre-provisioned Grafana dashboards.
-  nginx/                      HTTPS reverse proxy (self-signed cert, enables browser microphone).
+Makefile                     Lifecycle, readiness check, offline bundle, and test targets (run `make` for the list).
+AGENTS.md                    AI agent context file.
+compose/                     Docker Compose files: application services and demo camera publishers.
+backend/                     Application Backend (FastAPI) and browser UI; built locally as handheld/backend:dev.
+config/                      Per-service configuration: DLSPS pipelines and detector profile, Chat Q&A, proxy, TURN, MQTT, metrics, speech.
+scripts/                     Demo asset preparation and live readiness checks.
+examples/                    Synthetic demo mission packet and an Intel® RealSense™ RTSP publisher script.
+.agents/skills/              AI agent skills for the application and its Open Edge Platform microservices.
+third-party-components.spdx  Software bill of materials of third-party components.
 ```
 
 ## Stack
 
 | Service | Image | Role |
 |---------|-------|------|
-| `grafana` | `grafana/grafana:13.1.0-25893932881` | Dashboards — consumes metrics via Grafana Live |
-| `ovms` | `openvino/model_server@sha256:cc13f88dc249cb94ab30cab90286b0c72a329e3d605da497bd4e594c5d21af00` | LLM inference via OpenAI-compatible REST API |
-| `open-webui` | `ghcr.io/open-webui/open-webui:v0.11.0-slim` | Chat UI connected to OpenVINO model server |
-| `whisper-stt` | `whisper-stt:latest` (local build) | Speech-to-text with Prometheus metrics |
-| `nginx-https` | `nginx:alpine` | HTTPS reverse proxy (self-signed cert, enables browser microphone) |
+| DL Streamer Pipeline Server | `intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24` | Detection, tracking, annotated WebRTC, MQTT, crops |
+| Chat Q&A Core | `intel/chatqna:core_gpu_2026.2.0` | Mission documents and answers |
+| Audio Analyzer | `intel/audio-analyzer:2026.2.0` | Speech-to-text (Whisper-medium, GPU) |
+| Text To Speech | `intel/text-to-speech:2026.2.0` | Spoken alerts and answers (SpeechT5) |
+| Alert Agent | `intel/alert-agent-service:2026.2.0` | Rule-mode alert dispatch, no LLM |
+| Metrics Manager | `intel/metrics-manager:2026.2.0` | Hardware telemetry |
+| Model Download | `intel/model-download:2026.2.0` | Prepares the YOLO26s IR (first start) |
+| MediaMTX | `bluenviron/mediamtx:1.21.3` | RTSP input, WHIP/WHEP relay |
+| Coturn | `coturn/coturn:4.18.0-alpine` | Loopback-only TURN for tunneled browsers |
+| Mosquitto | `eclipse-mosquitto:2.0.22` | MQTT between DLSPS and Backend |
+| NGINX | `nginx:1.30.6-alpine` | TLS reverse proxy on `127.0.0.1:8443` |
+| FFmpeg | `bluenviron/mediamtx:1.21.3-ffmpeg` | Demo cameras only |
+| Backend + UI | `handheld/backend:dev` (built from `backend/`) | Application logic; calls the microservice APIs only |
 
-All services share the `fedaero` Docker network and are defined in [`docker-compose.yml`](docker-compose.yml).
+[![Architecture diagram](docs/user-guide/_assets/architecture.svg)](docs/user-guide/_assets/architecture.svg)
+
+The Backend is never in the video path. The running application also serves an interactive
+architecture page at `/architecture.html`.
 
 ## Prerequisites
 
 | Requirement | Notes |
 |-------------|-------|
-| Docker Engine release 24 or later| [Install guide](https://docs.docker.com/engine/install/) |
-| Docker Compose v2 | Included with Docker Desktop; on Linux OS, install the `docker-compose-plugin` package. Use `docker compose` (space), not `docker-compose` (hyphen). |
-| `render` group | Required for GPU access by OpenVINO model server. Verify with `getent group render`. |
-| Git | Required for `make vippet-get` to do sparse-checkout of Visual Pipeline and Platform Evaluation Tool. |
-| Intel® GPU with OpenVINO driver | iGPU or discrete GPU based on the Xe architecture. |
-| **CDI only:** CDI drivers configured | Set `CDI_XE_DEVICE_0` in `.env` (see `AGENTS.md` for all env vars). |
-
-Run `make setup` after cloning to auto-detect the `render` group GID and write the `.env`.
+| Intel® GPU and NPU | `/dev/dri/renderD128` and `/dev/accel/accel0` with the Intel GPU and NPU drivers installed. |
+| Docker Engine and Docker Compose 2.24.4 or later | [Install guide](https://docs.docker.com/engine/install/). Use `docker compose` (space). |
+| GNU Make, Python 3.11 or later, curl, OpenSSL | Used by the Make lifecycle. |
+| Disk space and Internet access | The first start downloads several GB of models; later starts run offline. |
 
 ### Optional Hugging Face Token
 
-OVMS and Open WebUI download models from Hugging Face or OpenVINO Hub on first start. For authenticated or gated model access, and potentially faster Hugging Face downloads, export `HF_TOKEN` before deploying. The default public model does not require a token.
+Export `HF_TOKEN` only if Hugging Face rate-limits the model downloads. Do not add the token to
+`.env` or commit it to version control.
 
 ```bash
 export HF_TOKEN=hf_...
-make deploy
 ```
-
-Do not add the token to `.env` or commit it to version control.
 
 ## Quick Start
 
-> **Recommended — use `make deploy`.**
-> This stack requires the Visual Pipeline and Platform Evaluation Tool to be running first because the tool will create the `fedaero` Docker network. Running `docker compose up -d` first **will fail** with:
-> ```text
-> network visual-pipeline-and-platform-evaluation-tool_default declared as external, but could not be found
-> ```
-> `make deploy` handles everything — it fetches and starts Visual Pipeline and Platform Evaluation Tool, requests its model downloads, waits for the shared network, then starts this stack. ViPPET and OpenVINO Model Server model downloads run concurrently; the command completes after ViPPET models are installed.
-
 ```bash
 cd handheld-multi-modal
-make deploy        # standard GPU
-make deploy-cdi    # CDI / SR-IOV environments
+make demo-up       # start with looping demo cameras (run again to restart)
+make up            # or start without cameras; add them in the console
+make demo-mission  # optional: load the example mission from examples/
+make               # list all commands (status, stop, check, tests, ...)
 ```
 
-**Development or testing without Visual Pipeline and Platform Evaluation Tool** — a standalone variant creates its own isolated `fedaero` network. Metrics from Visual Pipeline and Platform Evaluation Tool pipelines will not be available.
+Before anything is downloaded, `make up` and `make demo-up` list the third-party software and
+models they download, with their licenses, and ask you to accept them. Add `CONFIRM=yes` to
+accept without the question.
 
-```bash
-make up-standalone
-```
+Open <https://localhost:8443/> on the device and trust `config/tls/server.crt`. For offline
+installs, see
+[Copy to Another Device](docs/user-guide/application-operations.md#copy-to-another-device-offline).
 
 ## Endpoints
 
-Open WebUI, Grafana dashboard, and Whisper speech-to-text service are only accessible via the NGINX Transport Layer Security (TLS) reverse proxy — their container ports are not exposed directly to the host.
+Every published port binds to `127.0.0.1`. The console has no authentication. For remote
+access, use an SSH tunnel as described in
+[Access Application User Interface](docs/user-guide/access-application.md#remote-access-through-an-ssh-tunnel).
 
-| Service                                         | URL                             | Notes                                                                 |
-|-------------------------------------------------|---------------------------------|-----------------------------------------------------------------------|
-| Single pane page                                | https://localhost:443           | via NGINX reverse proxy                                               |
-| Visual Pipeline and Platform Evaluation Tool UI | https://localhost:1443          | Runs pipelines on any combination of devices (CPU, GPU, NPU)          |
-| Whisper speech-to-text service                  | https://localhost:5443          | Speech-to-text with browser microphone enabled that runs STT on CPU   |
-| OVMS metrics                                    | https://localhost:6443/metrics  | Prometheus metrics endpoints                                          |
-| Grafana dashboard                               | https://localhost:7443          | Pre-provisioned dashboards                                            |
-| Open WebUI                                      | https://localhost:8443          | LLM chat UI with browser microphone enabled that runs models on GPU   |
+| Service | URL | Notes |
+|---------|-----|-------|
+| Operator console | https://localhost:8443 | Through the NGINX TLS reverse proxy |
+| Architecture page | https://localhost:8443/architecture.html | Interactive service diagram |
+| TURN relay | `127.0.0.1:3478` (TCP) | Live video for tunneled browsers |
+| RTSP input | `rtsp://127.0.0.1:8554/<camera>` | Local camera publishers |
 
 ## Make Targets
 
 ```text
-make deploy           # full deployment: starts ViPPET and handheld services while their model downloads run concurrently; waits for ViPPET models to install
-make deploy-cdi       # same full deployment for CDI and SR-IOV
-make models-download-async  # request ViPPET models in the background; view .work/models-download.log for request diagnostics
-make models-status     # wait for and show ViPPET model installation progress
-make up                Start this stack (standard, requires Visual Pipeline and Platform Evaluation Tool network)
-make up-cdi            Start this stack (CDI, requires Visual Pipeline and Platform Evaluation Tool network)
-make up-standalone     Start this stack without Visual Pipeline and Platform Evaluation Tool (development or testing only)
-make down              Stop all services
-make down-cdi          Stop all services started with up-cdi (or with deploy-cdi)
-make down-standalone   Stop all services started with up-standalone
-make build             Build local images
-make restart           Restart all services
-make urls              Print all service endpoints
-make test              Check service connectivity
-make health            Show service health or status
-make clean CONFIRM=yes Stop containers and remove all data directories
+make prereq / demo-prereq       Check host tools and devices, download models (and demo videos)
+make up / demo-up               Start the application (demo-up also starts demo cameras)
+make demo-mission               Load the example mission document
+make status                     Services and per-camera feed health
+make check                      Read-only readiness check of images, models, and services
+make stop                       Stop every service
+make pipelines-restart          Restart Backend and DLSPS; language models stay loaded
+make speech-device TTS_DEVICE=  Move SpeechT5 to CPU or GPU
+make down                       Remove containers; keep models, history, and TLS
+make bundle / bundle-load       Copy the prepared application to offline devices
+make clean / clean-demo         Remove generated configuration / demo assets
+make clean-history CONFIRM=yes  Remove tracks, evidence, rules, alerts, and missions
+make clean-all CONFIRM=yes      Remove everything above plus models, caches, and TLS keys
+make test / test-ui / test-assets / test-fuzz / test-history
 ```
 
-## Component README Files
+## Documentation
 
-- [LLM: OpenVINO model server and Open WebUI chat interface](apps/LLM-OpenWebUI/README.md)
-- [Speech-to-Text feature: Whisper speech-to-text service](apps/speech-to-text/README.md)
+- [User Guide](docs/user-guide/index.md)
+- [Deploy the Application](docs/user-guide/deploy-applications.md)
+- [Access Application User Interface](docs/user-guide/access-application.md)
+- [Operator Guide](docs/user-guide/operator-guide.md)
+- [Application Operations](docs/user-guide/application-operations.md)
+- [Release Notes](docs/user-guide/release-notes.md)
+
+Demo videos: intel-iot-devkit sample (CC BY 4.0) and Pexels video 34622113 (Pexels License).
+The mission packet in `examples/` is synthetic.

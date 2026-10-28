@@ -1,22 +1,22 @@
+<!--
+SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Benchmark — Handheld (Soldier System) Blueprint
 
-The Handheld Multi-Modal application ships with ViPPET, a benchmarking tool that, by default,
-starts automatically as part of the deployment. See more details in
-[ViPPET Benchmarking](./benchmarking/run-vippet-benchmarks.md) or
-the official [ViPPET Documentation](https://docs.openedgeplatform.intel.com/dev/edge-ai-libraries/visual-pipeline-and-platform-evaluation-tool/index.html)
-
-For platform-level benchmarking beyond ViPPET — vision AI inference, hardware-accelerated
-media processing, end-to-end video analytics pipelines, and generative AI — see the
+For platform-level benchmarking — vision AI inference, hardware-accelerated media processing,
+end-to-end video analytics pipelines, and generative AI — see the
 [Edge Workloads and Benchmarks Guide](./benchmarking/run-edge-benchmarks.md).
 
-
+The Handheld Multi-Modal application itself reports live CPU, memory, GPU, NPU, and power
+telemetry in the **Resources** panel of the operator console. See the
+[Operator Guide](operator-guide.md#resources).
 
 <!--hide_directive
 :::{toctree}
 :hidden:
 
-ViPPET Benchmarking <./benchmarking/run-vippet-benchmarks.md>
 Edge Workloads and Benchmarks Guide <./benchmarking/run-edge-benchmarks.md>
 :::
 hide_directive-->
-
