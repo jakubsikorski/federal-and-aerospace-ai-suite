@@ -99,7 +99,13 @@ Or start it without demo cameras, and add your own cameras later in the console:
 make up
 ```
 
-Both targets check the host, download the YOLO26s INT8 detector through the Model Download
+Both targets check the host and then list the third-party container images, Python packages,
+models, and (for `make demo-up`) demo videos they download, with their licenses, and ask you
+to accept them. Answer `y` to continue, or pass `CONFIRM=yes` to accept without the question,
+for example in scripts: `make demo-up CONFIRM=yes`. The list is generated from
+[`third-party-components.spdx`](../../third-party-components.spdx).
+
+They then download the YOLO26s INT8 detector through the Model Download
 microservice, generate a self-signed TLS certificate for `localhost`, build the Backend image,
 and start every service. `make demo-up` also downloads the demo videos and waits until both
 demo cameras produce detections and annotated video. While waiting, Make prints progress and

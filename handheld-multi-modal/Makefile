@@ -38,7 +38,7 @@ ANNOTATED_IDS := $(patsubst cam%,annotated%,$(CAMERA_IDS))
 .PHONY: help prereq demo-prereq up demo-up demo-mission status stop \
   pipelines-restart down clean clean-demo clean-history clean-all \
   demo-stop demo-down demo-status demo-pipelines-restart \
-  bundle bundle-load preflight setup tls asset-permissions model-downloader-up \
+  bundle bundle-load preflight licenses setup tls asset-permissions model-downloader-up \
   check test test-ui test-assets test-history
 
 help:
@@ -80,7 +80,9 @@ help:
 	@echo
 	@echo 'Options: CAMERAS=1..2 demo cameras (default 2)  TTS_DEVICE=CPU|GPU (default CPU)'
 	@echo '         ASSET_ROOT=<path>'
+	@echo '         CONFIRM=yes  accept the third-party licenses without asking (prereq, up and demo targets)'
 	@echo 'The first start downloads several GB of models (internet, up to an hour); later starts run offline.'
+	@echo 'Each start first lists the third-party software it downloads and their licenses, and asks to accept them.'
 
 # Shown while waiting for services that download on their first start.
 SETUP_NOTE := The stock Model Download installs its Python packages from PyPI on every start (about 2-5 min with internet).
@@ -256,8 +258,14 @@ model-downloader-up:
 # These prerequisites are deliberately sequential, including under make -j.
 .NOTPARALLEL:
 
+# Lists the third-party images, packages, models (and demo videos) a start
+# downloads with their licenses, and asks to accept them. CONFIRM=yes skips the
+# question. Runs before anything is pulled.
+licenses:
+	@CONFIRM="$(CONFIRM)" python3 scripts/license_notice.py $(if $(DEMO_FEEDS),--demo)
+
 # Chat Q&A, Whisper and SpeechT5 download their own models on first start.
-prereq: preflight asset-permissions
+prereq: preflight licenses asset-permissions
 	@if python3 scripts/demo_assets.py check-model; then
 	  echo 'YOLO26s INT8 cache verified'
 	else
@@ -270,6 +278,7 @@ prereq: preflight asset-permissions
 # Demo camera clips and their frame-rate caps (<video>:<max fps>).
 DEMO_CLIPS := person-bicycle-car-detection.mp4:30 pexels-34622113.mp4:25
 
+demo-prereq: DEMO_FEEDS := yes
 demo-prereq: prereq
 	@python3 scripts/demo_assets.py video
 	video="$$ASSET_ROOT/data/dlsps/demo-video"

@@ -175,6 +175,11 @@ def main():
                          capture_output=True, text=True).stdout
     assert 'demo_assets.py model' in own and 'demo_assets.py video' not in own and 'up -d --force-recreate cam' not in own
     assert 'demo_assets.py video' in dry and 'up -d --force-recreate cam1 cam2' in dry
+    # Licenses are shown and accepted before anything is pulled; demo starts add the videos.
+    for plan, demo in ((own, False), (dry, True)):
+        notice = plan.index('scripts/license_notice.py')
+        assert notice < plan.index('model-downloader -ec'), 'licenses must be accepted before any download'
+        assert ('license_notice.py --demo' in plan) == demo
     print('PASS: stock job request, atomic installation, cached reuse, corruption/failed-job rejection, timeout cancellation, video integrity, Make dry-run safety/full-stack failure cleanup, separate device groups, interrupted Chat export recovery, committed example mission packet not auto-loaded, localhost-only bindings')
 
 

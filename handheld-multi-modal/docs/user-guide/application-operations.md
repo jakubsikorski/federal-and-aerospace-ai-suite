@@ -14,7 +14,7 @@ the command list.
 
 ```bash
 # Deploy with your own cameras
-make prereq             # check host tools and devices; download YOLO26s INT8
+make prereq             # check host tools and devices; accept licenses; download YOLO26s INT8
 make up                 # start everything (runs prereq), no cameras: add them in the console
 # Deploy with the demo camera feeds
 make demo-prereq        # prereq + download and prepare the demo videos

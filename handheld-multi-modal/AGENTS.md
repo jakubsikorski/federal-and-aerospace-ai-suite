@@ -31,6 +31,8 @@ Read [README.md](README.md) before changing the deployment.
 ```bash
 make demo-up            # start with demo cameras (also restarts)
 make up                 # start without cameras
+# prereq, up and demo targets ask to accept third-party licenses; agents and scripts
+# must show the list to the user and pass CONFIRM=yes only after the user accepts.
 make status             # services and per-camera feed health
 make check              # read-only readiness check
 make pipelines-restart  # restart Backend and DLSPS only

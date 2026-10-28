@@ -94,6 +94,10 @@ make demo-mission  # optional: load the example mission from examples/
 make               # list all commands (status, stop, check, tests, ...)
 ```
 
+Before anything is downloaded, `make up` and `make demo-up` list the third-party software and
+models they download, with their licenses, and ask you to accept them. Add `CONFIRM=yes` to
+accept without the question.
+
 Open <https://localhost:8443/> on the device and trust `config/tls/server.crt`. For offline
 installs, see
 [Copy to Another Device](docs/user-guide/application-operations.md#copy-to-another-device-offline).
