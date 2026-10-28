@@ -629,7 +629,7 @@ def create_app() -> FastAPI:
     async def _json_body(request: Request):
         try:
             return await request.json()
-        except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
+        except (ValueError, RecursionError):  # includes JSON, UTF-8 and int-digit-limit errors
             return None
 
     @app.get("/api/cameras")

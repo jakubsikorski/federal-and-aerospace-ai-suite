@@ -5109,7 +5109,8 @@ def test_api_rejects_invalid_json_encoding_and_sqlite_id_overflow():
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
                                      base_url="http://test") as client:
             for path in ("/api/ask", "/api/mission/ask", "/api/speech/talk", "/api/speech/replay"):
-                for body in (b'\xff', b'{"text":"\xff"}', b'[' * 10000 + b']' * 10000):
+                for body in (b'\xff', b'{"text":"\xff"}', b'[' * 10000 + b']' * 10000,
+                             b'{"text":' + b'9' * 5000 + b'}'):
                     response = await client.post(path, content=body,
                                                  headers={"content-type": "application/json"})
                     assert response.status_code == 422, (path, response.text)
