@@ -28,18 +28,21 @@ SOURCE = "c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9"
 EXPORT_SCRIPT = "4d22f42ffe1df79800dc2ef1749f7e37f3d47bf1"
 VIDEO_URL = f"https://raw.githubusercontent.com/open-edge-platform/edge-ai-libraries/{SOURCE}/microservices/dlstreamer-pipeline-server/resources/videos/classroom.avi"
 VIDEO_SHA = "ca6d1b53d54a40ffda9d4ca1d0ab0cc43f744583324aaf97146c820e2b62a2fa"
-# (file name, source URL, sha256). Make re-encodes the mp4 clips to <stem>.maxN.ts
+# (file name, source URLs tried in order, sha256). Make re-encodes the mp4 clips to <stem>.maxN.ts
 # for the camera publishers; classroom.avi backs test_crops.py --live.
 # Pexels items are used under the Pexels License.
 VIDEOS = (
-    ("classroom.avi", VIDEO_URL, VIDEO_SHA),
+    ("classroom.avi", (VIDEO_URL,), VIDEO_SHA),
     # cam1: intel-iot-devkit/sample-videos (CC BY 4.0), H.264 768x432 12 fps, 53.9 s.
     ("person-bicycle-car-detection.mp4",
-     "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/"
-     "57978890822836f2b4743852f04f62fc511757e4/person-bicycle-car-detection.mp4",
+     ("https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/"
+      "57978890822836f2b4743852f04f62fc511757e4/person-bicycle-car-detection.mp4",),
      "452b11b7e0efbd019f1d9570d0c790e90416ad4ad29eec6003872d08443140ef"),
-    # cam2: Pexels video 34622113, H.264 1920x1080 59.94 fps, 20.0 s.
-    ("pexels-34622113.mp4", "https://www.pexels.com/download/video/34622113/?w=1920&h=1080",
+    # cam2: Pexels video 34622113, H.264 1920x1080 59.94 fps, 20.0 s. The direct file
+    # link comes first; the download page may answer scripts with a Cloudflare challenge.
+    ("pexels-34622113.mp4",
+     ("https://videos.pexels.com/video-files/34622113/14672977_1920_1080_60fps.mp4",
+      "https://www.pexels.com/download/video/34622113/?w=1920&h=1080"),
      "ef856e96a33f035b9ab8d6ecbd0c6006c8e9dd98c177af1e7ea0bd0702d7172f"),
 )
 APPROVED_HASHES = tuple(json.loads(
@@ -127,8 +130,21 @@ def download_model(root, timeout):
     print(f"Installed verified {MODEL} INT8: {target}")
 
 
+def fetch_verified(url, staged, digest):
+    """Download `url` to `staged`; return an error message, or None when the sha256 matches."""
+    # Pexels rejects urllib's default User-Agent with 403.
+    request = urllib.request.Request(url, headers={"User-Agent": "handheld-demo-assets/1.0"})
+    try:
+        # Pinned https URLs only; the download is sha256-verified below.
+        with urllib.request.urlopen(request, timeout=60) as response, staged.open("wb") as output:  # nosec B310
+            shutil.copyfileobj(response, output)
+    except OSError as error:
+        return str(error)
+    return None if sha(staged) == digest else "checksum mismatch"
+
+
 def download_video(root):
-    for name, url, digest in VIDEOS:
+    for name, urls, digest in VIDEOS:
         target = root / "data/dlsps/demo-video" / name
         if target.exists():
             if sha(target) != digest:
@@ -136,16 +152,18 @@ def download_video(root):
             print(f"Verified cached demo video: {target}")
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
+        failures = []
         with tempfile.TemporaryDirectory(prefix=".video-", dir=target.parent) as temporary:
             staged = Path(temporary) / target.name
-            # Pexels rejects urllib's default User-Agent with 403.
-            request = urllib.request.Request(url, headers={"User-Agent": "handheld-demo-assets/1.0"})
-            # Pinned https URL only; the download is sha256-verified below.
-            with urllib.request.urlopen(request, timeout=60) as response, staged.open("wb") as output:  # nosec B310
-                shutil.copyfileobj(response, output)
-            if sha(staged) != digest:
-                raise ValueError(f"Downloaded demo video checksum mismatch: {name}")
-            staged.rename(target)
+            for url in urls:
+                problem = fetch_verified(url, staged, digest)
+                if problem is None:
+                    staged.rename(target)
+                    break
+                failures.append(f"{url}: {problem}")
+                print(f"Demo video source failed, trying the next one: {failures[-1]}")
+            else:
+                raise RuntimeError(f"Could not download demo video {name}: " + "; ".join(failures))
         print(f"Downloaded pinned demo video: {target}")
 
 

@@ -50,7 +50,7 @@ def demo_videos():
     sys.path.insert(0, str(REPO / "scripts"))
     from demo_assets import VIDEOS  # pylint: disable=import-outside-toplevel
     return [{"PackageName": name, "PackageLicenseConcluded": DEMO_VIDEO_LICENSES.get(name, "see source"),
-             "PackageDownloadLocation": url} for name, url, _ in VIDEOS]
+             "PackageDownloadLocation": urls[0]} for name, urls, _ in VIDEOS]
 
 
 def cells(pkg):
