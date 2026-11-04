@@ -21,12 +21,14 @@ import tempfile
 import threading
 import time
 import types
+import uuid
 import zipfile
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 
 import httpx
+import yaml
 
 sys.path.insert(0, str(Path(__file__).parent))
 # `make test` runs inside the deployed Backend, whose demo camera count must not
@@ -5122,6 +5124,559 @@ def test_api_rejects_invalid_json_encoding_and_sqlite_id_overflow():
                     response = await client.get(f"/api/tracks/{track_id}/{suffix}")
                     assert response.status_code == 422, response.text
     asyncio.run(check())
+
+
+
+# -- whole application, offline ------------------------------------------------
+# One Backend process brought up through its real lifespan, with every stock
+# service answered in-process. Every API route is driven through the ASGI app,
+# so a weekly run proves the application wiring, not only the units.
+
+class _Upstream:
+    """Pinned stock services (Chat Q&A, Whisper, TTS, DLSPS, MediaMTX, Alert
+    Agent, Metrics Manager) answering the requests Backend actually sends."""
+
+    def __init__(self, pipeline, marker):
+        self.pipeline = pipeline
+        self.marker = marker
+        self.lock = threading.Lock()
+        self.instances = {}
+        self.documents = set()
+        self.dispatched = []
+        self.fail = set()
+        self.transcript = "What is on Camera 1?"
+
+    def __call__(self, request):
+        host, path, method = request.url.host, request.url.path, request.method
+        if host in self.fail:
+            return httpx.Response(503, json={"detail": "down"})
+        with self.lock:
+            handler = getattr(self, "_" + host.replace("-", "_"))
+            return handler(request, path, method)
+
+    def _chatqna(self, request, path, method):
+        if path == "/model":
+            return httpx.Response(200, json={"llm_model": "Intel/neural-chat-7b-v3-3"})
+        if path == "/health":
+            return httpx.Response(200, json={"status": "ok"})
+        if path == "/chat":
+            body = json.loads(request.content)
+            if body.get("stream"):
+                return httpx.Response(200, headers={"content-type": "text/event-stream"},
+                                      content=b"data: Not specified\n\n")
+            return httpx.Response(200, json={
+                "status": "Success", "metadata": "prompt" + self.marker + " Not specified"})
+        if path == "/documents" and method == "GET":
+            return httpx.Response(200, json={"metadata": {"documents": sorted(self.documents)}})
+        if path == "/documents" and method == "POST":
+            name = request.content.split(b'filename="', 1)[1].split(b'"', 1)[0].decode()
+            self.documents.add(name)
+            return httpx.Response(200, json={"status": "Success"})
+        if path == "/documents" and method == "DELETE":
+            params = dict(request.url.params)
+            if params.get("delete_all") == "true":
+                self.documents.clear()
+            else:
+                self.documents.discard(params.get("document"))
+            return httpx.Response(204)
+        raise AssertionError(f"chatqna {method} {path}")
+
+    def _audio_analyzer(self, request, path, method):
+        if path == "/health":
+            return httpx.Response(200, json={"status": "ok"})
+        if path == "/v1/audio/transcriptions":
+            return httpx.Response(200, json={"text": self.transcript})
+        raise AssertionError(f"audio-analyzer {method} {path}")
+
+    def _tts(self, request, path, method):
+        if path == "/v1/model-info":
+            return httpx.Response(200, json={"model": "microsoft/speecht5_tts",
+                                             "device": os.environ.get("TTS_DEVICE") or "CPU"})
+        if path == "/v1/audio/speech":
+            return httpx.Response(200, json={
+                "audio_base64": base64.b64encode(_wav(0.05)).decode()})
+        raise AssertionError(f"tts {method} {path}")
+
+    def _dlsps(self, request, path, method):
+        if path == "/pipelines" and method == "GET":
+            return httpx.Response(200, json=[{"name": self.pipeline, "version": "1"}])
+        if path == "/pipelines/status":
+            return httpx.Response(200, json=[{"id": i, "state": s}
+                                             for i, s in self.instances.items()])
+        if method == "POST" and path.startswith("/pipelines/user_defined_pipelines/"):
+            instance = "i" + uuid.uuid4().hex[:8]
+            self.instances[instance] = "RUNNING"
+            return httpx.Response(200, json=instance)
+        if method == "GET" and path.endswith("/status"):
+            return httpx.Response(200, json={"state": self.instances.get(
+                path.split("/")[2], "ERROR")})
+        if method == "DELETE":
+            self.instances.pop(path.rsplit("/", 1)[-1], None)
+            return httpx.Response(200, json={})
+        raise AssertionError(f"dlsps {method} {path}")
+
+    def _mediamtx(self, request, path, method):
+        if path == "/v3/paths/list":
+            return httpx.Response(200, json={"items": [{"name": "cam1", "ready": True}]})
+        if path.endswith("/list"):
+            return httpx.Response(200, json={"items": []})
+        return httpx.Response(200, json={})
+
+    def _alert_agent(self, request, path, method):
+        if path == "/api/v1/health":
+            return httpx.Response(200, json={"status": "healthy"})
+        if path == "/api/v1/events":
+            time.sleep(0.05)
+            event = json.dumps({"event_id": "m-observed", "timestamp": "2026-01-01T00:00:00Z"})
+            return httpx.Response(200, headers={"content-type": "text/event-stream"},
+                                  content=f"event: alert_action\ndata: {event}\n\n"
+                                          "event: alert_action\ndata: not-json\n\n".encode())
+        if path == "/api/v1/actions/execute":
+            self.dispatched.append(json.loads(request.content))
+            return httpx.Response(200, json={"actions_taken": ["log_alert"]})
+        raise AssertionError(f"alert-agent {method} {path}")
+
+    def _metrics(self, request, path, method):
+        now = int(time.time() * 1000)
+        return httpx.Response(200, json={"metrics": {
+            "a": {"name": "mem_used_percent", "fields": {"value": 41.5},
+                  "tags": {"host": "handheld"}, "timestamp": now},
+            "b": {"name": "cpu_usage_idle", "fields": {"value": 90.0},
+                  "tags": {"host": "handheld", "cpu": "cpu-total"}, "timestamp": now}}})
+
+
+class _OfflineMqtt:
+    """paho client stand-in: connects at once and never touches the network."""
+
+    def __init__(self, *_args, **_kwargs):
+        self.subscribed = []
+
+    def connect(self, _host, _port, keepalive=60):
+        self.on_connect(self, None, None, "Success", None)
+
+    def subscribe(self, topics):
+        self.subscribed.append(topics)
+
+    def loop_start(self):
+        pass
+
+    def loop_stop(self):
+        pass
+
+    def disconnect(self):
+        pass
+
+
+def _wait_for(predicate, timeout=10.0, message="condition"):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        value = predicate()
+        if value:
+            return value
+        time.sleep(0.05)
+    raise AssertionError(f"timed out waiting for {message}")
+
+
+def test_application_lifespan_and_every_route_offline():
+    """Start Backend through its real lifespan and drive every API route.
+
+    Stock services are answered in-process and MQTT is replaced, so this runs
+    with `--network none`. It covers startup ordering, the supervisor, alert
+    dispatch, speech, voice, mission, images, history clear and shutdown.
+    """
+    import asyncio
+    import functools
+    import logging
+    import shutil
+    from unittest import mock
+
+    import paho.mqtt.client as paho
+    from app import alerts as alerting
+    from app import main, pipelines
+    from app.assistant import load_prompt_template, resolve_answer_marker
+
+    repo = Path(__file__).resolve().parent.parent
+    saved = (pipelines.PIPELINE, pipelines.PREDICTED_CONFIDENCE,
+             list(logging.getLogger().handlers), logging.getLogger().level)
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        placement = root / "model-placement"
+        placement.mkdir()
+        shutil.copy(repo / "config/chatqna/config.yaml", placement / "chatqna.yaml")
+        shutil.copy(repo / "config/audio-analyzer/config.yaml", placement / "audio-analyzer.yaml")
+        shutil.copy(repo / "config/tts/config.yaml", placement / "tts.yaml")
+        shutil.copy(repo / "config/dlsps/npu/config.json", placement / "dlsps.json")
+        dlsps_json = str(placement / "dlsps.json")
+        pipeline = pipelines.resolve_pipeline_name(dlsps_json)
+        marker = resolve_answer_marker(load_prompt_template(str(placement)))
+        crops = root / "crops"
+        (crops / "cam1").mkdir(parents=True)
+        (root / "metadata.yaml").write_text("task: detect\nnames:\n  0: person\n  1: car\n")
+        cleanup = root / "cleanup.py"
+        cleanup.write_text(
+            "import sys, pathlib\n"
+            "store = pathlib.Path(sys.argv[2])\n"
+            "store.mkdir(parents=True, exist_ok=True)\n"
+            "(store / 'generation').write_text('g2')\n")
+        config = root / "backend.yaml"
+        config.write_text(yaml.safe_dump({
+            "db_path": str(root / "app.db"),
+            "mission_sources_dir": str(root / "mission_sources"),
+            "mission_ingest_poll_seconds": 0.01,
+            "crop_dir": str(crops),
+            "crop_cleanup_script": str(cleanup),
+            "detector_metadata_path": str(root / "metadata.yaml"),
+            "detector_profile_path": str(root / "unused-profile.json"),
+            "streams": [{"stream_id": "cam1", "display_name": "Camera 1",
+                         "sort_order": 0, "enabled": True}],
+            "takeover_seconds": 0.1,
+            "supervise_seconds": 0.1,
+            "pipeline_start_poll_seconds": 0.0,
+            "min_track_observations": 1,
+            "alert_speech_floor_seconds": 0.0,
+            "log_level": "WARNING",
+        }))
+        upstream = _Upstream(pipeline, marker)
+        real_client = httpx.Client
+
+        def offline_client(*_args, **kwargs):
+            return real_client(transport=httpx.MockTransport(upstream),
+                               timeout=kwargs.get("timeout", 5.0))
+
+        patches = [
+            mock.patch.dict(os.environ, {"BACKEND_CONFIG": str(config)}),
+            mock.patch("httpx.Client", offline_client),
+            mock.patch.object(paho, "Client", _OfflineMqtt),
+            mock.patch.object(pipelines, "PIPELINE_CONFIG_PATH", dlsps_json),
+            mock.patch.object(pipelines, "resolve_pipeline_name",
+                              functools.partial(pipelines.resolve_pipeline_name, dlsps_json)),
+            mock.patch.object(pipelines, "validate_detector_profile", lambda *a, **k: None),
+            mock.patch.object(main, "load_prompt_template",
+                              functools.partial(load_prompt_template, str(placement))),
+            mock.patch.object(main, "Placement",
+                              functools.partial(main.Placement, directory=str(placement))),
+        ]
+        for patch in patches:
+            patch.start()
+        pipelines.shutdown.clear()
+        pipelines.wake.clear()
+        for table in (pipelines._failures, pipelines._retry_after,
+                      pipelines._accepted_at, pipelines._cleaned_terminal):
+            table.clear()
+        try:
+            asyncio.run(_drive_application(main.create_app(), upstream, root, alerting))
+        finally:
+            for patch in reversed(patches):
+                patch.stop()
+            pipelines.shutdown.clear()
+            pipelines.wake.clear()
+            pipelines.PIPELINE, pipelines.PREDICTED_CONFIDENCE = saved[0], saved[1]
+            logging.getLogger().handlers[:] = saved[2]
+            logging.getLogger().setLevel(saved[3])
+        # Shutdown stopped every pipeline Backend owned.
+        assert upstream.instances == {}, upstream.instances
+
+
+async def _drive_application(app, upstream, root, alerting):
+    import asyncio
+    from app import pipelines
+
+    async with app.router.lifespan_context(app):
+        state = app.state
+        assert state.ingest.client.subscribed, "ingest must subscribe on connect"
+        assert len(upstream.instances) == 1, "startup reconcile starts the enabled camera"
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                     base_url="http://test", timeout=30) as client:
+            async def ok(method, url, status=200, **kwargs):
+                response = await client.request(method, url, **kwargs)
+                assert response.status_code == status, (method, url, response.status_code,
+                                                        response.text[:300])
+                return response.json() if response.content else None
+
+            # -- readiness and inventory --------------------------------
+            health = (await ok("GET", "/api/health"))["data"]
+            assert health["status"] == "ready", health
+            upstream.fail = {"chatqna", "metrics"}
+            health = (await ok("GET", "/api/health"))["data"]
+            assert health["status"] == "blocked" and "chatqna" in health["blocking_failures"]
+            assert "metrics" in health["degraded"], health
+            upstream.fail = set()
+            models = (await ok("GET", "/api/models"))["data"]
+            assert models, models
+            streams = (await ok("GET", "/api/streams"))["data"]
+            assert [s["stream_id"] for s in streams] == ["cam1"]
+            assert streams[0]["whep_path"] == "/annotated1/whep"
+            _wait_for(lambda: state.telemetry.snapshot()["status"] != "unavailable",
+                      message="telemetry poll")
+            assert (await ok("GET", "/api/metrics"))["data"]["metrics"]
+
+            # -- observations and evidence ------------------------------
+            now = time.time()
+            for offset in (0.0, 0.2, 0.4):
+                _send(state.ingest, _observation("cam1", 7, observed_at=now + offset),
+                      topic="detections/live")
+            candidate = "c" * 32
+            (root / "crops/cam1" / (candidate + ".jpg")).write_bytes(b"\xff\xd8jpeg\xff\xd9")
+            _send(state.ingest, _crop("cam1", 7, candidate, observed_at=now + 0.1))
+            state.ingest.write(lambda c: None)
+            current = (await ok("GET", "/api/streams/cam1/current"))["data"]
+            assert current, current
+            tracks = (await ok("GET", "/api/streams/cam1/tracks?classes=person"))["data"]
+            track_id = tracks["tracks"][0]["track_id"]
+            await ok("GET", "/api/streams/cam9/current", 404)
+            await ok("GET", "/api/streams/cam9/tracks", 404)
+            listed = (await ok("GET", f"/api/tracks/{track_id}/candidates"))["data"]
+            assert listed["candidates"][0]["candidate_id"] == candidate
+            await ok("GET", "/api/tracks/999999/candidates", 404)
+            assert (await ok("GET", "/api/ingest/stats"))["data"]
+            image = await client.get(f"/api/candidates/{candidate}/image")
+            assert image.status_code == 200 and image.content.startswith(b"\xff\xd8")
+            cached = await client.get(f"/api/candidates/{candidate}/image",
+                                      headers={"if-none-match": image.headers["etag"]})
+            assert cached.status_code == 304
+            assert (await client.get(f"/api/tracks/{track_id}/snip")).status_code == 200
+            await ok("GET", "/api/candidates/unknown/image", 404)
+            await ok("GET", "/api/tracks/999999/snip", 404)
+
+            # -- rules, dispatch and incidents --------------------------
+            rules = (await ok("GET", "/api/rules"))["data"]
+            assert rules["classes"] == ["person", "car"], rules
+            rule = (await ok("POST", "/api/rules", 201, json={
+                "name": "Person", "class_label": "person", "speak": True}))["data"]
+            await ok("POST", "/api/rules", 422, json={"class_label": "boat"})
+            await ok("PATCH", f"/api/rules/{rule['rule_id']}", json={"name": "Person seen"})
+            await ok("PATCH", "/api/rules/rmissing", 404, json={"name": "x"})
+            await ok("PATCH", f"/api/rules/{rule['rule_id']}", 422, json={"zone": 5})
+            later = time.time()
+            for offset in (0.0, 0.2, 0.4):
+                _send(state.ingest, _observation("cam1", 8, observed_at=later + offset,
+                                                 confidence=0.95), topic="detections/live")
+            state.ingest.write(lambda c: None)
+            _wait_for(lambda: upstream.dispatched, message="alert dispatch")
+            body = (await ok("GET", "/api/alerts"))["data"]
+            assert body["alerts"] and body["incidents"], body
+            match_id = body["alerts"][0]["match_id"]
+            incident = body["incidents"][0]["incident_id"]
+            await ok("POST", f"/api/alerts/{match_id}/retry", 409)
+            assert (await ok("GET", f"/api/incidents/{incident}/tracks"))["data"]["tracks"]
+            await ok("GET", "/api/incidents/unknown/tracks", 404)
+            assert (await ok("POST", f"/api/incidents/{incident}/speak"))["data"]["speech_id"]
+            await ok("POST", "/api/incidents/unknown/speak", 404)
+            await ok("POST", "/api/incidents/speak-open")
+            await ok("POST", f"/api/incidents/{incident}/snooze", 422, json={"minutes": "x"})
+            await ok("POST", f"/api/incidents/{incident}/acknowledge", 422, json=[1])
+            await ok("POST", f"/api/incidents/{incident}/acknowledge")
+            await ok("POST", f"/api/incidents/{incident}/acknowledge", 409)
+            await ok("DELETE", f"/api/incidents/{incident}")
+            await ok("DELETE", "/api/incidents/unknown", 404)
+            await ok("DELETE", f"/api/rules/{rule['rule_id']}", 422)
+            await ok("DELETE", f"/api/rules/{rule['rule_id']}?confirm={rule['rule_id']}")
+            await ok("DELETE", "/api/rules/rmissing?confirm=rmissing", 404)
+
+            # -- speech and voice ---------------------------------------
+            speech = (await ok("GET", "/api/speech?trace=5"))["data"]
+            assert "trace" in speech, speech
+            await ok("POST", "/api/speech/unknown/playback", 422, json={"event": "bogus"})
+            await ok("POST", "/api/speech/unknown/playback", json={"event": "ended"})
+            await ok("POST", "/api/speech/talk", json={"held": True})
+            await ok("POST", "/api/speech/talk", json={"held": False, "answer_pending": True})
+            await ok("POST", "/api/speech/talk", 422, json={"held": "yes"})
+            spoken = await ok("POST", "/api/voice/transcribe?speak=true", content=_wav(1.0))
+            assert spoken["data"]["text"] == upstream.transcript, spoken
+            await ok("POST", "/api/voice/transcribe", 422, content=b"not a wav")
+            await ok("POST", "/api/voice/transcribe", 413, content=b"\0" * (10 * 1024 * 1024 + 1))
+            upstream.transcript = "x" * 600
+            await ok("POST", "/api/voice/transcribe", 422, content=_wav(1.0))
+            upstream.fail = {"audio-analyzer"}
+            await ok("POST", "/api/voice/transcribe", 503, content=_wav(1.0))
+            upstream.fail = set()
+            await ok("POST", "/api/voice/cancel")
+            replay = (await ok("POST", "/api/speech/replay", json={"text": "Camera one is clear."}))
+            assert replay["data"]["speech_id"], replay
+            await ok("POST", "/api/speech/replay", 422, json={"text": ""})
+            await ok("POST", "/api/speech/stop")
+
+            # -- assistant and mission ----------------------------------
+            assert (await ok("GET", "/api/history/options"))["data"]
+            asked = await ok("POST", "/api/ask", json={"text": "What is on Camera 1 now?",
+                                                         "selected_stream": "cam1"})
+            assert asked["data"], asked
+            await ok("POST", "/api/assistant/reset?conversation_id=bad", 422)
+            await ok("POST", "/api/assistant/reset?conversation_id=" + "a" * 32)
+            _wait_for(lambda: not state.mission._brief_active(), message="startup reconcile")
+            status = (await ok("GET", "/api/mission/documents"))["data"]
+            assert status["sources"] == [], status
+            uploaded = await ok("POST", "/api/mission/documents", 201,
+                                files={"files": ("mission.pdf", _pdf_bytes(), "application/pdf")})
+            assert uploaded["data"]["sources"][0]["status"] == "ready", uploaded
+            await ok("POST", "/api/mission/documents", 422,
+                     files={"files": ("notes.txt", b"plain", "text/plain")})
+            await ok("POST", "/api/mission/documents", 422, files=[
+                ("files", ("a.pdf", _pdf_bytes(), "application/pdf")),
+                ("files", ("b.pdf", _pdf_bytes(), "application/pdf"))])
+            await ok("GET", "/api/mission/brief")
+            answer = await ok("POST", "/api/mission/ask", json={"text": "Who leads?"})
+            assert answer["data"], answer
+            await ok("POST", "/api/mission/ask", 422, json={"question": "x"})
+            await ok("POST", "/api/mission/reingest", 422)
+            await ok("POST", "/api/mission/reingest?confirm=REINGEST%20MISSION")
+            _wait_for(lambda: not state.mission._brief_active(), message="reingest")
+            await ok("DELETE", "/api/mission/documents", 422)
+            await ok("DELETE", "/api/mission/documents?document=mission.pdf", 422)
+            await ok("DELETE", "/api/mission/documents?document=mission.pdf&confirm=mission.pdf")
+            await ok("DELETE", "/api/mission/documents?delete_all=true", 422)
+            upstream.fail = {"chatqna"}
+            await ok("POST", "/api/mission/documents", 503,
+                     files={"files": ("mission.pdf", _pdf_bytes(), "application/pdf")})
+            upstream.fail = set()
+
+            # -- per-camera history clear -------------------------------
+            await ok("POST", "/api/streams/cam9/clear?confirm=cam9", 404)
+            await ok("POST", "/api/streams/cam1/clear?confirm=cam2", 400)
+            state.clear_lock.acquire()
+            await ok("POST", "/api/streams/cam1/clear?confirm=cam1", 409)
+            state.clear_lock.release()
+            cleared = (await ok("POST", "/api/streams/cam1/clear?confirm=cam1"))["data"]
+            assert cleared["cleared"] and cleared["history_generation"] == "g2", cleared
+            assert cleared["pipeline_restarted"], cleared
+            assert (await ok("GET", f"/api/tracks/{track_id}/candidates", 404)) is not None
+            script = state.cfg["crop_cleanup_script"]
+            state.cfg["crop_cleanup_script"] = str(root / "missing.py")
+            failed = await client.post("/api/streams/cam1/clear?confirm=cam1")
+            assert failed.status_code == 503 and failed.json()["data"]["cleared"] is False
+            state.cfg["crop_cleanup_script"] = script
+
+            # -- live event stream --------------------------------------
+            async def stop_stream():
+                await asyncio.sleep(1.5)
+                pipelines.shutdown.set()
+
+            stopper = asyncio.create_task(stop_stream())
+            events = await client.get("/api/stream?classes=person")
+            await stopper
+            kinds = {line[7:] for line in events.text.splitlines() if line.startswith("event: ")}
+            assert {"mode", "feed", "track", "alert", "telemetry", "speech"} <= kinds, kinds
+
+
+
+def test_reset_refuses_rather_than_reporting_a_false_clear():
+    """Every failed step leaves history in place and the camera IDLE, not DRAINING."""
+    import fcntl
+    from unittest import mock
+    from app import reset
+
+    with tempfile.TemporaryDirectory() as tmp:
+        pipelines, conn, cfg = _pipeline_fixture(tmp)
+        store = Path(tmp) / "cam1"
+        store.mkdir()
+        cfg["crop_cleanup_script"] = str(Path(tmp) / "cleanup.py")
+        client = FakeDlsps()
+
+        def expect(message, stream_id="cam1"):
+            try:
+                reset.clear_camera(conn, cfg, client, None, stream_id)
+            except reset.ResetError as exc:
+                assert message in str(exc), exc
+            else:
+                raise AssertionError(f"clear reported success; expected {message!r}")
+            row = conn.execute("SELECT clear_state FROM streams WHERE stream_id='cam1'").fetchone()
+            assert row["clear_state"] == "IDLE", dict(row)
+
+        expect("unknown camera", "cam9")
+        expect("is not mounted")
+        Path(cfg["crop_cleanup_script"]).write_text("import sys\nsys.exit('store is locked')\n")
+        expect("cleanup exited 1: store is locked")
+
+        # A live producer holds the lock and keeps status.json fresh.
+        with open(store / ".lock", "w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            assert reset.crop_store_busy(tmp, "cam1", 30.0) is True, "no status.json is busy"
+            (store / "status.json").write_text("{}")
+            assert reset.crop_store_busy(tmp, "cam1", 30.0) is True
+            assert reset.crop_store_busy(tmp, "cam1", 0.0) is False, "stale heartbeat is free"
+            with mock.patch.object(reset, "LOCK_GRACE_SECONDS", 0.0), \
+                    mock.patch.object(reset.time, "sleep", lambda _s: None):
+                cfg["takeover_seconds"] = 0.05
+                with mock.patch.object(reset, "crop_store_busy", lambda *a: True):
+                    expect("still holds its lock")
+        os.chmod(store / ".lock", 0)
+        if os.geteuid() != 0:
+            assert reset.crop_store_busy(tmp, "cam1", 30.0) is True, "unopenable lock is busy"
+        os.chmod(store / ".lock", 0o600)
+
+        # Cleanup run as root must not leave files the producer cannot reopen.
+        (store / "generation").write_text("g9")
+        try:
+            reset._check_producer_can_write(str(store), {"user": os.getuid() + 1})
+        except reset.ResetError as exc:
+            assert "generation" in str(exc) or ".lock" in str(exc), exc
+        else:
+            raise AssertionError("wrong-owner store files were accepted")
+        reset._check_producer_can_write(str(store), {"user": os.getuid()})
+        assert reset._read_generation(cfg, "cam9") is None
+
+        # An interrupted clear that still cannot finish is logged and left for later.
+        conn.execute("UPDATE streams SET clear_state='DRAINING'")
+        conn.commit()
+        assert reset.resume_interrupted(conn, cfg, client, None) == []
+
+        # Without ingest, a failing write is rolled back on the request connection.
+        try:
+            reset._write(None, conn, lambda c: c.execute("UPDATE no_such_table SET x=1"))
+        except sqlite3.OperationalError:
+            pass
+        else:
+            raise AssertionError("failing write was swallowed")
+        conn.close()
+
+
+def test_telemetry_poller_reports_unavailable_and_timestamp_units():
+    from app import telemetry
+
+    assert telemetry._epoch_ms("bad") is None and telemetry._epoch_ms(5) is None
+    assert telemetry._epoch_ms(1.7e9) == 1_700_000_000_000
+    assert telemetry._epoch_ms(1.7e12) == 1_700_000_000_000
+    assert telemetry._epoch_ms(1.7e18) == 1_700_000_000_000
+    assert telemetry.normalize([], "h")["reason"] == "invalid_payload"
+
+    class Down:
+        def metrics_latest(self):
+            raise httpx.ConnectError("metrics manager is down")
+
+    poller = telemetry.Telemetry(Down(), "handheld")
+    assert poller.snapshot()["reason"] == "starting"
+    poller.start()
+    _wait_for(lambda: poller.snapshot()["reason"] == "metrics_manager_unavailable",
+              message="failed poll")
+    poller.close()
+    assert not poller.thread.is_alive()
+
+    now = time.time()
+    sample = lambda name, value, **tags: {"name": name, "fields": {"value": value},
+                                          "tags": {"host": "h", **tags}, "timestamp": now}
+    snapshot = telemetry.normalize({"metrics": {
+        "1": sample("mem_total", 1000.0), "2": sample("mem_available_percent", 25.0),
+        "3": sample("temp_temp", 55.0, sensor="coretemp_package_id_0"),
+        "4": sample("gpu_engine_usage_usage", 12.0, engine="render"),
+    }}, "h", now=now)
+    ids = {m["id"]: m["value"] for m in snapshot["metrics"]}
+    assert ids["memory_available_bytes"] == 250.0, ids
+    assert ids["cpu_temperature_c"] == 55.0 and ids["gpu_engine_render_percent"] == 12.0, ids
+
+
+def test_server_signal_stops_streams_before_uvicorn_drains_them():
+    """SSE loops watch pipelines.shutdown; uvicorn alone would wait for them."""
+    import uvicorn
+    from app import pipelines
+    from app.__main__ import Server
+
+    server = Server(uvicorn.Config("app.main:app"))
+    pipelines.shutdown.clear()
+    try:
+        server.handle_exit(2, None)
+        assert pipelines.shutdown.is_set() and server.should_exit
+    finally:
+        pipelines.shutdown.clear()
 
 
 if __name__ == "__main__":

@@ -43,8 +43,8 @@ removed.
 | `TTS_DEVICE` | `CPU` | SpeechT5 device, `CPU` or `GPU` |
 | `ASSET_ROOT` | application directory | Root for `data/` and generated `config/` |
 | `WAIT_SECONDS` | `360` | Video and telemetry readiness budget, in seconds |
-| `MODEL_WAIT_SECONDS` | `3600` | YOLO download and export budget, in seconds |
-| `AI_WAIT_SECONDS` | `3600` | Chat Q&A, Whisper, and SpeechT5 readiness budget, in seconds |
+| `MODEL_WAIT_SECONDS` | `5400` | YOLO download and export budget, in seconds |
+| `AI_WAIT_SECONDS` | `5400` | Chat Q&A, Whisper, and SpeechT5 readiness budget, in seconds |
 
 Pass the same overrides to later Make commands, for example
 `make demo-up ASSET_ROOT=/path/to/assets CAMERAS=1`.
@@ -151,7 +151,7 @@ To swap the detector model:
 - **Video is unplayable** — the annotated video is H.264 over WebRTC; the browser must support
   H.264. For remote access, see [Remote Access Through an SSH Tunnel](access-application.md#remote-access-through-an-ssh-tunnel).
 - **A model card shows Starting** — the service has not answered yet; on the first start it may
-  still be downloading or converting its model (up to an hour).
+  still be downloading or converting its model (up to 90 minutes).
 - **Startup fails behind a proxy** — include `localhost,127.0.0.1` in `no_proxy` and `NO_PROXY`;
   see [Configuring the Proxy](deploy-applications.md#optional-configuring-the-proxy).
 
@@ -159,8 +159,29 @@ To swap the detector model:
 
 ```bash
 make test           # Backend checks in the Backend image against this directory
-make test-ui        # browser checks; requires Firefox and geckodriver
+make test-ui        # browser checks in headless Firefox
 make test-assets    # asset preparation and Make dry-run checks
 make test-fuzz      # REST API fuzzing of the Backend (see backend/FUZZING.md)
 make test-history   # history query checks against the running demo (needs demo-up)
+make test-coverage  # Backend checks with a line coverage gate (COVERAGE_MIN, default 90)
+make test-crops     # crop producer checks in the pinned DLSPS image; no NPU needed
+make test-crops-live  # real NPU and VA crop path inside the running DLSPS service
 ```
+
+For scheduled (for example weekly) runs, use the two suites:
+
+```bash
+make -k test-all    # offline: test-coverage, test-crops, test-assets, test-ui
+make -k test-live   # running application: test-history, test-crops-live
+```
+
+- Every test runs in a container; the host needs only Docker and Make. The offline tests use
+  `handheld/backend:test`, built from the Backend Dockerfile's `test` stage (Python
+  dependencies, coverage, Make, headless Firefox ESR, and a pinned geckodriver). Building it
+  the first time needs internet access.
+- `test-all` does not need the started application, models, or network access.
+- `test-live` needs `make up` or `make demo-up` first; `test-history` expects the demo cameras.
+- `-k` runs every check even after one fails; Make still exits non-zero.
+- `COVERAGE_OUTPUT=<dir>` writes `coverage.xml` for CI reporting.
+- `FUZZ_EVIDENCE=<dir>` writes fuzzing results outside the repository instead of
+  `docs/application/evidence/SDL504-api-fuzz`.

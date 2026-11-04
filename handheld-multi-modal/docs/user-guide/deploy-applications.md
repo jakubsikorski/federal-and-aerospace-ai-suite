@@ -112,7 +112,7 @@ demo cameras produce detections and annotated video. While waiting, Make prints 
 the latest error every 30 seconds.
 
 The first start downloads and converts the language, speech-to-text, and text-to-speech models
-through their stock microservices and can take up to an hour, depending on network bandwidth.
+through their stock microservices and can take up to 90 minutes, depending on network bandwidth.
 Later starts use the cached models and do not need Internet access.
 
 Run `make` on its own to list all commands. Use `CAMERAS=1` to start a single demo camera and

@@ -39,7 +39,13 @@ make pipelines-restart  # restart Backend and DLSPS only
 make stop               # stop every service
 make down               # remove containers; keep models, history, and TLS
 make test               # Backend checks in the Backend image
+make test-all           # offline suite, 90% Backend coverage gate (no running stack)
+# Every test runs in a container; the host needs only Docker and Make.
+make test-live          # checks against the running stack (after up or demo-up)
 ```
+
+New Backend code needs tests in `backend/test_backend.py` that keep `make test-coverage`
+at or above `COVERAGE_MIN` (90%).
 
 `clean-history` and `clean-all` are destructive and require `CONFIRM=yes`.
 

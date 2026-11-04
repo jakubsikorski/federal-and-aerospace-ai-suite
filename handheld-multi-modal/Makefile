@@ -12,8 +12,8 @@ CAMERAS ?= 2
 ASSET_ROOT ?= $(CURDIR)
 export ASSET_ROOT := $(abspath $(ASSET_ROOT))
 export WAIT_SECONDS ?= 360
-MODEL_WAIT_SECONDS ?= 3600
-AI_WAIT_SECONDS ?= 3600
+MODEL_WAIT_SECONDS ?= 5400
+AI_WAIT_SECONDS ?= 5400
 export RENDER_GID ?= $(shell stat -c '%g' /dev/dri/renderD128 2>/dev/null)
 export ACCEL_GID ?= $(shell stat -c '%g' /dev/accel/accel0 2>/dev/null)
 export ASSET_GID := $(shell id -g)
@@ -39,7 +39,8 @@ ANNOTATED_IDS := $(patsubst cam%,annotated%,$(CAMERA_IDS))
   pipelines-restart down clean clean-demo clean-history clean-all \
   demo-stop demo-down demo-status demo-pipelines-restart \
   bundle bundle-load preflight licenses setup tls asset-permissions model-downloader-up \
-  check test test-ui test-assets test-history
+  check test test-ui test-assets test-history test-image test-coverage test-crops \
+  test-crops-live test-all test-live
 
 help:
 	@echo 'Handheld operator application'
@@ -77,11 +78,16 @@ help:
 	@echo
 	@echo 'Checks: make check          Images, models and demo videos complete; once started, every service answers'
 	@echo '        make test | test-ui | test-assets | test-fuzz | test-history (needs demo-up)'
+	@echo '        Every test runs in a container; the host needs only Docker and Make.'
+	@echo '        make test-all          Offline suite: backend with coverage gate, crops, assets, UI'
+	@echo '        make test-live         Running-stack suite (needs up or demo-up): history, NPU crop path'
+	@echo '        Test options: COVERAGE_MIN=<percent> (default 90)  COVERAGE_OUTPUT=<dir> (writes coverage.xml)'
+	@echo '                      FUZZ_EVIDENCE=<dir> (default docs/application/evidence/SDL504-api-fuzz)'
 	@echo
 	@echo 'Options: CAMERAS=1..2 demo cameras (default 2)  TTS_DEVICE=CPU|GPU (default CPU)'
 	@echo '         ASSET_ROOT=<path>'
 	@echo '         CONFIRM=yes  accept the third-party licenses without asking (prereq, up and demo targets)'
-	@echo 'The first start downloads several GB of models (internet, up to an hour); later starts run offline.'
+	@echo 'The first start downloads several GB of models (internet, up to 90 minutes); later starts run offline.'
 	@echo 'Each start first lists the third-party software it downloads and their licenses, and asks to accept them.'
 
 # Shown while waiting for services that download on their first start.
@@ -637,19 +643,55 @@ check: preflight
 	  echo 'Ready for make up or make demo-up; no internet needed.'
 	fi
 
+# Weekly automation: every test runs in a container, so the host needs only
+# Docker and Make. `make test-all` is offline; `make test-live` needs the
+# started stack.
+TEST_IMAGE ?= handheld/backend:dev
+COVERAGE_MIN ?= 90
+COVERAGE_OUTPUT ?=
+FUZZ_EVIDENCE ?= docs/application/evidence/SDL504-api-fuzz
+DLSPS_IMAGE := $(shell awk '/^  dlsps:/{f=1} f&&/image:/{print $$2; exit}' compose/handheld-multi-modal.yaml)
+TEST_RUN := docker run --rm --user "$$(id -u):$$(id -g)" --network none --read-only --cap-drop ALL \
+  --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev,size=512m -e PYTHONDONTWRITEBYTECODE=1
+
 test:
-	docker run --rm --network none -v "$(CURDIR):/srv" -w /srv/backend handheld/backend:dev python3 test_backend.py
+	docker run --rm --network none -v "$(CURDIR):/srv" -w /srv/backend $(TEST_IMAGE) python3 test_backend.py
+
+# Runtime dependencies plus coverage; built from the Backend Dockerfile's test stage.
+test-image:
+	docker build -q --target test -t handheld/backend:test backend >/dev/null
+
+test-coverage: test-image
+	$(if $(COVERAGE_OUTPUT),mkdir -p "$(COVERAGE_OUTPUT)")
+	$(TEST_RUN) -e COVERAGE_FILE=/tmp/.coverage -v "$(CURDIR):/srv:ro" \
+	  $(if $(COVERAGE_OUTPUT),-v "$(abspath $(COVERAGE_OUTPUT)):/coverage") -w /srv/backend handheld/backend:test sh -c \
+	  'coverage run --source=app test_backend.py && coverage report --skip-empty --fail-under=$(COVERAGE_MIN) \
+	   && if [ -d /coverage ]; then coverage xml -q -o /coverage/coverage.xml; fi'
+
+# Crop producer checks in the pinned DLSPS image, without the stack or an NPU.
+test-crops:
+	$(TEST_RUN) -e CROP_TEST_TMPDIR=/tmp/crop-test -v "$(CURDIR)/scripts/dlsps:/opt/handheld-crops:ro" \
+	  -w /opt/handheld-crops --entrypoint python3 $(DLSPS_IMAGE) test_crops.py
+
+# Real NPU/VA crop path inside the running DLSPS service.
+test-crops-live:
+	$(COMPOSE) exec -T dlsps python3 /opt/handheld-crops/test_crops.py --live --output /tmp/crop-live
+
+test-all: test-coverage test-crops test-assets test-ui
+
+test-live: test-history test-crops-live
 
 .PHONY: test-fuzz
 test-fuzz:
-	mkdir -p docs/application/evidence/SDL504-api-fuzz
-	docker run --rm --user "$$(id -u):$$(id -g)" --network none --read-only --cap-drop ALL --security-opt no-new-privileges --memory 1g --cpus 2 --pids-limit 128 --tmpfs /tmp:rw,nosuid,nodev,size=256m -e PYTHONDONTWRITEBYTECODE=1 -v "$(CURDIR):/srv:ro" -v "$(CURDIR)/docs/application/evidence/SDL504-api-fuzz:/evidence" -w /srv/backend handheld/backend:dev python3 fuzz_api.py --output /evidence --seed "$(or $(FUZZ_SEED),504)" --mutations "$(or $(FUZZ_MUTATIONS),32)"
+	mkdir -p "$(FUZZ_EVIDENCE)"
+	docker run --rm --user "$$(id -u):$$(id -g)" --network none --read-only --cap-drop ALL --security-opt no-new-privileges --memory 1g --cpus 2 --pids-limit 128 --tmpfs /tmp:rw,nosuid,nodev,size=256m -e PYTHONDONTWRITEBYTECODE=1 -v "$(CURDIR):/srv:ro" -v "$(abspath $(FUZZ_EVIDENCE)):/evidence" -w /srv/backend $(TEST_IMAGE) python3 fuzz_api.py --output /evidence --seed "$(or $(FUZZ_SEED),504)" --mutations "$(or $(FUZZ_MUTATIONS),32)"
 
-test-assets:
-	python3 scripts/test_demo_assets.py
+test-assets: test-image
+	$(TEST_RUN) -v "$(CURDIR):/srv:ro" -w /srv handheld/backend:test python3 scripts/test_demo_assets.py
 
-test-ui:
-	python3 backend/test_ui.py
+# Headless Firefox ESR and geckodriver from the test image; --shm-size for Firefox.
+test-ui: test-image
+	$(TEST_RUN) --shm-size 1g -v "$(CURDIR):/srv:ro" -w /srv handheld/backend:test python3 backend/test_ui.py
 
 test-history:
 	docker run --rm --network host -u "$$(id -u):$$(id -g)" -e ASSET_ROOT=/srv -e NO_PROXY='*' -e no_proxy='*' \

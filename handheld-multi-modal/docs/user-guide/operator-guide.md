@@ -91,7 +91,7 @@ such as a voice question. Below the diagram, you can see **Where each model runs
 1. The model you selected. Tap it again to close the details.
 2. The status, model, device and host. Tap **Close** to hide the details. **Starting** means
    that the service is still loading or downloading its model. The first start can take up to
-   an hour. If you ask a question during this time, the assistant tells you that the model is
+   90 minutes. If you ask a question during this time, the assistant tells you that the model is
    not ready yet, so try again later.
 
 ## All Cameras

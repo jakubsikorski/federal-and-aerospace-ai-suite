@@ -323,7 +323,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["check", "check-ir", "check-model", "model", "video", "mission"])
     parser.add_argument("--root", type=Path, default=Path(os.environ.get("ASSET_ROOT", REPO)))
-    parser.add_argument("--timeout", type=int, default=3600)
+    parser.add_argument("--timeout", type=int, default=5400)
     parser.add_argument("--clips", nargs="*", default=[], help="<video>:<max fps> camera clips (check)")
     parser.add_argument("--fix", default="", help="command shown for missing items (check-ir)")
     parser.add_argument("files", nargs="*", help="OpenVINO .xml files relative to --root (check-ir)")

@@ -4,7 +4,8 @@
 
 """Offline UX regression check. Requires Firefox + geckodriver, Python stdlib only.
 
-Run from the repo root: python3 backend/test_ui.py
+`make test-ui` runs it in the Backend test image (Firefox ESR, pinned geckodriver).
+Directly from the repo root: python3 backend/test_ui.py
 Optional screenshots: python3 backend/test_ui.py --screenshots ui-shots
 Fixtures prove interaction/layout, not live inference or video transport.
 """

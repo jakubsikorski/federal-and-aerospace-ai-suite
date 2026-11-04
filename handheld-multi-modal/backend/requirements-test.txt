@@ -1,0 +1,5 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+# Test-only tooling for the Dockerfile `test` stage; never in the runtime image.
+coverage==7.6.10

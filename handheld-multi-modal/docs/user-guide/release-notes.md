@@ -36,7 +36,7 @@ lifecycle.
 
 - All ports bind to `127.0.0.1` and the console has no authentication. Remote access is
   supported only through an SSH tunnel.
-- The first start downloads and converts models and can take up to an hour.
+- The first start downloads and converts models and can take up to 90 minutes.
 - The Backend container runs as root to manage its crop store; Compose drops its capabilities.
 - The demo camera publisher uses a third-party FFmpeg container image that is pulled by the
   user and is not redistributed with the application.
