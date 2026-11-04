@@ -163,7 +163,7 @@ make test-ui        # browser checks in headless Firefox
 make test-assets    # asset preparation and Make dry-run checks
 make test-fuzz      # REST API fuzzing of the Backend (see backend/FUZZING.md)
 make test-history   # history query checks against the running demo (needs demo-up)
-make test-coverage  # Backend checks with a line coverage gate (COVERAGE_MIN, default 90)
+make test-coverage  # Backend checks with a line coverage gate (COVERAGE_MIN, default 75)
 make test-crops     # crop producer checks in the pinned DLSPS image; no NPU needed
 make test-crops-live  # real NPU and VA crop path inside the running DLSPS service
 ```

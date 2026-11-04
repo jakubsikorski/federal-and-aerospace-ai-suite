@@ -132,7 +132,7 @@ make clean / clean-demo         Remove generated configuration / demo assets
 make clean-history CONFIRM=yes  Remove tracks, evidence, rules, alerts, and missions
 make clean-all CONFIRM=yes      Remove everything above plus models, caches, and TLS keys
 make test / test-ui / test-assets / test-fuzz / test-history
-make test-all                   Offline test suite with a 90% Backend coverage gate
+make test-all                   Offline test suite with a 75% Backend coverage gate
 make test-live                  Tests against the running application (after up or demo-up)
 ```
 

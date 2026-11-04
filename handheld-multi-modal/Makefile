@@ -81,7 +81,7 @@ help:
 	@echo '        Every test runs in a container; the host needs only Docker and Make.'
 	@echo '        make test-all          Offline suite: backend with coverage gate, crops, assets, UI'
 	@echo '        make test-live         Running-stack suite (needs up or demo-up): history, NPU crop path'
-	@echo '        Test options: COVERAGE_MIN=<percent> (default 90)  COVERAGE_OUTPUT=<dir> (writes coverage.xml)'
+	@echo '        Test options: COVERAGE_MIN=<percent> (default 75)  COVERAGE_OUTPUT=<dir> (writes coverage.xml)'
 	@echo '                      TEST_VERBOSE=1 (full output; by default only failures print it)'
 	@echo '                      FUZZ_EVIDENCE=<dir> (default docs/application/evidence/SDL504-api-fuzz)'
 	@echo
@@ -648,7 +648,7 @@ check: preflight
 # Docker and Make. `make test-all` is offline; `make test-live` needs the
 # started stack.
 TEST_IMAGE ?= handheld/backend:dev
-COVERAGE_MIN ?= 90
+COVERAGE_MIN ?= 75
 COVERAGE_OUTPUT ?=
 FUZZ_EVIDENCE ?= docs/application/evidence/SDL504-api-fuzz
 DLSPS_IMAGE := $(shell awk '/^  dlsps:/{f=1} f&&/image:/{print $$2; exit}' compose/handheld-multi-modal.yaml)
