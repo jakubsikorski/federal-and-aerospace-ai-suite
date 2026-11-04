@@ -160,12 +160,12 @@ make demo
 Create the `hota-scene` scene and its two cameras, then run the setup script:
 
 ```bash
-cd deterministic-threat-detection
+cd federal-and-aerospace-ai-suite/deterministic-threat-detection
 bash usecases/scenescape-deterministic-inference/hota/scripts/setup-hota-scene.sh
 ```
 
 > [!NOTE]
-> If you downloaded and extracted the zip file, add the path to your extracted `deterministic-threat-detection/` folder.
+> If you downloaded and extracted the zip file, replace `federal-and-aerospace-ai-suite/deterministic-threat-detection/` with the path to your extracted `deterministic-threat-detection/` folder.
 
 This creates the scene `hota-scene` and registers cameras `Cam_x1_0` and `Cam_x2_0` via the Scenescape REST API. See the [Scenescape API Reference](https://docs.openedgeplatform.intel.com/dev/scenescape/api-reference.html) for details.
 

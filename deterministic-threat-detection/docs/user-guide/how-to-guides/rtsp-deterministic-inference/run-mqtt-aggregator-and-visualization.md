@@ -21,13 +21,13 @@ TSN setup. It is a Dash application that:
 Before running the script, ensure you have Python 3 and the required libraries installed.
 
 ```bash
-cd deterministic-threat-detection/usecases/rtsp-deterministic-inference/mqtt_data_aggregator
+cd federal-and-aerospace-ai-suite/deterministic-threat-detection/usecases/rtsp-deterministic-inference/mqtt_data_aggregator
 pip install -r requirements.txt
 ```
 
 ## Running the Script
 
-Navigate to the `deterministic-threat-detection/usecases/rtsp-deterministic-inference/mqtt_data_aggregator` directory and run the
+Navigate to the `federal-and-aerospace-ai-suite/deterministic-threat-detection/usecases/rtsp-deterministic-inference/mqtt_data_aggregator` directory and run the
 script. You will need to provide the correct broker IP addresses for each topic.
 
 ```bash

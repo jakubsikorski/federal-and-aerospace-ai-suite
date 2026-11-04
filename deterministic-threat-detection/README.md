@@ -37,7 +37,7 @@ Clone the full repository and navigate to the application directory:
 
 ```bash
 git clone https://github.com/open-edge-platform/federal-and-aerospace-ai-suite.git
-cd deterministic-threat-detection
+cd federal-and-aerospace-ai-suite/deterministic-threat-detection
 ```
 
 ### Option 2 — Download ZIP Archive
@@ -51,7 +51,12 @@ cd deterministic-threat-detection
 ```
 
 > [!NOTE]
-> The documentation assumes paths relative to the `deterministic-threat-detection` directory. If you used the ZIP archive, add the path to your extracted `deterministic-threat-detection` folder wherever it appears in the guides.
+> The documentation assumes paths relative to the
+> `federal-and-aerospace-ai-suite/deterministic-threat-detection` directory.
+> If you used the ZIP archive, replace
+> `federal-and-aerospace-ai-suite/deterministic-threat-detection` with the
+> path to your extracted `deterministic-threat-detection` folder wherever it
+> appears in the guides.
 
 ---
 
