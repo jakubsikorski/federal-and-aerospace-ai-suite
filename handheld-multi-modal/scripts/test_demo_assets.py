@@ -3,11 +3,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """Offline check: completed jobs only, cache integrity, failed/partial jobs, video hashes."""
+import contextlib
 import hashlib
 import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 from unittest.mock import patch
 
@@ -183,27 +185,46 @@ def main():
     print('PASS: stock job request, atomic installation, cached reuse, corruption/failed-job rejection, timeout cancellation, video integrity, Make dry-run safety/full-stack failure cleanup, separate device groups, interrupted Chat export recovery, committed example mission packet not auto-loaded, localhost-only bindings')
 
 
+@contextlib.contextmanager
+def captured_output(capture):
+    '''Send this process's stdout and stderr, including output written by
+    child code below the Python level, to the `capture` file.'''
+    sys.stdout.flush()
+    sys.stderr.flush()
+    saved_stdout, saved_stderr = os.dup(1), os.dup(2)
+    os.dup2(capture.fileno(), 1)
+    os.dup2(capture.fileno(), 2)
+    try:
+        yield
+    finally:
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os.dup2(saved_stdout, 1)
+        os.dup2(saved_stderr, 2)
+        os.close(saved_stdout)
+        os.close(saved_stderr)
+
+
 def run_quietly():
-    """Simulated Model Download failures print alarming lines; show them only on failure."""
-    import sys
-    sys.stdout.flush(); sys.stderr.flush()
-    saved, failed = (os.dup(1), os.dup(2)), True
+    '''Run the checks with their output captured. Simulated Model Download
+    failures print alarming lines, so the full output is shown only on failure;
+    on success only the final PASS line is printed.'''
     with tempfile.TemporaryFile() as capture:
-        os.dup2(capture.fileno(), 1); os.dup2(capture.fileno(), 2)
         try:
-            main()
-            failed = False
-        finally:
-            sys.stdout.flush(); sys.stderr.flush()
-            os.dup2(saved[0], 1); os.dup2(saved[1], 2)
-            os.close(saved[0]); os.close(saved[1])
+            with captured_output(capture):
+                main()
+        except BaseException:
             capture.seek(0)
-            output = capture.read().decode(errors='replace')
-            if failed:
-                sys.stderr.write(output)
-            else:
-                print(output.strip().splitlines()[-1])
+            sys.stderr.buffer.write(capture.read())
+            sys.stderr.flush()
+            raise
+        capture.seek(0)
+        lines = capture.read().decode(errors='replace').strip().splitlines()
+        print(lines[-1] if lines else 'PASS')
 
 
 if __name__ == '__main__':
-    main() if os.environ.get('TEST_VERBOSE') == '1' else run_quietly()
+    if os.environ.get('TEST_VERBOSE') == '1':
+        main()
+    else:
+        run_quietly()

@@ -186,5 +186,3 @@ make -k test-live   # running application: test-history, test-crops-live
   `TEST_VERBOSE=1` always shows it.
 - `-k` runs every check even after one fails; Make still exits non-zero.
 - `COVERAGE_OUTPUT=<dir>` writes `coverage.xml` for CI reporting.
-- `FUZZ_EVIDENCE=<dir>` writes fuzzing results outside the repository instead of
-  `docs/application/evidence/SDL504-api-fuzz`.
