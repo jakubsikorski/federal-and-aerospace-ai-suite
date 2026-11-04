@@ -82,6 +82,7 @@ help:
 	@echo '        make test-all          Offline suite: backend with coverage gate, crops, assets, UI'
 	@echo '        make test-live         Running-stack suite (needs up or demo-up): history, NPU crop path'
 	@echo '        Test options: COVERAGE_MIN=<percent> (default 90)  COVERAGE_OUTPUT=<dir> (writes coverage.xml)'
+	@echo '                      TEST_VERBOSE=1 (full output; by default only failures print it)'
 	@echo '                      FUZZ_EVIDENCE=<dir> (default docs/application/evidence/SDL504-api-fuzz)'
 	@echo
 	@echo 'Options: CAMERAS=1..2 demo cameras (default 2)  TTS_DEVICE=CPU|GPU (default CPU)'
@@ -654,28 +655,58 @@ DLSPS_IMAGE := $(shell awk '/^  dlsps:/{f=1} f&&/image:/{print $$2; exit}' compo
 TEST_RUN := docker run --rm --user "$$(id -u):$$(id -g)" --network none --read-only --cap-drop ALL \
   --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev,size=512m -e PYTHONDONTWRITEBYTECODE=1
 
+# One result line per test target; the full output (including the deliberate
+# failure-path logs the checks provoke) is shown only when it fails, or always
+# with TEST_VERBOSE=1.
+define run_test
+run_test() {
+  local label=$$1 log rc=0 start=$$SECONDS detail='' n cov findings; shift
+  if [[ $${TEST_VERBOSE:-} == 1 ]]; then "$$@"; return; fi
+  log=$$(mktemp); trap 'rm -f "$$log"' RETURN
+  printf '%-16s ' "$$label"
+  "$$@" >"$$log" 2>&1 || rc=$$?
+  n=$$(grep -cE '^(ok test_|PASS)' "$$log" || true)
+  ((n > 0)) && detail="$$n check$$( ((n == 1)) || echo s)"
+  cov=$$(awk '/^TOTAL/{print $$NF}' "$$log")
+  [[ -n $$cov ]] && detail+="$${detail:+, }line coverage $$cov (minimum $(COVERAGE_MIN)%)"
+  findings=$$(grep -o '"findings": [0-9]*' "$$log" | tail -1 | grep -o '[0-9]*$$' || true)
+  [[ -n $$findings ]] && detail+="$${detail:+, }$$findings findings"
+  if ((rc == 0)); then
+    echo "PASS  $$((SECONDS - start))s$${detail:+  $$detail}"
+  else
+    echo "FAIL  $$((SECONDS - start))s (exit $$rc); output:"; cat "$$log"
+  fi
+  return $$rc
+}
+endef
+
 test:
-	docker run --rm --network none -v "$(CURDIR):/srv" -w /srv/backend $(TEST_IMAGE) python3 test_backend.py
+	@$(run_test)
+	run_test test docker run --rm --network none -v "$(CURDIR):/srv" -w /srv/backend $(TEST_IMAGE) python3 test_backend.py
 
 # Runtime dependencies plus coverage; built from the Backend Dockerfile's test stage.
 test-image:
-	docker build -q --target test -t handheld/backend:test backend >/dev/null
+	@$(run_test)
+	run_test test-image docker build -q --target test -t handheld/backend:test backend
 
 test-coverage: test-image
+	@$(run_test)
 	$(if $(COVERAGE_OUTPUT),mkdir -p "$(COVERAGE_OUTPUT)")
-	$(TEST_RUN) -e COVERAGE_FILE=/tmp/.coverage -v "$(CURDIR):/srv:ro" \
+	run_test test-coverage $(TEST_RUN) -e COVERAGE_FILE=/tmp/.coverage -v "$(CURDIR):/srv:ro" \
 	  $(if $(COVERAGE_OUTPUT),-v "$(abspath $(COVERAGE_OUTPUT)):/coverage") -w /srv/backend handheld/backend:test sh -c \
 	  'coverage run --source=app test_backend.py && coverage report --skip-empty --fail-under=$(COVERAGE_MIN) \
 	   && if [ -d /coverage ]; then coverage xml -q -o /coverage/coverage.xml; fi'
 
 # Crop producer checks in the pinned DLSPS image, without the stack or an NPU.
 test-crops:
-	$(TEST_RUN) -e CROP_TEST_TMPDIR=/tmp/crop-test -v "$(CURDIR)/scripts/dlsps:/opt/handheld-crops:ro" \
+	@$(run_test)
+	run_test test-crops $(TEST_RUN) -e CROP_TEST_TMPDIR=/tmp/crop-test -v "$(CURDIR)/scripts/dlsps:/opt/handheld-crops:ro" \
 	  -w /opt/handheld-crops --entrypoint python3 $(DLSPS_IMAGE) test_crops.py
 
 # Real NPU/VA crop path inside the running DLSPS service.
 test-crops-live:
-	$(COMPOSE) exec -T dlsps python3 /opt/handheld-crops/test_crops.py --live --output /tmp/crop-live
+	@$(run_test)
+	run_test test-crops-live $(COMPOSE) exec -T dlsps python3 /opt/handheld-crops/test_crops.py --live --output /tmp/crop-live
 
 test-all: test-coverage test-crops test-assets test-ui
 
@@ -683,16 +714,20 @@ test-live: test-history test-crops-live
 
 .PHONY: test-fuzz
 test-fuzz:
+	@$(run_test)
 	mkdir -p "$(FUZZ_EVIDENCE)"
-	docker run --rm --user "$$(id -u):$$(id -g)" --network none --read-only --cap-drop ALL --security-opt no-new-privileges --memory 1g --cpus 2 --pids-limit 128 --tmpfs /tmp:rw,nosuid,nodev,size=256m -e PYTHONDONTWRITEBYTECODE=1 -v "$(CURDIR):/srv:ro" -v "$(abspath $(FUZZ_EVIDENCE)):/evidence" -w /srv/backend $(TEST_IMAGE) python3 fuzz_api.py --output /evidence --seed "$(or $(FUZZ_SEED),504)" --mutations "$(or $(FUZZ_MUTATIONS),32)"
+	run_test test-fuzz docker run --rm --user "$$(id -u):$$(id -g)" --network none --read-only --cap-drop ALL --security-opt no-new-privileges --memory 1g --cpus 2 --pids-limit 128 --tmpfs /tmp:rw,nosuid,nodev,size=256m -e PYTHONDONTWRITEBYTECODE=1 -v "$(CURDIR):/srv:ro" -v "$(abspath $(FUZZ_EVIDENCE)):/evidence" -w /srv/backend $(TEST_IMAGE) python3 fuzz_api.py --output /evidence --seed "$(or $(FUZZ_SEED),504)" --mutations "$(or $(FUZZ_MUTATIONS),32)"
 
 test-assets: test-image
-	$(TEST_RUN) -v "$(CURDIR):/srv:ro" -w /srv handheld/backend:test python3 scripts/test_demo_assets.py
+	@$(run_test)
+	run_test test-assets $(TEST_RUN) -v "$(CURDIR):/srv:ro" -w /srv handheld/backend:test python3 scripts/test_demo_assets.py
 
 # Headless Firefox ESR and geckodriver from the test image; --shm-size for Firefox.
 test-ui: test-image
-	$(TEST_RUN) --shm-size 1g -v "$(CURDIR):/srv:ro" -w /srv handheld/backend:test python3 backend/test_ui.py
+	@$(run_test)
+	run_test test-ui $(TEST_RUN) --shm-size 1g -v "$(CURDIR):/srv:ro" -w /srv handheld/backend:test python3 backend/test_ui.py
 
 test-history:
-	docker run --rm --network host -u "$$(id -u):$$(id -g)" -e ASSET_ROOT=/srv -e NO_PROXY='*' -e no_proxy='*' \
+	@$(run_test)
+	run_test test-history docker run --rm --network host -u "$$(id -u):$$(id -g)" -e ASSET_ROOT=/srv -e NO_PROXY='*' -e no_proxy='*' \
 	  -v "$(CURDIR):/srv" -w /srv handheld/backend:dev python3 scripts/test_history.py

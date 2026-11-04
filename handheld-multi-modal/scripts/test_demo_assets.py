@@ -183,5 +183,27 @@ def main():
     print('PASS: stock job request, atomic installation, cached reuse, corruption/failed-job rejection, timeout cancellation, video integrity, Make dry-run safety/full-stack failure cleanup, separate device groups, interrupted Chat export recovery, committed example mission packet not auto-loaded, localhost-only bindings')
 
 
+def run_quietly():
+    """Simulated Model Download failures print alarming lines; show them only on failure."""
+    import sys
+    sys.stdout.flush(); sys.stderr.flush()
+    saved, failed = (os.dup(1), os.dup(2)), True
+    with tempfile.TemporaryFile() as capture:
+        os.dup2(capture.fileno(), 1); os.dup2(capture.fileno(), 2)
+        try:
+            main()
+            failed = False
+        finally:
+            sys.stdout.flush(); sys.stderr.flush()
+            os.dup2(saved[0], 1); os.dup2(saved[1], 2)
+            os.close(saved[0]); os.close(saved[1])
+            capture.seek(0)
+            output = capture.read().decode(errors='replace')
+            if failed:
+                sys.stderr.write(output)
+            else:
+                print(output.strip().splitlines()[-1])
+
+
 if __name__ == '__main__':
-    main()
+    main() if os.environ.get('TEST_VERBOSE') == '1' else run_quietly()

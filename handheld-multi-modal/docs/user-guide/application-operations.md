@@ -181,6 +181,9 @@ make -k test-live   # running application: test-history, test-crops-live
   the first time needs internet access.
 - `test-all` does not need the started application, models, or network access.
 - `test-live` needs `make up` or `make demo-up` first; `test-history` expects the demo cameras.
+- Each test target prints one `PASS` or `FAIL` line. Its full output, including the
+  failure-path logs the checks provoke on purpose, is shown only when it fails;
+  `TEST_VERBOSE=1` always shows it.
 - `-k` runs every check even after one fails; Make still exits non-zero.
 - `COVERAGE_OUTPUT=<dir>` writes `coverage.xml` for CI reporting.
 - `FUZZ_EVIDENCE=<dir>` writes fuzzing results outside the repository instead of

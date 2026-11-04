@@ -2219,7 +2219,7 @@ def test_mission_failure_matrix():
             )
             conn.commit()
             conn.close()
-            mission = types.SimpleNamespace(answer=lambda text, generate=None, turns=(): {
+            mission = types.SimpleNamespace(loaded=lambda: False, answer=lambda text, generate=None, turns=(): {
                 "intent": "mission_knowledge", "answer_text": text, "errors": []})
             assistant = Assistant(
                 {"assistant_queue_depth": 1, "detector_metadata_path": metadata.name,
@@ -2243,7 +2243,7 @@ def test_mission_failure_matrix():
                 "What is the mission assignment for camera 1?", "cam2"
             )["intent"] == "mission_knowledge"
             assistant.mission = types.SimpleNamespace(
-                answer=lambda text, generate=None, turns=(): (_ for _ in ()).throw(
+                loaded=lambda: False, answer=lambda text, generate=None, turns=(): (_ for _ in ()).throw(
                     MissionUnavailable("No mission documents are ready.")))
             try:
                 assistant.ask("What weapons are prohibited during the mission today?")
@@ -5679,9 +5679,31 @@ def test_server_signal_stops_streams_before_uvicorn_drains_them():
         pipelines.shutdown.clear()
 
 
+def _run_quietly(fn):
+    """Run one test with its stdout/stderr (including deliberate failure-path
+    logs and tracebacks) captured at the descriptor level; replay them only
+    when the test fails."""
+    sys.stdout.flush(); sys.stderr.flush()
+    saved = os.dup(1), os.dup(2)
+    failed = True
+    with tempfile.TemporaryFile() as capture:
+        os.dup2(capture.fileno(), 1); os.dup2(capture.fileno(), 2)
+        try:
+            fn()
+            failed = False
+        finally:
+            sys.stdout.flush(); sys.stderr.flush()
+            os.dup2(saved[0], 1); os.dup2(saved[1], 2)
+            os.close(saved[0]); os.close(saved[1])
+            if failed:
+                capture.seek(0)
+                sys.stderr.buffer.write(capture.read()); sys.stderr.flush()
+
+
 if __name__ == "__main__":
+    verbose = os.environ.get("TEST_VERBOSE") == "1"
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):
-            fn()
-            print("ok", name)
+            fn() if verbose else _run_quietly(fn)
+            print("ok", name, flush=True)
     print("all checks passed")
