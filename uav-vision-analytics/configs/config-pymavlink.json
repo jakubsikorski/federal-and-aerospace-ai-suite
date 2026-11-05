@@ -5,15 +5,165 @@
                 "name": "uav_object_detection_cpu",
                 "source": "gstreamer",
                 "queue_maxsize": 50,
-                "pipeline": "multifilesrc location=/home/pipeline-server/resources/videos/uav_sample.avi loop=true ! h264parse ! decodebin3 ! gvadetect device=CPU name=detection model-instance-id=instcpu0 threshold=0.4 ! gvapython module=/home/pipeline-server/gvapython/telemetry-overlay-pymavlink.py class=DrawDynamicText function=process_frame arg=[\"PyMAVLink-RTSP-CPU\"] ! gvametaconvert add-empty-results=true name=metaconvert ! gvametapublish name=destination ! appsink name=appsink",
+                "pipeline": "multifilesrc location=/home/pipeline-server/resources/videos/{parameters[video]} loop=true ! h264parse ! decodebin3 ! identity sync=true ! queue ! gvadetect device=CPU name=detection model-instance-id={parameters[detection_instance_id]} model={parameters[detection_model]} inference-region=full-frame inference-interval=1 batch-size=1 nireq=2 ie-config=\"CPU_THROUGHPUT_STREAMS=2\" threshold=0.4 ! gvapython module=/home/pipeline-server/gvapython/telemetry-overlay-pymavlink.py class=DrawDynamicText function=process_frame arg=[\"{parameters[overlay_label]}\"] ! queue ! gvametaconvert add-empty-results=true name=metaconvert ! gvametapublish name=destination method=file file-path=/dev/null ! queue ! gvafpscounter ! appsink name=appsink",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "detection-properties": {
-                             "element": {
-                                "name": "detection",
-                                "format": "element-properties"
-                              }
+                        "detection_model": {
+                            "type": "string",
+                            "pattern": "^/home/pipeline-server/resources/models/[A-Za-z0-9_./-]+\\.xml$",
+                            "default": "/home/pipeline-server/resources/models/yolo11s/yolo11s_openvino_model/yolo11s.xml"
+                        },
+                        "detection_instance_id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9_]+$",
+                            "default": "instcpu0"
+                        },
+                        "video": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.-]+\\.(avi|mp4|mkv|ts)$",
+                            "default": "uav_sample_front.avi"
+                        },
+                        "overlay_label": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_-]{1,48}$",
+                            "default": "PyMAVLink-RTSP-CPU"
+                        }
+                    }
+                },
+                "auto_start": false
+            },
+            {
+                "name": "uav_object_detection_cpu_cpu",
+                "source": "gstreamer",
+                "queue_maxsize": 50,
+                "pipeline": "multifilesrc location=/home/pipeline-server/resources/videos/{parameters[video]} loop=true ! h264parse ! decodebin3 ! identity sync=true ! tee name=split allow-not-linked=true split. ! queue ! gvadetect device=CPU name=detection model-instance-id={parameters[detection_instance_id]} model={parameters[detection_model]} inference-region=full-frame inference-interval=1 batch-size=1 nireq=2 ie-config=\"CPU_THROUGHPUT_STREAMS=2\" threshold=0.4 ! gvapython module=/home/pipeline-server/gvapython/telemetry-overlay-pymavlink.py class=DrawDynamicText function=process_frame arg=[\"{parameters[overlay_label]}\"] ! queue ! gvametaconvert add-empty-results=true name=metaconvert ! gvametapublish name=destination method=file file-path=/dev/null ! queue ! gvafpscounter ! appsink name=appsink sync=false split. ! queue leaky=downstream max-size-buffers=2 ! videorate drop-only=true ! video/x-raw,framerate=1/5 ! videoscale ! videoconvert ! video/x-raw,format=BGRA,width=[1,{parameters[frame_width]}],height=[1,{parameters[frame_height]}] ! gvagenai name=captioner model-instance-id={parameters[captioner_instance_id]} model-path={parameters[captioner_model_path]} device=CPU prompt=\"{parameters[captioner_prompt]}\" chunk-size=1 generation-config=\"max_new_tokens={parameters[captioner_max_new_tokens]},num_beams=1,do_sample=false,temperature=0.1,repetition_penalty=1.1\" frame-rate=0 metrics=true ! gvametaconvert add-empty-results=true name=caption_metaconvert ! gvapython class=MQTTPublisher function=process module=/home/pipeline-server/gvapython/mqtt_publisher/mqtt_publisher.py name=mqtt_publisher kwarg={% raw %}{{\"topic\":\"{% endraw %}{parameters[mqtt_topic]}{% raw %}\"}}{% endraw %} ! fakesink sync=false async=false",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "detection_model": {
+                            "type": "string",
+                            "pattern": "^/home/pipeline-server/resources/models/[A-Za-z0-9_./-]+\\.xml$",
+                            "default": "/home/pipeline-server/resources/models/yolo11s/yolo11s_openvino_model/yolo11s.xml"
+                        },
+                        "detection_instance_id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9_]+$",
+                            "default": "instcpu0"
+                        },
+                        "video": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.-]+\\.(avi|mp4|mkv|ts)$",
+                            "default": "uav_sample_front.avi"
+                        },
+                        "captioner_model_path": {
+                            "type": "string",
+                            "pattern": "^/home/pipeline-server/resources/ov_models/[A-Za-z0-9_./-]+$",
+                            "default": "/home/pipeline-server/resources/ov_models/cpu/InternVL2-1B"
+                        },
+                        "captioner_instance_id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9_]+$",
+                            "default": "instvlm_cpu"
+                        },
+                        "captioner_prompt": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9 ,.?'-]+$",
+                            "default": "Describe what you see in the scene."
+                        },
+                        "captioner_max_new_tokens": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 4096,
+                            "default": 50
+                        },
+                        "frame_width": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 896
+                        },
+                        "frame_height": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 448
+                        },
+                        "overlay_label": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_-]{1,48}$",
+                            "default": "PyMAVLink-RTSP-CPU-CPU-Caption"
+                        },
+                        "mqtt_topic": {
+                            "type": "string",
+                            "pattern": "^uav/caption/[A-Za-z0-9_-]+$",
+                            "default": "uav/caption/cpu"
+                        }
+                    }
+                },
+                "auto_start": false
+            },
+            {
+                "name": "uav_object_detection_cpu_gpu",
+                "source": "gstreamer",
+                "queue_maxsize": 50,
+                "pipeline": "multifilesrc location=/home/pipeline-server/resources/videos/{parameters[video]} loop=true ! h264parse ! decodebin3 ! identity sync=true ! tee name=split allow-not-linked=true split. ! queue ! gvadetect device=CPU name=detection model-instance-id={parameters[detection_instance_id]} model={parameters[detection_model]} inference-region=full-frame inference-interval=1 batch-size=1 nireq=2 ie-config=\"CPU_THROUGHPUT_STREAMS=2\" threshold=0.4 ! gvapython module=/home/pipeline-server/gvapython/telemetry-overlay-pymavlink.py class=DrawDynamicText function=process_frame arg=[\"{parameters[overlay_label]}\"] ! queue ! gvametaconvert add-empty-results=true name=metaconvert ! gvametapublish name=destination method=file file-path=/dev/null ! queue ! gvafpscounter ! appsink name=appsink sync=false split. ! queue leaky=downstream max-size-buffers=2 ! videorate drop-only=true ! video/x-raw,framerate=1/5 ! videoscale ! videoconvert ! video/x-raw,format=BGRA,width=[1,{parameters[frame_width]}],height=[1,{parameters[frame_height]}] ! gvagenai name=captioner model-instance-id={parameters[captioner_instance_id]} model-path={parameters[captioner_model_path]} device=GPU prompt=\"{parameters[captioner_prompt]}\" chunk-size=1 generation-config=\"max_new_tokens={parameters[captioner_max_new_tokens]},num_beams=1,do_sample=false,temperature=0.1,repetition_penalty=1.1\" frame-rate=0 metrics=true ! gvametaconvert add-empty-results=true name=caption_metaconvert ! gvapython class=MQTTPublisher function=process module=/home/pipeline-server/gvapython/mqtt_publisher/mqtt_publisher.py name=mqtt_publisher kwarg={% raw %}{{\"topic\":\"{% endraw %}{parameters[mqtt_topic]}{% raw %}\"}}{% endraw %} ! fakesink sync=false async=false",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "detection_model": {
+                            "type": "string",
+                            "pattern": "^/home/pipeline-server/resources/models/[A-Za-z0-9_./-]+\\.xml$",
+                            "default": "/home/pipeline-server/resources/models/yolo11s/yolo11s_openvino_model/yolo11s.xml"
+                        },
+                        "detection_instance_id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9_]+$",
+                            "default": "instcpu0"
+                        },
+                        "video": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.-]+\\.(avi|mp4|mkv|ts)$",
+                            "default": "uav_sample_front.avi"
+                        },
+                        "captioner_model_path": {
+                            "type": "string",
+                            "pattern": "^/home/pipeline-server/resources/ov_models/[A-Za-z0-9_./-]+$",
+                            "default": "/home/pipeline-server/resources/ov_models/gpu/InternVL2-1B"
+                        },
+                        "captioner_instance_id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9_]+$",
+                            "default": "instvlm_gpu"
+                        },
+                        "captioner_prompt": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9 ,.?'-]+$",
+                            "default": "Describe what you see in the scene."
+                        },
+                        "captioner_max_new_tokens": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 4096,
+                            "default": 50
+                        },
+                        "frame_width": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 896
+                        },
+                        "frame_height": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 448
+                        },
+                        "overlay_label": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_-]{1,48}$",
+                            "default": "PyMAVLink-RTSP-CPU-GPU-Caption"
+                        },
+                        "mqtt_topic": {
+                            "type": "string",
+                            "pattern": "^uav/caption/[A-Za-z0-9_-]+$",
+                            "default": "uav/caption/cpu"
                         }
                     }
                 },
@@ -23,15 +173,165 @@
                 "name": "uav_object_detection_gpu",
                 "source": "gstreamer",
                 "queue_maxsize": 50,
-                "pipeline": "multifilesrc location=/home/pipeline-server/resources/videos/uav_sample.avi loop=true ! h264parse ! decodebin3 ! gvadetect device=GPU model-instance-id=instgpu0 inference-region=full-frame inference-interval=1 batch-size=1 nireq=1 ie-config=\"GPU_THROUGHPUT_STREAMS=1\" threshold=0.4 name=detection ! gvapython module=/home/pipeline-server/gvapython/telemetry-overlay-pymavlink.py class=DrawDynamicText function=process_frame arg=[\"PyMAVLink-RTSP-GPU\"] ! queue ! gvametaconvert add-empty-results=true name=metaconvert ! gvametapublish name=destination ! queue ! gvafpscounter ! appsink name=appsink",
+                "pipeline": "multifilesrc location=/home/pipeline-server/resources/videos/{parameters[video]} loop=true ! h264parse ! decodebin3 ! identity sync=true ! queue ! gvadetect device=GPU name=detection model-instance-id={parameters[detection_instance_id]} model={parameters[detection_model]} inference-region=full-frame inference-interval=1 batch-size=1 nireq=1 ie-config=\"GPU_THROUGHPUT_STREAMS=1\" threshold=0.4 ! gvapython module=/home/pipeline-server/gvapython/telemetry-overlay-pymavlink.py class=DrawDynamicText function=process_frame arg=[\"{parameters[overlay_label]}\"] ! queue ! gvametaconvert add-empty-results=true name=metaconvert ! gvametapublish name=destination method=file file-path=/dev/null ! queue ! gvafpscounter ! appsink name=appsink",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "detection-properties": {
-                             "element": {
-                                "name": "detection",
-                                "format": "element-properties"
-                              }
+                        "detection_model": {
+                            "type": "string",
+                            "pattern": "^/home/pipeline-server/resources/models/[A-Za-z0-9_./-]+\\.xml$",
+                            "default": "/home/pipeline-server/resources/models/yolo11s/yolo11s_openvino_model/yolo11s.xml"
+                        },
+                        "detection_instance_id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9_]+$",
+                            "default": "instgpu0"
+                        },
+                        "video": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.-]+\\.(avi|mp4|mkv|ts)$",
+                            "default": "uav_sample_bottom.avi"
+                        },
+                        "overlay_label": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_-]{1,48}$",
+                            "default": "PyMAVLink-RTSP-GPU"
+                        }
+                    }
+                },
+                "auto_start": false
+            },
+            {
+                "name": "uav_object_detection_gpu_cpu",
+                "source": "gstreamer",
+                "queue_maxsize": 50,
+                "pipeline": "multifilesrc location=/home/pipeline-server/resources/videos/{parameters[video]} loop=true ! h264parse ! decodebin3 ! identity sync=true ! tee name=split allow-not-linked=true split. ! queue ! gvadetect device=GPU name=detection model-instance-id={parameters[detection_instance_id]} model={parameters[detection_model]} inference-region=full-frame inference-interval=1 batch-size=1 nireq=1 ie-config=\"GPU_THROUGHPUT_STREAMS=1\" threshold=0.4 ! gvapython module=/home/pipeline-server/gvapython/telemetry-overlay-pymavlink.py class=DrawDynamicText function=process_frame arg=[\"{parameters[overlay_label]}\"] ! queue ! gvametaconvert add-empty-results=true name=metaconvert ! gvametapublish name=destination method=file file-path=/dev/null ! queue ! gvafpscounter ! appsink name=appsink sync=false split. ! queue leaky=downstream max-size-buffers=2 ! videorate drop-only=true ! video/x-raw,framerate=1/5 ! videoscale ! videoconvert ! video/x-raw,format=BGRA,width=[1,{parameters[frame_width]}],height=[1,{parameters[frame_height]}] ! gvagenai name=captioner model-instance-id={parameters[captioner_instance_id]} model-path={parameters[captioner_model_path]} device=CPU prompt=\"{parameters[captioner_prompt]}\" chunk-size=1 generation-config=\"max_new_tokens={parameters[captioner_max_new_tokens]},num_beams=1,do_sample=false,temperature=0.1,repetition_penalty=1.1\" frame-rate=0 metrics=true ! gvametaconvert add-empty-results=true name=caption_metaconvert ! gvapython class=MQTTPublisher function=process module=/home/pipeline-server/gvapython/mqtt_publisher/mqtt_publisher.py name=mqtt_publisher kwarg={% raw %}{{\"topic\":\"{% endraw %}{parameters[mqtt_topic]}{% raw %}\"}}{% endraw %} ! fakesink sync=false async=false",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "detection_model": {
+                            "type": "string",
+                            "pattern": "^/home/pipeline-server/resources/models/[A-Za-z0-9_./-]+\\.xml$",
+                            "default": "/home/pipeline-server/resources/models/yolo11s/yolo11s_openvino_model/yolo11s.xml"
+                        },
+                        "detection_instance_id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9_]+$",
+                            "default": "instgpu0"
+                        },
+                        "video": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.-]+\\.(avi|mp4|mkv|ts)$",
+                            "default": "uav_sample_bottom.avi"
+                        },
+                        "captioner_model_path": {
+                            "type": "string",
+                            "pattern": "^/home/pipeline-server/resources/ov_models/[A-Za-z0-9_./-]+$",
+                            "default": "/home/pipeline-server/resources/ov_models/cpu/InternVL2-1B"
+                        },
+                        "captioner_instance_id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9_]+$",
+                            "default": "instvlm_cpu"
+                        },
+                        "captioner_prompt": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9 ,.?'-]+$",
+                            "default": "Describe what you see in the scene."
+                        },
+                        "captioner_max_new_tokens": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 4096,
+                            "default": 50
+                        },
+                        "frame_width": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 896
+                        },
+                        "frame_height": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 448
+                        },
+                        "overlay_label": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_-]{1,48}$",
+                            "default": "PyMAVLink-RTSP-GPU-CPU-Caption"
+                        },
+                        "mqtt_topic": {
+                            "type": "string",
+                            "pattern": "^uav/caption/[A-Za-z0-9_-]+$",
+                            "default": "uav/caption/gpu"
+                        }
+                    }
+                },
+                "auto_start": false
+            },
+            {
+                "name": "uav_object_detection_gpu_gpu",
+                "source": "gstreamer",
+                "queue_maxsize": 50,
+                "pipeline": "multifilesrc location=/home/pipeline-server/resources/videos/{parameters[video]} loop=true ! h264parse ! decodebin3 ! identity sync=true ! tee name=split allow-not-linked=true split. ! queue ! gvadetect device=GPU name=detection model-instance-id={parameters[detection_instance_id]} model={parameters[detection_model]} inference-region=full-frame inference-interval=1 batch-size=1 nireq=1 ie-config=\"GPU_THROUGHPUT_STREAMS=1\" threshold=0.4 ! gvapython module=/home/pipeline-server/gvapython/telemetry-overlay-pymavlink.py class=DrawDynamicText function=process_frame arg=[\"{parameters[overlay_label]}\"] ! queue ! gvametaconvert add-empty-results=true name=metaconvert ! gvametapublish name=destination method=file file-path=/dev/null ! queue ! gvafpscounter ! appsink name=appsink sync=false split. ! queue leaky=downstream max-size-buffers=2 ! videorate drop-only=true ! video/x-raw,framerate=1/5 ! videoscale ! videoconvert ! video/x-raw,format=BGRA,width=[1,{parameters[frame_width]}],height=[1,{parameters[frame_height]}] ! gvagenai name=captioner model-instance-id={parameters[captioner_instance_id]} model-path={parameters[captioner_model_path]} device=GPU prompt=\"{parameters[captioner_prompt]}\" chunk-size=1 generation-config=\"max_new_tokens={parameters[captioner_max_new_tokens]},num_beams=1,do_sample=false,temperature=0.1,repetition_penalty=1.1\" frame-rate=0 metrics=true ! gvametaconvert add-empty-results=true name=caption_metaconvert ! gvapython class=MQTTPublisher function=process module=/home/pipeline-server/gvapython/mqtt_publisher/mqtt_publisher.py name=mqtt_publisher kwarg={% raw %}{{\"topic\":\"{% endraw %}{parameters[mqtt_topic]}{% raw %}\"}}{% endraw %} ! fakesink sync=false async=false",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "detection_model": {
+                            "type": "string",
+                            "pattern": "^/home/pipeline-server/resources/models/[A-Za-z0-9_./-]+\\.xml$",
+                            "default": "/home/pipeline-server/resources/models/yolo11s/yolo11s_openvino_model/yolo11s.xml"
+                        },
+                        "detection_instance_id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9_]+$",
+                            "default": "instgpu0"
+                        },
+                        "video": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.-]+\\.(avi|mp4|mkv|ts)$",
+                            "default": "uav_sample_bottom.avi"
+                        },
+                        "captioner_model_path": {
+                            "type": "string",
+                            "pattern": "^/home/pipeline-server/resources/ov_models/[A-Za-z0-9_./-]+$",
+                            "default": "/home/pipeline-server/resources/ov_models/gpu/InternVL2-1B"
+                        },
+                        "captioner_instance_id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9_]+$",
+                            "default": "instvlm_gpu"
+                        },
+                        "captioner_prompt": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9 ,.?'-]+$",
+                            "default": "Describe what you see in the scene."
+                        },
+                        "captioner_max_new_tokens": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 4096,
+                            "default": 50
+                        },
+                        "frame_width": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 896
+                        },
+                        "frame_height": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 448
+                        },
+                        "overlay_label": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_-]{1,48}$",
+                            "default": "PyMAVLink-RTSP-GPU-GPU-Caption"
+                        },
+                        "mqtt_topic": {
+                            "type": "string",
+                            "pattern": "^uav/caption/[A-Za-z0-9_-]+$",
+                            "default": "uav/caption/gpu"
                         }
                     }
                 },
@@ -41,125 +341,301 @@
                 "name": "uav_object_detection_npu",
                 "source": "gstreamer",
                 "queue_maxsize": 50,
-                "pipeline": "multifilesrc location=/home/pipeline-server/resources/videos/uav_sample.avi loop=true ! h264parse ! decodebin3 ! gvadetect device=NPU model-instance-id=instnpu0 inference-region=full-frame inference-interval=1 batch-size=1 nireq=4 threshold=0.4 name=detection ! gvapython module=/home/pipeline-server/gvapython/telemetry-overlay-pymavlink.py class=DrawDynamicText function=process_frame arg=[\"PyMAVLink-RTSP-NPU\"] ! queue ! gvametaconvert add-empty-results=true name=metaconvert ! gvametapublish name=destination ! queue ! gvafpscounter ! appsink name=appsink",
+                "pipeline": "multifilesrc location=/home/pipeline-server/resources/videos/{parameters[video]} loop=true ! h264parse ! decodebin3 ! identity sync=true ! queue ! gvadetect device=NPU name=detection model-instance-id={parameters[detection_instance_id]} model={parameters[detection_model]} inference-region=full-frame inference-interval=1 batch-size=1 nireq=4 threshold=0.4 ! gvapython module=/home/pipeline-server/gvapython/telemetry-overlay-pymavlink.py class=DrawDynamicText function=process_frame arg=[\"{parameters[overlay_label]}\"] ! queue ! gvametaconvert add-empty-results=true name=metaconvert ! gvametapublish name=destination method=file file-path=/dev/null ! queue ! gvafpscounter ! appsink name=appsink",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "detection-properties": {
-                             "element": {
-                                "name": "detection",
-                                "format": "element-properties"
-                              }
-                        }
-                    }
-                },
-                "auto_start": false
-            },
-
-            {
-                "name": "uav_realsense_cpu",
-                "source": "gstreamer",
-                "queue_maxsize": 50,
-                "pipeline": "v4l2src device=/dev/video4 ! videoconvert ! video/x-raw,format=NV12,width=1280,height=720 ! gvadetect device=CPU name=detection model-instance-id=instcpu0 threshold=0.4 ! gvapython module=/home/pipeline-server/gvapython/telemetry-overlay-pymavlink.py class=DrawDynamicText function=process_frame arg=[\"RealSense-RTSP-CPU\"] ! gvametaconvert add-empty-results=true name=metaconvert ! gvametapublish name=destination ! appsink name=appsink",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "detection-properties": {
-                             "element": {
-                                "name": "detection",
-                                "format": "element-properties"
-                              }
-                        }
-                    }
-                },
-                "auto_start": false
-            },
-            {
-                "name": "uav_realsense_gpu",
-                "source": "gstreamer",
-                "queue_maxsize": 50,
-                "pipeline": "v4l2src device=/dev/video4 ! videoconvert ! video/x-raw,format=NV12,width=1280,height=720 ! gvadetect device=GPU model-instance-id=instgpu0 inference-region=full-frame inference-interval=1 batch-size=1 nireq=1 ie-config=\"GPU_THROUGHPUT_STREAMS=1\" threshold=0.4 name=detection ! gvapython module=/home/pipeline-server/gvapython/telemetry-overlay-pymavlink.py class=DrawDynamicText function=process_frame arg=[\"RealSense-RTSP-GPU\"] ! queue ! gvametaconvert add-empty-results=true name=metaconvert ! gvametapublish name=destination ! queue ! gvafpscounter ! appsink name=appsink",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "detection-properties": {
-                             "element": {
-                                "name": "detection",
-                                "format": "element-properties"
-                              }
+                        "detection_model": {
+                            "type": "string",
+                            "pattern": "^/home/pipeline-server/resources/models/[A-Za-z0-9_./-]+\\.xml$",
+                            "default": "/home/pipeline-server/resources/models/yolo11s/yolo11s_openvino_model/yolo11s.xml"
+                        },
+                        "detection_instance_id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9_]+$",
+                            "default": "instnpu0"
+                        },
+                        "video": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.-]+\\.(avi|mp4|mkv|ts)$",
+                            "default": "uav_sample_back.avi"
+                        },
+                        "overlay_label": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_-]{1,48}$",
+                            "default": "PyMAVLink-RTSP-NPU"
                         }
                     }
                 },
                 "auto_start": false
             },
             {
-                "name": "uav_realsense_npu",
+                "name": "uav_object_detection_npu_cpu",
                 "source": "gstreamer",
                 "queue_maxsize": 50,
-                "pipeline": "v4l2src device=/dev/video4 ! videoconvert ! video/x-raw,format=NV12,width=1280,height=720 ! gvadetect device=NPU model-instance-id=instnpu0 inference-region=full-frame inference-interval=1 batch-size=1 nireq=4 threshold=0.4 name=detection ! gvapython module=/home/pipeline-server/gvapython/telemetry-overlay-pymavlink.py class=DrawDynamicText function=process_frame arg=[\"RealSense-RTSP-NPU\"] ! queue ! gvametaconvert add-empty-results=true name=metaconvert ! gvametapublish name=destination ! queue ! gvafpscounter ! appsink name=appsink",
+                "pipeline": "multifilesrc location=/home/pipeline-server/resources/videos/{parameters[video]} loop=true ! h264parse ! decodebin3 ! identity sync=true ! tee name=split allow-not-linked=true split. ! queue ! gvadetect device=NPU name=detection model-instance-id={parameters[detection_instance_id]} model={parameters[detection_model]} inference-region=full-frame inference-interval=1 batch-size=1 nireq=4 threshold=0.4 ! gvapython module=/home/pipeline-server/gvapython/telemetry-overlay-pymavlink.py class=DrawDynamicText function=process_frame arg=[\"{parameters[overlay_label]}\"] ! queue ! gvametaconvert add-empty-results=true name=metaconvert ! gvametapublish name=destination method=file file-path=/dev/null ! queue ! gvafpscounter ! appsink name=appsink sync=false split. ! queue leaky=downstream max-size-buffers=2 ! videorate drop-only=true ! video/x-raw,framerate=1/5 ! videoscale ! videoconvert ! video/x-raw,format=BGRA,width=[1,{parameters[frame_width]}],height=[1,{parameters[frame_height]}] ! gvagenai name=captioner model-instance-id={parameters[captioner_instance_id]} model-path={parameters[captioner_model_path]} device=CPU prompt=\"{parameters[captioner_prompt]}\" chunk-size=1 generation-config=\"max_new_tokens={parameters[captioner_max_new_tokens]},num_beams=1,do_sample=false,temperature=0.1,repetition_penalty=1.1\" frame-rate=0 metrics=true ! gvametaconvert add-empty-results=true name=caption_metaconvert ! gvapython class=MQTTPublisher function=process module=/home/pipeline-server/gvapython/mqtt_publisher/mqtt_publisher.py name=mqtt_publisher kwarg={% raw %}{{\"topic\":\"{% endraw %}{parameters[mqtt_topic]}{% raw %}\"}}{% endraw %} ! fakesink sync=false async=false",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "detection-properties": {
-                             "element": {
-                                "name": "detection",
-                                "format": "element-properties"
-                              }
+                        "detection_model": {
+                            "type": "string",
+                            "pattern": "^/home/pipeline-server/resources/models/[A-Za-z0-9_./-]+\\.xml$",
+                            "default": "/home/pipeline-server/resources/models/yolo11s/yolo11s_openvino_model/yolo11s.xml"
+                        },
+                        "detection_instance_id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9_]+$",
+                            "default": "instnpu0"
+                        },
+                        "video": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.-]+\\.(avi|mp4|mkv|ts)$",
+                            "default": "uav_sample_back.avi"
+                        },
+                        "captioner_model_path": {
+                            "type": "string",
+                            "pattern": "^/home/pipeline-server/resources/ov_models/[A-Za-z0-9_./-]+$",
+                            "default": "/home/pipeline-server/resources/ov_models/cpu/InternVL2-1B"
+                        },
+                        "captioner_instance_id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9_]+$",
+                            "default": "instvlm_cpu"
+                        },
+                        "captioner_prompt": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9 ,.?'-]+$",
+                            "default": "Describe what you see in the scene."
+                        },
+                        "captioner_max_new_tokens": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 4096,
+                            "default": 50
+                        },
+                        "frame_width": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 896
+                        },
+                        "frame_height": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 448
+                        },
+                        "overlay_label": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_-]{1,48}$",
+                            "default": "PyMAVLink-RTSP-NPU-CPU-Caption"
+                        },
+                        "mqtt_topic": {
+                            "type": "string",
+                            "pattern": "^uav/caption/[A-Za-z0-9_-]+$",
+                            "default": "uav/caption/npu"
                         }
                     }
                 },
                 "auto_start": false
             },
-
             {
-                "name": "uav_udpsink_cpu",
+                "name": "uav_object_detection_npu_gpu",
                 "source": "gstreamer",
                 "queue_maxsize": 50,
-                "pipeline": "multifilesrc location=/home/pipeline-server/resources/videos/uav_sample.avi loop=true ! h264parse ! decodebin3 ! gvadetect device=CPU name=detection model-instance-id=instcpu0 threshold=0.4 ! gvapython module=/home/pipeline-server/gvapython/telemetry-overlay-pymavlink.py class=DrawDynamicText function=process_frame arg=[\"PyMAVLink-UDP-CPU\"] ! gvametaconvert add-empty-results=true name=metaconvert ! gvametapublish name=destination ! gvawatermark ! vah264lpenc ! rtph264pay ! udpsink host=host.docker.internal port=5600",
+                "pipeline": "multifilesrc location=/home/pipeline-server/resources/videos/{parameters[video]} loop=true ! h264parse ! decodebin3 ! identity sync=true ! tee name=split allow-not-linked=true split. ! queue ! gvadetect device=NPU name=detection model-instance-id={parameters[detection_instance_id]} model={parameters[detection_model]} inference-region=full-frame inference-interval=1 batch-size=1 nireq=4 threshold=0.4 ! gvapython module=/home/pipeline-server/gvapython/telemetry-overlay-pymavlink.py class=DrawDynamicText function=process_frame arg=[\"{parameters[overlay_label]}\"] ! queue ! gvametaconvert add-empty-results=true name=metaconvert ! gvametapublish name=destination method=file file-path=/dev/null ! queue ! gvafpscounter ! appsink name=appsink sync=false split. ! queue leaky=downstream max-size-buffers=2 ! videorate drop-only=true ! video/x-raw,framerate=1/5 ! videoscale ! videoconvert ! video/x-raw,format=BGRA,width=[1,{parameters[frame_width]}],height=[1,{parameters[frame_height]}] ! gvagenai name=captioner model-instance-id={parameters[captioner_instance_id]} model-path={parameters[captioner_model_path]} device=GPU prompt=\"{parameters[captioner_prompt]}\" chunk-size=1 generation-config=\"max_new_tokens={parameters[captioner_max_new_tokens]},num_beams=1,do_sample=false,temperature=0.1,repetition_penalty=1.1\" frame-rate=0 metrics=true ! gvametaconvert add-empty-results=true name=caption_metaconvert ! gvapython class=MQTTPublisher function=process module=/home/pipeline-server/gvapython/mqtt_publisher/mqtt_publisher.py name=mqtt_publisher kwarg={% raw %}{{\"topic\":\"{% endraw %}{parameters[mqtt_topic]}{% raw %}\"}}{% endraw %} ! fakesink sync=false async=false",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "detection-properties": {
-                             "element": {
-                                "name": "detection",
-                                "format": "element-properties"
-                              }
+                        "detection_model": {
+                            "type": "string",
+                            "pattern": "^/home/pipeline-server/resources/models/[A-Za-z0-9_./-]+\\.xml$",
+                            "default": "/home/pipeline-server/resources/models/yolo11s/yolo11s_openvino_model/yolo11s.xml"
+                        },
+                        "detection_instance_id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9_]+$",
+                            "default": "instnpu0"
+                        },
+                        "video": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.-]+\\.(avi|mp4|mkv|ts)$",
+                            "default": "uav_sample_back.avi"
+                        },
+                        "captioner_model_path": {
+                            "type": "string",
+                            "pattern": "^/home/pipeline-server/resources/ov_models/[A-Za-z0-9_./-]+$",
+                            "default": "/home/pipeline-server/resources/ov_models/gpu/InternVL2-1B"
+                        },
+                        "captioner_instance_id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9_]+$",
+                            "default": "instvlm_gpu"
+                        },
+                        "captioner_prompt": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9 ,.?'-]+$",
+                            "default": "Describe what you see in the scene."
+                        },
+                        "captioner_max_new_tokens": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 4096,
+                            "default": 50
+                        },
+                        "frame_width": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 896
+                        },
+                        "frame_height": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 448
+                        },
+                        "overlay_label": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_-]{1,48}$",
+                            "default": "PyMAVLink-RTSP-NPU-GPU-Caption"
+                        },
+                        "mqtt_topic": {
+                            "type": "string",
+                            "pattern": "^uav/caption/[A-Za-z0-9_-]+$",
+                            "default": "uav/caption/npu"
                         }
                     }
                 },
                 "auto_start": false
             },
             {
-                "name": "uav_udpsink_gpu",
+                "name": "uav_camera_npu",
                 "source": "gstreamer",
                 "queue_maxsize": 50,
-                "pipeline": "multifilesrc location=/home/pipeline-server/resources/videos/uav_sample.avi loop=true ! h264parse ! decodebin3 ! gvadetect device=GPU model-instance-id=instgpu0 inference-region=full-frame inference-interval=1 batch-size=1 nireq=1 ie-config=\"GPU_THROUGHPUT_STREAMS=1\" threshold=0.4 name=detection ! gvapython module=/home/pipeline-server/gvapython/telemetry-overlay-pymavlink.py class=DrawDynamicText function=process_frame arg=[\"PyMAVLink-UDP-GPU\"] ! queue ! gvametaconvert add-empty-results=true name=metaconvert ! gvametapublish name=destination ! gvawatermark ! vah264lpenc ! rtph264pay ! udpsink host=host.docker.internal port=5601",
+                "pipeline": "v4l2src device={parameters[device]} ! video/x-raw,width={parameters[camera_width]},height={parameters[camera_height]},framerate={parameters[camera_fps]}/1 ! videoconvert ! video/x-raw,format=NV12 ! queue ! gvadetect device=NPU name=detection model-instance-id={parameters[detection_instance_id]} model={parameters[detection_model]} inference-region=full-frame inference-interval=1 batch-size=1 nireq=4 threshold=0.4 ! gvapython module=/home/pipeline-server/gvapython/telemetry-overlay-pymavlink.py class=DrawDynamicText function=process_frame arg=[\"{parameters[overlay_label]}\"] ! queue ! gvametaconvert add-empty-results=true name=metaconvert ! gvametapublish name=destination method=file file-path=/dev/null ! queue ! gvafpscounter ! appsink name=appsink",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "detection-properties": {
-                             "element": {
-                                "name": "detection",
-                                "format": "element-properties"
-                              }
+                        "detection_model": {
+                            "type": "string",
+                            "pattern": "^/home/pipeline-server/resources/models/[A-Za-z0-9_./-]+\\.xml$",
+                            "default": "/home/pipeline-server/resources/models/yolo11s/yolo11s_openvino_model/yolo11s.xml"
+                        },
+                        "detection_instance_id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9_]+$",
+                            "default": "instnpu0"
+                        },
+                        "overlay_label": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_-]{1,48}$",
+                            "default": "PyMAVLink-Camera-NPU"
+                        },
+                        "device": {
+                            "type": "string",
+                            "pattern": "^/dev/(video[0-9]{1,3}|v4l/by-(id|path)/[A-Za-z0-9_.:+-]{1,128})$",
+                            "default": "/dev/video0"
+                        },
+                        "camera_width": {
+                            "type": "integer",
+                            "minimum": 16,
+                            "maximum": 7680,
+                            "default": 1280
+                        },
+                        "camera_height": {
+                            "type": "integer",
+                            "minimum": 16,
+                            "maximum": 4320,
+                            "default": 720
+                        },
+                        "camera_fps": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 120,
+                            "default": 30
                         }
                     }
                 },
                 "auto_start": false
             },
             {
-                "name": "uav_udpsink_npu",
+                "name": "uav_camera_npu_gpu",
                 "source": "gstreamer",
                 "queue_maxsize": 50,
-                "pipeline": "multifilesrc location=/home/pipeline-server/resources/videos/uav_sample.avi loop=true ! h264parse ! decodebin3 ! gvadetect device=NPU model-instance-id=instnpu0 inference-region=full-frame inference-interval=1 batch-size=1 nireq=4 threshold=0.4 name=detection ! gvapython module=/home/pipeline-server/gvapython/telemetry-overlay-pymavlink.py class=DrawDynamicText function=process_frame arg=[\"PyMAVLink-UDP-NPU\"] ! queue ! gvametaconvert add-empty-results=true name=metaconvert ! gvametapublish name=destination ! gvawatermark ! vah264lpenc ! rtph264pay ! udpsink host=host.docker.internal port=5602",
+                "pipeline": "v4l2src device={parameters[device]} ! video/x-raw,width={parameters[camera_width]},height={parameters[camera_height]},framerate={parameters[camera_fps]}/1 ! videoconvert ! video/x-raw,format=NV12 ! tee name=split allow-not-linked=true split. ! queue ! gvadetect device=NPU name=detection model-instance-id={parameters[detection_instance_id]} model={parameters[detection_model]} inference-region=full-frame inference-interval=1 batch-size=1 nireq=4 threshold=0.4 ! gvapython module=/home/pipeline-server/gvapython/telemetry-overlay-pymavlink.py class=DrawDynamicText function=process_frame arg=[\"{parameters[overlay_label]}\"] ! queue ! gvametaconvert add-empty-results=true name=metaconvert ! gvametapublish name=destination method=file file-path=/dev/null ! queue ! gvafpscounter ! appsink name=appsink sync=false split. ! queue leaky=downstream max-size-buffers=2 ! videorate drop-only=true ! video/x-raw,framerate=1/5 ! videoscale ! videoconvert ! video/x-raw,format=BGRA,width=[1,{parameters[frame_width]}],height=[1,{parameters[frame_height]}] ! gvagenai name=captioner model-instance-id={parameters[captioner_instance_id]} model-path={parameters[captioner_model_path]} device=GPU prompt=\"{parameters[captioner_prompt]}\" chunk-size=1 generation-config=\"max_new_tokens={parameters[captioner_max_new_tokens]},num_beams=1,do_sample=false,temperature=0.1,repetition_penalty=1.1\" frame-rate=0 metrics=true ! gvametaconvert add-empty-results=true name=caption_metaconvert ! gvapython class=MQTTPublisher function=process module=/home/pipeline-server/gvapython/mqtt_publisher/mqtt_publisher.py name=mqtt_publisher kwarg={% raw %}{{\"topic\":\"{% endraw %}{parameters[mqtt_topic]}{% raw %}\"}}{% endraw %} ! fakesink sync=false async=false",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "detection-properties": {
-                             "element": {
-                                "name": "detection",
-                                "format": "element-properties"
-                              }
+                        "detection_model": {
+                            "type": "string",
+                            "pattern": "^/home/pipeline-server/resources/models/[A-Za-z0-9_./-]+\\.xml$",
+                            "default": "/home/pipeline-server/resources/models/yolo11s/yolo11s_openvino_model/yolo11s.xml"
+                        },
+                        "detection_instance_id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9_]+$",
+                            "default": "instnpu0"
+                        },
+                        "captioner_model_path": {
+                            "type": "string",
+                            "pattern": "^/home/pipeline-server/resources/ov_models/[A-Za-z0-9_./-]+$",
+                            "default": "/home/pipeline-server/resources/ov_models/gpu/InternVL2-1B"
+                        },
+                        "captioner_instance_id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9_]+$",
+                            "default": "instvlm_gpu"
+                        },
+                        "captioner_prompt": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9 ,.?'-]+$",
+                            "default": "Describe what you see in the scene."
+                        },
+                        "captioner_max_new_tokens": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 4096,
+                            "default": 50
+                        },
+                        "frame_width": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 896
+                        },
+                        "frame_height": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 448
+                        },
+                        "overlay_label": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_-]{1,48}$",
+                            "default": "PyMAVLink-Camera-NPU-GPU-Caption"
+                        },
+                        "mqtt_topic": {
+                            "type": "string",
+                            "pattern": "^uav/caption/[A-Za-z0-9_-]+$",
+                            "default": "uav/caption/npu"
+                        },
+                        "device": {
+                            "type": "string",
+                            "pattern": "^/dev/(video[0-9]{1,3}|v4l/by-(id|path)/[A-Za-z0-9_.:+-]{1,128})$",
+                            "default": "/dev/video0"
+                        },
+                        "camera_width": {
+                            "type": "integer",
+                            "minimum": 16,
+                            "maximum": 7680,
+                            "default": 1280
+                        },
+                        "camera_height": {
+                            "type": "integer",
+                            "minimum": 16,
+                            "maximum": 4320,
+                            "default": 720
+                        },
+                        "camera_fps": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 120,
+                            "default": 30
                         }
                     }
                 },

@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+#
+# SOURCE=basler: the pipeline server uses a pylon/gencamsrc image that you build yourself and a macvlan interface on the cameras' TSN VLAN
+# (tsn0.3, VLAN 3), so GigE Vision discovery and the camera stream (192.168.3.x) reach the container directly.
+# The scenescape network stays attached for the broker; the macvlan has no gateway, so default traffic keeps
+# using the scenescape network. (Docker does not let the host itself talk to a macvlan address - not needed.)
+services:
+  dlstreamer-pipeline-server:
+    volumes:
+      - /dev:/dev  # device access for the camera SDK (USB cameras; harmless for GigE)
+    image: tsn-dlstreamer-pipeline-server-basler:${SCENESCAPE_VERSION}
+    pull_policy: never  # built by hand, see docs/user-guide/how-to-guides/basler/integrate-basler-camera-with-scenescape.md
+    networks:
+      scenescape:
+        gw_priority: 1
+      cameras:
+        ipv4_address: ${BASLER_CONTAINER_IP:-192.168.3.61}
+        gw_priority: 0
+
+networks:
+  cameras:
+    driver: macvlan
+    driver_opts:
+      parent: ${BASLER_PARENT_IFACE:-tsn0.3}
+    ipam:
+      config:
+        - subnet: ${BASLER_SUBNET:-192.168.3.0/24}
+          ip_range: ${BASLER_IP_RANGE:-192.168.3.60/30}

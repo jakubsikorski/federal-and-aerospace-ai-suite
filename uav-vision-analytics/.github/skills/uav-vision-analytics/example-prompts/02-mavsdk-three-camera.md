@@ -23,9 +23,9 @@ annotated stream. Automatically start all three pipelines when the UAV arms
 
 Produce:
 - `docker-compose-uavsdk.yml` (single DL Streamer Pipeline Server container)
-- `configs/config-uavsdk.json` with three camera pipeline variants
+- `configs/config-uavsdk.json` with the nine detection/caption pipelines (RTSP source) and `configs/cameras-uavsdk.yaml` with the nadir, forward and rear cameras
 - `gvapython/telemetry-overlay-uavsdk.py` MQTT-based overlay
-- `scripts/uavsdk_pipeline_manager.py` with ffprobe RTSP probing
+- `scripts/mavlink_pipeline_manager.py` (shared manager; `ARM_SOURCE=mqtt` for the SDK) with ffprobe RTSP probing
 - `Makefile` with uavsdk-up/down, start-rtsp targets
 - `.env` template
 - `tests/` pytest suite

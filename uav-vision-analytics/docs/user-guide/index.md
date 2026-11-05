@@ -19,7 +19,10 @@ flight controller telemetry on a companion compute platform.
 
 Based on DL Streamer Pipeline Server, the application processes video from a UAV-mounted
 camera or a simulated video file, detects common object across 80 classes (person, car, truck, bus, bicycle, motorcycle, and more), and outputs an RTSP stream annotated with MAVLink telemetry (GPS, altitude, speed, heading). The stream is consumable by any capable client, such as QGroundControl (QGC), VLC, and ffplay.
-It runs the YOLO11s, Ultralytics' pretrained small object detection model.
+It runs the YOLO11s, Ultralytics' pretrained small object detection model. Each camera's
+pipeline can optionally also run a vision-language model (VLM) alongside detection to
+publish natural-language scene captions over MQTT -- see
+[Configure the Cameras](./how-to-customize/camera-management/configure-cameras.md).
 
 ![UAV drone](./_assets/fedaero-drone.svg)
 
@@ -51,7 +54,8 @@ Integration mode that connects to a running instance of the UAV Mission Compute 
 [Get Started — UAV Mission Compute SDK Mode](./get-started/get-started-uavsdk.md)
 
 To learn more about the application and how to use it, see
-[How to use UAV Vision Analytics Application](./how-to-guides.md).
+[How-To Guides](./how-to-guides.md); to change what it does, see
+[How to Customize](./how-to-customize.md).
 
 ## Installation Guide
 
@@ -60,8 +64,9 @@ Follow the steps below to set up and run the UAV Blueprint:
 1. [Infrastructure Setup](./infrastructure-setup.md) — Build the OS image, flash it to a bootable USB, and validate the provisioned platform.
 2. [Install OEP SDK and Usage](./get-started/install-oep-sdks.md) — Verify hardware accelerators and install the UAV Mission Compute SDK on the provisioned target.
 3. [Install UAV Vision Analytics Application](install-uav-app.md) — Choose and follow the deployment mode that matches your setup (Standalone or UAV Mission Compute SDK).
-4. [How to use UAV Vision Analytics Application](./how-to-guides.md) — Learn how to configure models, cameras, QGroundControl, and more.
-5. [Benchmarks](./benchmark.md) — Measure stream density and hardware utilization.
+4. [How-To Guides](./how-to-guides.md) — Operate the application: QGroundControl, the ground station, deployment modes, troubleshooting.
+5. [How to Customize](./how-to-customize.md) — Change cameras, models, pipelines, the overlay and live-search tuning.
+6. [Benchmarks](./benchmark.md) — Measure stream density and hardware utilization.
 
 ## AI Agent Skills
 
@@ -96,7 +101,8 @@ immediately.
 Infrastructure Setup <./infrastructure-setup.md>
 Install OEP SDK and Usage <./get-started/install-oep-sdks.md>
 Install UAV Vision Analytics Application <install-uav-app.md>
-How to use UAV Vision Analytics Application <./how-to-guides.md>
+How-To Guides <./how-to-guides.md>
+How to Customize <./how-to-customize.md>
 Benchmarks <./benchmark.md>
 Agent SKILLs <./agents.md>
 Release Notes <./release-notes.md>

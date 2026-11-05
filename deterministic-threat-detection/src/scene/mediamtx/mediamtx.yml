@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+#
+# Relay on the SceneScape host. Each camera stream is pulled ONCE over the TSN VLAN from the
+# machine that serves the video file, then handed to two readers:
+#   - the DL Streamer pipelines, over RTSP inside the compose network (rtsp://mediamtx:8554/<cam>)
+#   - the browser, as WebRTC on :8889 (the dashboard embeds the player page)
+# The sources must match CAMERA*_HOST in .env (the machines that serve the video files).
+logLevel: info
+
+rtsp: yes
+rtspTransports: [tcp]
+rtspAddress: :8554
+
+rtmp: no
+hls: no
+srt: no
+moq: no
+api: no
+metrics: no
+pprof: no
+playback: no
+
+webrtc: yes
+webrtcAddress: :8889
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: ""
+# No public STUN server in the lab network; the browser reaches the host address directly.
+webrtcICEServers2: []
+# The address the browser uses is added through MTX_WEBRTCADDITIONALHOSTS (see docker-compose.yml)
+
+paths:
+  Cam_x1_0:
+    source: rtsp://192.168.127.12:8554/Cam_x1_0
+    rtspTransport: udp  # like the old demo: loss is not resent, so congestion damages the picture (tcp = lossless but stalls)
+    sourceOnDemand: no
+  Cam_x2_0:
+    source: rtsp://192.168.127.13:8554/Cam_x2_0
+    rtspTransport: udp  # like the old demo: loss is not resent, so congestion damages the picture (tcp = lossless but stalls)
+    sourceOnDemand: no

@@ -1,0 +1,88 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+# The shared dashboard (one web UI, a tab per use case) and the MQTT broker that receives the camera
+# machines' results (use case 1). Independent of the scene stack in ../scene: own compose project,
+# own broker on port ${MQTT_PORT} (1884), dashboard on the lab address.
+name: tsn-dashboard
+
+services:
+  broker:
+    image: docker.io/library/eclipse-mosquitto:2.0.22
+    ports:
+      - "${MQTT_PORT:-1884}:1883"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    restart: unless-stopped
+
+  # System load of this machine for the dashboard's "System load" card (CPU, memory, GPU, temperature).
+  # Published on loopback only; the backend (host network) reads its event stream.
+  metrics-manager:
+    image: docker.io/intel/metrics-manager:2026.2.0
+    privileged: true
+    pid: host
+    volumes:
+      - /sys:/sys:ro
+    ports:
+      - "127.0.0.1:${METRICS_PORT:-19090}:9090"
+    # The image only checks /health, which still passes when the collector (telegraf) has stopped delivering
+    # (the stream then carries no metrics). This wrapper restarts the service after 3 empty checks (~1 min);
+    # `restart: unless-stopped` brings it back.
+    command:
+      - sh
+      - -c
+      - |
+        /entrypoint.sh &
+        pid=$$!
+        trap 'kill $$pid; wait $$pid; exit 0' TERM INT
+        sleep 60
+        bad=0
+        while kill -0 $$pid 2>/dev/null; do
+          if python -c "
+        import urllib.request, sys
+        r = urllib.request.urlopen('http://localhost:9090/metrics/stream', timeout=8)
+        for l in r:
+            if l.startswith(b'data:'):
+                sys.exit(0 if b'\"metrics\": [{' in l else 1)
+        sys.exit(1)"; then bad=0; else bad=$$((bad+1)); fi
+          if [ $$bad -ge 3 ]; then echo "metrics stream has no data, restarting"; kill $$pid; bad=0; fi
+          sleep 20
+        done
+        wait $$pid
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      args:
+        UID: ${LOCAL_UID:-1000}
+        GID: ${LOCAL_GID:-1000}
+        http_proxy: ${http_proxy:-}
+        https_proxy: ${https_proxy:-}
+    image: tsn-dashboard-backend
+    # Host networking: the iperf3 server binds the VLAN 5 address, and the dashboard binds the
+    # lab address. Nothing here passes through a Docker bridge/NAT.
+    network_mode: host
+    depends_on:
+      - broker
+    env_file:
+      - ../../lab.env  # machine addresses (SSH_USER, M*_LAB_IP, M*_NOISE_IP, SWITCH_IP)
+    environment:
+      MQTT_HOST: 127.0.0.1
+      MQTT_PORT: ${MQTT_PORT:-1884}
+      DASHBOARD_BIND: ${DASHBOARD_BIND:-0.0.0.0}
+      DASHBOARD_PORT: ${DASHBOARD_PORT:-8080}
+      TRAFFIC_MODE: ${TRAFFIC_MODE:-iperf}
+      TRAFFIC_MAX_MBPS: ${TRAFFIC_MAX_MBPS:-1000}
+      SWITCH_MODE: ${SWITCH_MODE:-moxa}
+      SWITCH_ALLOW_WRITE: ${SWITCH_ALLOW_WRITE:-0}
+      SCENE_SOURCE: ${SOURCE:-video}
+      SCENE_ENABLED: ${SCENE_ENABLED:-1}
+      # name=url pairs of the machines' metrics-manager streams (the local .env lists them)
+      METRICS_SOURCES: ${METRICS_SOURCES:-}
+      HOTA_WINDOW_S: ${HOTA_WINDOW_S:-10}
+    volumes:
+      - ${HOME}/.ssh:/home/app/.ssh:ro
+      # use case 2: ground truth for the live HOTA and the SceneScape broker CA (TLS)
+      - ../data:/data:ro
+      - ../scene/secrets/certs/scenescape-ca.pem:/certs/scenescape-ca.pem:ro
+    restart: unless-stopped

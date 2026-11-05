@@ -1,171 +1,160 @@
 # Get Started
 
-This guide provides a streamlined path to setting up and running the Deterministic Threat
-Detection demonstration. It covers the essential prerequisites and the main steps to see the
-system in action.
+Set up four machines and a Moxa TSN switch, then start both use cases with one command.
 
-## How It Works
+## Prerequisites
 
-![DTD High-Level Architecture](./_assets/rtsp-dtd-architecture.svg)
+- Four machines and a Moxa TSN-G5000 switch as listed in [System requirements](./system-requirements.md).
+- Machine-1 is the machine you work on. It has `git`, `make` and Docker, and passwordless ssh
+  works from it to machines 2, 3 and 4 (`ssh-copy-id <user>@<machine>`). Your user is in the
+  `docker` group on all four. [First-time setup](./first-time-setup.md) walks through these.
 
-The use case involves multiple RTSP cameras streaming video to edge compute nodes for AI
-inference. Simultaneously, a sensor data producer generates telemetry data. Both inference
-results and sensor data are published over MQTT.
+## Clone the project
 
-An aggregation node measures the end-to-end latency. By injecting background traffic and then
-enabling TSN features, the demonstration shows how TSN provides consistent and deterministic
-latency for critical data streams.
+```bash
+git clone https://github.com/open-edge-platform/federal-and-aerospace-ai-suite.git
+cd federal-and-aerospace-ai-suite/deterministic-threat-detection
+```
 
-To ensure synchronized operations across all devices, every machine in the system uses Precision Time Protocol (PTP) to align their clocks accurately.
+Clone it on machine-1 only: `make up` copies what the other machines need. The one-time setup scripts are
+the exception; [First-time setup](./first-time-setup.md) copies them by hand.
 
-An aggregation node collects the MQTT messages and calculates the end-to-end latency. To demonstrate the impact of Time-Sensitive Networking (TSN), background traffic is introduced into the network. By enabling TSN features, the system showcases how TSN guarantees consistent and deterministic latency for critical data streams, even under network congestion.
+## First time setup guide
 
+One-time steps per machine and for the switch (ssh and Docker, NIC and VLANs, PTP, switch,
+`lab.env`): **[First-time setup](./first-time-setup.md)**. Skip it once done.
 
-## System Requirements
+## Architecture diagram
 
-See [System Requirements](./get-started/system-requirements.md) for the full list of software and hardware prerequisites.
+![Architecture: live traffic, no load](./_assets/architecture-video-idle.gif)
 
-## Network Topology
+```mermaid
+flowchart LR
+    subgraph C["machine-2 / machine-3"]
+        V["test video<br/>RTSP"]
+        I["DL Streamer<br/>inference"]
+    end
+    subgraph M["machine-1"]
+        B["MQTT broker"]
+        D["dashboard<br/>latency"]
+        R["mediamtx relay"]
+        S["DL Streamer +<br/>SceneScape"]
+        H["live HOTA"]
+    end
+    N["machine-4<br/>load, VLAN 5"]
+    V --> I -->|"use case 1: MQTT, VLAN 1"| B --> D
+    V -->|"use case 2: RTSP, VLAN 1"| R --> S --> H --> D
+    N ==>|"load, VLAN 5"| SW["Moxa switch<br/>Qbv"]
+    SW -.->|"confined to its slot"| M
+```
 
-![TSN Network Topology](./_assets/rtsp-dtd-network-topology.svg)
+- **machine-2 / machine-3:** replay a test video as an RTSP camera, and run the use case 1
+  inference pipeline, which publishes results over MQTT.
+- **machine-1:** receives MQTT (use case 1), pulls both RTSP streams once, decodes and tracks them
+  with DL Streamer and SceneScape (use case 2), and serves the dashboard.
+- **machine-4:** generates the background load on VLAN 5.
+- **Switch:** PTP grandmaster; with Qbv on, VLAN 5 is confined to its own time slot.
+- **Lab network (grey):** ssh, load control and switch commands. Never shaped.
 
-The experimental setup consists of:
+The same diagram is live in the dashboard (**Architecture** button).
 
-- **2 × [AXIS RTSP Camera P3265-LVE](https://www.axis.com/products/axis-p3265-lve/support)**
-- **1 × [Moxa Managed Switch TSN-G5000 Series](https://www.moxa.com/getmedia/a0db0ef9-2741-4bad-91c6-1ec1827aca64/moxa-tsn-g5000-series-web-console-manual-v2.3.pdf)**
-- **5 × Arrow Lake Linux Machines with `Intel i226` TSN network cards**
+## Application Deployment
 
-### Logical Roles
+```bash
+make up
+```
 
-| Machine | Role |
-|---------|------|
-| Machine 1 | Camera 1 RTSP Capture + AI Inference |
-| Machine 2 | Camera 2 RTSP Capture + AI Inference |
-| Machine 3 | Sensor Data Producer (MQTT) |
-| Machine 4 | MQTT Aggregator + Visualization |
-| Machine 5 | Traffic Injector (`iperf`) |
+`make up` starts the test-video streams, the dashboard, the load agent, the camera pipelines and
+SceneScape.
 
-All machines are connected to a MOXA switch and synchronized using PTP.
+- The first run pulls the Docker images (several GB; the DL Streamer image alone is about 5 GB)
+  and downloads the detection model, so it takes several minutes.
+- Before the first model download, `make up` asks you to accept the model license (Open Model
+  Zoo, Apache-2.0). Answering anything other than yes aborts the setup. The answer is remembered
+  in `src/data/models/.terms-accepted`. For non-interactive runs, set `ACCEPT_MODEL_TERMS=yes`.
 
-## Steps to Test the Use Case
+When it finishes it prints:
 
-1. **Configure PTP on all machines.**
+- Dashboard: `https://<machine-1 lab address>/dashboard/`
+- SceneScape: `https://<machine-1 lab address>/` (user `admin`, password in
+  `src/scene/secrets/supass`)
 
-   Synchronize the system clocks of all machines to a
-   common time reference using Precision Time Protocol (PTP). This is essential for accurate
-   latency measurement.
+The certificate is self-signed; accept the browser warning.
 
-   ```bash
-   sudo apt-get update
-   sudo apt-get install -y linuxptp git
-   git clone https://git.code.sf.net/p/linuxptp/code linuxptp
-   cd linuxptp
-   # Terminal 1: Run ptp4l to synchronize the PTP clock
-   sudo ptp4l -i enp1s0 -f configs/gPTP.cfg --step_threshold=1 -m -s
-   # Terminal 2: Run phc2sys to synchronize the system clock to the PTP clock
-   sudo phc2sys -s enp1s0 -c CLOCK_REALTIME --step_threshold=1 --transportSpecific=1 -w -m
-   ```
+Try it:
 
-   > [!NOTE]
-   > Make sure to replace `enp1s0` with the actual network interface name associated
-   > with the `i226` network card.
+1. **Use case 1** shows latency per camera (about 2 ms idle).
 
-   For detailed instructions on configuring PTP, refer to the [PTP Configuration Guide](./how-to-guides/rtsp-deterministic-inference/configure-ptp-gptp.md).
+   ![Use case 1: latency](./_assets/uc1-latency.gif)
 
-2. **Create VLAN on all machines.**
+2. **Use case 2** shows the live tracking quality (HOTA) and the frames the tracker sees. The
+   dip to about 0 once per minute is the 62 s test video restarting.
 
-   Set up Virtual LANs (VLANs) to segregate network traffic,
-   isolating critical data from best-effort traffic.
+   ![Use case 2: tracking](./_assets/uc2-tracking-video.gif)
 
-   > [!NOTE]
-   > Configure the VLAN on the MOXA as mentioned in the
-   > [MOXA VLAN Configuration Guide](./how-to-guides/common/configure-vlan-on-moxa-switch.md)    to assign VLAN ID on TSN switch.
+3. Switch off Qbv (the toggle works only after you set `SWITCH_ALLOW_WRITE=1`, see
+   [First-time setup](./first-time-setup.md#6-lab-configuration-machine-1)) and move **Network load**
+   to 1000 Mbit/s: latency climbs from milliseconds to
+   seconds and the tracker rate (use case 2) and HOTA collapse. The Architecture view shows the
+   streams stalling and frames lost.
 
-   On the Arrow Lake machines, create VLAN interfaces corresponding to the VLAN IDs
-   configured on the MOXA switch.
+   ![Load with Qbv off](./_assets/architecture-video-load-qbv-off.gif)
 
-   ```bash
-   sudo ip link add link enp1s0 name enp1s0.1 type vlan id 1
-   sudo ip link set enp1s0.1 type vlan egress-qos-map 0:1
-   sudo ifconfig enp1s0.1 192.168.127.31 up
+4. Switch Qbv on: the load is confined to its slot (about 95 Mbit/s gets through) and both
+   recover.
 
-   sudo ip link add link enp1s0 name enp1s0.3 type vlan id 3
-   sudo ip link set enp1s0.3 type vlan egress-qos-map 0:3
-   sudo ifconfig enp1s0.3 192.168.3.31 up
+   ![Load with Qbv on](./_assets/architecture-video-load-qbv-on.gif)
 
-   sudo ip link add link enp1s0 name enp1s0.5 type vlan id 5
-   sudo ip link set enp1s0.5 type vlan egress-qos-map 0:5
-   sudo ifconfig enp1s0.5 192.168.5.31 up
-   ```
+Qbv takes about 10 s to turn on and up to 30 s to turn off; the toggle shows the real switch state.
 
-   > [!NOTE]
-   >
-   > - Make sure to replace `enp1s0` with the actual network interface name associated
-   >   with the `i226` network card.
+```bash
+make status
+make down
+```
 
-   For detailed instructions on creating VLANs on HOST machines, refer to the
-   [HOST VLAN Configuration Guide](./how-to-guides/common/create-vlan-on-all-machines.md).
+## Basler testing
 
-3. **Run RTSP Camera Capture and AI Inference.**
+Use two Basler GigE cameras instead of the test videos for use case 2. Prepare them first:
+[Configure Basler PTP timestamps](./how-to-guides/basler/configure-basler-ptp-timestamps.md) and
+[Integrate Basler cameras with SceneScape](./how-to-guides/basler/integrate-basler-camera-with-scenescape.md),
+which also explains how to build the pipeline server image with the Basler SDK yourself (the project does not ship it).
 
-   Start the video pipeline on Machines 1 and 2. This involves capturing the RTSP stream,
-   timestamping frames using the PTP-synchronized clock, and running AI inference on the
-   video and publish the results over MQTT.
+```bash
+make up SOURCE=basler
+make down
+```
 
-   For detailed instructions on running RTSP camera capture and AI inference, refer to the
-   [RTSP Camera and AI Inference Guide](./how-to-guides/rtsp-deterministic-inference/run-rtsp-camera-and-ai-inference.md).
+The test-video streams still start: use case 1 needs them on machines 2 and 3 (do not pass
+`STREAMS=0`). Always pass `SOURCE=basler` on the command line; the default is `video`.
+HOTA is not shown for Basler (no ground truth); the tracker rate is.
 
-4. **Run Sensor Data Producer.**
+## Troubleshooting
 
-   On Machine 3, start the Python script that simulates a sensor generating and publishing timestamped data over MQTT.
+| Symptom | Fix |
+|---------|-----|
+| Browser shows `400 Bad Request` | The host in the URL is not allowed; use the lab address printed by `make up` |
+| Qbv toggle disabled with a banner | Turn on **Schedule Gate** for port 1 in the switch web page |
+| Qbv toggle disabled, read-only | Set `SWITCH_ALLOW_WRITE=1` in `src/dashboard/.env`, run `make up` again |
+| Latency stays high with Qbv on | Check the VLAN priority maps (`ip -d link show tsn0.1` lists `egress_qos`) and PTP (`sudo ptp-profile status`) |
+| Basler `Device::open()` fails | Another process holds the camera: `docker stop -t 30` the pipeline container, then retry |
+| A start failed half way | `make down`, fix the cause, `make up` again. `make -C src/scene clean` also deletes the SceneScape database volumes |
 
-   For detailed instructions on running the sensor data producer, refer to the
-   [Sensor Data Producer Guide](./how-to-guides/rtsp-deterministic-inference/run-sensor-data-producer.md).
+## Key References
 
-5. **Run MQTT Aggregator and Visualization.**
-
-   On Machine 4, launch the application that subscribes to the MQTT topics, calculates end-to-end latency, and displays it on a live dashboard.
-
-   ![MQTT Data Aggregator](./_assets/mqtt-data-aggregator.png)
-
-   For detailed instructions on running the MQTT aggregator and visualization, refer to the
-   [MQTT Aggregator and Visualization Guide](./how-to-guides/rtsp-deterministic-inference/run-mqtt-aggregator-and-visualization.md).
-
-6. **Run Traffic Injector.**
-
-   On Machine 5, use iPerf3 to generate high-volume background
-   traffic to simulate network congestion.
-
-   ![MQTT Data Aggregator With Traffic](./_assets/mqtt-data-aggregator-with-traffic.png)
-
-   For detailed instructions on running the traffic injector, refer to the
-   [Traffic Injector Guide](./how-to-guides/rtsp-deterministic-inference/run-traffic-injector.md).
-
-7. **Enable TSN Traffic Shaping.**
-
-   Configure the Time-Aware Shaper (IEEE 802.1Qbv) on the MOXA switch to prioritize the
-   critical traffic from cameras and sensors, protecting it from the background traffic.
-   ![MOXA Time Aware Shaper](./_assets/moxa-time-aware-shaper-port-setting.png)
-
-   For detailed instructions on enabling TSN traffic shaping, refer to the
-   [TSN Traffic Shaping Guide](./how-to-guides/common/enable-tsn-traffic-shaping.md).
-
-8. **Analyze Results and Visualize Latency.**
-
-   Observe the latency graphs on the MQTT Aggregator dashboard. With TSN enabled,
-   the latency for critical traffic should remain low and deterministic, even with
-   the iPerf3 traffic running.
-
-## Learn More
-
-- [How-to Guides](./how-to-guides.md)
-- [Release Notes](./release-notes.md)
+- [MOXA TSN-G5000 series](https://www.moxa.com/en/products/industrial-network-infrastructure/ethernet-switches/layer-2-managed-switches/tsn-g5008-series)
+- [SceneScape](https://github.com/open-edge-platform/scenescape)
+- [DL Streamer](https://github.com/open-edge-platform/dlstreamer)
+- [TrackEval (HOTA)](https://github.com/JonathonLuiten/TrackEval)
+- [First-time setup](./first-time-setup.md)
+- [How-to guides](./how-to-guides.md)
 
 <!--hide_directive
 :::{toctree}
 :hidden:
 
-get-started/system-requirements
+system-requirements
+first-time-setup
+how-to-guides
 
 :::
 hide_directive-->

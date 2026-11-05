@@ -1,0 +1,86 @@
+###############################################################################
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+#
+# UAV ground-station viewer — run this on a machine SEPARATE from the one
+# running ../uav-vision-analytics (docker-compose-pymavlink.yml /
+# docker-compose-uavsdk.yml). Enter the UAV host's IP in the dashboard and
+# press Connect; nothing here talks to the UAV host until a user does that.
+#
+# Video is always delivered via "H.264 Relay" mode: docker-compose-
+# mediamtx.yml is brought up alongside this file (see `make up`), and the
+# local mediamtx sidecar pulls the remote host's RTSP stream on demand and
+# re-serves it to the browser as WebRTC (WHEP) -- pure remux, no
+# transcoding. Requires the remote pipeline's RTSP output to be H.264 (as
+# uav-vision-analytics publishes); otherwise the dashboard shows a placeholder instead of video.
+#
+# Add docker-compose-vss.yml to also run the VSS search containers and show
+# the "Live Natural Language Search" option in the dashboard (make up-vss).
+###############################################################################
+
+services:
+
+  # This ground station's own metrics-manager -- powers the "UAV Ground
+  # Station Utilization" panel (CPU/RAM always; GPU/NPU if GPU_DEVICE/
+  # NPU_DEVICE were auto-detected by 'make init', see .env.example). Same
+  # image as uav-vision-analytics's own "metrics-manager", named
+  # "gs-metrics-manager" so the two can coexist if ever run on one machine.
+  # Internal-only (no host port published) -- viz-backend proxies its SSE
+  # stream at /api/local-metrics-stream.
+  gs-metrics-manager:
+    image: intel/metrics-manager:2026.2.0
+    container_name: uav-gs-metrics-manager
+    privileged: true
+    pid: host
+    devices:
+      - ${GPU_DEVICE:-/dev/null}:${GPU_DEVICE:-/dev/null}
+      - ${GPU_RENDER_DEVICE:-/dev/null}:${GPU_RENDER_DEVICE:-/dev/null}
+      - ${NPU_DEVICE:-/dev/null}:${NPU_DEVICE:-/dev/null}
+    volumes:
+      - /sys:/sys:ro
+    restart: unless-stopped
+
+  viz-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: uav-ground-station-backend:local
+    container_name: uav-gs-backend
+    environment:
+      - DEFAULT_REMOTE_HOST=${VIZ_COMPANION_HOST:-127.0.0.1}
+      - CAMERA_ORDER=${VIZ_CAMERA_ORDER:-front,bottom,back}
+      - REMOTE_HTTPS_PORT=${VIZ_REMOTE_HTTPS_PORT:-443}
+      - REMOTE_MQTT_PORT=${VIZ_REMOTE_MQTT_PORT:-1883}
+      - REMOTE_RTSP_PORT=${VIZ_REMOTE_RTSP_PORT:-8555}
+      # "Live Natural Language Search" is off (and hidden) unless the
+      # docker-compose-vss.yml overlay is added, which sets VSS_ENABLED=true
+      # and points the URLs at its own VSS containers. To use a full VSS
+      # deployment started with VSS's setup.sh instead, set VSS_ENABLED=true
+      # (and the URLs, if VSS runs on another machine) in .env.
+      - VSS_ENABLED=${VSS_ENABLED:-false}
+      - VSS_MANAGER_URL=${VSS_MANAGER_URL:-http://host.docker.internal:12345/manager}
+      - VSS_DATASTORE_URL=${VSS_DATASTORE_URL:-http://host.docker.internal:12345/datastore}
+      - VSS_DATASTORE_BUCKET=${VSS_DATASTORE_BUCKET:-video-summary}
+      - VSS_SEARCH_TIMEOUT_SECONDS=${VSS_SEARCH_TIMEOUT_SECONDS:-60}
+      - VSS_LIVE_SYNC_INTERVAL_SECONDS=${VSS_LIVE_SYNC_INTERVAL_SECONDS:-15}
+      - VSS_SEARCH_RELATIVE_CUTOFF=${VSS_SEARCH_RELATIVE_CUTOFF:-0.90}
+      - VSS_PLAYBACK_DEFAULT=${VSS_PLAYBACK_DEFAULT:-sd}
+      - VSS_PREVIEW_ENABLED=${VSS_PREVIEW_ENABLED:-true}
+      - VSS_PREVIEW_HEIGHT=${VSS_PREVIEW_HEIGHT:-360}
+      - VSS_PREVIEW_MAX_KBPS=${VSS_PREVIEW_MAX_KBPS:-800}
+      - VSS_PREVIEW_CACHE_MB=${VSS_PREVIEW_CACHE_MB:-1024}
+      - VSS_PREVIEW_PREWARM=${VSS_PREVIEW_PREWARM:-3}
+      - VSS_SEARCH_MIN_PEAK_SCORE=${VSS_SEARCH_MIN_PEAK_SCORE:-0.25}
+      # "Flight Summary" report -- built from the MQTT
+      # scene-caption stream, independent of VSS.
+      - CAPTION_BUFFER_SIZE=${CAPTION_BUFFER_SIZE:-1000}
+      - CAPTION_LOG_IDLE_TTL_SECONDS=${CAPTION_LOG_IDLE_TTL_SECONDS:-120}
+    extra_hosts:
+      # Lets the default VSS_*_URL reach a VSS stack published on this same
+      # machine's host ports.
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${VIZ_HOST_IP:-127.0.0.1}:${VIZ_PORT:-8080}:8080"
+    depends_on:
+      - gs-metrics-manager
+    restart: on-failure:5

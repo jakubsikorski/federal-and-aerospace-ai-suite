@@ -41,7 +41,7 @@ Expected: `card0`/`renderD128` under `/dev/dri`, `accel0` under `/dev/accel`, an
 Get the UAV Mission Compute SDK source on the target and start the simulation stack.
 
 ```bash
-curl -OjL https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/releases/download/2026.2/uav-mission-apps.zip
+curl -OjL https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/releases/download/fedaero-latest/uav-mission-apps.zip
 unzip uav-mission-apps.zip
 cd uav-mission-compute-sdk/
 ```
@@ -156,10 +156,10 @@ Once `make up-sim-camera` is up, treat the SDK as a fixed platform layer that yo
 
 | Interface | Endpoint (default) | What your app does with it |
 | --- | --- | --- |
-| Telemetry (MQTT) | `mqtt://<host>:1884`, topics `uav/<id>/telemetry/#` | Subscribe to position, attitude, battery, GPS, and armed/disarmed state |
+| Telemetry (MQTT) | `mqtt://<host>:1883`, topics `uav/<id>/telemetry/#` | Subscribe to position, attitude, battery, GPS, and armed/disarmed state |
 | Video (RTSP) | `rtsp://<host>:8554/uav-1/{nadir,forward,rear}` | Read one or more H.264 camera streams |
 | Vehicle control (REST) | `http://<host>:8080/action/*`, `/telemetry`, `/state` | Arm, takeoff, land, return, or query current state |
-| Results/publish (MQTT) | `mqtt://<host>:1884`, custom topics under `uav/<id>/app/...` | Publish detections, alerts, or app events |
+| Results/publish (MQTT) | `mqtt://<host>:1883`, custom topics under `uav/<id>/app/...` | Publish detections, alerts, or app events |
 | Observability (optional) | InfluxDB `:8086`, Grafana `:3000` | Persist and visualize app metrics |
 
 Key runtime facts to design around:
@@ -175,7 +175,7 @@ Key runtime facts to design around:
 Pick one based on how tightly your app needs to co-locate with the SDK:
 
 - **Sidecar container on the SDK Compose network** — simplest for accessing services by DNS name (`mosquitto`, `mediamtx`, `companion-bridge`) without exposing ports. Add a service to your own `docker-compose.yml` and attach `networks: [uav-mission-compute-sdk_default]` (or the actual network name from `docker network ls`).
-- **Standalone container / host process** — connect to published host ports (`localhost:1884`, `localhost:8554`, `localhost:8080`). Requires `HOST_IP=0.0.0.0` in the SDK's `.env`.
+- **Standalone container / host process** — connect to published host ports (`localhost:1883`, `localhost:8554`, `localhost:8080`). Requires `HOST_IP=0.0.0.0` in the SDK's `.env`.
 - **Remote host** — same as standalone, but point at the SDK host's IP. Use only in a trusted network; MQTT and RTSP are unauthenticated by default.
 
 #### Minimal app skeleton
@@ -210,7 +210,7 @@ For a concrete implementation of this shape, see [UAV Vision Analytics Get Start
 2. Verify interfaces from your dev shell before writing app code:
 
    ```bash
-   mosquitto_sub -h localhost -p 1884 -t "uav/uav-1/telemetry/#" -v
+   mosquitto_sub -h localhost -p 1883 -t "uav/uav-1/telemetry/#" -v
    curl -s http://localhost:8080/state
    ffprobe -rtsp_transport tcp rtsp://localhost:8554/uav-1/nadir   # after arm
    ```

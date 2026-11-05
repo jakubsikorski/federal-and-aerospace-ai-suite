@@ -1,0 +1,76 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+# One DL Streamer Pipeline Server per camera machine (machine-2 / machine-3): reads the local RTSP
+# camera, stamps frames with the PTP time, detects people and publishes the result over MQTT to the
+# dashboard host on the TSN VLAN. Normally driven by deploy.sh, which renders config.json.
+name: tsn-camera-pipeline
+
+services:
+  dlsps:
+    image: ${DLSTREAMER_PIPELINE_SERVER_IMAGE:-intel/dlstreamer-pipeline-server:2026.3.0-ubuntu24-rc1}
+    # Host networking: reads the local mediamtx on 127.0.0.1 and publishes MQTT on the TSN VLAN.
+    network_mode: host
+    tty: true
+    entrypoint: ["./run.sh"]
+    environment:
+      RUN_MODE: EVA
+      DETECTION_DEVICE: CPU
+      REST_SERVER_PORT: ${REST_PORT:-8081}
+      MQTT_HOST: ${MQTT_HOST:?set MQTT_HOST}
+      MQTT_PORT: ${MQTT_PORT:-1884}
+      # JPEG of every frame (with boxes) goes in the MQTT message, like the old publish_frame=true
+      PUBLISH_FRAME: ${PUBLISH_FRAME:-1}
+      JPEG_QUALITY: ${JPEG_QUALITY:-85}
+      no_proxy: ${MQTT_HOST},127.0.0.1,localhost,${EXTRA_NO_PROXY:-127.0.0.1}
+      NO_PROXY: ${MQTT_HOST},127.0.0.1,localhost,${EXTRA_NO_PROXY:-127.0.0.1}
+    volumes:
+      - ${CONFIG_FILE:-./config.json}:/home/pipeline-server/config.json:ro
+      - ./latency_stamp.py:/home/pipeline-server/user_scripts/gvapython/latency_stamp.py:ro
+      - ${MODELS_DIR:-./models}:/home/pipeline-server/models:ro
+      # The server creates its working directory here as uid/gid 1999; a plain mount is root-owned.
+      - pipeline-root:/var/cache/pipeline_root:uid=1999,gid=1999
+    pids_limit: 1000
+    # No automatic restart: a restart would change the message sequence mid-demo.
+    restart: "no"
+
+  # System load of this camera machine for the dashboard's "System load" card.
+  metrics-manager:
+    image: docker.io/intel/metrics-manager:2026.2.0
+    privileged: true
+    pid: host
+    volumes:
+      - /sys:/sys:ro
+    ports:
+      - "${METRICS_PORT:-19090}:9090"
+    # The image only checks /health, which still passes when the collector (telegraf) has stopped delivering
+    # (the stream then carries no metrics). This wrapper restarts the service after 3 empty checks (~1 min);
+    # `restart: unless-stopped` brings it back.
+    command:
+      - sh
+      - -c
+      - |
+        /entrypoint.sh &
+        pid=$$!
+        trap 'kill $$pid; wait $$pid; exit 0' TERM INT
+        sleep 60
+        bad=0
+        while kill -0 $$pid 2>/dev/null; do
+          if python -c "
+        import urllib.request, sys
+        r = urllib.request.urlopen('http://localhost:9090/metrics/stream', timeout=8)
+        for l in r:
+            if l.startswith(b'data:'):
+                sys.exit(0 if b'\"metrics\": [{' in l else 1)
+        sys.exit(1)"; then bad=0; else bad=$$((bad+1)); fi
+          if [ $$bad -ge 3 ]; then echo "metrics stream has no data, restarting"; kill $$pid; bad=0; fi
+          sleep 20
+        done
+        wait $$pid
+    restart: unless-stopped
+
+volumes:
+  pipeline-root:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs

@@ -1,48 +1,36 @@
 # Deterministic Threat Detection with Time-Sensitive Networking (TSN) - Preview
 
-The Deterministic Threat Detection with Time-Sensitive Networking (TSN) project demonstrates how to deliver deterministic, low-latency AI and sensor workloads in shared networks. This application is currently in preview.
+Shows how a Time-Sensitive Networking switch keeps AI video workloads deterministic while the
+network is flooded with background traffic. One web dashboard, two use cases:
 
----
+| Use case | What it shows | Metric |
+|----------|---------------|--------|
+| **1 - Latency** | Two cameras run AI inference and publish the results over MQTT | One-way network latency per message |
+| **2 - Tracking** | SceneScape fuses two camera views into tracked people | Live HOTA score (test videos) or tracker rate (Basler cameras) |
 
-## Overview
+A slider on the dashboard injects load (UDP, up to 1 Gbit/s) from a fourth machine. A toggle enables the
+IEEE 802.1Qbv Time-Aware Shaper on the switch. With the shaper off the load starves both use cases;
+with it on they are not affected.
 
-![Deterministic Threat Detection Architecture](./docs/user-guide/_assets/common-deterministic-threat-detection-architecture.svg)
+![Dashboard: use case 1](./docs/user-guide/_assets/uc1-latency.gif)
 
-| Component | Role |
-|-----------|------|
-| **Moxa Managed Switch TSN-G5000 Series** | Precision Time Protocol (PTP) Grandmaster clock, VLAN segmentation, and IEEE 802.1Qbv time-aware traffic shaping |
-| **Arrow Lake Host (Intel® Ethernet Network Adapter I226)** | TSN-capable inference host; clock synchronized to the switch via PTP |
-| **Camera(s)** | Video source; supports cameras that use the Real-Time Streaming Protocol (RTSP) with either the Network Time Protocol (NTP) or the generalized Precision Time Protocol (gPTP), or the Basler GigE cameras that use IEEE 1588 version 2 hardware Precision Time Protocol (PTP). |
-| **Traffic Injector** | Runs `iperf3` to generate background congestion and demonstrate TSN protection |
+![Dashboard: use case 2](./docs/user-guide/_assets/uc2-tracking-video.gif)
 
-This project demonstrates two complementary use cases for industrial edge AI, both using the TSN infrastructure to protect latency-sensitive streams from background congestion:
+## Quick start
 
-### Use Case 1 — Multi-Camera AI Inference with Deterministic Delivery
-
-Deep Learning Streamer (DL Streamer) processes the RTSP camera streams from AXIS cameras for person detection. The DL Streamer then publishes the inference results and simulated sensor telemetry over MQTT with PTP timestamps. An MQTT aggregation node measures end-to-end latency in real time, demonstrating how TSN protects critical streams from iperf3 background congestion.
-
-[Get Started — Use Case 1](./docs/user-guide/get-started.md)
-
-Basler GigE cameras hardware-timestamp each frame with IEEE 1588v2 Precision Time Protocol (PTP). A patched GStreamer pipeline propagates these timestamps through DL Streamer into Scenescape for 3D multi-camera tracking. This use case measures how TSN congestion affects Higher Order Tracking Accuracy (HOTA) and demonstrates that traffic shaping restores accuracy to the baseline.
-
-[Get Started — Use Case 2](./docs/user-guide/get-started-scenescape.md)
-
----
-
-## Application Deployment
-
-### Option 1 — Git Clone
-
-Clone the full repository and navigate to the application directory:
+You need four Linux machines and a Moxa TSN switch ([System requirements](./docs/user-guide/system-requirements.md)).
+Set up the machines, VLANs, PTP and the switch once: [First-time setup](./docs/user-guide/first-time-setup.md).
+Then, on machine-1:
 
 ```bash
 git clone https://github.com/open-edge-platform/federal-and-aerospace-ai-suite.git
 cd federal-and-aerospace-ai-suite/deterministic-threat-detection
+cp lab.env.example lab.env      # fill in the addresses (once, see First-time setup, step 6)
+make up                         # test videos; or: make up SOURCE=basler
+make down
 ```
 
-### Option 2 — Download ZIP Archive
-
-Download and extract the standalone application package:
+No git on machine-1? Download the archive instead:
 
 ```bash
 curl -OjL https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/releases/download/fedaero-latest/deterministic-threat-detection.zip
@@ -58,19 +46,33 @@ cd deterministic-threat-detection
 > path to your extracted `deterministic-threat-detection` folder wherever it
 > appears in the guides.
 
----
+Then open `https://<machine-1 lab address>/dashboard/`. [Get started](./docs/user-guide/get-started.md)
+explains the dashboard and what to try.
+
+## Layout
+
+| Path | Runs on | What |
+|------|---------|------|
+| `src/dashboard/` | machine-1 | Web UI, backend, MQTT broker |
+| `src/scene/` | machine-1 | SceneScape, DL Streamer Pipeline Server, mediamtx, nginx |
+| `src/camera-node/` | machines 2 and 3 | Test-video RTSP publishers, camera inference pipelines |
+| `src/traffic-node/` | machine-4 | Load agent (iperf3) and metrics |
+| `src/switch/` | machine-2 (remote) | Moxa switch scripts (Qbv, port priority, PTP profile) |
+| `src/setup/` | every machine | One-time NIC/VLAN and PTP setup scripts |
+| `src/data/` | | Test videos, ground truth, model config (the model itself is downloaded by `make up`) |
+| `docs/user-guide/` | | Documentation |
 
 ## Documentation
 
-- [Get Started — Use Case 1](./docs/user-guide/get-started.md)
-- [Get Started — Use Case 2](./docs/user-guide/get-started-scenescape.md)
-- [How-to Guides](./docs/user-guide/how-to-guides.md)
-- [Release Notes](./docs/user-guide/release-notes.md)
+- [First-time setup](./docs/user-guide/first-time-setup.md) (once per machine)
+- [Get started](./docs/user-guide/get-started.md)
+- [System requirements](./docs/user-guide/system-requirements.md)
+- [How-to guides](./docs/user-guide/how-to-guides.md): Moxa switch, PTP, Basler cameras
+- [Release notes](./docs/user-guide/release-notes.md)
 
-## Key References
+## Tests
 
-- **Moxa Managed Switch TSN-G5000 Series:** [PTP Grandmaster, VLAN segmentation, and IEEE 802.1Qbv shaping](https://www.moxa.com/en/products/industrial-network-infrastructure/ethernet-switches/layer-2-managed-switches/tsn-g5008-series)
-- **Intel Ethernet Network Adapter I226:** TSN-capable Ethernet controller for Arrow Lake hosts
-- **IEEE 802.1Qbv standard:** Time-Aware Scheduler for traffic isolation
-- **Scenescape:** [3D multi-camera object tracking](https://github.com/open-edge-platform/scenescape)
-- **DL Streamer:** [Intel's video processing and AI inference pipeline](https://github.com/openvinotoolkit/dlstreamer)
+```bash
+make test        # dashboard unit tests (no hardware needed)
+make test-e2e    # SceneScape end-to-end test (needs `make up` running with the test videos)
+```

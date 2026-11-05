@@ -25,8 +25,8 @@
       "should_trigger": true,
       "expectations": [
         "docker-compose-uavsdk.yml with single DL Streamer Pipeline Server container, no broker/px4 services",
-        "config-uavsdk.json with nadir_camera_rtsp_cpu, forward_camera_rtsp_gpu, rear_camera_rtsp_npu pipelines using rtspsrc",
-        "uavsdk_pipeline_manager.py subscribes to MQTT uav/{id}/telemetry/status and parses armed boolean",
+        "config-uavsdk.json with the uav_object_detection_* pipelines using rtspsrc (rtsp_url parameter) and cameras-uavsdk.yaml with the nadir, forward and rear cameras",
+        "mavlink_pipeline_manager.py (ARM_SOURCE=mqtt) subscribes to MQTT uav/{id}/telemetry/status and parses armed boolean",
         "ffprobe RTSP probe before starting each pipeline (wait_for_rtsp_stream with retries)",
         "prerequisite note: uav-mission-compute-sdk must be running first",
         "RTSP source URLs pointing to host.docker.internal:8554/uav-1/nadir, /forward, /rear"

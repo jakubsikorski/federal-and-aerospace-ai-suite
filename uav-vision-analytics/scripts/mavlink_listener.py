@@ -15,7 +15,7 @@ Examples:
   python3 mavlink_listener.py --port 14550
 
 Inside the container:
-  docker exec -it dlstreamer-pipeline-server \
+  docker exec -it uav-va-dlstreamer-pipeline-server \
     python3 /home/pipeline-server/scripts/mavlink_listener.py
 """
 

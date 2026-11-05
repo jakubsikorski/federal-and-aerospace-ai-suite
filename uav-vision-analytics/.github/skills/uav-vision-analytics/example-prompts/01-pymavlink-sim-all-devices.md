@@ -20,7 +20,7 @@ RTSP stream. Pipelines start automatically when the UAV arms and stop on disarm.
 
 Produce:
 - `docker-compose-pymavlink.yml` with all required services
-- `configs/config-pymavlink.json` with three pipeline variants (cpu, gpu, npu)
+- `configs/config-pymavlink.json` with the video pipelines (detection on cpu, gpu or npu, optionally with captions) and the live camera pipelines
 - `gvapython/telemetry-overlay-pymavlink.py` overlay script
 - `scripts/mavlink_pipeline_manager.py` pipeline manager
 - `mavlink-router/main.conf` routing config

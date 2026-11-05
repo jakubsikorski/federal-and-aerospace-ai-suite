@@ -1,0 +1,83 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+#
+# Cameras that `make start-rtsp` streams when the vehicle is armed.
+#
+# After editing:
+#   make check-cameras       validate this file and show what would run (nothing is started)
+#   make start-rtsp          (re)start the manager; it also re-reads this file every time the vehicle is armed
+#   make cameras-status      compare what this file asks for with what is running
+#
+# For each enabled camera the manager starts one pipeline, chosen from its devices:
+#   captioning off -> uav_object_detection_<detection device>               (detection only)
+#   captioning on  -> uav_object_detection_<detection device>_<vlm device>  (detection + captions)
+# A live camera (device: instead of video:) runs the same pipelines named uav_camera_... instead of uav_object_detection_...
+# Detection can run on cpu, gpu or npu. The VLM that writes the captions runs on cpu or gpu only.
+
+version: 1
+
+cameras:
+  - id: front_camera                 # a-z, 0-9 and _ ; also the default stream name uav-front-camera and caption topic uav/caption/front_camera
+    enabled: true                    # false skips this camera without deleting its settings
+    video: uav_sample_front.avi      # file name in resources/videos (see scripts/convert_video.sh to prepare your own)
+                                     # or, instead of video, a live camera: device: /dev/v4l/by-id/<name> (see the end of this file)
+    overlay: true                    # false hides the detection boxes AND the telemetry text on the stream
+    detection:
+      device: npu                    # cpu | gpu | npu
+      model: yolo11s/yolo11s_openvino_model/yolo11s.xml   # path below resources/models
+    captioning:
+      enabled: true                  # false = detection only
+      device: gpu                    # cpu | gpu
+      model: InternVL2-1B            # folder name in resources/ov_models/<device>/
+      prompt: This is the video from the drone simulation environment. Treat it as a real drone footage and Describe what you see in the scene.      # letters, digits, spaces and , . ? ' - only
+      max_new_tokens: 70
+
+  - id: bottom_camera
+    enabled: true
+    video: uav_sample_bottom.avi
+    overlay: true
+    detection:
+      device: npu
+      model: yolo11s/yolo11s_openvino_model/yolo11s.xml
+    captioning:
+      enabled: true
+      device: gpu
+      model: InternVL2-1B
+      prompt: This is the video from the drone simulation environment. Treat it as a real drone footage and Describe what you see in the scene.
+      max_new_tokens: 70
+
+  - id: back_camera
+    enabled: true
+    video: uav_sample_back.avi
+    overlay: true
+    detection:
+      device: npu
+      model: yolo11s/yolo11s_openvino_model/yolo11s.xml
+    captioning:
+      enabled: false
+      device: gpu
+      model: InternVL2-1B
+      prompt: This is the video from the drone simulation environment. Treat it as a real drone footage and Describe what you see in the scene.
+      max_new_tokens: 70
+
+  # A live camera (Intel RealSense, USB webcam) instead of a video file; disabled until a camera is connected.
+  # List the cameras with v4l2-ctl --list-devices (a RealSense has several nodes; take the colour one), put the
+  # same path in .env as CAMERA_DEVICE_1 (up to _4), recreate the container (make pymav-up), set enabled: true.
+  # config-pymavlink.json has the uav_camera_npu and uav_camera_npu_gpu pipelines only; for other devices copy
+  # the pipelines you need from configs/config-pymavlink-realsense.json (all nine) into it.
+  - id: realsense_camera
+    enabled: false
+    device: /dev/video4
+    width: 1280                      # optional, default 1280
+    height: 720                      # optional, default 720
+    fps: 30                          # optional, default 30
+    overlay: true
+    detection:
+      device: npu                    # cpu | gpu | npu (cpu and gpu need their pipeline copied, see above)
+      model: yolo11s/yolo11s_openvino_model/yolo11s.xml
+    captioning:
+      enabled: false                 # true = uav_camera_npu_gpu
+      device: gpu
+      model: InternVL2-1B
+      prompt: Describe what you see in the scene.
+      max_new_tokens: 70

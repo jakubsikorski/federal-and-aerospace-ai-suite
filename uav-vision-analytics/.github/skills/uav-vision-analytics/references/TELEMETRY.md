@@ -105,7 +105,7 @@ companion bridge.
 ```yaml
 volumes:
   - "./gvapython/telemetry-overlay-uavsdk.py:/home/pipeline-server/gvapython/telemetry-overlay-uavsdk.py"
-  - "./scripts/uavsdk_pipeline_manager.py:/home/pipeline-server/scripts/pipeline_manager.py"
+  - "./scripts/mavlink_pipeline_manager.py:/home/pipeline-server/scripts/pipeline_manager.py"
 ```
 
 ---
@@ -115,52 +115,43 @@ volumes:
 ### mavlink_pipeline_manager.py (pymavlink mode)
 
 Monitors the MAVLink HEARTBEAT `base_mode` flag for `MAV_MODE_FLAG_SAFETY_ARMED`.
-Only RTSP sink output is supported (`--sink rtsp`).
+Only RTSP output is supported (there is no `--sink` option).
 
-**RTSP pipelines defined:**
-```python
-RTSP_PIPELINES = [
-    {"name": "uav_object_detection_cpu", "frame_path": "uav-mavlink-cpu", "device": "CPU"},
-    {"name": "uav_object_detection_gpu", "frame_path": "uav-mavlink-gpu", "device": "GPU"},
-]
-```
+**Cameras:** the pipelines are not hard-coded. `camera_config.py` (next to the manager) loads and validates
+`configs/cameras-pymavlink.yaml` (mounted at `/home/pipeline-server/configs/cameras-pymavlink.yaml`) and returns one plan per enabled camera: the
+pipeline (`uav_object_detection_<det>` or `uav_object_detection_<det>_<vlm>`), its start request and the RTSP path
+`uav-<camera>`. The manager re-reads the file at every arming and keeps the last good configuration when the file is broken.
 
 **Key constants:**
 ```python
 CONNECTION_STRING   = "udpin:0.0.0.0:14541"
-PIPELINE_BASE_URL   = "http://localhost:8081/pipelines/user_defined_pipelines"
-PIPELINE_DELETE_URL = "http://localhost:8081/pipelines/{instance_id}"
+PIPELINE_SERVER_URL = "http://localhost:8081"          # PIPELINE_SERVER_URL overrides it
 ```
 
 **Invocation inside container:**
 ```bash
-python3 /home/pipeline-server/scripts/pipeline_manager.py --sink rtsp
+python3 /home/pipeline-server/scripts/pipeline_manager.py              # wait for ARM, start the cameras
+python3 /home/pipeline-server/scripts/pipeline_manager.py --start-now  # start them now, no vehicle
+python3 /home/pipeline-server/scripts/pipeline_manager.py --status     # file versus running pipelines
 ```
 
 **Makefile target:**
 ```bash
-make start-rtsp      # docker exec -it dlstreamer-pipeline-server bash -c "python3 ..."
+make start-rtsp      # docker exec -it uav-va-dlstreamer-pipeline-server bash -c "python3 ..."
 ```
 
-### uavsdk_pipeline_manager.py (uavsdk mode)
+### mavlink_pipeline_manager.py with ARM_SOURCE=mqtt (uavsdk mode)
 
-Subscribes to MQTT broker at `host.docker.internal:1883` on topic
-`uav/{{UAV_ID}}/telemetry/status`. Parses `armed` boolean from JSON payload.
+The same manager as the pymavlink stack; `docker-compose-uavsdk.yml` sets `ARM_SOURCE=mqtt` and
+`CAMERAS_CONFIG=/home/pipeline-server/configs/cameras-uavsdk.yaml`. It subscribes to the SDK's MQTT broker
+(`MQTT_BROKER_HOST:MQTT_BROKER_PORT`, default `host.docker.internal:1883`) on `uav/<UAV_ID>/telemetry/status` and parses the
+`armed` boolean of the JSON payload.
 
-**On ARMED:** calls `wait_for_rtsp_stream()` with `ffprobe` for each camera RTSP URL
-before POSTing pipelines (retries 3× with 2 s delay).
+**On ARMED:** re-reads the cameras file and, for each camera whose source is an RTSP stream, probes it with `ffprobe`
+(3 tries, 2 s apart) before starting its pipeline; unavailable cameras are skipped. The source URL
+`rtsp://host.docker.internal:8554/{uav_id}/<camera>` takes `{uav_id}` from `UAV_ID` (default `uav-1`).
 
 **On DISARMED:** DELETEs all running pipeline instances.
-
-**RTSP source URLs probed:**
-```python
-RTSP_BASE_URL = f"rtsp://host.docker.internal:8554/uav-1"
-PIPELINES = [
-    {"name": "nadir_camera_rtsp_cpu",    "rtsp_url": f"{RTSP_BASE_URL}/nadir",   "device": "CPU"},
-    {"name": "forward_camera_rtsp_gpu",  "rtsp_url": f"{RTSP_BASE_URL}/forward", "device": "GPU"},
-    {"name": "rear_camera_rtsp_npu",     "rtsp_url": f"{RTSP_BASE_URL}/rear",    "device": "NPU"},
-]
-```
 
 **Only RTSP sink is supported** in UAVSDK mode.
 

@@ -117,7 +117,7 @@ RUN git clone --depth 1 https://github.com/mavlink-router/mavlink-router.git /sr
     && meson setup build . -Dsystemdsystemunitdir=/usr/lib/systemd/system \
     && ninja -C build \
     && ninja -C build install \
-    && rm -rf /src
+    && find /src -delete
 
 ENV http_proxy= https_proxy= no_proxy=
 
@@ -214,13 +214,14 @@ dlstreamer-pipeline-server:
 > ```
 >
 > Binding to `${HOST_IP:-127.0.0.1}` (not `0.0.0.0`) scopes the published ports to the
-> specific interface in `HOST_IP` instead of every interface on the host — see
-> `references/SECURITY.md`-style guidance in `docs/user-guide/how-to-guides/security-considerations.md`.
+> specific interface in `HOST_IP` instead of every interface on the host.
 
 **For UAVSDK mode** mount the UAVSDK overlay and manager instead:
 ```yaml
     - "./gvapython/telemetry-overlay-uavsdk.py:/home/pipeline-server/gvapython/telemetry-overlay-uavsdk.py"
-    - "./scripts/uavsdk_pipeline_manager.py:/home/pipeline-server/scripts/pipeline_manager.py"
+    - "./scripts/mavlink_pipeline_manager.py:/home/pipeline-server/scripts/pipeline_manager.py"
+    - "./scripts/camera_config.py:/home/pipeline-server/scripts/camera_config.py:ro"
+    - "./configs:/home/pipeline-server/configs:rw"          # cameras-uavsdk.yaml (CAMERAS_CONFIG), ARM_SOURCE=mqtt
 ```
 And set `UAV_ID` env var (default `uav-1`).
 
@@ -236,7 +237,7 @@ HOST_IP=192.168.1.x           # LAN IP, auto-detected by 'make init'; used for R
                                # (breaks remote QGroundControl/VLC/ffplay viewing).
 
 # DL Streamer image
-DLSTREAMER_PIPELINE_SERVER_IMAGE=intel/dlstreamer-pipeline-server:2026.1.0-ubuntu24
+DLSTREAMER_PIPELINE_SERVER_IMAGE=intel/dlstreamer-pipeline-server:2026.3.0-ubuntu24-rc1
 
 # Proxy
 # http_proxy=
@@ -257,7 +258,7 @@ pymav-up:    ## Start pymavlink stack (docker-compose-pymavlink.yml)
 pymav-down:  ## Stop pymavlink stack
 uavsdk-up:   ## Start UAVSDK stack (requires uav-mission-compute-sdk running first)
 uavsdk-down: ## Stop UAVSDK stack
-start-rtsp:  ## Launch pipeline_manager.py --sink rtsp inside container
+start-rtsp:  ## Launch pipeline_manager.py inside container
 ```
 
 Full Makefile is in `uav-vision-analytics/Makefile`.
@@ -283,7 +284,7 @@ PX4 SITL ──MAVLink──▶ mavlink-router (:14550 server → :14541 broadca
 
 ```
 uav-mission-compute-sdk:
-  PX4+Gazebo → companion-bridge → MQTT broker (:1884)
+  PX4+Gazebo → companion-bridge → MQTT broker (:1883)
                                → RTSP server (:8554) [camera streams]
 
 DL Streamer Pipeline Server container:

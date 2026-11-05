@@ -15,7 +15,7 @@ REST path and MQTT topic suffix are derived from the `name` field.
 
 - Launch path: `POST /pipelines/user_defined_pipelines/{name}`
 - Status:       `GET  /pipelines/{instance_id}/status`
-- Delete:       `DELETE /pipelines/{instance_id}`
+- Delete:       `/pipelines/{instance_id}` (HTTP DELETE)
 
 The POST response body is the integer `instance_id` — save it for DELETE calls.
 

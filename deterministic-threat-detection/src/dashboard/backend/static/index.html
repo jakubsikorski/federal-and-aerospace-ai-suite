@@ -1,0 +1,131 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: (C) 2026 Intel Corporation -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deterministic Threat Detection</title>
+  <link rel="stylesheet" href="css/styles.css?v=43">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true"></span>
+      <h1>Deterministic Threat Detection</h1>
+      <span class="sub">TSN Federal and Aerospace demo</span>
+    </div>
+    <div class="chips">
+      <button id="toggle-arch" class="btn" type="button">Architecture</button>
+      <span id="chip-mqtt" class="chip chip-bad" title="MQTT broker connection">Connecting</span>
+      <span id="chip-mode" class="chip chip-warn hidden"></span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <div class="side" aria-label="Controls and system load">
+      <section class="panel" id="card-load" aria-labelledby="h-load">
+        <h2 id="h-load">Network load</h2>
+        <p class="hint">Background traffic from machine-4 to machine-1 over VLAN 5.</p>
+        <div class="slider-row">
+          <input id="traffic" type="range" min="0" max="1000" step="10" value="0" aria-labelledby="h-load">
+          <output id="traffic-value">0 Mbit/s</output>
+        </div>
+        <div id="traffic-measured" class="hint"></div>
+        <div id="traffic-msg" class="msg hidden"></div>
+      </section>
+
+      <section class="panel" id="card-qbv" aria-labelledby="h-qbv">
+        <h2 id="h-qbv">Time-aware Shaper (Qbv)</h2>
+        <p class="hint">Gate schedule on switch <span id="qbv-port">port 1</span> that protects the camera stream.</p>
+        <label class="switch">
+          <input id="qbv" type="checkbox">
+          <span class="track"></span>
+          <span id="qbv-label" class="switch-label">Off</span>
+        </label>
+        <div id="qbv-warn" class="warn hidden" role="alert"></div>
+        <div id="qbv-schedule" class="hint"></div>
+        <div id="qbv-msg" class="msg hidden"></div>
+      </section>
+
+
+      <section class="panel sysload" id="card-system" aria-labelledby="h-system">
+        <div class="sys-head"><h2 id="h-system">System utilization</h2>
+          <select id="system-select" class="sys-select" aria-labelledby="h-system" hidden></select></div>
+        <div id="system-rows" class="sys-rows"></div>
+        <p id="system-empty" class="hint hidden">Not configured (set METRICS_SOURCES).</p>
+      </section>
+    </div>
+
+    <section class="main">
+      <nav class="tabs" role="tablist" aria-label="Use case">
+        <button class="tab" role="tab" data-tab="uc1" aria-selected="true">Use case 1 · Latency</button>
+        <button class="tab" role="tab" data-tab="uc2" aria-selected="false">Use case 2 · Tracking (HOTA)</button>
+      </nav>
+
+      <div id="view-uc1" class="view">
+      <div class="uc1-top">
+        <div id="kpis" class="kpis"></div>
+        <section class="kpi chart-options" id="card-chart" aria-labelledby="h-chart" style="--c:#8b98a7">
+          <div class="kpi-name"><span id="h-chart">Chart options</span></div>
+          <label class="check"><input id="log-scale" type="checkbox"> Logarithmic scale</label>
+          <label class="check"><input id="include-proc" type="checkbox"> Add processing time (end-to-end)</label>
+          <button id="clear" class="btn" type="button">Clear history</button>
+        </section>
+      </div>
+      <div class="panel chart-card">
+        <div class="chart-head">
+          <h2>Network latency</h2>
+          <span class="hint">MQTT publish on machine-2/3 to arrival on machine-1 (PTP-synchronised clocks); processing time is shown on each card</span>
+        </div>
+        <div class="chart-wrap"><canvas id="chart"></canvas></div>
+        <div id="empty" class="empty">Waiting for inference messages…</div>
+      </div>
+      </div>
+
+      <div id="view-uc2" class="view uc2 hidden">
+        <div class="uc2-left">
+          <div id="uc2-offline" class="warn hidden" role="alert"></div>
+          <div class="kpis">
+            <div class="kpi" style="--c:#3ecf8e"><div class="kpi-name"><span>HOTA (last <span id="hota-window">10</span> s)</span></div>
+              <div class="kpi-value" id="hota-value">–</div>
+              <div class="kpi-row"><span id="hota-det"></span><span id="hota-ass"></span></div></div>
+            <div class="kpi" style="--c:#4da3ff"><div class="kpi-name"><span title="Share of frames in the window that had a fresh tracker update">Fresh tracker frames</span></div>
+              <div class="kpi-value" id="hota-covered">–</div>
+              <div class="kpi-row"><span id="hota-frames"></span></div></div>
+            <div class="kpi" style="--c:#f5a623"><div class="kpi-name"><span title="Tracker updates published by SceneScape per second">SceneScape output</span></div>
+              <div class="kpi-value" id="scene-rate">–<small> updates/s</small></div>
+              <div class="kpi-row"><span id="scene-cam"></span></div></div>
+          </div>
+          <div class="panel chart-card">
+            <div class="chart-head"><h2>Tracking quality</h2>
+              <span class="hint">tracked people vs ground truth (TrackEval HOTA, sliding window)</span></div>
+            <div class="chart-wrap compact"><canvas id="hota-chart"></canvas></div>
+          </div>
+        </div>
+        <aside class="uc2-right panel">
+          <h2>As the tracker sees it</h2>
+          <p class="hint">Decoded frames with the detection boxes. Lost packets show up as smeared blocks.</p>
+          <figure><img id="decoded-cam1" alt="Cam_x1_0 as decoded by the pipeline"><figcaption>Cam_x1_0 · machine-2</figcaption></figure>
+          <figure><img id="decoded-cam2" alt="Cam_x2_0 as decoded by the pipeline"><figcaption>Cam_x2_0 · machine-3</figcaption></figure>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <div id="arch-modal" class="arch-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="arch-title">
+    <div class="arch-dialog">
+      <div class="arch-head">
+        <h2 id="arch-title">Architecture &middot; live traffic</h2>
+        <div id="arch-legend" class="arch-legend"></div>
+        <button id="arch-close" class="btn" type="button" aria-label="Close">Close</button>
+      </div>
+      <svg id="arch-svg" viewBox="0 0 1000 580" role="img" aria-label="Machines connected through the TSN switch, with live traffic"></svg>
+    </div>
+  </div>
+
+  <script src="js/vendor/chart.umd.js"></script>
+  <script src="js/arch.js?v=43"></script>
+  <script src="js/app.js?v=43"></script>
+</body>
+</html>

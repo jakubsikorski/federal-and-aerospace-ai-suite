@@ -1,0 +1,258 @@
+<!--
+SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+SPDX-License-Identifier: Apache-2.0
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UAV Ground Station</title>
+  <link rel="stylesheet" href="css/styles.css?v=44" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>UAV Ground Station <span class="muted">/ Remote Viewer</span></h1>
+    <div class="topbar-actions">
+      <button id="topbar-search-btn" class="btn btn-primary btn-icon hidden" type="button" title="Search indexed video (press /)">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Search Videos</span>
+      </button>
+      <button id="topbar-summary-btn" class="btn btn-primary btn-icon" type="button" title="Build a flight summary report from captured scene captions">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/><path d="M9.5 13h5M9.5 16.5h5M9.5 9.5h2"/></svg><span>Flight Summary</span>
+      </button>
+      <button id="toggle-arch" class="btn btn-ghost" type="button">Architecture</button>
+    </div>
+  </header>
+
+  <!-- Multi-UAV tabs: one tab per UAV host the dashboard has connected to in
+       this session. Switching tabs swaps which host's cards/metrics are shown
+       in the panels below; a host's VSS live-sync indexing keeps running in the
+       background regardless of which tab is active, and only stops when its tab
+       is explicitly closed. -->
+  <nav id="uav-tabs" class="uav-tabs hidden" aria-label="Connected UAVs">
+    <div id="uav-tabs-list" class="uav-tabs-list" role="tablist"></div>
+    <div class="uav-tabs-toolbar">
+      <button id="refresh-btn" class="btn btn-ghost btn-icon-only" type="button" title="Re-check running pipelines on the active tab now">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11A8 8 0 1 0 18.3 16"/><path d="M20 5v6h-6"/></svg>
+      </button>
+      <button id="add-uav-tab-btn" class="btn btn-primary btn-icon uav-tab-add" type="button">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Add UAV</span>
+      </button>
+    </div>
+  </nav>
+
+  <input id="host-input" type="hidden" />
+
+  <div id="connect-modal" class="modal-overlay hidden">
+    <div class="modal-dialog connect-dialog" role="dialog" aria-modal="true" aria-labelledby="connect-modal-title">
+      <header class="modal-header">
+        <div class="modal-title">
+          <h2 id="connect-modal-title">Connect a UAV</h2>
+          <span class="muted">Point this dashboard at a UAV Companion Compute board's IP</span>
+        </div>
+        <button id="connect-modal-close" class="btn btn-ghost modal-close" type="button" aria-label="Close connect UAV">&times;</button>
+      </header>
+      <form id="connect-form" class="connect-form">
+        <div class="connect-form-row">
+          <label for="connect-host-input">UAV Companion Compute IP</label>
+          <input id="connect-host-input" type="text" placeholder="127.0.0.1" autocomplete="off" required />
+        </div>
+        <div class="connect-form-row">
+          <label for="connect-label-input">Tab label <span class="muted">(optional)</span></label>
+          <input id="connect-label-input" type="text" placeholder="e.g. North drone" maxlength="24" autocomplete="off" />
+        </div>
+        <div id="connect-form-error" class="connect-form-error" aria-live="polite"></div>
+        <div class="connect-form-actions">
+          <button id="connect-submit-btn" class="btn btn-primary" type="submit">Connect</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <main class="layout">
+    <section id="cards-container" class="cards-container"></section>
+
+    <aside class="side-panels">
+      <section class="panel">
+        <h2 class="panel-title" title="Compute on the UAV's companion board (the drone)"><span class="panel-title-icon panel-title-icon-uav" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><rect x="9.5" y="9.5" width="5" height="5" rx="1.2"/><path d="M9.5 9.5 7.4 7.4M14.5 9.5l2.1-2.1M9.5 14.5l-2.1 2.1M14.5 14.5l2.1 2.1"/><circle cx="5.5" cy="5.5" r="3"/><circle cx="18.5" cy="5.5" r="3"/><circle cx="5.5" cy="18.5" r="3"/><circle cx="18.5" cy="18.5" r="3"/></svg></span>UAV Companion Board Utilization</h2>
+        <div class="chart-card">
+          <div class="chart-header">
+            <span class="chart-value" style="color:#1ad0ff">CPU <span id="cpuVal">—</span></span>
+            <span class="chart-value" style="color:#8ca0c2">RAM <span id="ramVal">—</span></span>
+            <span class="chart-value gpu-values" id="gpuValues" style="display:none;"></span>
+            <span class="chart-value" id="npuStat" style="color:#b388ff; display:none;">NPU <span id="npuVal">—</span></span>
+          </div>
+          <div class="chart-wrap"><canvas id="statsChart"></canvas></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel-title" title="Compute on this ground station machine"><span class="panel-title-icon panel-title-icon-gs" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="M3.6 9.6a7.5 7.5 0 0 0 10.8 10.8z"/><path d="M9 15l3.5-3.5"/><circle cx="13" cy="11" r="0.9"/><path d="M8 18.6V22M5 22h6"/><path d="M15.5 6a3.5 3.5 0 0 1 2.5 2.5"/><path d="M15.5 2.5a7 7 0 0 1 6 6"/></svg></span>UAV Ground Station Utilization</h2>
+        <p class="muted chart-subtitle">
+          This machine's own compute -- e.g. the cost of locally remuxing
+          H.264 RTSP to WebRTC ("H.264 Relay" mode).
+        </p>
+        <div class="chart-card">
+          <div class="chart-header">
+            <span class="chart-value" style="color:#1ad0ff">CPU <span id="gsCpuVal">—</span></span>
+            <span class="chart-value" style="color:#8ca0c2">RAM <span id="gsRamVal">—</span></span>
+            <span class="chart-value gpu-values" id="gsGpuValues" style="display:none;"></span>
+            <span class="chart-value" id="gsNpuStat" style="color:#b388ff; display:none;">NPU <span id="gsNpuVal">—</span></span>
+          </div>
+          <div class="chart-wrap"><canvas id="gsStatsChart"></canvas></div>
+        </div>
+      </section>
+
+      <section id="search-panel" class="panel search-panel hidden">
+        <h2>Live Natural Language Search</h2>
+        <p class="muted chart-subtitle">
+          Find moments in the UAV's live feeds with a natural-language
+          prompt.
+        </p>
+        <div class="live-index">
+          <div class="live-index-head">
+            <span>Live indexing</span>
+            <span id="live-index-summary" class="muted">connect to a UAV to start</span>
+          </div>
+          <ul id="live-index-list" class="live-index-list"></ul>
+        </div>
+        <button id="open-search-btn" class="btn btn-primary btn-icon btn-block" type="button">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Search Videos</span>
+        </button>
+      </section>
+    </aside>
+  </main>
+
+  <div id="search-modal" class="modal-overlay hidden">
+    <div class="modal-dialog search-dialog" role="dialog" aria-modal="true" aria-labelledby="search-modal-title">
+      <header class="modal-header">
+        <div class="modal-title">
+          <h2 id="search-modal-title">Search Videos</h2>
+          <span class="muted">Natural-language search over indexed footage &middot; VSS</span>
+        </div>
+        <span id="search-vss-status" class="pill pill-pending">checking VSS&hellip;</span>
+        <button id="search-modal-close" class="btn btn-ghost modal-close" type="button" aria-label="Close search">&times;</button>
+      </header>
+
+      <form id="search-form" class="search-form" role="search">
+        <div class="search-input-wrap">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input id="search-query-input" type="search" maxlength="500" aria-label="Search prompt"
+                 placeholder="Describe what you're looking for, e.g. a white car on the road" autocomplete="off" />
+        </div>
+        <button id="search-submit-btn" class="btn btn-primary search-submit" type="submit">Search</button>
+      </form>
+
+      <!-- Scope filters: always visible (idle state, while typing, and on top
+           of results) rather than tucked away post-search, so a multi-UAV
+           operator can narrow the search *before* typing a query (e.g. "only
+           this drone's front camera"), and -- just as importantly -- can
+           narrow or widen an *already-run* search's results without having to
+           re-type the query, since changing either select re-runs the last
+           query automatically. Defaults to "All UAVs"/"All
+           cameras" so search covers every connected UAV's footage unless the
+           operator deliberately narrows it. -->
+      <div id="search-filter-bar" class="summary-form-row search-filter-bar">
+        <label for="search-uav-filter">UAV</label>
+        <select id="search-uav-filter"><option value="">All UAVs</option></select>
+        <label for="search-camera-filter">Camera</label>
+        <select id="search-camera-filter"><option value="">All cameras</option></select>
+      </div>
+
+      <div id="search-body" class="search-body" aria-live="polite"></div>
+    </div>
+  </div>
+
+  <div id="summary-modal" class="modal-overlay hidden">
+    <div class="modal-dialog summary-dialog" role="dialog" aria-modal="true" aria-labelledby="summary-modal-title">
+      <header class="modal-header">
+        <div class="modal-title">
+          <h2 id="summary-modal-title">Flight Summary</h2>
+          <span class="muted">Extractive report built from live scene captions &middot;</span>
+        </div>
+        <button id="summary-modal-close" class="btn btn-ghost modal-close" type="button" aria-label="Close flight summary">&times;</button>
+      </header>
+
+      <form id="summary-form" class="summary-form">
+        <div class="summary-form-row">
+          <label for="summary-host-select">UAV</label>
+          <select id="summary-host-select"></select>
+          <input id="summary-host-input" type="text" placeholder="127.0.0.1" autocomplete="off" class="hidden" />
+        </div>
+        <div class="summary-form-row">
+          <span class="summary-form-label">Cameras</span>
+          <div id="summary-camera-checks" class="summary-device-checks">
+            <span class="muted">Connect to a UAV to list its cameras&hellip;</span>
+          </div>
+        </div>
+        <div class="summary-form-row">
+          <label for="summary-window-input">Window (minutes)</label>
+          <input id="summary-window-input" type="number" min="1" max="1440" value="15" />
+          <label for="summary-highlights-input">Max highlights</label>
+          <input id="summary-highlights-input" type="number" min="1" max="100" value="20" />
+        </div>
+        <div class="summary-form-actions">
+          <button id="summary-generate-btn" class="btn btn-primary" type="submit">Generate</button>
+          <a id="summary-download-btn" class="btn btn-ghost hidden" href="#" download>Download PDF</a>
+        </div>
+      </form>
+
+      <div id="summary-body" class="summary-body" aria-live="polite"></div>
+    </div>
+  </div>
+
+  <div id="arch-modal" class="modal-overlay hidden">
+    <div class="modal-dialog arch-dialog" role="dialog" aria-modal="true" aria-labelledby="arch-modal-title">
+      <header class="modal-header">
+        <div class="modal-title">
+          <h2 id="arch-modal-title">How this application is built</h2>
+          <span class="muted">A separate ground-station machine viewing and searching a remote UAV host, using stock Open Edge Platform services through their own APIs</span>
+        </div>
+        <button id="arch-modal-close" class="btn btn-ghost modal-close" type="button" aria-label="Close architecture">&times;</button>
+      </header>
+      <div class="arch-body">
+        <div class="arch-toolbar">
+          <div class="arch-providers" role="group" aria-label="Highlight components by origin">
+            <button type="button" class="arch-provider oep" data-provider="oep"><b data-count="oep">0</b><span><strong>Open Edge Platform</strong>Intel stock microservices</span></button>
+            <button type="button" class="arch-provider oss" data-provider="oss"><b data-count="oss">0</b><span><strong>Open source</strong>relay, broker, proxy, stores</span></button>
+            <button type="button" class="arch-provider app" data-provider="app"><b data-count="app">0</b><span><strong>Application</strong>the only custom code</span></button>
+          </div>
+          <div class="arch-scenarios" role="group" aria-label="Follow a data flow">
+            <span class="muted">Follow a flow:</span>
+          </div>
+        </div>
+        <div class="arch-stage">
+          <div class="arch-diagram">
+            <svg id="arch-svg" viewBox="0 0 1200 660" role="img" aria-labelledby="arch-svg-title">
+              <title id="arch-svg-title">Services and data flows. Select a service or a flow for details.</title>
+              <defs>
+                <marker id="arch-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M0 0L10 5L0 10z" fill="context-stroke"/>
+                </marker>
+              </defs>
+              <g id="arch-lanes"></g><g id="arch-edges"></g><g id="arch-nodes"></g>
+            </svg>
+            <div class="arch-legend" aria-label="Legend">
+              <span><i class="lg-video"></i>RTSP video</span>
+              <span><i class="lg-webrtc"></i>WebRTC (WHEP)</span>
+              <span><i class="lg-mqtt"></i>MQTT captions</span>
+              <span><i class="lg-rest"></i>HTTPS / REST / SSE</span>
+              <span><i class="lg-files"></i>Video segments / clips</span>
+            </div>
+          </div>
+          <aside id="arch-card" class="arch-card" aria-live="polite"></aside>
+        </div>
+        <h3 class="arch-h3">Where each model runs</h3>
+        <div id="arch-devices" class="arch-devices"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/vendor/chart.js"></script>
+  <script src="js/utils/charts.js?v=44"></script>
+  <script src="js/app.js?v=44"></script>
+  <script src="js/search.js?v=44"></script>
+  <script src="js/summary.js?v=44"></script>
+  <script src="js/arch.js?v=44"></script>
+</body>
+</html>

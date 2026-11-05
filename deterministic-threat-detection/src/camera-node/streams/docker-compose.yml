@@ -1,0 +1,36 @@
+# One RTSP "camera": mediamtx + an ffmpeg publisher looping a test video.
+# The same file is used on every machine; only CAM (and START_AT) differ.
+#
+#   CAM=Cam_x1_0 START_AT=<epoch seconds> docker compose up -d
+#
+# Normally driven by start-synced-streams.sh, which picks START_AT for all machines.
+services:
+  stream:
+    image: ${IMAGE:-bluenviron/mediamtx:1.19.2-ffmpeg}
+    # Host networking: the stream must leave on the host's TSN VLAN interface with its
+    # 802.1Q priority intact. A bridge network would NAT it and lose the VLAN QoS mapping.
+    network_mode: host
+    init: true
+    # No automatic restart: a restart after START_AT has passed would start immediately
+    # and silently desynchronize the streams.
+    restart: "no"
+    stop_grace_period: 5s
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    environment:
+      CAM: ${CAM:?set CAM, e.g. Cam_x1_0}
+      START_AT: ${START_AT:-0}
+      RTSP_PORT: ${RTSP_PORT:-8554}
+      BIND_IP: ${BIND_IP:-}
+      # mediamtx: RTSP over UDP and TCP, every other listener off (avoids port clashes on the host).
+      # UDP is what GStreamer's rtspsrc tries first (the old demo's behaviour): lost packets are not
+      # resent, so congestion shows up as damaged pictures. Set RTSP_TRANSPORTS=tcp for a lossless pull.
+      MTX_RTSPTRANSPORTS: ${RTSP_TRANSPORTS:-udp,tcp}
+      MTX_RTSPADDRESS: ${BIND_IP:-}:${RTSP_PORT:-8554}
+      MTX_RTMP: "no"
+      MTX_HLS: "no"
+      MTX_WEBRTC: "no"
+      MTX_SRT: "no"
+      MTX_MOQ: "no"
+    volumes:
+      - ${MEDIA_DIR:-./media}:/media:ro
+      - ./entrypoint.sh:/entrypoint.sh:ro

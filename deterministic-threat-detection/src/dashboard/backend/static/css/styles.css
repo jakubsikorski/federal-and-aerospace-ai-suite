@@ -1,0 +1,236 @@
+/* SPDX-FileCopyrightText: (C) 2026 Intel Corporation */
+/* SPDX-License-Identifier: Apache-2.0 */
+:root {
+  --bg: #0b0f14; --panel: #121820; --panel-border: #212b36;
+  --text: #e6edf3; --muted: #8b98a7; --accent: #1a73e8;
+  --ok: #3ecf8e; --warn: #f5a623; --bad: #ef5b5b;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+h1 { font-size: 18px; margin: 0; font-weight: 600; }
+h2 { font-size: 13px; margin: 18px 0 4px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+h2:first-child { margin-top: 0; }
+.hidden { display: none !important; }
+
+.topbar { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px;
+  background: var(--panel); border-bottom: 1px solid var(--panel-border); }
+.brand { display: flex; align-items: center; gap: 12px; }
+.logo { width: 14px; height: 14px; border-radius: 3px; background: var(--accent); }
+.sub { color: var(--muted); }
+.chips { display: flex; gap: 8px; }
+.chip { padding: 3px 10px; border-radius: 999px; font-size: 12px; border: 1px solid var(--panel-border); }
+.chip-ok { color: var(--ok); border-color: var(--ok); }
+.chip-warn { color: var(--warn); border-color: var(--warn); }
+.chip-bad { color: var(--bad); border-color: var(--bad); }
+
+.layout { display: grid; grid-template-columns: 300px 1fr; gap: 16px; padding: 16px 20px; }
+@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+.panel { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 8px; padding: 16px; }
+.hint { color: var(--muted); font-size: 12px; margin: 0 0 8px; }
+
+.slider-row { display: flex; align-items: center; gap: 12px; }
+input[type=range] { flex: 1; accent-color: var(--accent); }
+output { min-width: 84px; text-align: right; font-variant-numeric: tabular-nums; }
+.msg { margin-top: 6px; font-size: 12px; color: var(--warn); }
+
+.switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; }
+.switch input { position: absolute; opacity: 0; }
+.track { width: 44px; height: 24px; border-radius: 999px; background: #2a3441; position: relative; transition: background .2s; }
+.track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
+  border-radius: 50%; background: #fff; transition: transform .2s; }
+.switch input:checked + .track { background: var(--ok); }
+.switch input:checked + .track::after { transform: translateX(20px); }
+.switch input:disabled + .track { opacity: .5; }
+.switch.busy .track { animation: pulse 1s ease-in-out infinite; opacity: .8; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 4px rgba(26, 115, 232, .35); } }
+.switch input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
+.check { display: block; margin: 4px 0 10px; }
+.btn { background: transparent; color: var(--text); border: 1px solid var(--panel-border);
+  border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.btn:hover { border-color: var(--accent); }
+
+.main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.kpi { background: var(--panel); border: 1px solid var(--panel-border); border-left: 4px solid var(--c, var(--accent));
+  border-radius: 8px; padding: 12px 14px; }
+.kpi-name { color: var(--muted); font-size: 12px; display: flex; justify-content: space-between; }
+.kpi-value { font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.kpi-value small { font-size: 13px; color: var(--muted); font-weight: 400; }
+.kpi-row { display: flex; gap: 14px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.kpi.stalled .kpi-value { color: var(--bad); }
+.tag-stalled { color: var(--bad); }
+
+.chart-card { position: relative; }
+.chart-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.chart-head h2 { margin: 0; }
+.chart-wrap { position: relative; height: 420px; margin-top: 8px; }
+.empty { position: absolute; inset: 60px 0 0 0; display: flex; align-items: center; justify-content: center; color: var(--muted); pointer-events: none; }
+
+.warn { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--warn); border-left-width: 4px; border-radius: 6px;
+  background: rgba(245, 166, 35, .10); color: var(--text); font-size: 12px; }
+.warn strong { color: var(--warn); }
+
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--panel-border); }
+.tab { background: transparent; color: var(--muted); border: 0; border-bottom: 2px solid transparent;
+  padding: 8px 14px; cursor: pointer; font: inherit; }
+.tab:hover { color: var(--text); }
+.tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+.view { display: flex; flex-direction: column; gap: 16px; }
+.hota-low .kpi-value { color: var(--bad); }
+
+.videos { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+.videos figure { margin: 0; }
+.videos iframe { width: 100%; aspect-ratio: 4 / 3; border: 1px solid var(--panel-border); border-radius: 6px; background: #000; }
+.videos figcaption { color: var(--muted); font-size: 12px; margin-top: 4px; }
+
+.videos img { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; border: 1px solid var(--panel-border); border-radius: 6px; background: #000; display: block; }
+
+/* use case 2: charts and numbers on the left, the two decoded videos stacked on the right, no page scroll */
+.uc2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 34%); gap: 16px; align-items: stretch; }
+.uc2-left { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.uc2-left .kpis { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+/* the chart card takes all the height left under the numbers, down to the bottom of the video column */
+.uc2-left .chart-card { flex: 1; display: flex; flex-direction: column; min-height: 240px; }
+.uc2-left .chart-wrap.compact { flex: 1; height: auto; min-height: 0; }
+.uc2-right { padding: 12px; }
+.uc2-right h2 { margin-top: 0; }
+.uc2-right .hint { margin-bottom: 6px; }
+.uc2-right figure { margin: 0 0 8px; }
+.uc2-right img { width: 100%; height: calc((100vh - 270px) / 2 - 22px); min-height: 120px; object-fit: contain;
+  border: 1px solid var(--panel-border); border-radius: 6px; background: #000; display: block; aspect-ratio: auto; }
+.uc2-right figcaption { color: var(--muted); font-size: 12px; margin-top: 2px; }
+@media (max-width: 1000px) { .uc2 { grid-template-columns: 1fr; } .uc2-right img { height: 240px; } .uc2-left .chart-card { min-height: 320px; } }
+
+/* ---- fixed-height layout: both tabs fill the window, so the left control card is the same height on
+   both and the charts / videos share what is left (no page scroll) ---- */
+:root { --hdr: 55px; }
+.layout { height: calc(100vh - var(--hdr)); box-sizing: border-box; align-items: stretch; }
+
+.main { min-height: 0; }
+.view { flex: 1; min-height: 0; }
+#view-uc1 .chart-card { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+#view-uc1 .chart-wrap { flex: 1; height: auto; min-height: 160px; }
+.uc2 { grid-template-rows: minmax(0, 1fr); }
+.uc2-left { min-height: 0; }
+.uc2-left .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.uc2-left .chart-card { min-height: 0; }
+.uc2-right { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.uc2-right figure { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0 0 8px; }
+.uc2-right img { flex: 1; min-height: 0; height: auto; width: 100%; object-fit: contain; }
+@media (max-width: 1000px), (max-height: 600px) {
+  .layout { height: auto; }
+  .view { flex: none; }
+  #view-uc1 .chart-wrap { height: 380px; flex: none; }
+  .uc2 { grid-template-columns: 1fr; }
+  .uc2-left .chart-card { min-height: 320px; }
+  .uc2-right { overflow: visible; }
+  .uc2-right img { height: 240px; flex: none; }
+}
+
+/* The number cards have the same height on both tabs, so the chart card under them (Network latency on
+   tab 1, Tracking quality on tab 2) starts at the same place and ends at the same place: same height. */
+:root { --kpi-h: 124px; }
+.kpis .kpi { height: var(--kpi-h); box-sizing: border-box; overflow: hidden; }
+.kpi-name, .kpi-row { white-space: nowrap; }
+.kpi-name > span:first-child, .kpi-row > span { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.kpi-value { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- left column: separate cards, the system load card at the bottom ---- */
+.side { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow-y: auto; }
+.side .panel { padding: 12px 14px; }
+.side h2 { margin-top: 0; }
+.sysload { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+.sys-rows { display: flex; flex: 1 1 auto; flex-direction: column; gap: 8px; min-height: 0; }
+.sys-machine.stale { opacity: .5; }
+.sys-title { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.sys-note { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.sys-header { display: flex; flex-wrap: wrap; gap: 2px 10px; margin: 2px 0 4px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.sys-value > span { display: inline-block; min-width: 2.6em; text-align: right; font-variant-numeric: tabular-nums; }
+.sys-chart { position: relative; height: 120px; }
+.sys-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.sys-head h2 { margin: 0; }
+.sys-select { background: var(--panel); color: var(--text); border: 1px solid var(--panel-border); border-radius: 6px; padding: 2px 6px; font-size: 12px; }
+
+/* Use case 1: the chart options sit to the right of the camera cards, same height as them */
+.uc1-top { display: flex; gap: 12px; align-items: stretch; }
+.uc1-top .kpis { flex: 1; min-width: 0; }
+.chart-options { flex: 0 0 260px; display: flex; flex-direction: column; justify-content: space-between; gap: 2px; padding: 8px 14px; }
+.chart-options .check { font-size: 12px; margin: 0; }
+.chart-options .btn { align-self: flex-start; padding: 2px 10px; font-size: 12px; }
+@media (max-width: 1000px) { .uc1-top { flex-direction: column; } .chart-options { flex-basis: auto; } }
+
+/* System utilization: natural height under the other cards; the chart keeps a sensible aspect ratio
+   (a chart stretched to the whole column height is far taller than it is wide) */
+.sys-chart { flex: 1 1 auto; min-height: 130px; }
+.sys-chart canvas { position: absolute; inset: 0; }
+
+/* ---- Architecture overlay (js/arch.js): topology with live, animated traffic ---- */
+.arch-overlay { position: fixed; inset: 0; z-index: 50; background: rgba(5, 8, 12, .82); display: flex; align-items: center; justify-content: center; padding: 20px; }
+.arch-dialog { width: min(1400px, 100%); max-height: 100%; display: flex; flex-direction: column; background: var(--panel);
+  border: 1px solid var(--panel-border); border-radius: 10px; overflow: hidden; }
+.arch-head { display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-bottom: 1px solid var(--panel-border); }
+.arch-head h2 { margin: 0; white-space: nowrap; }
+.arch-legend { flex: 1; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--muted); }
+.arch-legend i { display: inline-block; width: 22px; height: 0; border-top: 3px dotted var(--c); margin-right: 6px; vertical-align: middle; }
+#arch-svg { width: 100%; height: auto; min-height: 0; display: block; font-family: inherit; }
+#arch-svg .node { fill: #0f151c; stroke: #2b3947; stroke-width: 1.5; }
+#arch-svg .node-in { fill: #17202a; stroke: #2b3947; }
+#arch-svg .t { fill: var(--text); font-size: 13px; font-weight: 600; }
+#arch-svg .s { fill: var(--muted); font-size: 11px; }
+#arch-svg .live { fill: var(--text); font-size: 11px; font-variant-numeric: tabular-nums; paint-order: stroke; stroke: #0f151c; stroke-width: 4px; stroke-linejoin: round; }
+#arch-svg .dot { fill: var(--muted); }
+#arch-svg .dot.ok { fill: var(--ok); }
+#arch-svg .dot.bad { fill: var(--bad); }
+#arch-svg .switch { fill: #101a26; stroke: #4da3ff; stroke-width: 2; }
+#arch-svg .flow { fill: none; stroke: var(--c); stroke-width: var(--w, 3); stroke-linecap: round; stroke-dasharray: 1 13;
+  animation: arch-flow var(--dur, 1s) linear infinite; opacity: .95; }
+#arch-svg .flow.idle { animation: none; opacity: .18; stroke-dasharray: 2 6; }
+#arch-svg .flow.stale { animation: none; stroke: var(--bad); opacity: .6; stroke-dasharray: 2 6; }
+#arch-svg .rail { fill: none; stroke: var(--c); stroke-width: 1; opacity: .16; }
+#arch-svg .ctl { fill: none; stroke: #6b7886; stroke-width: 1.5; stroke-dasharray: 4 4; }
+@keyframes arch-flow { to { stroke-dashoffset: -14; } }
+@media (prefers-reduced-motion: reduce) { #arch-svg .flow { animation: none; } }
+#arch-svg .flow.lossy { opacity: .6; stroke-dasharray: 1 6 1 22; animation-name: arch-flow-lossy; }
+#arch-svg .drop { fill: none; stroke: var(--bad); stroke-width: 6; stroke-linecap: round; stroke-dasharray: 0.1 34;
+  opacity: var(--o, 1); animation: arch-flow var(--dur, 1s) linear infinite; filter: drop-shadow(0 0 3px var(--bad)); }
+@keyframes arch-flow-lossy { to { stroke-dashoffset: -29; } }
+#arch-svg .switch.on { stroke: var(--ok); stroke-width: 3.5; fill: #12271f; filter: drop-shadow(0 0 10px rgba(62, 207, 142, .55)); }
+#arch-svg .flow.protected { stroke-width: calc(var(--w, 3) * 1px + 1px); filter: drop-shadow(0 0 5px var(--c)); }
+#arch-svg .badge { fill: none; stroke: var(--ok); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 4px var(--ok)); }
+#arch-svg .clock circle { fill: none; stroke: #3ecf8e; stroke-width: 1.5; }
+#arch-svg .clock path { fill: none; stroke: #3ecf8e; stroke-width: 1.5; stroke-linecap: round; }
+#arch-svg .clock { cursor: help; }
+#arch-svg .clock circle.hit { fill: transparent; stroke: none; pointer-events: all; }
+#arch-svg .clock text.ptp { fill: #3ecf8e; font-size: 11px; font-weight: 600; letter-spacing: .04em; }
+
+/* tabs: filled pills; the left column starts below the tab strip, level with the first card of the tab */
+:root { --tabs-h: 40px; }
+.tabs { height: var(--tabs-h); box-sizing: border-box; border-bottom: 0; gap: 8px; align-items: stretch; }
+.tab { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 8px; padding: 0 16px; font-weight: 600; }
+.tab:hover { border-color: var(--accent); }
+.tab[aria-selected="true"] { background: rgba(77, 163, 255, .16); border-color: var(--accent); color: #fff;
+  box-shadow: 0 0 0 1px var(--accent) inset, 0 0 12px rgba(77, 163, 255, .25); }
+.side { padding-top: calc(var(--tabs-h) + 16px); box-sizing: border-box; }
+@media (max-width: 900px) { .side { padding-top: 0; } }
+.sys-machine { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+.sys-machine[hidden] { display: none; }
+
+/* the Network load card is as tall as the first row of cards of the tab */
+:root { --top-h: 124px; }
+#card-load { height: var(--top-h); box-sizing: border-box; flex: none; overflow: hidden; }
+.uc1-top .kpi, .uc2-left .kpis .kpi { min-height: var(--top-h); box-sizing: border-box; }
+.side { gap: 16px; }
+
+/* subtle divider between the controls column and the tabs area */
+@media (min-width: 901px) {
+  .main { position: relative; }
+  .main::before { content: ""; position: absolute; left: -8px; top: 0; bottom: 0; width: 1px;
+    background: linear-gradient(to bottom, transparent, rgba(139, 152, 167, .28) 8%, rgba(139, 152, 167, .28) 92%, transparent); pointer-events: none; }
+}
+
+/* topbar controls use the same rounded-rectangle outline as the tabs */
+.topbar .chip, .topbar .btn { border-radius: 8px; min-height: 30px; box-sizing: border-box; display: inline-flex; align-items: center; padding: 0 12px; }
+
+.chips { align-items: center; }
+.topbar { box-sizing: border-box; height: var(--hdr); }

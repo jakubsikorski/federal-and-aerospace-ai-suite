@@ -17,7 +17,7 @@ compatibility: >-
   video/render groups). For pymavlink mode: PX4 SITL runs in simulation.
   For UAVSDK mode: uav-mission-compute-sdk must be running first.
   Ports 8081 (REST), 8555 (RTSP), 1883 (MQTT), 14541/udp (MAVLink) must be
-  free. Tested with intel/dlstreamer-pipeline-server:2026.1.0 image.
+  free. Tested with intel/dlstreamer-pipeline-server:2026.3.0-ubuntu24-rc1 image.
 ---
 
 <!-- SPDX-FileCopyrightText: (C) 2026 Intel Corporation -->
@@ -75,6 +75,7 @@ MAVLink/MQTT → Pipeline Manager → start/stop pipelines on ARMED/DISARMED
 | [`references/DEPLOY.md`](references/DEPLOY.md) | Docker Compose services, env vars, Makefile targets, volumes, device access |
 | [`references/MODEL.md`](references/MODEL.md) | YOLO11s download + OpenVINO export, custom model substitution |
 | [`references/TESTS.md`](references/TESTS.md) | pytest structure, REST API tests, RTSP stream validation, MQTT checks |
+| [`benchmark.md`](benchmark.md) | Evaluation baseline: agent output with the skill loaded compared with no skill |
 
 ## Parameters (from invoking prompt)
 
@@ -152,8 +153,7 @@ MAVLink/MQTT → Pipeline Manager → start/stop pipelines on ARMED/DISARMED
 {{STACK_DIR}}/
 ├── docker-compose-pymavlink.yml     # or docker-compose-uavsdk.yml
 ├── 10040_sihsim_quadx.post          # PX4 airframe MAVLink routing (pymavlink only)
-├── .env                             # HOST_IP, image tags
-├── .env.example                     # template copied by make init
+├── .env.example                     # template; `make init` creates the local env file from it
 ├── Makefile                         # init, model, stack up/down, pipeline start/stop
 ├── configs/
 │   └── config-{{PIPELINE_PREFIX}}.json   # DL Streamer Pipeline Server pipeline definitions
@@ -187,9 +187,10 @@ or scripts is a syntax error.
 2. `make model` succeeds: OpenVINO IR model present at
    `resources/models/yolo11s/yolo11s_openvino_model/yolo11s.xml`.
 3. `make pymav-up` (or `make uavsdk-up`) → all containers `running`, including `nginx`.
-4. `curl -k https://localhost/pipelines` returns the registered pipeline definitions
+4. A GET on `https://localhost/pipelines` (with a client that accepts the self-signed certificate)
+   returns the registered pipeline definitions
    (`dlstreamer-pipeline-server` no longer publishes a host port directly — it is reached
-   only through the `nginx` reverse proxy on `443`; self-signed cert requires `-k`).
+   only through the `nginx` reverse proxy on `443`, which uses a self-signed certificate).
 5. Pipeline manager starts with `make start-rtsp` and connects to MAVLink/MQTT.
 6. On ARMED signal: pipelines start; RTSP streams appear at `:8555`.
 7. `ffplay rtsp://localhost:8555/{{RTSP_PATH}}` shows annotated video with telemetry overlay.

@@ -1,0 +1,17 @@
+{
+  "config": {
+    "logging": {
+      "C_LOG_LEVEL": "INFO",
+      "PY_LOG_LEVEL": "INFO"
+    },
+    "pipelines": [
+      {
+        "name": "latency",
+        "source": "gstreamer",
+        "queue_maxsize": 50,
+        "pipeline": "rtspsrc location=@RTSP_URL@ latency=100 protocols=tcp ! rtph264depay ! h264parse ! gvapython class=LatencyStamp function=process module=/home/pipeline-server/user_scripts/gvapython/latency_stamp.py name=stamp ! avdec_h264 ! videoconvert ! videoscale ! video/x-raw,format=BGR,width=800,height=600 ! gvadetect name=detection threshold=0.4 device=CPU model=/home/pipeline-server/models/omz/person-detection-retail-0013/FP32/person-detection-retail-0013.xml model-proc=/home/pipeline-server/models/object_detection/person/person-detection-retail-0013.json ! gvapython class=PublishResult arg=[\"@TOPIC@\"] function=process module=/home/pipeline-server/user_scripts/gvapython/latency_stamp.py name=publish ! appsink sync=false",
+        "auto_start": true
+      }
+    ]
+  }
+}

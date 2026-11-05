@@ -1,0 +1,334 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+#
+# Standalone deterministic threat detection (HOTA) application.
+# SceneScape + DLStreamer Pipeline Server reading two RTSP streams published
+# by tsn-machine-2 / tsn-machine-3 over the TSN VLAN.
+
+name: tsn-scene
+
+x-proxy-env: &proxy-env
+  http_proxy: ${http_proxy:-}
+  https_proxy: ${https_proxy:-}
+  HTTP_PROXY: ${http_proxy:-}
+  HTTPS_PROXY: ${https_proxy:-}
+  no_proxy: ${no_proxy:-},.scenescape.intel.com,${CAMERA1_HOST},${CAMERA2_HOST}
+  NO_PROXY: ${no_proxy:-},.scenescape.intel.com,${CAMERA1_HOST},${CAMERA2_HOST}
+
+services:
+  ntpserver:
+    image: docker.io/dockurr/chrony:4.6.1
+    environment:
+      <<: *proxy-env
+    networks:
+      scenescape:
+        aliases:
+          - ntpserv
+    restart: on-failure:5
+
+  broker:
+    image: docker.io/library/eclipse-mosquitto:2.0.22
+    ports:
+      - "1883:1883"
+    environment:
+      <<: *proxy-env
+    volumes:
+      - ./mosquitto/mosquitto-secure.conf:/mosquitto/config/mosquitto.conf
+    secrets:
+      - root-cert
+      - broker-cert
+      - broker-key
+    entrypoint: [
+        "/bin/sh",
+        "-e",
+        "-c",
+        "cp -r /run/secrets /mosquitto/secrets  && \
+        /docker-entrypoint.sh /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf",
+      ]
+    networks:
+      scenescape:
+        aliases:
+          - broker.scenescape.intel.com
+    user: "${UID}:${GID}"
+    restart: on-failure:5
+
+  pgserver:
+    image: postgres:17.6
+    env_file:
+      - ./secrets/pgserver/pgserver.env
+    networks:
+      - scenescape
+    environment:
+      POSTGRES_USER: scenescape
+      POSTGRES_DB: scenescape
+    volumes:
+      - pgserver-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scenescape -d scenescape"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  web:
+    image: intel/scenescape-manager:${SCENESCAPE_VERSION}
+    init: true
+    networks:
+      scenescape:
+        aliases:
+          - web.scenescape.intel.com
+    depends_on:
+      pgserver:
+        condition: service_healthy
+      broker:
+        condition: service_started
+    environment:
+      <<: *proxy-env
+      SUPASS: ${SUPASS}
+      SCENESCAPE_ALLOWED_HOSTS: ${ALLOWED_HOSTS:-}
+      DBHOST: pgserver
+      DBPORT: 5432
+    command: >
+      webserver
+      --dbtype postgres
+      --broker broker.scenescape.intel.com
+      --brokerauth /run/secrets/browser.auth
+      --brokerrootcert /run/secrets/certs/scenescape-ca.pem
+    healthcheck:
+      test: "curl --insecure -H 'Host: localhost' -X GET https://127.0.0.1:443/api/v1/database-ready | grep 'true'"
+      interval: 10s
+      timeout: 120s
+      retries: 10
+      start_period: 10s
+    volumes:
+      - pgserver-media:/workspace/media
+      - pgserver-migrations:/workspace/migrations
+      - ./webserver/user_access_config.json:/home/scenescape/Scenescape/user_access_config.json
+    secrets:
+      - source: root-cert
+        target: certs/scenescape-ca.pem
+      - source: web-cert
+        target: certs/scenescape-web.crt
+      - source: web-key
+        target: certs/scenescape-web.key
+      - django
+      - browser.auth
+      - controller.auth
+    restart: on-failure:5
+
+  # One-shot: imports the hota-scene appdata package (scene, cameras, map)
+  # into the database once the web service has migrated it. Idempotent.
+  scene-loader:
+    profiles: [video]  # other sources use a scene the user calibrates in the UI
+    image: intel/scenescape-manager:${SCENESCAPE_VERSION}
+    entrypoint: ["bash", "/opt/load_scene.sh"]
+    networks:
+      - scenescape
+    depends_on:
+      web:
+        condition: service_healthy
+    environment:
+      <<: *proxy-env
+      DBHOST: pgserver
+      DBPORT: 5432
+    volumes:
+      - pgserver-media:/workspace/media
+      - ./webserver/load_scene.sh:/opt/load_scene.sh:ro
+      - ./webserver/hota-scene-appdata.tar.bz2:/opt/appdata.tar.bz2:ro
+    secrets:
+      - django
+      - browser.auth
+      - controller.auth
+    restart: "no"
+
+  scene:
+    image: intel/scenescape-controller:${SCENESCAPE_VERSION}
+    init: true
+    environment:
+      <<: *proxy-env
+    networks:
+      scenescape:
+    configs:
+      - source: tracker-config
+        target: /home/scenescape/Scenescape/tracker-config.json
+    depends_on:
+      web:
+        condition: service_healthy
+      scene-loader:
+        condition: service_completed_successfully
+        required: false  # only runs for SOURCE=video
+      broker:
+        condition: service_started
+      ntpserver:
+        condition: service_started
+    command: >
+      --restauth /run/secrets/controller.auth
+      --brokerauth /run/secrets/controller.auth
+      --broker broker.scenescape.intel.com
+      --ntp ntpserv
+    volumes:
+      - pgserver-media:/home/scenescape/Scenescape/media
+    secrets:
+      - source: root-cert
+        target: certs/scenescape-ca.pem
+      - django
+      - controller.auth
+    restart: on-failure:5
+
+  analytics:
+    image: intel/scenescape-analytics:${SCENESCAPE_VERSION}
+    init: true
+    environment:
+      <<: *proxy-env
+    networks:
+      scenescape:
+    depends_on:
+      web:
+        condition: service_healthy
+      scene-loader:
+        condition: service_completed_successfully
+        required: false  # only runs for SOURCE=video
+      broker:
+        condition: service_started
+      ntpserver:
+        condition: service_started
+    command: >
+      --restauth /run/secrets/controller.auth
+      --brokerauth /run/secrets/controller.auth
+      --broker broker.scenescape.intel.com
+    volumes:
+      - pgserver-media:/home/scenescape/Scenescape/media
+    secrets:
+      - source: root-cert
+        target: certs/scenescape-ca.pem
+      - django
+      - controller.auth
+    restart: on-failure:5
+
+  # Two HOTA pipelines (hota-cam1 / hota-cam2): RTSP -> SEI frame number ->
+  # person detection -> MQTT. CPU only; start them via config.json autostart.
+  # Pulls each camera stream once over the TSN VLAN and serves it as local RTSP (for the pipelines)
+  # and as WebRTC (for the dashboard in the browser).
+  mediamtx:
+    profiles: [video]  # only the test-video source needs the relay
+    image: docker.io/bluenviron/mediamtx:1.19.2
+    networks:
+      scenescape:
+        aliases:
+          - mediamtx
+    ports:
+      - "8889:8889"
+      - "8189:8189/udp"
+    environment:
+      # address of this host as the browser sees it, advertised in the WebRTC ICE candidates
+      MTX_WEBRTCADDITIONALHOSTS: ${LAB_IP:-}
+    volumes:
+      - ./mediamtx/mediamtx.yml:/mediamtx.yml:ro
+    restart: on-failure:5
+
+  dlstreamer-pipeline-server:
+    image: ${DLSTREAMER_PIPELINE_SERVER_IMAGE}
+    networks:
+      - scenescape
+    ports:
+      # REST API on loopback only: the dashboard's watchdog restarts ended pipelines through it
+      - "127.0.0.1:8082:8080"
+    tty: true
+    entrypoint: ["./run.sh"]
+    depends_on:
+      broker:
+        condition: service_started
+      ntpserver:
+        condition: service_started
+      mediamtx:
+        condition: service_started
+        required: false  # only for SOURCE=video
+    healthcheck:
+      test: ["CMD", "curl", "-I", "-s", "http://localhost:8080/pipelines"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    environment:
+      - RUN_MODE=EVA
+      - DETECTION_DEVICE=CPU
+      - ADD_UTCTIME_TO_METADATA=true
+      - APPEND_PIPELINE_NAME_TO_PUBLISHER_TOPIC=false
+      - REST_SERVER_PORT=8080
+      - MQTT_HOST=broker.scenescape.intel.com
+      - MQTT_PORT=1883
+      - http_proxy=${http_proxy:-}
+      - https_proxy=${https_proxy:-}
+      - no_proxy=.scenescape.intel.com,mediamtx,${CAMERA1_HOST},${CAMERA2_HOST},${no_proxy:-}
+      - NO_PROXY=.scenescape.intel.com,mediamtx,${CAMERA1_HOST},${CAMERA2_HOST},${no_proxy:-}
+    volumes:
+      - ./dlstreamer-pipeline-server/config.generated.json:/home/pipeline-server/config.json:ro
+      - ./dlstreamer-pipeline-server/sscape_adapter.py:/home/pipeline-server/user_scripts/gvapython/sscape/sscape_adapter.py:ro
+      - ./dlstreamer-pipeline-server/sei_parser.py:/home/pipeline-server/user_scripts/gvapython/sscape/sei_parser.py:ro
+      - ../data/models:/home/pipeline-server/models:ro
+      - dlstreamer-pipeline-server-pipeline-root:/var/cache/pipeline_root:uid=1999,gid=1999
+    secrets:
+      - source: root-cert
+        target: certs/scenescape-ca.pem
+    pids_limit: 1000
+    restart: on-failure:5
+
+  nginx:
+    image: nginx:1.30.2-alpine
+    container_name: nginx-reverse-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "./nginx/nginx.conf.template:/etc/nginx/nginx.conf.template:ro"
+      - "./nginx/ssl:/etc/nginx/ssl:ro"
+    networks:
+      - scenescape
+    depends_on:
+      - dlstreamer-pipeline-server
+      - web
+    environment:
+      - http_proxy=${http_proxy:-}
+      - https_proxy=${https_proxy:-}
+      - no_proxy=${no_proxy:-},${HOST_IP}
+      - NO_PROXY=${no_proxy:-},${HOST_IP}
+      - NGINX_CLIENT_MAX_BODY_SIZE=${NGINX_CLIENT_MAX_BODY_SIZE}
+      - DASHBOARD_UPSTREAM=${LAB_IP}:${DASHBOARD_PORT:-8080}
+      - NGINX_ENVSUBST_TEMPLATE_DIR=/etc/nginx
+      - NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx
+    restart: on-failure:5
+
+networks:
+  scenescape:
+
+volumes:
+  pgserver-db:
+  pgserver-media:
+  pgserver-migrations:
+  dlstreamer-pipeline-server-pipeline-root:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+
+configs:
+  tracker-config:
+    file: ./controller/tracker-config.json
+
+secrets:
+  root-cert:
+    file: ./secrets/certs/scenescape-ca.pem
+  broker-cert:
+    file: ./secrets/certs/scenescape-broker.crt
+  broker-key:
+    file: ./secrets/certs/scenescape-broker.key
+  web-cert:
+    file: ./secrets/certs/scenescape-web.crt
+  web-key:
+    file: ./secrets/certs/scenescape-web.key
+  django:
+    file: ./secrets/django
+  browser.auth:
+    file: ./secrets/browser.auth
+  controller.auth:
+    file: ./secrets/controller.auth

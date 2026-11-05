@@ -8,7 +8,7 @@
 ```
 tests/
 ├── conftest.py                  # shared fixtures, env vars, REST base URL
-├── test_stack_up.py             # containers running and healthy
+├── test_stack_up.py             # REST API and broker reachable
 ├── test_pipeline_start.py       # REST API: list, start, status, stop
 ├── test_rtsp_stream.py          # RTSP stream availability after pipeline start
 └── test_mavlink_trigger.py      # pipeline starts/stops on armed/disarmed
@@ -56,36 +56,28 @@ def rtsp_port():
 # SPDX-FileCopyrightText: (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import subprocess
+import ast
+import os
+import socket
 import pytest
+import requests
+
+REST_BASE = os.getenv("DLSPS_REST_URL", "https://localhost")
+HOST_IP = os.getenv("HOST_IP", "127.0.0.1")
 
 
-def _running_containers():
-    result = subprocess.run(
-        ["docker", "ps", "--format", "{{.Names}}"],
-        capture_output=True, text=True, check=True
-    )
-    return result.stdout.splitlines()
+def test_dlstreamer_reachable():
+    resp = requests.get(f"{REST_BASE}/pipelines", timeout=10, verify=False)
+    assert resp.status_code == 200
 
 
-def test_dlstreamer_container_running():
-    assert "dlstreamer-pipeline-server" in _running_containers()
-
-
-def test_broker_container_running():
+def test_broker_reachable():
     """Only present in pymavlink mode."""
-    containers = _running_containers()
-    # Skip if broker not expected (UAVSDK mode)
-    if "broker" not in containers:
-        pytest.skip("broker not present (UAVSDK mode)")
-    assert "broker" in containers
-
-
-def test_px4_container_running():
-    containers = _running_containers()
-    if "px4" not in containers:
-        pytest.skip("px4 not present (UAVSDK mode)")
-    assert "px4" in containers
+    try:
+        with socket.create_connection((HOST_IP, 1883), timeout=3):
+            pass
+    except OSError:
+        pytest.skip("broker not reachable (UAVSDK mode)")
 ```
 
 ---
@@ -236,8 +228,9 @@ def test_rtsp_stream_available(rest_base, rtsp_host, rtsp_port):
 # SPDX-FileCopyrightText: (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import ast
+import pathlib
 import pytest
-import subprocess
 import time
 import requests
 
@@ -246,35 +239,21 @@ import requests
 # For unit testing without a live MAVLink connection, mock the armed state
 # by directly calling the REST API (as the pipeline_manager does).
 
+# Run from the stack directory; scripts/ is mounted into the container.
+MANAGER_SCRIPT = pathlib.Path("scripts/mavlink_pipeline_manager.py")
+MODEL_XML = pathlib.Path("resources/models/yolo11s/yolo11s_openvino_model/yolo11s.xml")
+
 
 def test_pipeline_manager_script_exists():
-    result = subprocess.run(
-        ["docker", "exec", "dlstreamer-pipeline-server",
-         "test", "-f", "/home/pipeline-server/scripts/pipeline_manager.py"],
-        capture_output=True
-    )
-    assert result.returncode == 0, "pipeline_manager.py not found in container"
+    assert MANAGER_SCRIPT.is_file(), "pipeline manager script not found in the stack"
 
 
-def test_pipeline_manager_importable():
-    result = subprocess.run(
-        ["docker", "exec", "dlstreamer-pipeline-server",
-         "python3", "-c", "import sys; sys.path.insert(0, '/home/pipeline-server/scripts'); "
-         "import pipeline_manager; print('OK')"],
-        capture_output=True, text=True, timeout=10
-    )
-    assert result.returncode == 0 and "OK" in result.stdout, \
-        f"Import failed: {result.stderr}"
+def test_pipeline_manager_parses():
+    ast.parse(MANAGER_SCRIPT.read_text())
 
 
 def test_model_file_exists():
-    result = subprocess.run(
-        ["docker", "exec", "dlstreamer-pipeline-server",
-         "test", "-f",
-         "/home/pipeline-server/resources/models/yolo11s/yolo11s_openvino_model/yolo11s.xml"],
-        capture_output=True
-    )
-    assert result.returncode == 0, "Model file not found in container"
+    assert MODEL_XML.is_file(), "Model file not found; run `make model`"
 ```
 
 ---

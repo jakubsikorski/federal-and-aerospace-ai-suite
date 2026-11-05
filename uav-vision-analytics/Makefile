@@ -8,17 +8,31 @@ endif
 
 COMPOSE_PYMAV  := docker-compose-pymavlink.yml
 COMPOSE_SDK := docker-compose-uavsdk.yml
-DLSPS          := dlstreamer-pipeline-server
+DLSPS          := uav-va-dlstreamer-pipeline-server
 MODEL_DIR      := resources/models/yolo11s
 MODEL_XML      := $(MODEL_DIR)/yolo11s_openvino_model/yolo11s.xml
 VENV           := resources/venv
-DEVICE         ?= gpu
 SSL_DIR        := configs/nginx/ssl
+VLM_MODEL_PATH := $(CURDIR)/resources
+VLM_MODEL_ID   ?= OpenGVLab/InternVL2-1B
+VLM_DEVICE     ?= CPU,GPU
+VLM_WEIGHT_FORMAT ?= int8
 
-.PHONY: help init build model _check_model _check_certs _check_venv_pkg \
-        pymav-up pymav-down \
+# Canonical download_models.sh lives in the LVC app (metro-ai-suite); fetched on
+# demand and cached locally rather than vendored, so there's a single source of
+# truth. Pinned to a commit for reproducibility — bump VLM_DOWNLOAD_SCRIPT_REF to
+# pick up upstream changes.
+VLM_DOWNLOAD_SCRIPT_REPO ?= open-edge-platform/edge-ai-suites
+VLM_DOWNLOAD_SCRIPT_REF  ?= 3e8fea635ef8e8484dbd18a35238caa90e65f111
+VLM_DOWNLOAD_SCRIPT_PATH := metro-ai-suite/live-video-analysis/live-video-captioning/model_download_scripts/download_models.sh
+VLM_DOWNLOAD_SCRIPT_URL  ?= https://raw.githubusercontent.com/$(VLM_DOWNLOAD_SCRIPT_REPO)/$(VLM_DOWNLOAD_SCRIPT_REF)/$(VLM_DOWNLOAD_SCRIPT_PATH)
+VLM_DOWNLOAD_SCRIPT      := $(CURDIR)/.cache/download_models.sh
+
+.PHONY: help init build model _confirm_model_license vlm-model _check_model _check_certs _check_venv_pkg _device_gids \
+        _fetch_vlm_download_script \
+        pymav-build pymav-up pymav-down \
         uavsdk-up uavsdk-down \
-        start-rtsp
+        start-rtsp check-cameras cameras-status
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / \
@@ -80,18 +94,18 @@ init: ## Create .env from template, auto-detect the host IP, and auto-detect GPU
                                 && echo "$$dev" && break; \
                         done); \
                 if [ -n "$$RS_DEV" ]; then \
-                        echo "✅ USB camera detected: $$RS_DEV → /dev/video4"; \
-                        if grep -q "^REALSENSE_DEVICE=" .env; then \
-                                sed -i "s|^REALSENSE_DEVICE=.*|REALSENSE_DEVICE=$$RS_DEV|" .env; \
+                        echo "✅ USB camera detected: $$RS_DEV (CAMERA_DEVICE_1; use it as device: in configs/cameras-pymavlink.yaml)"; \
+                        if grep -q "^CAMERA_DEVICE_1=" .env; then \
+                                sed -i "s|^CAMERA_DEVICE_1=.*|CAMERA_DEVICE_1=$$RS_DEV|" .env; \
                         else \
-                                echo "REALSENSE_DEVICE=$$RS_DEV" >> .env; \
+                                echo "CAMERA_DEVICE_1=$$RS_DEV" >> .env; \
                         fi; \
                 else \
-                        echo "⚠  No USB camera found — REALSENSE_DEVICE=/dev/null (RealSense/camera pipelines disabled)."; \
-                        if grep -q "^REALSENSE_DEVICE=" .env; then \
-                                sed -i "s|^REALSENSE_DEVICE=.*|REALSENSE_DEVICE=/dev/null|" .env; \
+                        echo "⚠  No USB camera found — CAMERA_DEVICE_1=/dev/null (live cameras disabled)."; \
+                        if grep -q "^CAMERA_DEVICE_1=" .env; then \
+                                sed -i "s|^CAMERA_DEVICE_1=.*|CAMERA_DEVICE_1=/dev/null|" .env; \
                         else \
-                                echo "REALSENSE_DEVICE=/dev/null" >> .env; \
+                                echo "CAMERA_DEVICE_1=/dev/null" >> .env; \
                         fi; \
                 fi; \
 		fi
@@ -129,7 +143,25 @@ _check_venv_pkg: ## Verify python3-venv (ensurepip) is installed; fail fast with
 	echo "❌ Install it manually (e.g., sudo apt-get update && sudo apt-get install -y $$VENV_PKG) and re-run 'make model'."; \
 	exit 1
 
-model: _check_venv_pkg ## Download YOLO11s (COCO-pretrained) and export to OpenVINO FP16
+# Asks the user to accept the model license. ACCEPT_LICENSE=y answers yes (for scripts and CI).
+_confirm_model_license:
+	@echo "This sample uses the $(LICENSE_NAME) model."; \
+	if [ -n "$(LICENSE_BY)" ]; then \
+		echo "This model is provided by $(LICENSE_BY) and is subject to its license:"; \
+		echo "$(LICENSE_URL)"; \
+	else \
+		echo "This model is provided by its publisher and is subject to the license published with it."; \
+	fi; \
+	echo "Disclaimer: by downloading and using this model, you confirm that you accept the"; \
+	echo "license terms and agree to comply with any applicable model-use and privacy requirements."; \
+	if [ "$(ACCEPT_LICENSE)" = "y" ]; then ANSWER=y; \
+	else printf "Proceed with the $(LICENSE_NAME) model download and usage? [y/N]: "; read ANSWER || ANSWER=N; fi; \
+	case "$$ANSWER" in y|Y|yes|YES) ;; *) echo "$(LICENSE_NAME) model download cancelled. Exiting."; exit 1;; esac
+
+model: LICENSE_NAME = YOLO11s
+model: LICENSE_BY = Ultralytics
+model: LICENSE_URL = https://github.com/ultralytics/ultralytics/blob/main/LICENSE
+model: _confirm_model_license _check_venv_pkg ## Download YOLO11s (COCO-pretrained) and export to OpenVINO FP16
 	@echo "[model] Creating virtualenv..."
 	python3 -m venv $(VENV)
 	@echo "[model] Installing dependencies..."
@@ -145,17 +177,52 @@ model: _check_venv_pkg ## Download YOLO11s (COCO-pretrained) and export to OpenV
 	  half=True
 	@echo "[model] Done. Model at: $(MODEL_DIR)/yolo11s_openvino_model/"
 
+_fetch_vlm_download_script: ## (internal) Fetch+cache the canonical download_models.sh from the LVC app. Set FORCE_REFRESH=true to re-fetch.
+	@mkdir -p "$(dir $(VLM_DOWNLOAD_SCRIPT))"
+	@if [ "$(FORCE_REFRESH)" = "true" ] || [ ! -f "$(VLM_DOWNLOAD_SCRIPT)" ]; then \
+		echo "[vlm-model] Fetching download_models.sh from $(VLM_DOWNLOAD_SCRIPT_URL)"; \
+		curl -fsSL "$(VLM_DOWNLOAD_SCRIPT_URL)" -o "$(VLM_DOWNLOAD_SCRIPT)" || { \
+			echo "❌ Failed to fetch download_models.sh. Check network access to raw.githubusercontent.com,"; \
+			echo "   or verify VLM_DOWNLOAD_SCRIPT_REF=$(VLM_DOWNLOAD_SCRIPT_REF) still exists upstream."; \
+			rm -f "$(VLM_DOWNLOAD_SCRIPT)"; \
+			exit 1; \
+		}; \
+		chmod +x "$(VLM_DOWNLOAD_SCRIPT)"; \
+	else \
+		echo "[vlm-model] Using cached download_models.sh at $(VLM_DOWNLOAD_SCRIPT) (FORCE_REFRESH=true to re-fetch)"; \
+	fi
+
+vlm-model: LICENSE_NAME = $(VLM_MODEL_ID)
+vlm-model: _confirm_model_license _fetch_vlm_download_script ## Download/convert the VLM captioning model (OpenVINO IR) for CPU and GPU. Override VLM_MODEL_ID/VLM_DEVICE/VLM_WEIGHT_FORMAT to customize.
+	@echo "[vlm-model] Downloading '$(VLM_MODEL_ID)' (weight-format=$(VLM_WEIGHT_FORMAT)) for device(s): $(VLM_DEVICE)"
+	MODEL_PATH="$(VLM_MODEL_PATH)" "$(VLM_DOWNLOAD_SCRIPT)" \
+	  --model "$(VLM_MODEL_ID)" \
+	  --type vlm \
+	  --weight-format "$(VLM_WEIGHT_FORMAT)" \
+	  --device "$(VLM_DEVICE)"
+	@echo "[vlm-model] Done. Model(s) at: resources/ov_models/<device>/$(notdir $(VLM_MODEL_ID))/"
+
 # ── pymavlink stack ───────────────────────────────────────────────────────────
 
-pymav-up: _check_model _check_certs ## Start standalone pymavlink stack (PX4 SITL + broker + DL Streamer Pipeline Server + mediamtx)
-	docker compose -f $(COMPOSE_PYMAV) up -d
+pymav-build: _check_model ## (Re)build the locally built pymavlink images (requires network access)
+	docker compose -f $(COMPOSE_PYMAV) build
+
+pymav-up: _check_model _check_certs _device_gids ## Start standalone pymavlink stack; builds images only if missing, so it runs offline afterwards
+	@if ! docker image inspect $(DLSTREAMER_PIPELINE_SERVER_IMAGE)-pymavlink uav-vision-analytics-mavlink-router:local >/dev/null 2>&1; then \
+		echo "[pymav-up] Locally built images not found — building (requires network access)..."; \
+		docker compose -f $(COMPOSE_PYMAV) build; \
+	fi
+	docker compose -f $(COMPOSE_PYMAV) up -d --no-build
 
 pymav-down: ## Stop and remove pymavlink stack (includes volumes)
 	docker compose -f $(COMPOSE_PYMAV) down -v
 
+_device_gids: # Record the group IDs of the GPU/NPU/camera devices in .env (used by group_add)
+	@./scripts/update_device_gids.sh
+
 # ── UAV Mission Compute SDK stack ──────────────────────────────────────────────────────────────
 
-uavsdk-up: _check_model _check_certs ## Start UAV Mission Compute SDK stack (requires uav-mission-compute-sdk running first)
+uavsdk-up: _check_model _check_certs _device_gids ## Start UAV Mission Compute SDK stack (requires uav-mission-compute-sdk running first)
 	docker compose -f $(COMPOSE_SDK) up -d
 
 uavsdk-down: ## Stop and remove UAV Mission Compute SDK stack (includes volumes)
@@ -163,12 +230,17 @@ uavsdk-down: ## Stop and remove UAV Mission Compute SDK stack (includes volumes)
 
 # ── Pipeline management ───────────────────────────────────────────────────────
 
-start-rtsp: ## Start RTSP pipelines. DEVICE=cpu|gpu|npu|all (default: gpu)
+start-rtsp: ## Start the cameras in configs/cameras-pymavlink.yaml when the vehicle is armed (the file is re-read at every arming). CAMERAS=<file> uses another file.
 	-docker exec -it \
 	  -e HOST_IP=$(HOST_IP) \
-	  -e PIPELINE_DEVICE=$(DEVICE) \
 	  $(DLSPS) bash -c \
-	  "python3 /home/pipeline-server/scripts/pipeline_manager.py --sink rtsp"
+	  "python3 /home/pipeline-server/scripts/pipeline_manager.py $(if $(CAMERAS),--config $(CAMERAS))"
+
+check-cameras: ## Validate configs/cameras-pymavlink.yaml and show what would run (nothing is started). CAMERAS=<file> checks another file.
+	docker exec $(DLSPS) python3 /home/pipeline-server/scripts/camera_config.py check $(CAMERAS)
+
+cameras-status: ## Compare configs/cameras-pymavlink.yaml with the pipelines that are running
+	docker exec $(DLSPS) python3 /home/pipeline-server/scripts/pipeline_manager.py --status $(if $(CAMERAS),--config $(CAMERAS))
 
 # ── Convenience alias ─────────────────────────────────────────────────────────
 

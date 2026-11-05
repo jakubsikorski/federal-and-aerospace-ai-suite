@@ -1,0 +1,19 @@
+src/scene/secrets/*
+!src/scene/secrets/generate_secrets.sh
+!src/scene/secrets/openssl.cnf
+src/scene/nginx/ssl/
+.env
+.venv-test/
+src/scene/tests/artifacts/
+
+__pycache__/
+.pytest_cache/
+.venv/
+
+lab.env
+src/scene/mediamtx/mediamtx.yml
+src/scene/dlstreamer-pipeline-server/config.generated.json
+
+# downloaded by src/data/download_models.sh
+src/data/models/omz/
+src/data/models/.terms-accepted

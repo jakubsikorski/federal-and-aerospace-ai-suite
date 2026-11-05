@@ -1,0 +1,59 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+#
+# Cameras of the UAV Mission Compute SDK stack (make uavsdk-up): the manager starts them when the SDK reports the
+# vehicle as armed (MQTT uav/<UAV_ID>/telemetry/status). Same format and tools as configs/cameras-pymavlink.yaml
+# (see docs/user-guide/how-to-guides/customize/cameras/configure-cameras.md): make check-cameras, make start-rtsp, make cameras-status.
+#
+# The source is an RTSP stream (rtsp:) instead of a video file. {uav_id} is replaced by UAV_ID from .env (default uav-1).
+# The pipelines are the ones of the pymavlink stack (same names), with an RTSP source; see configs/config-uavsdk.json:
+#   captioning off -> uav_object_detection_<detection device>               (detection only)
+#   captioning on  -> uav_object_detection_<detection device>_<vlm device>  (detection + captions)
+# Detection can run on cpu, gpu or npu. The VLM that writes the captions runs on cpu or gpu only, needs its model
+# (make vlm-model) and publishes on MQTT uav/caption/<camera id>. If captions are off; set captioning.enabled: true on
+# a camera to switch them on (the VLM shares the GPU or CPU with detection, so start with one camera).
+
+version: 1
+
+cameras:
+  - id: nadir_camera                 # a-z, 0-9 and _ ; also the stream name uav-nadir-camera and caption topic uav/caption/nadir_camera
+    enabled: true                    # false skips this camera without deleting its settings
+    rtsp: rtsp://host.docker.internal:8554/{uav_id}/nadir
+    overlay: true                    # false hides the detection boxes AND the telemetry text on the stream
+    detection:
+      device: cpu                    # cpu | gpu | npu
+      model: yolo11s/yolo11s_openvino_model/yolo11s.xml   # path below resources/models
+    captioning:
+      enabled: true                 # true = detection + VLM captions (uav_object_detection_cpu_<vlm device>)
+      device: gpu                    # cpu | gpu  (the VLM does not run on the NPU)
+      model: InternVL2-1B            # folder in resources/ov_models/<device>/
+      prompt: Describe what you see in the scene.         # letters, digits, spaces and , . ? ' - only
+      max_new_tokens: 50
+
+  - id: forward_camera
+    enabled: true
+    rtsp: rtsp://host.docker.internal:8554/{uav_id}/forward
+    overlay: true
+    detection:
+      device: gpu
+      model: yolo11s/yolo11s_openvino_model/yolo11s.xml
+    captioning:
+      enabled: true                 # true = uav_object_detection_gpu_<vlm device>
+      device: gpu
+      model: InternVL2-1B
+      prompt: Describe what you see in the scene.
+      max_new_tokens: 50
+
+  - id: rear_camera
+    enabled: true                    # skipped on a host without an NPU (NPU_DEVICE not set)
+    rtsp: rtsp://host.docker.internal:8554/{uav_id}/rear
+    overlay: true
+    detection:
+      device: npu
+      model: yolo11s/yolo11s_openvino_model/yolo11s.xml
+    captioning:
+      enabled: true                 # true = uav_object_detection_npu_<vlm device>
+      device: gpu
+      model: InternVL2-1B
+      prompt: Describe what you see in the scene.
+      max_new_tokens: 50
