@@ -34,17 +34,20 @@ SANDBOX := docker run --rm \
 # `run_test <label> <command...>` prints one line such as
 #   test-coverage    PASS  25s  118 checks, line coverage 92% (minimum 75%)
 # The command's output, including the failure-path logs the checks provoke on
-# purpose, is printed only when it fails, or always with TEST_VERBOSE=1.
+# purpose, is printed only when it fails. TEST_VERBOSE=1 streams it as it runs
+# and still ends with the result line.
 define run_test
 run_test() {
   local label=$$1; shift
-  if [[ $${TEST_VERBOSE:-} == 1 ]]; then "$$@"; return; fi
-
-  local log rc=0 start=$$SECONDS
+  local log rc=0 start=$$SECONDS verbose=$${TEST_VERBOSE:-}
   log=$$(mktemp)
   trap 'rm -f "$$log"' RETURN
-  printf '%-16s ' "$$label"
-  "$$@" >"$$log" 2>&1 || rc=$$?
+  if [[ $$verbose == 1 ]]; then
+    "$$@" 2>&1 | tee "$$log" || rc=$${PIPESTATUS[0]}
+  else
+    printf '%-16s ' "$$label"
+    "$$@" >"$$log" 2>&1 || rc=$$?
+  fi
 
   # Summary from the output: checks passed, coverage total, fuzz findings.
   local checks coverage findings summary=()
@@ -58,8 +61,11 @@ run_test() {
 
   local elapsed=$$((SECONDS - start))s details='' item
   for item in "$${summary[@]}"; do details+="$${details:+, }$$item"; done
+  [[ $$verbose == 1 ]] && printf '%-16s ' "$$label"
   if ((rc == 0)); then
     echo "PASS  $$elapsed$${details:+  $$details}"
+  elif [[ $$verbose == 1 ]]; then
+    echo "FAIL  $$elapsed (exit $$rc)"
   else
     echo "FAIL  $$elapsed (exit $$rc); output:"
     cat "$$log"
@@ -80,7 +86,8 @@ test-image:
 	@$(run_test)
 	run_test test-image docker build -q --target test -t $(OFFLINE_IMAGE) backend
 
-# Backend checks with a line coverage gate; COVERAGE_OUTPUT=<dir> adds coverage.xml.
+# Backend checks with a line coverage gate; COVERAGE_OUTPUT=<dir> adds coverage.xml,
+# written before the gate so it is kept when coverage is below the minimum.
 test-coverage: test-image
 	@$(run_test)
 	$(if $(COVERAGE_OUTPUT),mkdir -p "$(COVERAGE_OUTPUT)")
@@ -91,8 +98,8 @@ test-coverage: test-image
 	  -w /srv/backend \
 	  $(OFFLINE_IMAGE) sh -c ' \
 	    coverage run --source=app test_backend.py && \
-	    coverage report --skip-empty --fail-under=$(COVERAGE_MIN) && \
-	    if [ -d /coverage ]; then coverage xml -q -o /coverage/coverage.xml; fi'
+	    { [ ! -d /coverage ] || coverage xml -q -o /coverage/coverage.xml; } && \
+	    coverage report --skip-empty --fail-under=$(COVERAGE_MIN)'
 
 # Crop producer checks in the DLSPS image, without the application or an NPU.
 test-crops:
