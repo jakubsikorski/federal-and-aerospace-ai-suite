@@ -1,376 +1,461 @@
-<svg host="65bd71144e" xmlns="http://www.w3.org/2000/svg" style="background: transparent; background-color: transparent; color-scheme: light dark;" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="722px" height="360px" viewBox="-0.5 -0.5 722 360" content="&lt;mxfile scale=&quot;1.2&quot; border=&quot;0&quot;&gt;&lt;diagram name=&quot;Page-1&quot; id=&quot;VtN8XQ1RQwx3f_HCsjCX&quot;&gt;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&lt;/diagram&gt;&lt;/mxfile&gt;">
+<svg host="65bd71144e" xmlns="http://www.w3.org/2000/svg" style="background: transparent; background-color: transparent; color-scheme: light;" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="722px" height="360px" viewBox="0 0 722 360" content="&lt;mxfile scale=&quot;1.2&quot; border=&quot;0&quot;&gt;&lt;diagram name=&quot;Page-1&quot; id=&quot;VtN8XQ1RQwx3f_HCsjCX&quot;&gt;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&lt;/diagram&gt;&lt;/mxfile&gt;">
     <defs/>
     <g>
-        <g>
-            <rect x="0" y="60" width="720" height="60" fill="#fcfcfc" stroke="#2b66af" stroke-width="1.2" pointer-events="all" style="fill: light-dark(rgb(252, 252, 252), rgb(31, 31, 31)); stroke: light-dark(rgb(43, 102, 175), rgb(111, 162, 224));"/>
-        </g>
-        <g>
-            <rect x="0" y="192" width="360" height="48" fill="#d0e6fb" stroke="none" pointer-events="all" style="fill: light-dark(rgb(208, 230, 251), rgb(12, 39, 87));"/>
-        </g>
-        <g>
-            <g transform="translate(-0.5 -0.5)scale(1.2)">
-                <switch>
-                    <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
-                        <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe flex-start; justify-content: unsafe center; width: 292px; height: 1px; padding-top: 167px; margin-left: 9px;">
-                            <div style="box-sizing: border-box; font-size: 0; text-align: center; color: #525252; ">
-                                <div style="display: inline-block; font-size: 12px; font-family: &quot;Helvetica&quot;; color: light-dark(#525252, #FCFCFC); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
-                                    <div style="">
-                                        <b>
-                                            OpenVINO
-                                        </b>
-                                        <span style="background-color: transparent;">
-                                            <b>
-                                                ™
-                                            </b>
-                                        </span>
+        <g data-cell-id="0">
+            <g data-cell-id="1">
+                <g data-cell-id="2">
+                    <g transform="translate(0.5,0.5)">
+                        <rect x="0.4" y="59.8" width="720" height="60" fill="#fcfcfc" stroke="#2b66af" stroke-width="1.2" pointer-events="all" style="fill: light-dark(rgb(252, 252, 252), rgb(31, 31, 31)); stroke: light-dark(rgb(43, 102, 175), rgb(111, 162, 224));"/>
+                    </g>
+                </g>
+                <g data-cell-id="3">
+                    <g>
+                        <rect x="0.4" y="191.8" width="360" height="48" fill="#d0e6fb" stroke="none" pointer-events="all" style="fill: light-dark(rgb(208, 230, 251), rgb(12, 39, 87));"/>
+                    </g>
+                    <g>
+                        <g transform="scale(1.2)">
+                            <switch>
+                                <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                                    <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe flex-start; justify-content: unsafe center; width: 292px; height: 1px; padding-top: 167px; margin-left: 9px;">
+                                        <div style="box-sizing: border-box; font-size: 0; text-align: center; color: #525252; ">
+                                            <div style="display: inline-block; font-size: 12px; font-family: Helvetica; color: light-dark(#525252, #FCFCFC); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
+                                                <div style="">
+                                                    <b>
+                                                        OpenVINO
+                                                    </b>
+                                                    <span style="background-color: transparent;">
+                                                        <b>
+                                                            ™
+                                                        </b>
+                                                    </span>
+                                                </div>
+                                                <div style="">
+                                                    <span style="font-size: 10px;">
+                                                        Runtime - CPU / GPU / NPU inference
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div style="">
-                                        <font style="font-size: 10px;">
-                                            Runtime - CPU / GPU / NPU inference
-                                        </font>
+                                </foreignObject>
+                                <text x="155" y="179" fill="#525252" font-family="Helvetica" font-size="12px" text-anchor="middle" style="fill: light-dark(rgb(82, 82, 82), rgb(252, 252, 252));">
+                                    <tspan x="155" y="179">
+                                        OpenVINO™
+                                    </tspan>
+                                    <tspan x="155" y="193">
+                                        Runtime - CPU / GPU / NPU inference
+                                    </tspan>
+                                </text>
+                            </switch>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="4">
+                    <g transform="translate(0.5,0.5)">
+                        <rect x="12.4" y="65.8" width="348" height="48" fill="none" stroke="#2b66af" stroke-width="1.2" stroke-dasharray="3.6 3.6" pointer-events="all" style="stroke: light-dark(rgb(43, 102, 175), rgb(111, 162, 224));"/>
+                    </g>
+                    <g>
+                        <g transform="scale(1.2)">
+                            <switch>
+                                <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                                    <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 288px; height: 1px; padding-top: 75px; margin-left: 11px;">
+                                        <div style="box-sizing: border-box; font-size: 0; text-align: center; color: #525252; ">
+                                            <div style="display: inline-block; font-size: 12px; font-family: Helvetica; color: light-dark(#525252, #FCFCFC); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
+                                                <div>
+                                                    <span style="background-color: transparent; font-size: 10px;">
+                                                        <b>
+                                                            Curated Benchmark Suite
+                                                        </b>
+                                                    </span>
+                                                </div>
+                                                <div>
+                                                    <span style="background-color: transparent; font-size: 8px;">
+                                                        Visual Pipeline &amp; Platform Evaluation Tool
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
-                            </div>
-                        </div>
-                    </foreignObject>
-                    <text x="155" y="179" fill="light-dark(#525252,#FCFCFC)" font-family="&quot;Helvetica&quot;" font-size="12px" text-anchor="middle">
-                        OpenVINO™...
-                    </text>
-                </switch>
-            </g>
-        </g>
-        <g>
-            <rect x="12" y="66" width="348" height="48" fill="none" stroke="#2b66af" stroke-width="1.2" stroke-dasharray="3.6 3.6" pointer-events="all" style="stroke: light-dark(rgb(43, 102, 175), rgb(111, 162, 224));"/>
-        </g>
-        <g>
-            <g transform="translate(-0.5 -0.5)scale(1.2)">
-                <switch>
-                    <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
-                        <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 288px; height: 1px; padding-top: 75px; margin-left: 11px;">
-                            <div style="box-sizing: border-box; font-size: 0; text-align: center; color: #525252; ">
-                                <div style="display: inline-block; font-size: 12px; font-family: &quot;Helvetica&quot;; color: light-dark(#525252, #FCFCFC); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
-                                    <div>
-                                        <span style="background-color: transparent; font-size: 10px;">
-                                            <b>
-                                                Curated Benchmark Suite
-                                            </b>
-                                        </span>
+                                </foreignObject>
+                                <text x="155" y="71" fill="#525252" font-family="Helvetica" font-size="12px" text-anchor="middle" style="fill: light-dark(rgb(82, 82, 82), rgb(252, 252, 252));">
+                                    <tspan x="155" y="71">
+                                        Curated Benchmark Suite
+                                    </tspan>
+                                    <tspan x="155" y="85">
+                                        Visual Pipeline &amp; Platform Evaluation Tool
+                                    </tspan>
+                                </text>
+                            </switch>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="5">
+                    <g>
+                        <rect x="0.4" y="131.8" width="228" height="48" fill="#d0e6fb" stroke="none" pointer-events="all" style="fill: light-dark(rgb(208, 230, 251), rgb(12, 39, 87));"/>
+                    </g>
+                    <g>
+                        <g transform="scale(1.2)">
+                            <switch>
+                                <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                                    <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe flex-start; justify-content: unsafe center; width: 182px; height: 1px; padding-top: 117px; margin-left: 9px;">
+                                        <div style="box-sizing: border-box; font-size: 0; text-align: center; color: #525252; ">
+                                            <div style="display: inline-block; font-size: 10px; font-family: Helvetica; color: light-dark(#525252, #ededed); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
+                                                <span style="font-size: 12px;">
+                                                    <b>
+                                                        MAVLink SDK
+                                                    </b>
+                                                </span>
+                                                <div>
+                                                    API - Telemetry
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <span style="background-color: transparent; font-size: 8px;">
-                                            Visual Pipeline &amp; Platform Evaluation Tool
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </foreignObject>
-                    <text x="155" y="79" fill="light-dark(#525252,#FCFCFC)" font-family="&quot;Helvetica&quot;" font-size="12px" text-anchor="middle">
-                        Curated Benchmark Suite...
-                    </text>
-                </switch>
-            </g>
-        </g>
-        <g>
-            <rect x="0" y="132" width="228" height="48" fill="#d0e6fb" stroke="none" pointer-events="all" style="fill: light-dark(rgb(208, 230, 251), rgb(12, 39, 87));"/>
-        </g>
-        <g>
-            <g transform="translate(-0.5 -0.5)scale(1.2)">
-                <switch>
-                    <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
-                        <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe flex-start; justify-content: unsafe center; width: 182px; height: 1px; padding-top: 117px; margin-left: 9px;">
-                            <div style="box-sizing: border-box; font-size: 0; text-align: center; color: #525252; ">
-                                <div style="display: inline-block; font-size: 10px; font-family: &quot;Helvetica&quot;; color: light-dark(#525252, #ededed); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
-                                    <font style="font-size: 12px;">
-                                        <b>
-                                            MAVLink SDK
-                                        </b>
-                                    </font>
-                                    <div>
+                                </foreignObject>
+                                <text x="100" y="127" fill="#525252" font-family="Helvetica" font-size="10px" text-anchor="middle" style="fill: light-dark(rgb(82, 82, 82), rgb(237, 237, 237));">
+                                    <tspan x="100" y="127">
+                                        MAVLink SDK
+                                    </tspan>
+                                    <tspan x="100" y="139">
                                         API - Telemetry
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </foreignObject>
-                    <text x="100" y="127" fill="light-dark(#525252, #ededed)" font-family="&quot;Helvetica&quot;" font-size="10px" text-anchor="middle">
-                        MAVLink SDK...
-                    </text>
-                </switch>
-            </g>
-        </g>
-        <g>
-            <rect x="240" y="132" width="240" height="48" fill="#fff2cc" stroke="#d6b656" stroke-width="1.2" pointer-events="all" style="fill: light-dark(rgb(255, 242, 204), rgb(255, 242, 204)); stroke: light-dark(rgb(214, 182, 86), rgb(214, 182, 86));"/>
-        </g>
-        <g>
-            <g transform="translate(-0.5 -0.5)scale(1.2)">
-                <switch>
-                    <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
-                        <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe flex-start; justify-content: unsafe center; width: 192px; height: 1px; padding-top: 117px; margin-left: 209px;">
-                            <div style="box-sizing: border-box; font-size: 0; text-align: center; color: #525252; ">
-                                <div style="display: inline-block; font-size: 10px; font-family: &quot;Helvetica&quot;; color: light-dark(#525252, #525252); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
-                                    <font style="font-size: 12px; color: light-dark(rgb(82, 82, 82), rgb(82, 82, 82));">
-                                        <b style="">
-                                            QGroundControl Sim
-                                        </b>
-                                    </font>
-                                    <div>
-                                        <font style="color: light-dark(rgb(82, 82, 82), rgb(82, 82, 82));">
-                                            Ground station simulator
-                                        </font>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </foreignObject>
-                    <text x="305" y="127" fill="light-dark(#525252,#525252)" font-family="&quot;Helvetica&quot;" font-size="10px" text-anchor="middle">
-                        QGroundControl Sim...
-                    </text>
-                </switch>
-            </g>
-        </g>
-        <g>
-            <rect x="492" y="132" width="228" height="48" fill="#e1d5e7" stroke="#9673a6" stroke-width="1.2" pointer-events="all" style="fill: light-dark(rgb(225, 213, 231), rgb(225, 213, 231)); stroke: light-dark(rgb(150, 115, 166), rgb(150, 115, 166));"/>
-        </g>
-        <g>
-            <g transform="translate(-0.5 -0.5)scale(1.2)">
-                <switch>
-                    <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
-                        <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe flex-start; justify-content: unsafe center; width: 182px; height: 1px; padding-top: 117px; margin-left: 419px;">
-                            <div style="box-sizing: border-box; font-size: 0; text-align: center; color: #525252; ">
-                                <div style="display: inline-block; font-size: 10px; font-family: &quot;Helvetica&quot;; color: light-dark(#525252, #525252); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
-                                    <font style="font-size: 12px; color: light-dark(rgb(82, 82, 82), rgb(82, 82, 82));">
-                                        <b style="">
-                                            Speech-to-Text
-                                        </b>
-                                    </font>
-                                    <div>
-                                        <font style="color: light-dark(rgb(82, 82, 82), rgb(82, 82, 82));">
-                                            Multimodal AI applications
-                                        </font>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </foreignObject>
-                    <text x="510" y="127" fill="light-dark(#525252,#525252)" font-family="&quot;Helvetica&quot;" font-size="10px" text-anchor="middle">
-                        Speech-to-Text...
-                    </text>
-                </switch>
-            </g>
-        </g>
-        <g>
-            <rect x="372" y="66" width="336" height="48" fill="none" stroke="#2b66af" stroke-width="1.2" stroke-dasharray="3.6 3.6" pointer-events="all" style="stroke: light-dark(rgb(43, 102, 175), rgb(111, 162, 224));"/>
-        </g>
-        <g>
-            <g transform="translate(-0.5 -0.5)scale(1.2)">
-                <switch>
-                    <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
-                        <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 278px; height: 1px; padding-top: 75px; margin-left: 311px;">
-                            <div style="box-sizing: border-box; font-size: 0; text-align: center; color: #525252; ">
-                                <div style="display: inline-block; font-size: 12px; font-family: &quot;Helvetica&quot;; color: light-dark(#525252, #FCFCFC); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
-                                    <div>
-                                        <span style="background-color: transparent; font-size: 10px;">
-                                            <b>
-                                                Comprehensive Benchmarks
-                                            </b>
-                                        </span>
-                                    </div>
-                                    <div>
-                                        <span style="background-color: transparent; font-size: 8px;">
-                                            AI - Vision - Media - GenAI (Magic 9)
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </foreignObject>
-                    <text x="450" y="79" fill="light-dark(#525252,#FCFCFC)" font-family="&quot;Helvetica&quot;" font-size="12px" text-anchor="middle">
-                        Comprehensive Benchmarks...
-                    </text>
-                </switch>
-            </g>
-        </g>
-        <g>
-            <rect x="372" y="192" width="348" height="48" fill="#d0e6fb" stroke="none" pointer-events="all" style="fill: light-dark(rgb(208, 230, 251), rgb(12, 39, 87));"/>
-        </g>
-        <g>
-            <g transform="translate(-0.5 -0.5)scale(1.2)">
-                <switch>
-                    <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
-                        <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe flex-start; justify-content: unsafe center; width: 282px; height: 1px; padding-top: 167px; margin-left: 319px;">
-                            <div style="box-sizing: border-box; font-size: 0; text-align: center; color: #525252; ">
-                                <div style="display: inline-block; font-size: 12px; font-family: &quot;Helvetica&quot;; color: light-dark(#525252, #FCFCFC); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
-                                    <div style="">
-                                        <b>
-                                            DL Streamer
-                                        </b>
-                                    </div>
-                                    <div style="">
-                                        <font style="font-size: 10px;">
-                                            Vision - media pipelinesce
-                                        </font>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </foreignObject>
-                    <text x="460" y="179" fill="light-dark(#525252,#FCFCFC)" font-family="&quot;Helvetica&quot;" font-size="12px" text-anchor="middle">
-                        DL Streamer...
-                    </text>
-                </switch>
-            </g>
-        </g>
-        <g>
-            <rect x="0" y="252" width="720" height="48" fill="#d0e6fb" stroke="none" pointer-events="all" style="fill: light-dark(rgb(208, 230, 251), rgb(12, 39, 87));"/>
-        </g>
-        <g>
-            <g transform="translate(-0.5 -0.5)scale(1.2)">
-                <switch>
-                    <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
-                        <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe flex-start; justify-content: unsafe center; width: 592px; height: 1px; padding-top: 217px; margin-left: 9px;">
-                            <div style="box-sizing: border-box; font-size: 0; text-align: center; color: #525252; ">
-                                <div style="display: inline-block; font-size: 12px; font-family: &quot;Helvetica&quot;; color: light-dark(#525252, #FCFCFC); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
-                                    <div style="">
-                                        <b>
-                                            Infrastructure Software
-                                        </b>
-                                    </div>
-                                    <div style="">
-                                        <span style="font-size: 10px; background-color: transparent; color: light-dark(rgb(82, 82, 82), rgb(252, 252, 252));">
-                                            Drone-optimized Ubuntu 24.04 - Drivers - Tools - Companion compute hardware kit
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </foreignObject>
-                    <text x="305" y="229" fill="light-dark(#525252,#FCFCFC)" font-family="&quot;Helvetica&quot;" font-size="12px" text-anchor="middle">
-                        Infrastructure Software...
-                    </text>
-                </switch>
-            </g>
-        </g>
-        <g>
-            <rect x="672" y="196.8" width="36" height="18" fill="#2b66af" stroke="none" pointer-events="all" style="fill: light-dark(rgb(43, 102, 175), rgb(73, 161, 239));"/>
-        </g>
-        <g>
-            <g transform="translate(-0.5 -0.5)scale(1.2)">
-                <switch>
-                    <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
-                        <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 32px; height: 1px; padding-top: 172px; margin-left: 559px;">
-                            <div style="box-sizing: border-box; font-size: 0; text-align: center; color: #FCFCFC; ">
-                                <div style="display: inline-block; font-size: 9px; font-family: &quot;Helvetica&quot;; color: light-dark(#FCFCFC, #0C2757); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
-                                    <div>
-                                        <span>
-                                            <b>
-                                                Skill
-                                            </b>
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </foreignObject>
-                    <text x="575" y="174" fill="light-dark(#FCFCFC,#0C2757)" font-family="&quot;Helvetica&quot;" font-size="9px" text-anchor="middle">
-                        Skill
-                    </text>
-                </switch>
-            </g>
-        </g>
-        <g>
-            <rect x="672" y="256.8" width="36" height="18" fill="#2b66af" stroke="none" pointer-events="all" style="fill: light-dark(rgb(43, 102, 175), rgb(73, 161, 239));"/>
-        </g>
-        <g>
-            <g transform="translate(-0.5 -0.5)scale(1.2)">
-                <switch>
-                    <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
-                        <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 32px; height: 1px; padding-top: 222px; margin-left: 559px;">
-                            <div style="box-sizing: border-box; font-size: 0; text-align: center; color: #FCFCFC; ">
-                                <div style="display: inline-block; font-size: 9px; font-family: &quot;Helvetica&quot;; color: light-dark(#FCFCFC, #0C2757); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
-                                    <div>
-                                        <span>
-                                            <b>
-                                                Skill
-                                            </b>
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </foreignObject>
-                    <text x="575" y="224" fill="light-dark(#FCFCFC,#0C2757)" font-family="&quot;Helvetica&quot;" font-size="9px" text-anchor="middle">
-                        Skill
-                    </text>
-                </switch>
-            </g>
-        </g>
-        <g>
-            <rect x="0" y="312" width="720" height="48" fill="#2b66af" stroke="none" pointer-events="all" style="fill: light-dark(rgb(43, 102, 175), rgb(73, 161, 239));"/>
-        </g>
-        <g>
-            <g transform="translate(-0.5 -0.5)scale(1.2)">
-                <switch>
-                    <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
-                        <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe flex-start; justify-content: unsafe center; width: 592px; height: 1px; padding-top: 267px; margin-left: 9px;">
-                            <div style="box-sizing: border-box; font-size: 0; text-align: center; color: #FCFCFC; ">
-                                <div style="display: inline-block; font-size: 12px; font-family: &quot;Helvetica&quot;; color: light-dark(#FCFCFC, #0C2757); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
-                                    <div>
-                                        <div>
-                                            <b style="font-size: 12px;">
-                                                Intel Silicon - Intel® Core™ Ultra Series 3 (Panther Lake) 4Xe - Drone Companion Compute Devkit
-                                            </b>
-                                        </div>
-                                        <div>
-                                            <span style="background-color: transparent;">
-                                                <font style="font-size: 10px;">
-                                                    CPU - iGPU - NPU - IPU - UART - TPM - Ethernet - CAN
-                                                </font>
-                                            </span>
+                                    </tspan>
+                                </text>
+                            </switch>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="6">
+                    <g transform="translate(0.5,0.5)">
+                        <rect x="240.4" y="131.8" width="240" height="48" fill="#fff2cc" stroke="#d6b656" stroke-width="1.2" pointer-events="all" style="fill: rgb(255, 242, 204); stroke: rgb(214, 182, 86);"/>
+                    </g>
+                    <g>
+                        <g transform="scale(1.2)">
+                            <switch>
+                                <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                                    <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe flex-start; justify-content: unsafe center; width: 192px; height: 1px; padding-top: 117px; margin-left: 209px;">
+                                        <div style="box-sizing: border-box; font-size: 0; text-align: center; color: #525252; ">
+                                            <div style="display: inline-block; font-size: 10px; font-family: Helvetica; color: #525252; line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
+                                                <span style="font-size: 12px; color: light-dark(rgb(82, 82, 82), rgb(82, 82, 82));">
+                                                    <b style="">
+                                                        QGroundControl Sim
+                                                    </b>
+                                                </span>
+                                                <div>
+                                                    <span style="color: light-dark(rgb(82, 82, 82), rgb(82, 82, 82));">
+                                                        Ground station simulator
+                                                    </span>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                            </div>
-                        </div>
-                    </foreignObject>
-                    <text x="305" y="279" fill="light-dark(#FCFCFC,#0C2757)" font-family="&quot;Helvetica&quot;" font-size="12px" text-anchor="middle">
-                        Intel Silicon - Intel® Core™ Ultra Series 3 (Panther Lake) 4Xe - Drone Companion Compute Devkit...
-                    </text>
-                </switch>
-            </g>
-        </g>
-        <g>
-            <rect x="0" y="0" width="720" height="48" fill="#2b66af" stroke="none" pointer-events="all" style="fill: light-dark(rgb(43, 102, 175), rgb(73, 161, 239));"/>
-        </g>
-        <g>
-            <g transform="translate(-0.5 -0.5)scale(1.2)">
-                <switch>
-                    <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
-                        <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe flex-start; justify-content: unsafe center; width: 592px; height: 1px; padding-top: 7px; margin-left: 9px;">
-                            <div style="box-sizing: border-box; font-size: 0; text-align: center; color: #FCFCFC; ">
-                                <div style="display: inline-block; font-size: 12px; font-family: &quot;Helvetica&quot;; color: light-dark(#FCFCFC, #0C2757); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
-                                    <div>
-                                        <div>
-                                            <b style="font-size: 12px;">
-                                                Drone Mission Compute
-                                            </b>
-                                        </div>
-                                        <div>
-                                            <span style="background-color: transparent;">
-                                                <font style="font-size: 10px;">
-                                                    OS + SDK + reference app + YOLO11s + MAVLink GPS overlay + RTSP to QGroundControl
-                                                </font>
-                                            </span>
+                                </foreignObject>
+                                <text x="305" y="127" fill="#525252" font-family="Helvetica" font-size="10px" text-anchor="middle" style="fill: rgb(82, 82, 82);">
+                                    <tspan x="305" y="127">
+                                        QGroundControl Sim
+                                    </tspan>
+                                    <tspan x="305" y="139">
+                                        Ground station simulator
+                                    </tspan>
+                                </text>
+                            </switch>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="7">
+                    <g transform="translate(0.5,0.5)">
+                        <rect x="492.4" y="131.8" width="228" height="48" fill="#e1d5e7" stroke="#9673a6" stroke-width="1.2" pointer-events="all" style="fill: rgb(225, 213, 231); stroke: rgb(150, 115, 166);"/>
+                    </g>
+                    <g>
+                        <g transform="scale(1.2)">
+                            <switch>
+                                <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                                    <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe flex-start; justify-content: unsafe center; width: 182px; height: 1px; padding-top: 117px; margin-left: 419px;">
+                                        <div style="box-sizing: border-box; font-size: 0; text-align: center; color: #525252; ">
+                                            <div style="display: inline-block; font-size: 10px; font-family: Helvetica; color: #525252; line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
+                                                <span style="font-size: 12px; color: light-dark(rgb(82, 82, 82), rgb(82, 82, 82));">
+                                                    <b style="">
+                                                        Speech-to-Text
+                                                    </b>
+                                                </span>
+                                                <div>
+                                                    <span style="color: light-dark(rgb(82, 82, 82), rgb(82, 82, 82));">
+                                                        Multimodal AI applications
+                                                    </span>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                            </div>
-                        </div>
-                    </foreignObject>
-                    <text x="305" y="19" fill="light-dark(#FCFCFC,#0C2757)" font-family="&quot;Helvetica&quot;" font-size="12px" text-anchor="middle">
-                        Drone Mission Compute...
-                    </text>
-                </switch>
+                                </foreignObject>
+                                <text x="510" y="127" fill="#525252" font-family="Helvetica" font-size="10px" text-anchor="middle" style="fill: rgb(82, 82, 82);">
+                                    <tspan x="510" y="127">
+                                        Speech-to-Text
+                                    </tspan>
+                                    <tspan x="510" y="139">
+                                        Multimodal AI applications
+                                    </tspan>
+                                </text>
+                            </switch>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="8">
+                    <g transform="translate(0.5,0.5)">
+                        <rect x="372.4" y="65.8" width="336" height="48" fill="none" stroke="#2b66af" stroke-width="1.2" stroke-dasharray="3.6 3.6" pointer-events="all" style="stroke: light-dark(rgb(43, 102, 175), rgb(111, 162, 224));"/>
+                    </g>
+                    <g>
+                        <g transform="scale(1.2)">
+                            <switch>
+                                <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                                    <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 278px; height: 1px; padding-top: 75px; margin-left: 311px;">
+                                        <div style="box-sizing: border-box; font-size: 0; text-align: center; color: #525252; ">
+                                            <div style="display: inline-block; font-size: 12px; font-family: Helvetica; color: light-dark(#525252, #FCFCFC); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
+                                                <div>
+                                                    <span style="background-color: transparent; font-size: 10px;">
+                                                        <b>
+                                                            Comprehensive Benchmarks
+                                                        </b>
+                                                    </span>
+                                                </div>
+                                                <div>
+                                                    <span style="background-color: transparent;">
+                                                        <span style="font-size: 8px;">
+                                                            AI - Vision - Media - GenAI (Edge Workloads and Benchmarks)
+                                                        </span>
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </foreignObject>
+                                <text x="450" y="64" fill="#525252" font-family="Helvetica" font-size="12px" text-anchor="middle" style="fill: light-dark(rgb(82, 82, 82), rgb(252, 252, 252));">
+                                    <tspan x="450" y="64">
+                                        Comprehensive Benchmarks
+                                    </tspan>
+                                    <tspan x="450" y="78">
+                                        AI - Vision - Media - GenAI (Edge Workloads and
+                                    </tspan>
+                                    <tspan x="450" y="92">
+                                        Benchmarks)
+                                    </tspan>
+                                </text>
+                            </switch>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="9">
+                    <g>
+                        <rect x="372.4" y="191.8" width="348" height="48" fill="#d0e6fb" stroke="none" pointer-events="all" style="fill: light-dark(rgb(208, 230, 251), rgb(12, 39, 87));"/>
+                    </g>
+                    <g>
+                        <g transform="scale(1.2)">
+                            <switch>
+                                <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                                    <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe flex-start; justify-content: unsafe center; width: 282px; height: 1px; padding-top: 167px; margin-left: 319px;">
+                                        <div style="box-sizing: border-box; font-size: 0; text-align: center; color: #525252; ">
+                                            <div style="display: inline-block; font-size: 12px; font-family: Helvetica; color: light-dark(#525252, #FCFCFC); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
+                                                <div style="">
+                                                    <b>
+                                                        DL Streamer
+                                                    </b>
+                                                </div>
+                                                <div style="">
+                                                    <span style="font-size: 10px;">
+                                                        Vision - media pipelinesce
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </foreignObject>
+                                <text x="460" y="179" fill="#525252" font-family="Helvetica" font-size="12px" text-anchor="middle" style="fill: light-dark(rgb(82, 82, 82), rgb(252, 252, 252));">
+                                    <tspan x="460" y="179">
+                                        DL Streamer
+                                    </tspan>
+                                    <tspan x="460" y="193">
+                                        Vision - media pipelinesce
+                                    </tspan>
+                                </text>
+                            </switch>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="10">
+                    <g>
+                        <rect x="0.4" y="251.8" width="720" height="48" fill="#d0e6fb" stroke="none" pointer-events="all" style="fill: light-dark(rgb(208, 230, 251), rgb(12, 39, 87));"/>
+                    </g>
+                    <g>
+                        <g transform="scale(1.2)">
+                            <switch>
+                                <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                                    <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe flex-start; justify-content: unsafe center; width: 592px; height: 1px; padding-top: 217px; margin-left: 9px;">
+                                        <div style="box-sizing: border-box; font-size: 0; text-align: center; color: #525252; ">
+                                            <div style="display: inline-block; font-size: 12px; font-family: Helvetica; color: light-dark(#525252, #FCFCFC); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
+                                                <div style="">
+                                                    <b>
+                                                        Infrastructure Software
+                                                    </b>
+                                                </div>
+                                                <div style="">
+                                                    <span style="font-size: 10px; background-color: transparent; color: light-dark(rgb(82, 82, 82), rgb(252, 252, 252));">
+                                                        Drone-optimized Ubuntu 24.04 - Drivers - Tools - Companion compute hardware kit
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </foreignObject>
+                                <text x="305" y="229" fill="#525252" font-family="Helvetica" font-size="12px" text-anchor="middle" style="fill: light-dark(rgb(82, 82, 82), rgb(252, 252, 252));">
+                                    <tspan x="305" y="229">
+                                        Infrastructure Software
+                                    </tspan>
+                                    <tspan x="305" y="243">
+                                        Drone-optimized Ubuntu 24.04 - Drivers - Tools - Companion compute hardware kit
+                                    </tspan>
+                                </text>
+                            </switch>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="11">
+                    <g>
+                        <rect x="672.4" y="196.6" width="36" height="18" fill="#2b66af" stroke="none" pointer-events="all" style="fill: light-dark(rgb(43, 102, 175), rgb(73, 161, 239));"/>
+                    </g>
+                    <g>
+                        <g transform="scale(1.2)">
+                            <switch>
+                                <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                                    <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 32px; height: 1px; padding-top: 171px; margin-left: 559px;">
+                                        <div style="box-sizing: border-box; font-size: 0; text-align: center; color: #FCFCFC; ">
+                                            <div style="display: inline-block; font-size: 9px; font-family: Helvetica; color: light-dark(#FCFCFC, #0C2757); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
+                                                <div>
+                                                    <span>
+                                                        <b>
+                                                            Skill
+                                                        </b>
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </foreignObject>
+                                <text x="575" y="174" fill="#FCFCFC" font-family="Helvetica" font-size="9px" text-anchor="middle" style="fill: light-dark(rgb(252, 252, 252), rgb(12, 39, 87));">
+                                    Skill
+                                </text>
+                            </switch>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="12">
+                    <g>
+                        <rect x="672.4" y="256.6" width="36" height="18" fill="#2b66af" stroke="none" pointer-events="all" style="fill: light-dark(rgb(43, 102, 175), rgb(73, 161, 239));"/>
+                    </g>
+                    <g>
+                        <g transform="scale(1.2)">
+                            <switch>
+                                <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                                    <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 32px; height: 1px; padding-top: 221px; margin-left: 559px;">
+                                        <div style="box-sizing: border-box; font-size: 0; text-align: center; color: #FCFCFC; ">
+                                            <div style="display: inline-block; font-size: 9px; font-family: Helvetica; color: light-dark(#FCFCFC, #0C2757); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
+                                                <div>
+                                                    <span>
+                                                        <b>
+                                                            Skill
+                                                        </b>
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </foreignObject>
+                                <text x="575" y="224" fill="#FCFCFC" font-family="Helvetica" font-size="9px" text-anchor="middle" style="fill: light-dark(rgb(252, 252, 252), rgb(12, 39, 87));">
+                                    Skill
+                                </text>
+                            </switch>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="13">
+                    <g>
+                        <rect x="0.4" y="311.8" width="720" height="48" fill="#2b66af" stroke="none" pointer-events="all" style="fill: light-dark(rgb(43, 102, 175), rgb(73, 161, 239));"/>
+                    </g>
+                    <g>
+                        <g transform="scale(1.2)">
+                            <switch>
+                                <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                                    <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe flex-start; justify-content: unsafe center; width: 592px; height: 1px; padding-top: 267px; margin-left: 9px;">
+                                        <div style="box-sizing: border-box; font-size: 0; text-align: center; color: #FCFCFC; ">
+                                            <div style="display: inline-block; font-size: 12px; font-family: Helvetica; color: light-dark(#FCFCFC, #0C2757); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
+                                                <div>
+                                                    <div>
+                                                        <b style="font-size: 12px;">
+                                                            Intel Silicon - Intel® Core™ Ultra Series 3 (Panther Lake) 4Xe - Drone Companion Compute Devkit
+                                                        </b>
+                                                    </div>
+                                                    <div>
+                                                        <span style="background-color: transparent;">
+                                                            <span style="font-size: 10px;">
+                                                                CPU - iGPU - NPU - IPU - UART - TPM - Ethernet - CAN
+                                                            </span>
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </foreignObject>
+                                <text x="305" y="279" fill="#FCFCFC" font-family="Helvetica" font-size="12px" text-anchor="middle" style="fill: light-dark(rgb(252, 252, 252), rgb(12, 39, 87));">
+                                    <tspan x="305" y="279">
+                                        Intel Silicon - Intel® Core™ Ultra Series 3 (Panther Lake) 4Xe - Drone Companion Compute Devkit
+                                    </tspan>
+                                    <tspan x="305" y="293">
+                                        CPU - iGPU - NPU - IPU - UART - TPM - Ethernet - CAN
+                                    </tspan>
+                                </text>
+                            </switch>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="Dxcq8WYuqpPfUnX29Pgo-13">
+                    <g>
+                        <rect x="0.4" y="-0.2" width="720" height="48" fill="#2b66af" stroke="none" pointer-events="all" style="fill: light-dark(rgb(43, 102, 175), rgb(73, 161, 239));"/>
+                    </g>
+                    <g>
+                        <g transform="scale(1.2)">
+                            <switch>
+                                <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                                    <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe flex-start; justify-content: unsafe center; width: 592px; height: 1px; padding-top: 7px; margin-left: 9px;">
+                                        <div style="box-sizing: border-box; font-size: 0; text-align: center; color: #FCFCFC; ">
+                                            <div style="display: inline-block; font-size: 12px; font-family: Helvetica; color: light-dark(#FCFCFC, #0C2757); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
+                                                <div>
+                                                    <div>
+                                                        <b style="font-size: 12px;">
+                                                            Drone Mission Compute
+                                                        </b>
+                                                    </div>
+                                                    <div>
+                                                        <span style="background-color: transparent;">
+                                                            <span style="font-size: 10px;">
+                                                                OS + SDK + reference app + YOLO11s + MAVLink GPS overlay + RTSP to QGroundControl
+                                                            </span>
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </foreignObject>
+                                <text x="305" y="19" fill="#FCFCFC" font-family="Helvetica" font-size="12px" text-anchor="middle" style="fill: light-dark(rgb(252, 252, 252), rgb(12, 39, 87));">
+                                    <tspan x="305" y="19">
+                                        Drone Mission Compute
+                                    </tspan>
+                                    <tspan x="305" y="33">
+                                        OS + SDK + reference app + YOLO11s + MAVLink GPS overlay + RTSP to QGroundControl
+                                    </tspan>
+                                </text>
+                            </switch>
+                        </g>
+                    </g>
+                </g>
             </g>
         </g>
     </g>

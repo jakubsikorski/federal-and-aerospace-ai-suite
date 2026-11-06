@@ -13,12 +13,12 @@ modify an existing one, or remove one safely.
 
 ## Prerequisites
 
-- Familiarity with the deployment mode you're editing — the two modes use
+- Familiarity with the deployment mode you are editing — the two modes use
   **different** overlay scripts and data sources:
 
   | Mode | Script | Telemetry source |
   | --- | --- | --- |
-  | Standalone (pymavlink) | `gvapython/telemetry-overlay-pymavlink.py` | MAVLink UDP broadcast (`:14541`) via `pymavlink` |
+  | Standalone (Pymavlink) | `gvapython/telemetry-overlay-pymavlink.py` | MAVLink UDP broadcast (`:14541`) via `pymavlink` |
   | UAV Mission Compute SDK | `gvapython/telemetry-overlay-uavsdk.py` | MQTT topics `uav/{UAV_ID}/telemetry/#` |
 
 - The stack running in the target mode, so you can restart it to pick up
@@ -54,7 +54,7 @@ latest_data = {
 
 ### Add a new field
 
-**Example: add vertical climb rate (`VFR_HUD.climb`) in pymavlink mode.**
+**Example: add vertical climb rate (`VFR_HUD.climb`) in Pymavlink mode.**
 
 1. Add a key to `latest_data`:
 
@@ -133,7 +133,7 @@ same-key change like this.
 ffplay rtsp://<HOST_IP>:8555/uav-front-camera
 ```
 
-Confirm the new/changed/removed line appears (or doesn't) in the upper-left
+Confirm whether the new/changed/removed line appears in the upper-left
 overlay, and that its value updates as the simulated UAV moves.
 
 ## Troubleshooting

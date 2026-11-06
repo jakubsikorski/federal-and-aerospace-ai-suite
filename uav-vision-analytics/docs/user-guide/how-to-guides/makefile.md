@@ -14,12 +14,12 @@ Run `make help` (or just `make`) to list all targets with descriptions.
 
 | Target | Description |
 | --- | --- |
-| `make init` | Create `.env` from template and auto-detect the host IP, Intel GPU and NPU device paths and USB cameras |
-| `make model` | Download YOLO11s checkpoint and export to OpenVINO FP16 |
-| `make vlm-model` | Download and convert the VLM captioning model (OpenVINO IR) for CPU and GPU |
-| `make pymav-build` | Rebuild the locally built pymavlink images (requires network access) |
-| `make pymav-up` | Start the standalone pymavlink stack (requires model — errors if missing); builds images only if they do not exist yet |
-| `make pymav-down` | Stop and remove the pymavlink stack (includes volumes) |
+| `make init` | Create `.env` from template and auto-detect the host IP, Intel GPU and NPU device paths, and USB cameras |
+| `make model` | Download YOLO11s checkpoint and export to OpenVINO™ FP16 |
+| `make vlm-model` | Download and convert the VLM captioning model (OpenVINO™ IR) for CPU and GPU |
+| `make pymav-build` | Rebuild the locally built Pymavlink images (requires network access) |
+| `make pymav-up` | Start the standalone Pymavlink stack (requires model — errors if missing); builds images only if they do not exist yet |
+| `make pymav-down` | Stop and remove the Pymavlink stack (includes volumes) |
 | `make uavsdk-up` | Start the uav-mission-compute-sdk stack |
 | `make uavsdk-down` | Stop and remove the uav-mission-compute-sdk stack (includes volumes) |
 | `make start-rtsp` | Start the cameras of `configs/cameras-pymavlink.yaml` (RTSP output) when the vehicle is armed |
@@ -60,7 +60,7 @@ Both `make model` and `make vlm-model` show the model license and ask for confir
 
 Creates a Python virtual environment under `resources/venv/`, installs
 dependencies from `resources/requirements.txt`, downloads the `yolo11s.pt`
-checkpoint from Ultralytics, and exports it to OpenVINO FP16 IR format.
+checkpoint from Ultralytics, and exports it to OpenVINO™ FP16 IR format.
 
 > [!NOTE]
 > `make pymav-up` **checks for the model** before starting containers.
@@ -77,33 +77,33 @@ resources/
         └── yolo11s_openvino_model/      ← exported IR (yolo11s.xml + yolo11s.bin)
 ```
 
-> [!NOTE]
+> [!IMPORTANT]
 > `ultralytics` is pinned to `8.4.67`. Do not upgrade without
 > re-verifying GPU/NPU compatibility — newer versions use a `CumSum`-based
-> detection head that fails to compile on Intel GPU and NPU OpenVINO plugins.
+> detection head that fails to compile on Intel GPU and NPU OpenVINO™ plugins.
 
 ### `make vlm-model`
 
-Downloads `OpenGVLab/InternVL2-1B` and converts it to OpenVINO IR under `resources/ov_models/<device>/`. Needed for camera
+Downloads `OpenGVLab/InternVL2-1B` and converts it to OpenVINO™ IR under `resources/ov_models/<device>/`. Needed for camera
 captions. The conversion script is fetched from the live-video-captioning app at a pinned commit and cached in `.cache/`
 (`FORCE_REFRESH=true` fetches it again). Overrides: `VLM_MODEL_ID`, `VLM_DEVICE` (`cpu,gpu` by default; the VLM does not run on the NPU) and
 `VLM_WEIGHT_FORMAT` (`int8` by default).
 
 ### `make pymav-up` / `make pymav-down`
 
-Manages the **standalone pymavlink stack** (`docker-compose-pymavlink.yml`), which includes:
+Manages the **standalone Pymavlink stack** (`docker-compose-pymavlink.yml`), which includes:
 
-- `dlstreamer-pipeline-server` — AI inference, REST API (:8081), RTSP output (:8555) — reached via `nginx`
-- `broker` — Eclipse Mosquitto MQTT broker (:1883)
+- `dlstreamer-pipeline-server` — AI inference, REST API (`:8081`), RTSP output (`:8555`) — reached via `nginx`
+- `broker` — Eclipse Mosquitto MQTT broker (`:1883`)
 - `px4` — PX4 SITL flight controller simulator
-- `mavlink-router` — MAVLink routing sidecar (receives from PX4 on :14550, broadcasts to :14541, serves a remote QGroundControl on UDP :14551 published on `HOST_IP`)
-- `metrics-manager` — system metrics endpoint (:9090) — reached via `nginx`
+- `mavlink-router` — MAVLink routing sidecar (receives from PX4 on `:14550`, broadcasts to `:14541`, serves a remote QGroundControl on UDP `:14551` published on `HOST_IP`)
+- `metrics-manager` — system metrics endpoint (`:9090`) — reached via `nginx`
 - `nginx` — reverse proxy; the only service publishing ports to the host (`:80`, `:443`, `:8555`, `:1883`)
 
 `down` passes `-v` to also remove named volumes (pipeline cache).
 
 Before starting, `pymav-up` (and `uavsdk-up`) runs `scripts/update_device_gids.sh`, which writes the group IDs of the
-GPU, NPU and camera device nodes (`GPU_CARD_GID`, `GPU_RENDER_GID`, `NPU_GID`, `CAMERA_GID`) into `.env`; the compose
+GPU, NPU, and camera device nodes (`GPU_CARD_GID`, `GPU_RENDER_GID`, `NPU_GID`, `CAMERA_GID`) into `.env`; the compose
 files pass them as `group_add`, so the non-root pipeline user can open the devices on any host. Nothing to do by hand.
 
 Containers are named `uav-va-<service>` (for example `uav-va-dlstreamer-pipeline-server`), use those names with `docker exec` / `docker logs`.
@@ -138,7 +138,7 @@ cd ../uav-vision-analytics && make uavsdk-up
 
 Executes `pipeline_manager.py` inside the running `uav-va-dlstreamer-pipeline-server` container. It monitors the MAVLink
 ARMED/DISARMED state and starts/stops one inference pipeline per camera of `configs/cameras-pymavlink.yaml`, each with
-**RTSP frame output** on port `8555` (`rtsp://<HOST_IP>:8555/uav-<camera>`). The file is read when the manager starts
+**RTSP frame output** on port `:8555` (`rtsp://<HOST_IP>:8555/uav-<camera>`). The file is read when the manager starts
 and again at every arming, so after an edit you either run `make start-rtsp` again or disarm and arm. `CAMERAS=<file>`
 uses another configuration file.
 
@@ -148,10 +148,11 @@ make start-rtsp        # start the cameras on arming
 make cameras-status    # file versus running pipelines
 ```
 
-See [Configure the Cameras](../how-to-customize/camera-management/configure-cameras.md) for the file format. Requires the DL Streamer Pipeline Server container to
-already be running (`make pymav-up` first). Also used in UAV Mission Compute SDK mode: the
-container's `CAMERAS_CONFIG` env var (set to `configs/cameras-uavsdk.yaml` by
-`docker-compose-uavsdk.yml`) is the default file read there; `CAMERAS=<file>` overrides it in either mode.
+See [Configure the Cameras](../how-to-customize/camera-management/configure-cameras.md) for
+the file format. Requires the DL Streamer Pipeline Server container to already be running
+(`make pymav-up` first). Also used in UAV Mission Compute SDK mode: the container's
+`CAMERAS_CONFIG` env var (set to `configs/cameras-uavsdk.yaml` by `docker-compose-uavsdk.yml`)
+is the default file read there; `CAMERAS=<file>` overrides it in either mode.
 
 ### `make build`
 
@@ -165,7 +166,7 @@ Convenience alias for `make pymav-up`. Starts the default standalone stack.
 # 0. Install system prerequisites
 sudo apt install python3.12-venv ffmpeg
 
-# 1. Create .env and auto-detect the host IP, GPU, NPU and camera devices
+# 1. Create .env and auto-detect the host IP, GPU, NPU, and camera devices
 make init
 
 # 2. Download and export the detection model, and download the VLM used for captions

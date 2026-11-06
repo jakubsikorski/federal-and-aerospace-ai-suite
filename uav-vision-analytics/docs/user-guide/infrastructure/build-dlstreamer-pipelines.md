@@ -38,7 +38,7 @@ docker run --rm --device intel.com/gpu=card0 intel/dlstreamer:latest gst-inspect
 
 ### Download Models
 
-DL Streamer inference elements need OpenVINO IR models. Download them using the bundled script:
+DL Streamer inference elements need OpenVINO™ IR models. Download them using the bundled script:
 
 ```bash
 mkdir -p models
@@ -64,10 +64,11 @@ Available models include: `yolox-tiny`, `yolox_s`, `yolov7`, `yolov8s`, `yolov9c
 
 Models are saved to `models/public/<model_name>/<precision>/` (containing `.xml` and `.bin` files).
 
-## Running Pipelines
+## Run Pipelines
 
 Each example below is a complete, copy-paste-ready command.
 
+> [!NOTE]
 > **Proxy note:** If behind a corporate proxy, add `-e http_proxy=$http_proxy -e https_proxy=$https_proxy -e no_proxy=$no_proxy` to each `docker run` command. This is needed both for model downloads and for `urisourcebin` to fetch remote videos.
 
 ### Object Detection — GPU
@@ -212,7 +213,7 @@ docker run --rm \
 | Display | `vapostproc ! gvawatermark ! videoconvert ! autovideosink sync=false` |
 | MP4 file | `vapostproc ! gvawatermark ! vah264enc ! h264parse ! mp4mux ! filesink location=out.mp4` |
 
-## Running in Kubernetes
+## Run in Kubernetes
 
 ```yaml
 apiVersion: v1
@@ -276,7 +277,7 @@ See the [DL Streamer Coding Agent Guide](./use-dlstreamer-coding-agent.md) for u
 - [DL Streamer Repository](https://github.com/open-edge-platform/dlstreamer)
 - [DL Streamer Docker Hub](https://hub.docker.com/r/intel/dlstreamer)
 - [DL Streamer Elements Reference](https://docs.openedgeplatform.intel.com/dev/edge-ai-libraries/dlstreamer/elements/elements.html)
-- [DL Streamer Samples Reference](https://docs.openedgeplatform.intel.com/dev/edge-ai-libraries/dlstreamer/samples.html)
+- [DL Streamer Samples Reference](https://docs.openedgeplatform.intel.com/dev/edge-ai-libraries/dlstreamer/dev_guide/sample_apps_index.html)
 - [Container Device Interface Guide](./configure-cdi.md) — CDI setup for GPU/NPU access
 
 <!--hide_directive

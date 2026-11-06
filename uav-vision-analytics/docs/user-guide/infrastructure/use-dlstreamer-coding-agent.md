@@ -89,7 +89,7 @@ my_app/
 It also:
 
 - Pulls the `intel/dlstreamer:latest` Docker image
-- Downloads and converts models to OpenVINO format
+- Downloads and converts models to OpenVINO™ format
 - Downloads your test video
 - Runs the app and checks that output is valid
 
@@ -120,7 +120,7 @@ It also:
 | ------------------------------- | ------------------------------------------------------- |
 | Docker pull fails               | Check network and `docker login`                        |
 | Model export runs out of memory | Use a smaller model variant                             |
-| Output video won't play         | Usually fixed by agent (EOS handling); re-run if needed |
+| Output video will not play      | Usually fixed by agent (EOS handling); re-run if needed |
 | Very slow first run (5-10 min)  | Normal — GPU compiles shaders on first inference        |
 | NPU inference fails             | Not all models support NPU; agent falls back to GPU     |
 

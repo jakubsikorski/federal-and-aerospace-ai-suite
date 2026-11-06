@@ -20,13 +20,14 @@ profile is a protection policy, not a second power-profile selector. A thermal
 trip can reduce performance below the power target, but it cannot raise power
 above the RAPL cap.
 
+> [!NOTE]
 > Run both tools directly on the target system. On a provisioned node their
 > absolute paths are under `/opt/edge/developer/tools/power-tuning/`.
 
 ## Acronyms and Terms
 
 | Term | Meaning |
-|---|---|
+| --- | --- |
 | cTDP | Configurable Thermal Design Power. The platform-defined range of sustained processor power; Level 2 is the highest supported target. |
 | `intel_lpmd` | Intel Low Power Mode daemon. The power-profile tool configures it to apply CPU energy-performance tuning. |
 | MSR | Model-Specific Register. Low-level CPU register used to program the RAPL power limits. |
@@ -63,7 +64,7 @@ On platforms without the RAPL psys domain, `SysWatt` is not supported. Track
 combined profiles.
 
 | Combination | Expected behavior | Operational guidance |
-|---|---|---|
+| --- | --- | --- |
 | Low power + `cool` | Lowest temperatures; passive trips may reduce throughput early. | Suitable for fanless or tightly enclosed systems. |
 | Balanced power + `warm` | Normal balance of throughput, acoustics, and temperature. | Good starting point for qualification. |
 | High power + `hot` or `thermal-max` | More performance until higher temperatures; greater throttle and enclosure risk. | Validate under the real workload before deployment. |
@@ -76,7 +77,7 @@ not a guarantee that the enclosure can sustain the selected power target.
 Validate high-power combinations under the intended workload.
 
 | Power profile | `cool` (55/70/80 C) | `warm` (60/75/85 C) | `hot` (70/90/95 C) | `thermal-max` (95/100/104 C) |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `LowPower` (10 W) | Maximum thermal margin. | Balanced low-power operation. | Normally little thermal intervention. | Least protective and seldom needed. |
 | `BalancedLow` (15 W) | Favors temperature over throughput. | General low-power default. | Permits higher package temperature. | Validate the enclosure before use. |
 | `BalancedHigh` (20 W) | May reach passive trips under load. | Recommended starting point. | Higher temperature and throttle risk. | Qualification required. |
@@ -87,7 +88,7 @@ Validate high-power combinations under the intended workload.
 ### Conflict and Override Policies
 
 | Condition | Effective policy | Required action |
-|---|---|---|
+| --- | --- | --- |
 | Power profile is applied before thermal profile | The thermal PPCC maximum is refreshed with the current RAPL PL1. | This is the required order. |
 | Thermal profile is applied before, or restarted after, a power-profile change | thermald can restore the older PPCC package cap, overriding the newly intended RAPL PL1. | Re-apply the power profile, then re-apply the thermal profile. |
 | A `Processor` or `intel_powerclamp` trip is active | The thermal policy takes precedence for safety and reduces frequency or injects idle cycles; effective power and performance can fall below PL1. | Lower the power profile or select earlier trips if sustained throttling is unacceptable. |
@@ -168,8 +169,9 @@ stress command completes:
 sudo tools/power-tuning/pt_mon.sh
 sudo tools/power-tuning/stress_gen.sh --gpu 12 --duration 3m
 ```
+
 > [!NOTE]
-> Use `stress_gen.sh`, `openvino_stress.sh`, an magic9 benchmark, or
+> Use `stress_gen.sh`, `openvino_stress.sh`, an Edge Workloads and Benchmarks benchmark, or
 > your production workload to generate load for power and thermal profiling.
 > Choose a bounded run and use the same workload when comparing profiles.
 
@@ -186,7 +188,7 @@ thermal sequence.
 The two tools manage state with different lifetimes:
 
 | State | Location | After OS restart | Required action |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Package and psys RAPL PL1/PL2 caps | CPU MSRs and powercap state | Reset to firmware defaults. | Re-apply the intended power profile. |
 | `intel_lpmd` tuning | `intel_lpmd` configuration files | Retained and read by `intel_lpmd` at boot. | No action for retention; restore the original configuration to remove it. |
 | Thermal trip points and PPCC maximum | `/etc/thermald/thermal-conf.xml` | Retained and read when thermald starts. | Re-apply the thermal profile after the power profile to refresh PPCC with the new live PL1. |

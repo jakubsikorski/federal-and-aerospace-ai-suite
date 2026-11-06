@@ -195,7 +195,7 @@ See [Get Started (UAV Mission Compute SDK Mode) — Step 1](../get-started/get-s
 
 ### No telemetry overlay on stream (all zeros)
 
-**pymavlink mode:** Confirm `mavlink-router` is running and forwarding MAVLink from PX4:
+**Pymavlink mode:** Confirm `mavlink-router` is running and forwarding MAVLink from PX4:
 
 ```bash
 docker logs uav-va-mavlink-router
@@ -298,13 +298,13 @@ A `parameters` value does not match its schema `pattern` in the config file,
 for example a `detection_model` outside `/home/pipeline-server/resources/models/`
 (use the container path, not a host path), a `video` name with a folder in
 it, or a `captioner_prompt` with characters other than letters, digits,
-spaces and `, . ? ' -`. The schemas are listed in
+spaces, and `, . ? ' -`. The schemas are listed in
 [Modify Pipelines — The parameters schema](../how-to-customize/pipeline-management/modify-pipelines.md#the-parameters-schema).
 
 ### `model-instance-id ... errored out on a prior run`
 
 A previous start with the same `detection_instance_id` failed (wrong device,
-unsupported model, device not mounted) and the pipeline server keeps that
+unsupported model, or device not mounted) and the pipeline server keeps that
 instance poisoned until it restarts:
 
 ```bash
@@ -349,7 +349,7 @@ This pattern is for SITL testing only.
 
 ### Both stacks start but only one streams
 
-pymavlink and UAV Mission Compute SDK mode both bind `80`/`443`/`8555`;
+Pymavlink and UAV Mission Compute SDK mode both bind `80`/`443`/`8555`;
 only one `nginx` can hold them. Run `make pymav-down` or `make uavsdk-down`
 for the mode not in use.
 
@@ -396,7 +396,7 @@ the pipeline) so it re-opens the file.
 
 The node must be listed in `.env` (`CAMERA_DEVICE_1` … `CAMERA_DEVICE_4`)
 and the container recreated (`make pymav-up`) for it to be visible inside;
-use the stable `/dev/v4l/by-id/` path and the camera's colour node (YUYV or
+use the stable `/dev/v4l/by-id/` path and the camera's color node (YUYV or
 UYVY format). See
 [Configure the Cameras — Live cameras](../how-to-customize/camera-management/configure-cameras.md#live-cameras-realsense-usb-webcams).
 
@@ -426,7 +426,7 @@ confidence distribution; lower it as shown in
 
 ### Captioning pipeline goes to `ERROR` at start
 
-The model folder is not a complete OpenVINO IR export of the VLM, or the
+The model folder is not a complete OpenVINO™ IR export of the VLM, or the
 architecture is not supported by the `openvino_genai` version in the
 pipeline-server image. `docker logs uav-va-dlstreamer-pipeline-server` shows the
 loader error; revert `captioning.model` and re-arm to recover. The required
@@ -492,7 +492,7 @@ server, the stack is not running (`make pymav-up`) or nginx is published elsewhe
 binds only to `HOST_IP` (not `0.0.0.0`), so `localhost`/`127.0.0.1` never reach it once
 `HOST_IP` is set to a real address.
 
-If you're running the benchmark from a **different machine** than the one hosting the
+If you are running the benchmark from a **different machine** than the one hosting the
 stack, point it at that host explicitly:
 
 ```bash
@@ -575,7 +575,7 @@ it contains newer fixes not yet in the stable release:
 
 - [Download and Install QGroundControl — Latest daily build (Ubuntu)](https://docs.qgroundcontrol.com/master/en/qgc-user-guide/getting_started/download_and_install.html#ubuntu)
 
-> [!NOTE]
+> [!CAUTION]
 > The daily build is pre-release software and may be less stable
 > overall. Only use it if the Stable v5.1 release does not work for your setup.
 
@@ -682,9 +682,9 @@ The relevance filters are off or too low for the embedding model; see
 `VSS_SEARCH_MIN_PEAK_SCORE` / `VSS_SEARCH_RELATIVE_CUTOFF` in
 [Tune VSS Live Search](../how-to-customize/search-tuning/vss-search-tuning.md).
 
-### A result clip won't play in the browser
+### A result clip will not play in the browser
 
-Some stored live-stream segments use a codec the browser can't decode; the
+Some stored live-stream segments use a codec the browser cannot decode; the
 player falls back to VSS's server-decoded best-matching frame plus a
 download link. If the segment is older than VSS's `VSS_LIVE_RETENTION_HOURS`, it
 may no longer be available at all.
@@ -695,8 +695,8 @@ Confirm it reached `RUNNING` on the UAV host first (see
 [Viewing and Interpreting Detection Logs](./view-detection-logs.md) or
 `make cameras-status`); VSS only indexes RTSP streams it can see.
 
-See the ground station's own
-[README — VSS search](../../../../uav-ground-station/README.md#vss-search)
+See the Ground Station's own
+[README — VSS search](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/blob/main/uav-ground-station/README.md#vss-search)
 for the full route reference and container list.
 
 ## Multi-UAV Ground Station
@@ -706,24 +706,24 @@ for the feature this section covers.
 
 ### Disconnecting one UAV seems to affect another's video/metrics
 
-It shouldn't; each host's relay path, metrics stream, and caption buffer are
+This should not happen; each host's relay path, metrics stream, and caption buffer are
 keyed by host. If this happens, check for a camera-name collision (see
 [Multi-UAV Operations — Avoid camera-name collisions](./multi-uav-ground-station.md#4-avoid-camera-name-collisions))
-that wasn't actually disambiguated — confirm the relay/VSS names include the
+that was not actually disambiguated — confirm the relay/VSS names include the
 expected host segment.
 
 ### A disconnected host's Flight Summary still generates
 
-Expected for a short window: `caption_log.py` keeps a host/camera's buffer
+This is expected for a short window: `caption_log.py` keeps a host/camera's buffer
 warm until it has gone `CAPTION_LOG_IDLE_TTL_SECONDS` without being observed
 captioning, not the instant a tab closes.
 
 ### Reconnecting after a backend restart loses my tabs
 
-Expected; a backend restart assigns a new `boot_id` and starts with no
+This is expected; a backend restart assigns a new `boot_id` and starts with no
 sessions. This is a dashboard-session concept, not a UAV-side state change —
 nothing was lost on the UAV hosts themselves.
 
-See the ground station's own
-[README — Multiple UAVs at once](../../../../uav-ground-station/README.md#multiple-uavs-at-once)
-for implementation detail.
+See the Ground Station's own
+[README — Multiple UAVs at once](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/blob/main/uav-ground-station/README.md#multiple-uavs-at-once)
+for the implementation details.

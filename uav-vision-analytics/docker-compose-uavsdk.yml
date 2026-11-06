@@ -69,7 +69,7 @@ services:
   # (/metrics/stream and /api/v1/metrics/latest). The service name is what nginx uses; the container is
   # prefixed uav-va- so it never clashes with the SDK's own metrics-manager container.
   metrics-manager:
-    image: intel/metrics-manager:2026.2.0
+    image: intel/metrics-manager:2026.3.0-rc1
     container_name: uav-va-metrics-manager
     privileged: true
     pid: host

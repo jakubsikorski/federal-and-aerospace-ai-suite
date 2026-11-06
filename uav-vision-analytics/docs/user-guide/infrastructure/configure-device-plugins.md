@@ -12,7 +12,7 @@ Intel GPU and NPU device plugins expose hardware accelerators to Kubernetes pods
 The Edge Node Infrastructure software pre-installs these plugins during first boot. This guide covers verification, pod scheduling, and common usage patterns.
 
 | Resource Name | Plugin | Hardware | Use Case |
-|---------------|--------|----------|----------|
+| ------------- | ------ | -------- | -------- |
 | `gpu.intel.com/xe` | Intel GPU device plugin | Intel Xe-based integrated/discrete GPU (including SR-IOV VFs) | Media processing, inference, rendering |
 | `npu.intel.com/accel` | Intel NPU device plugin | Intel NPU 2000/3000/4000 series | Low-power AI inference |
 
@@ -183,7 +183,7 @@ spec:
 
 ---
 
-## Using GPU/NPU in Deployments
+## Use GPU or NPU in Deployments
 
 For production workloads, use a Deployment to manage GPU or NPU pods:
 
@@ -219,7 +219,7 @@ has 7 SR-IOV VFs, up to 7 pods can each receive one GPU device.
 
 ## Troubleshooting
 
-### No GPU/NPU Resources on the Node
+### No GPU or NPU Resources on the Node
 
 1. Check that the device plugin pods are running:
 

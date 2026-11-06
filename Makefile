@@ -21,6 +21,7 @@ HANDHELD_SRC := handheld-multi-modal
 DTD_SRC      := deterministic-threat-detection
 UAVSDK_SRC   := uav-mission-compute-sdk
 UAVVA_SRC    := uav-vision-analytics
+UAVGS_SRC    := uav-ground-station
 
 # Output archives.
 HANDHELD_ZIP := $(DIST_DIR)/handheld-multi-modal.zip
@@ -40,7 +41,7 @@ handheld-multi-modal: $(HANDHELD_ZIP) ## Build handheld-multi-modal.zip
 deterministic-threat-detection: $(DTD_ZIP) ## Build deterministic-threat-detection.zip
 
 .PHONY: uav-mission-apps
-uav-mission-apps: $(UAV_ZIP) ## Build uav-mission-apps.zip (uav-mission-compute-sdk + uav-vision-analytics)
+uav-mission-apps: $(UAV_ZIP) ## Build uav-mission-apps.zip (uav-mission-compute-sdk + uav-vision-analytics + uav-ground-station)
 
 .PHONY: federal-and-aerospace-ai-suite
 federal-and-aerospace-ai-suite: $(SOLUTION_ZIP) ## Build federal-and-aerospace-ai-suite.zip with the entire solution
@@ -74,10 +75,10 @@ $(DTD_ZIP): $(shell find $(DTD_SRC) -type f 2>/dev/null)
 	zip -rq "$@" "$(DTD_SRC)"
 	@echo "Archive ready: $@"
 
-$(UAV_ZIP): $(shell find $(UAVSDK_SRC) $(UAVVA_SRC) -type f 2>/dev/null)
+$(UAV_ZIP): $(shell find $(UAVSDK_SRC) $(UAVVA_SRC) $(UAVGS_SRC) -type f 2>/dev/null)
 	@mkdir -p "$(DIST_DIR)"
 	@rm -f "$@"
-	zip -rq "$@" "$(UAVSDK_SRC)" "$(UAVVA_SRC)"
+	zip -rq "$@" "$(UAVSDK_SRC)" "$(UAVVA_SRC)" "$(UAVGS_SRC)"
 	@echo "Archive ready: $@"
 
 # --- Full solution ZIP -------------------------------------------------------
@@ -87,7 +88,7 @@ $(UAV_ZIP): $(shell find $(UAVSDK_SRC) $(UAVVA_SRC) -type f 2>/dev/null)
 SOLUTION_STAGE := $(BUILD_DIR)/federal-and-aerospace-ai-suite
 
 $(SOLUTION_ZIP): \
-		$(shell find $(HANDHELD_SRC) $(DTD_SRC) $(UAVSDK_SRC) $(UAVVA_SRC) docs -type f 2>/dev/null) \
+		$(shell find $(HANDHELD_SRC) $(DTD_SRC) $(UAVSDK_SRC) $(UAVVA_SRC) $(UAVGS_SRC) docs -type f 2>/dev/null) \
 		README.md
 	@echo ">> Staging federal-and-aerospace-ai-suite (full solution)"
 	@rm -rf "$(SOLUTION_STAGE)"

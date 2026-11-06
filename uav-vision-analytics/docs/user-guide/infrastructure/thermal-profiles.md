@@ -21,7 +21,7 @@ ships a local tool that configures this policy through the Linux thermal daemon,
 `/etc/thermald/thermal-conf.xml` with a staged escalation on the CPU package
 sensor (`x86_pkg_temp`):
 
-```
+```text
 Fan (active)  <  Processor (passive)  <  intel_powerclamp (passive)
 fans on early    cap CPU frequency       inject idle cycles (hard limit)
 ```
@@ -30,6 +30,7 @@ It then makes thermald the **sole thermal authority** (a systemd drop-in that
 runs thermald with `--ignore-default-control` and **without** `--adaptive`, so
 firmware DPTF/GDDV adaptive tables do not override the trip points).
 
+> [!TIP]
 > **On the target system:** the commands below use repository-relative paths
 > (`tools/power-tuning/…`), which work when you run them from the repo root. On a
 > host provisioned with Infrastructure software, the same tools are available on
@@ -77,7 +78,7 @@ A profile is a set of three trip points on the CPU package sensor, ordered
 degrees Celsius.
 
 | Profile | Fan | Processor | powerclamp | Typical use |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `cool` | 55 | 70 | 80 | Aggressive cooling; fans on early, runs coolest/quietest at the cost of performance |
 | `warm` *(default)* | 60 | 75 | 85 | Balanced |
 | `hot` | 70 | 90 | 95 | Lets the platform run warmer before intervening |
@@ -87,7 +88,7 @@ degrees Celsius.
 ### Terminology
 
 | Term | Meaning |
-|---|---|
+| --- | --- |
 | thermald | The Linux thermal daemon that consumes the generated `thermal-conf.xml` and drives the cooling devices. |
 | trip point | A temperature threshold at which a cooling action is engaged. |
 | active trip | A cooling response that does **not** cost performance — here, turning fans on. |
@@ -142,7 +143,7 @@ tools/power-tuning/set_thermal_profile.sh --profile custom \
 ```
 
 | Option | Meaning |
-|---|---|
+| --- | --- |
 | `-p, --profile <name>` | Profile to apply: `cool`, `warm`, `hot`, `thermal-max`, or `custom` (default `warm`). |
 | `--fan <C>` | Fan (active) trip in Celsius (custom only). |
 | `--proc <C>` | Processor (passive) trip in Celsius (custom only). |
@@ -232,7 +233,7 @@ thermal config and systemd override are written to disk and **persist across a
 reboot**:
 
 | What changes | Where it lives | Reverts on reboot? |
-|---|---|---|
+| --- | --- | --- |
 | Thermal trip points | `/etc/thermald/thermal-conf.xml` | **No** — thermald re-reads it at the next boot. |
 | Sole-authority `ExecStart` | `/etc/systemd/system/thermald.service.d/override.conf` | **No** — the drop-in stays on disk. |
 
@@ -254,7 +255,7 @@ The same tool is also driven by an agent skill (see
 [AI Agent Integration](agent-skills.md)):
 
 | Skill | Purpose |
-|---|---|
+| --- | --- |
 | `set-thermal-profile` | Generate, apply and verify a thermald thermal profile (or disable thermald). |
 | `set-power-profile` | Cap the package/platform power so less heat is produced (apply first). |
 | `monitor-power-thermal` | Watch PkgTmp against the trip points while a load runs. |
@@ -270,5 +271,4 @@ and restart a system service, which must happen locally on the node. To drive
 them by natural language on a provisioned node, install an agent CLI on the
 target host and open it in the developer source tree (`/opt/edge/developer`),
 where the `skills/` directory and `tools/power-tuning/` scripts already live.
-See [Power Profiles](power-profiles.md#install-the-claude-code-cli-on-the-target-host-ubuntu)
-for the agent-CLI install steps.
+See [Infrastructure AI Agent Integration](./agent-skills.md) for the agent-CLI install steps.

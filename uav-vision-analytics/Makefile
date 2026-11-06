@@ -108,6 +108,7 @@ init: ## Create .env from template, auto-detect the host IP, and auto-detect GPU
                                 echo "CAMERA_DEVICE_1=/dev/null" >> .env; \
                         fi; \
                 fi; \
+				./scripts/update_device_gids.sh; \
 		fi
 
 # ── Pre-flight check ────────────────────────────────────────────────────────

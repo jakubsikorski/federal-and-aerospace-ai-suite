@@ -16,7 +16,7 @@ model, see [Modify the Detection Model](./modify-model.md).
 ## The bundled model
 
 `make vlm-model` downloads **InternVL2-1B** (`OpenGVLab/InternVL2-1B`) and
-converts it to OpenVINO IR, INT8 weights, for the CPU and the GPU:
+converts it to OpenVINO™ IR, INT8 weights, for the CPU and the GPU:
 
 ```text
 resources/ov_models/
@@ -49,8 +49,8 @@ device the camera uses.
 ## Required format
 
 `gvagenai` loads the model with `openvino_genai.VLMPipeline`, so the folder
-must contain a complete **OpenVINO IR export of the VLM** (not a PyTorch,
-safetensors or ONNX checkpoint). A typical export contains:
+must contain a complete **OpenVINO™ IR export of the VLM** (not a PyTorch,
+safetensors, or ONNX checkpoint). A typical export contains:
 
 | Files | Purpose |
 | --- | --- |
@@ -129,7 +129,7 @@ is under `.cache/`, which git ignores, and can be deleted afterwards.
 
 Google's Gemma 4 vision-language models work with the pipeline as-is;
 only the model folder and the `captioning` settings change. They need the
-OpenVINO GenAI runtime shipped in the DL Streamer Pipeline Server image.
+OpenVINO™ GenAI runtime shipped in the DL Streamer Pipeline Server image.
 
 1. Set up the [export environment](#export-environment), then download
    the pre-exported INT8 model (about 5 GB) for each device a camera will
@@ -190,7 +190,7 @@ For a pipeline started by hand, pass the container path in
 
 ## Prompt and caption length
 
-`prompt` may contain letters, digits, spaces and `, . ? ' -` only (validated
+`prompt` may contain letters, digits, spaces, and `, . ? ' -` only (validated
 by `make check-cameras`). `max_new_tokens` bounds the caption length and
 therefore the generation time; the pipeline sends one frame to the VLM every
 5 s, so a model/prompt combination that takes longer than that per caption

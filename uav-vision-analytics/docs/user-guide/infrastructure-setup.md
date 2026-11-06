@@ -29,6 +29,7 @@ make build MODE=server-image
 
 **Output:** `infrastructure/build-artifacts/out/usb-installation-files.tar.gz`
 
+> [!NOTE]
 > For a customized UAV image using the Image Composer Tool, see
 > [Advanced Image Customization](./infrastructure/advanced-image-customization.md)
 > UAV companion OS template: `infrastructure/host-os/ict/work-generic-companion-os-server-template.yml`

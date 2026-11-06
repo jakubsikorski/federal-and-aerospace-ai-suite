@@ -15,10 +15,10 @@ Use this guide after provisioning an edge node with the Infrastructure software 
 
 | Category | What It Measures | Devices | Backend |
 | -------- | ---------------- | ------- | ------- |
-| **Vision Benchmarks** | AI model inference (detection, classification) | CPU, GPU, NPU | OpenVINO benchmark_app |
+| **Vision Benchmarks** | AI model inference (detection, classification) | CPU, GPU, NPU | OpenVINO™ benchmark_app |
 | **Media Benchmarks** | Hardware video decode throughput and stream density | GPU (VA-API) | GStreamer + VA-API |
 | **Edge AI Pipelines** | End-to-end video analytics (decode + detect + track + classify) | GPU, NPU, GPU+NPU | DL Streamer |
-| **GenAI Benchmarks** | LLM/VLM token generation (1st token latency, throughput) | CPU, GPU, NPU | OpenVINO GenAI |
+| **GenAI Benchmarks** | LLM/VLM token generation (1st token latency, throughput) | CPU, GPU, NPU | OpenVINO™ GenAI |
 
 ## Prerequisites
 
@@ -81,7 +81,7 @@ Some GenAI models require authentication:
 export HF_TOKEN=<your-hugging-face-token>
 ```
 
-## Running Benchmarks
+## Run Benchmarks
 
 ### Vision Benchmarks
 
@@ -154,7 +154,7 @@ Example — run media benchmarks with power measurement, resuming from prior res
 cd workloads/media-benchmarks && make benchmarks POWER=True RESUME=True
 ```
 
-## Generating Reports
+## Generate Reports
 
 After running benchmarks, generate an interactive HTML dashboard:
 
@@ -195,7 +195,7 @@ make clean-all        # Remove all generated content (models, media, results)
 ## References
 
 - [Edge Workloads and Benchmarks Repository](https://github.com/open-edge-platform/edge-workloads-and-benchmarks)
-- [OpenVINO Toolkit](https://docs.openvino.ai/)
+- [OpenVINO™ Toolkit](https://docs.openvino.ai/)
 - [DL Streamer Documentation](https://docs.openedgeplatform.intel.com/dev/edge-ai-libraries/dlstreamer/index.html)
 - [Container Device Interface Guide](../infrastructure/configure-cdi.md) — CDI setup for GPU/NPU access
 - [DL Streamer Pipelines Guide](../infrastructure/build-dlstreamer-pipelines.md) — Building custom pipelines

@@ -42,7 +42,7 @@ Container names use the prefix `uav-va-` (vision analytics), for example `uav-va
 | `px4` | `px4io/px4-sitl:latest` | PX4 SITL flight controller simulation |
 | `mavlink-router` | Built from `uav-mission-compute-sdk/infra/px4-sim/mavlink-router` | Routes MAVLink telemetry between PX4 and the pipeline server; publishes UDP `14551` for a remote QGroundControl |
 | `dlstreamer-pipeline-server` | `intel/dlstreamer-pipeline-server:2026.3.0-ubuntu24-rc1` (+ `pymavlink`) | Core inference engine — YOLO11s detection and telemetry overlay |
-| `metrics-manager` | `intel/metrics-manager:2026.2.0` | Host platform (CPU/GPU) metrics |
+| `metrics-manager` | `intel/metrics-manager:2026.3.0-rc1` | Host platform (CPU/GPU) metrics |
 | `nginx` | `nginx:1.27-alpine` | Reverse proxy for HTTPS, RTSP and MQTT |
 
 All services share the `app_network` Docker network and are defined in [`docker-compose-pymavlink.yml`](docker-compose-pymavlink.yml). Only `nginx` (HTTPS, RTSP, MQTT) and `mavlink-router` (MAVLink UDP `14551`, for a remote QGroundControl) publish ports to the host; `dlstreamer-pipeline-server` and `metrics-manager` are reachable exclusively through `nginx`.

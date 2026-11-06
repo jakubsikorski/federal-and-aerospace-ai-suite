@@ -5,10 +5,10 @@ SPDX-License-Identifier: Apache-2.0
 
 # Change the Video Source
 
-A camera's video can come from a **file**, a **live camera** (Intel RealSense
-or USB webcam) or an **RTSP stream**. The source is one field of the camera
+A camera's video can come from a **file**, a **live camera** (RealSense
+or USB webcam), or an **RTSP stream**. The source is one field of the camera
 in [`configs/cameras-pymavlink.yaml`](../camera-management/configure-cameras.md)
-(or `cameras-uavsdk.yaml`); detection, captioning and overlay settings are
+(or `cameras-uavsdk.yaml`); detection, captioning, and overlay settings are
 the same for all three.
 
 | Source | Camera file | REST start request | Pipelines used |
@@ -17,10 +17,10 @@ the same for all three.
 | Live camera | `device: /dev/v4l/by-id/<name>` plus optional `width`, `height`, `fps` ([details](../camera-management/configure-cameras.md#live-cameras-realsense-usb-webcams)) | `"parameters": {"device": "/dev/v4l/by-id/<name>", "camera_width": 1280, "camera_height": 720, "camera_fps": 30}` | `uav_camera_<det>[_<vlm>]` (`config-pymavlink.json`; CPU/GPU variants in `config-pymavlink-realsense.json`) |
 | RTSP stream | `rtsp: rtsp://host:8554/{uav_id}/nadir` ([details](../camera-management/configure-cameras.md#rtsp-streams-uav-mission-compute-sdk)) | `"parameters": {"rtsp_url": "rtsp://host:8554/uav-1/nadir"}` | `uav_object_detection_<det>[_<vlm>]` (`config-uavsdk.json`) |
 
-Set exactly one of `video`, `device` or `rtsp` per camera. Then:
+Set exactly one of `video`, `device`, or `rtsp` per camera. Then:
 
 ```bash
-make check-cameras     # validates the file; reports a missing video file, device node or pipeline
+make check-cameras     # validates the file; reports a missing video file, device node, or pipeline
 make start-rtsp        # or disarm/arm; the file is re-read at every arming
 ```
 
@@ -34,7 +34,7 @@ make start-rtsp        # or disarm/arm; the file is re-read at every arming
   (`CAMERA_DEVICE_1` … `CAMERA_DEVICE_4`) so the compose file passes it into
   the container; recreate the container (`make pymav-up`) after changing it.
   Each node can be used by one camera only. See
-  [Intel RealSense Camera](../camera-management/realsense-guide.md).
+  [RealSense Camera](../camera-management/realsense-guide.md).
 - **RTSP stream** — used in UAV Mission Compute SDK mode, where the camera
   file is `configs/cameras-uavsdk.yaml` and `{uav_id}` is replaced by
   `UAV_ID` from `.env`. The manager starts a camera only once its stream can

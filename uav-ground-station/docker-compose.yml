@@ -28,7 +28,7 @@ services:
   # Internal-only (no host port published) -- viz-backend proxies its SSE
   # stream at /api/local-metrics-stream.
   gs-metrics-manager:
-    image: intel/metrics-manager:2026.2.0
+    image: intel/metrics-manager:2026.3.0-rc1
     container_name: uav-gs-metrics-manager
     privileged: true
     pid: host

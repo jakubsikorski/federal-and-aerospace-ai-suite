@@ -121,7 +121,7 @@ services:
       - "host.docker.internal:host-gateway"
 
   metrics-manager:
-    image: intel/metrics-manager:2026.2.0
+    image: intel/metrics-manager:2026.3.0-rc1
     container_name: uav-va-metrics-manager
     privileged: true
     pid: host

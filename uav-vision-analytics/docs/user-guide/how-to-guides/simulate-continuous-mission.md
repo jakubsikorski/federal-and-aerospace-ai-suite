@@ -3,12 +3,12 @@ SPDX-FileCopyrightText: (C) 2026 Intel Corporation
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Testing Against a Simulated, Continuously-Armed Mission
+# Test Against a Simulated, Continuously-Armed Mission
 
 PX4 SITL auto-disarms after a short idle period with no RC/GCS input. Both
 `pipeline_manager.py`'s ARMED-triggered auto-start (standalone mode) and the
 UAV Mission Compute SDK's arm-gated RTSP publishing depend on the vehicle
-staying armed. If you're testing pipelines interactively — not flying a
+staying armed. If you are testing pipelines interactively — not flying a
 scripted mission — you will otherwise hit unexplained stream drop-outs.
 
 > [!IMPORTANT]
@@ -34,7 +34,7 @@ often exceeded, so the vehicle disarms and dependent pipelines/streams stop.
 
 ## Steps
 
-### Standalone (pymavlink) mode — keep-alive pattern
+### Standalone (Pymavlink) mode — keep-alive pattern
 
 The standalone stack has no REST action endpoint (`:8080/action/arm` belongs to the UAV Mission Compute SDK).
 Use one of:
@@ -43,7 +43,8 @@ Use one of:
 - Run the cameras without depending on the arming state: `docker exec -it -e HOST_IP=<HOST_IP> uav-va-dlstreamer-pipeline-server python3 /home/pipeline-server/scripts/pipeline_manager.py --start-now`.
 
 > [!NOTE]
-> If you script the arm yourself (a MAVLink command over UDP `14551`), repeat it on a timer shorter than the idle-disarm timeout.
+> If you script the arm yourself (a MAVLink command over UDP `14551`), repeat it on a timer
+  shorter than the idle-disarm timeout.
 
 ### UAV Mission Compute SDK mode — keep-alive pattern
 
@@ -73,4 +74,4 @@ idle-disarm timeout, instead of stopping a few tens of seconds in.
 Arm/disarm flapping that leaves a stream down is covered in
 [Troubleshooting — Rapid arm/disarm flapping](./troubleshooting.md#rapid-armdisarm-flapping-leaves-a-stream-down-sitl).
 This keep-alive pattern is for SITL testing only; do not work around PX4's
-idle-disarm safety behaviour on real flight hardware.
+idle-disarm safety behavior on real flight hardware.

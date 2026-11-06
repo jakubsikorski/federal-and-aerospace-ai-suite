@@ -5,13 +5,15 @@ SPDX-License-Identifier: Apache-2.0
 
 # Benchmark — UAV Vision Analytics
 
-> **Scope:** This benchmarking guide applies to **Standalone Mode (pymavlink)** only. It does not cover the UAV Mission Compute SDK mode.
+> [!NOTE]
+> **Scope:** This benchmarking guide applies to **Standalone Mode (Pymavlink)** only. It does
+  not cover the UAV Mission Compute SDK mode.
 
 This document explains how to measure the performance of the UAV Vision Analytics
 application using the `calc_stream_density.sh` benchmarking script. The script
 determines the maximum number of concurrent drone-camera video streams the
 system can process (**stream density**) while sustaining a target frame rate,
-and simultaneously collects CPU, GPU and NPU utilization, frequency, power and memory
+and simultaneously collects CPU, GPU, and NPU utilization, frequency, power, and memory
 metrics from `metrics-manager`.
 
 > [!NOTE]
@@ -40,7 +42,7 @@ curl -k -s https://<HOST_IP>/api/v1/metrics/latest | head -3
 
 ## How the Script Works
 
-1. **Scenario** — the detection device, captioning on/off, the captioning device, the models, the prompt and
+1. **Scenario** — the detection device, captioning on/off, the captioning device, the models, the prompt, and
    `max_new_tokens` come from the first enabled video camera in `configs/cameras-pymavlink.yaml`.
    Flags override them, so no file has to be edited to try another combination.
    The pipeline is chosen like the application does:
@@ -98,7 +100,7 @@ More useful runs:
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `-d`, `--det-device` | YAML | Detection device `CPU`, `GPU` or `NPU`. |
+| `-d`, `--det-device` | YAML | Detection device `CPU`, `GPU`, or `NPU`. |
 | `-c`, `--captioning` | YAML | `true` or `false`. |
 | `-cd`, `--cap-device` | YAML | Captioning device `CPU` or `GPU` (the VLM does not run on the NPU). |
 | `-ct`, `--cap-tokens` | YAML | Caption length limit (`max_new_tokens`). |
@@ -136,15 +138,15 @@ Environment variables: `DLSPS_NODE_IP` (nginx address), `NGINX_CONTAINER` / `MET
 
  Hardware load at <N> stream(s)  (<samples> samples)
   Hardware metric                                     avg        min        max
-  CPU utilisation (%)                                <%>        <%>        <%>
+  CPU utilization (%)                                <%>        <%>        <%>
   GPU compute engine (%)                             <%>        <%>        <%>
-  NPU utilisation (%)                                <%>        <%>        <%>
+  NPU utilization (%)                                <%>        <%>        <%>
   ...
 ```
 
-The hardware table lists, when available: CPU utilisation, frequency and temperature; GPU utilisation
-(`max(compute, video)`), the compute (CCS), video decode/encode (VCS), video-enhance (VECS) and render engines,
-GPU frequency and power; NPU utilisation, frequency, power, temperature and memory; package power (RAPL and
+The hardware table lists, when available: CPU utilization, frequency, and temperature; GPU utilization
+(`max(compute, video)`), the compute (CCS), video decode/encode (VCS), video-enhance (VECS), and render engines,
+GPU frequency and power; NPU utilization, frequency, power, temperature, and memory; package power (RAPL and
 qmassa), platform power and memory use. FPS/W is the total FPS divided by the package power.
 
 ### Output folder
@@ -163,7 +165,7 @@ streams_<NN>/hw_samples.log  raw hardware snapshots (key=value, "---" per snapsh
 - **Captioning dominates the cost.** A VLM generating long captions keeps the GPU busy even with one or two
   streams. Lower `captioning.max_new_tokens` in `cameras-pymavlink.yaml` (or try `-ct`), caption only the cameras
   that need it, or run the VLM on a different device than the detector.
-- **Cameras share one VLM.** Cameras captioning with the same device, model and token limit share one loaded
+- **Cameras share one VLM.** Cameras captioning with the same device, model, and token limit share one loaded
   VLM (`captioner_instance_id`, set by the camera manager), so memory does not grow with every captioning camera.
   Their captions are generated one at a time, so each camera is captioned less often when many caption at once.
 - **RTSP output and overlay are part of the load.** Cameras with `overlay: false` in the YAML are cheaper.

@@ -12,7 +12,7 @@ model and how it is produced.
 
 ## What the pipelines accept
 
-`gvadetect` loads an **OpenVINO IR** model (`.xml` + `.bin`). The model file
+`gvadetect` loads an **OpenVINO™ IR** model (`.xml` + `.bin`). The model file
 must live below `resources/models/` (the pipeline schema rejects any other
 path), and a camera refers to it by its path relative to that folder. PyTorch
 or ONNX models must be converted first.
@@ -36,7 +36,7 @@ GPU and NPU (see [Manage the Detection Model](./model.md)).
 
 ## Option B — A custom or fine-tuned model
 
-1. Convert to OpenVINO IR if needed:
+1. Convert to OpenVINO™ IR if needed:
 
    ```bash
    resources/venv/bin/yolo export model=/path/to/best.pt format=openvino dynamic=True opset=18 imgsz=640 half=True   # Ultralytics-trained
@@ -45,12 +45,12 @@ GPU and NPU (see [Manage the Detection Model](./model.md)).
    ```
 
 2. Copy the `.xml` + `.bin` pair into a folder below `resources/models/`,
-   e.g. `resources/models/my-detector/model.xml`.
+   e.g., `resources/models/my-detector/model.xml`.
 
 Models exported from Ultralytics carry their class names and post-processing
 in the IR's metadata, which `gvadetect` reads directly. A model from another
-framework may need a model-proc JSON for its output layout; see the DL
-Streamer documentation for `gvadetect model-proc=`.
+framework may need a model-proc JSON for its output layout; see the DL Streamer documentation
+for `gvadetect model-proc=`.
 
 ## Point a camera at the model
 

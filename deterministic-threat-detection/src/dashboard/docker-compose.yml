@@ -17,7 +17,7 @@ services:
   # System load of this machine for the dashboard's "System load" card (CPU, memory, GPU, temperature).
   # Published on loopback only; the backend (host network) reads its event stream.
   metrics-manager:
-    image: docker.io/intel/metrics-manager:2026.2.0
+    image: docker.io/intel/metrics-manager:2026.3.0-rc1
     privileged: true
     pid: host
     volumes:

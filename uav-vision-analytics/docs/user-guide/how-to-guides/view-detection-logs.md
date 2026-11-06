@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: (C) 2026 Intel Corporation
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Viewing and Interpreting Detection Logs (JSONL)
+# View and Interpret Detection Logs (JSONL)
 
 Every pipeline can write its detection results as newline-delimited JSON
 (`json-lines`) to a file inside the container — a durable, machine-readable
@@ -33,7 +33,7 @@ Add this to the start request's `destination`:
 ```
 
 Several pipelines may write to the same `path` (lines interleave) or each
-to its own, e.g. `/tmp/results_front.jsonl`. The file lives inside the
+to its own, e.g., `/tmp/results_front.jsonl`. The file lives inside the
 container; copy it out with `docker cp` as shown below.
 
 ## Steps
@@ -72,7 +72,7 @@ docker cp uav-va-dlstreamer-pipeline-server:/tmp/results.jsonl ./results.jsonl
 
 ### 4. Correlate a log entry with a pipeline instance
 
-The metadata file itself doesn't include the pipeline `instance_id`. To
+The metadata file itself does not include the pipeline `instance_id`. To
 confirm *which* running pipeline is currently writing to a given path, check
 `GET /pipelines/status` (see
 [Manage Pipelines — Check status](../how-to-customize/pipeline-management/manage-pipelines.md#check-status))

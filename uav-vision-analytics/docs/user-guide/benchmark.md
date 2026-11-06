@@ -14,7 +14,6 @@ the more general, platform-level benchmarking process, a solution for end-to-end
 analytics pipelines, vision AI inference, hardware-accelerated media processing, and
 generative AI.
 
-
 <!--hide_directive
 :::{toctree}
 :hidden:

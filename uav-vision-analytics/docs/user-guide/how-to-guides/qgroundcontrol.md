@@ -7,11 +7,11 @@ QGroundControl on your host machine where you are running the application.
 
 - Stable v5.1: [Download and Install QGroundControl (Ubuntu)](https://docs.qgroundcontrol.com/Stable_V5.1/en/qgc-user-guide/getting_started/download_and_install.html#ubuntu)
 
-> [!NOTE]
+> [!TIP]
 > If you run into connection or video-stream issues with the stable release, see
 > [Troubleshooting: QGroundControl stable release fails to connect](./troubleshooting.md#qgroundcontrol-stable-release-fails-to-connect) for a fallback install option.
 
-## Enabling video stream in QGroundControl
+## Enable video stream in QGroundControl
 
 Steps to enable QGroundControl to connect to the UAV Vision Analytics application video stream.
 
@@ -43,7 +43,7 @@ rtsp://<HOST_IP>:8555/uav-back-camera
 > Make sure `make start-rtsp` is running in the DL Streamer Pipeline Server container before
 > attempting to connect QGroundControl to the RTSP stream.
 
-## Connecting QGroundControl from another machine
+## Connect QGroundControl from another machine
 
 `mavlink-router` exposes a UDP endpoint on `<HOST_IP>:14551` (bound to `HOST_IP` only,
 like the other published ports). QGroundControl on a different machine does not
@@ -64,7 +64,7 @@ before `make pymav-up`.
 > built into this stack it accepts a TCP connection but fails to send to it
 > (`Error sending tcp packet (Invalid argument)`), so no data reaches the client.
 
-> [!IMPORTANT]
+> [!WARNING]
 > Anyone who can reach `<HOST_IP>:14551` can command the vehicle. Keep the host on a
 > trusted network.
 

@@ -5,9 +5,9 @@ SPDX-License-Identifier: Apache-2.0
 
 # Install OEP SDK and Usage
 
-This page covers installing the UAV Mission Compute SDK on a provisioned Uncrewed Aerial Vehicle (UAV) target and validating the stack with the built-in PX4 + Gazebo simulation, RTSP streams, and OpenVINO vision processor.
+This page covers installing the UAV Mission Compute SDK on a provisioned Uncrewed Aerial Vehicle (UAV) target and validating the stack with the built-in PX4 + Gazebo simulation, RTSP streams, and OpenVINO™ vision processor.
 
-The provisioned image ships with system-level dependencies only — kernel, GPU/NPU drivers, Docker Engine, and container device plugins. The UAV Mission Compute SDK, container images, simulation stack, and OpenVINO Python runtime must be installed on the target as described below.
+The provisioned image ships with system-level dependencies only — kernel, GPU/NPU drivers, Docker Engine, and container device plugins. The UAV Mission Compute SDK, container images, simulation stack, and OpenVINO™ Python runtime must be installed on the target as described below.
 
 For image build and platform provisioning, see [Infrastructure Setup](../infrastructure-setup.md).
 

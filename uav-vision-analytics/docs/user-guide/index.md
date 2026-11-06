@@ -41,9 +41,9 @@ The application supports two deployment modes depending on whether an external S
 
 The application supports two deployment modes.
 
-### 1. Standalone Mode (pymavlink)
+### 1. Standalone Mode (Pymavlink)
 
-Self-contained mode using PX4 SITL simulation and pymavlink for MAVLink communication. No external dependencies required.
+Self-contained mode using PX4 SITL simulation and Pymavlink for MAVLink communication. No external dependencies required.
 
 [Get Started — Standalone Mode](./get-started/get-started-standalone.md)
 
@@ -72,7 +72,7 @@ Follow the steps below to set up and run the UAV Blueprint:
 
 This application supports AI agent skills for GitHub Copilot and compatible coding agents.
 Skills cover operational tasks (running pipelines, benchmarking, troubleshooting) and
-application creation (scaffolding new pymavlink or UAVSDK stacks). See
+application creation (scaffolding new Pymavlink or UAVSDK stacks). See
 [Agent SKILLs](agents.md) for details.
 
 ## Intended and Responsible Use

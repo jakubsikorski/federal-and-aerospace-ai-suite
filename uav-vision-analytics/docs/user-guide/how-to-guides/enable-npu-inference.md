@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: (C) 2026 Intel Corporation
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Enabling NPU Inference
+# Enable NPU Inference
 
 NPU is a first-class supported inference device — it has its own pipeline
 entries (`..._npu`) selectable per camera in `configs/cameras-pymavlink.yaml`
@@ -15,8 +15,8 @@ camera to (or away from) the NPU is a one-line change in the camera file, see
 
 ## Prerequisites
 
-- An Intel NPU (e.g. Meteor Lake / Panther Lake) with the NPU driver
-  installed on the host.
+- An Intel NPU (e.g., Intel® Core™ Ultra Series 1 or Intel® Core™ Ultra Series 3) with the
+  NPU driver installed on the host.
 - The stack not yet started for this session (or willing to restart it).
 
 ## Steps
@@ -28,7 +28,7 @@ ls /dev/accel/
 # expected: accel0 (or similar)
 ```
 
-If this directory doesn't exist or is empty, the NPU driver isn't installed /
+If this directory does not exist or is empty, the NPU driver is not installed /
 loaded on the host — install it before continuing (outside the scope of this
 app).
 
@@ -67,7 +67,7 @@ devices:
 ```
 
 No manual edits are needed here — this is just what makes `NPU_DEVICE` from
-`.env` reach the container. `ZE_ENABLE_ALT_DRIVERS` enables the NPU OpenVINO
+`.env` reach the container. `ZE_ENABLE_ALT_DRIVERS` enables the NPU OpenVINO™
 plugin and is already set by default.
 
 ### 4. Restart the stack so the container picks up the device

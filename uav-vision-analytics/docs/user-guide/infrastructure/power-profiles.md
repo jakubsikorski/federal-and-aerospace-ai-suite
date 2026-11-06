@@ -16,6 +16,7 @@ set of local power-tuning tools that let you:
 - **Monitor** live power and package temperature.
 - **Stress** the CPU and integrated GPU to validate a profile under load.
 
+> [!TIP]
 > **On the target system:** the commands below use repository-relative paths
 > (`tools/power-tuning/…`), which work when you run them from the repo root. On a
 > host provisioned with Infrastructure software, the same tools are available on
@@ -92,7 +93,6 @@ across a reboot:
   sudo apt-get install -y stress-ng
   ```
 
-
 ## Power Profiles
 
 A profile is a package-power (PkgWatt) budget plus a default burst ratio. The
@@ -106,7 +106,7 @@ psys (SysWatt) domain, a matching whole-platform cap is added automatically.
 > [Set an Explicit Power Envelope](#set-an-explicit-power-envelope).
 
 | Profile | PkgWatt budget | Default burst ratio | Typical use |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `LowPower` | 10 W | 1.25 | Fanless / battery, mostly idle (kiosk, signage, sensor) |
 | `BalancedLow` | 15 W | 1.25 | Light interactive (basic UI, browsing) |
 | `BalancedHigh` | 20 W | 1.18 | Interactive / mixed workloads |
@@ -117,7 +117,7 @@ psys (SysWatt) domain, a matching whole-platform cap is added automatically.
 ### Terminology
 
 | Term | Meaning |
-|---|---|
+| --- | --- |
 | PkgWatt | Package power — the CPU cores plus the integrated GPU. The main limit these tools set. |
 | SysWatt | Platform power — the whole board (package plus memory, VRs, other rails). Exposed by the RAPL psys domain. **Not available on all systems:** many Core Ultra platforms do not expose a psys domain at all (any `--sysWatt` is then ignored and only the PkgWatt cap applies), and on some silicon the counter is present but frozen, so it reads `0.00`. Use PkgWatt as the reliable effective figure. |
 | PL1 | Power Limit 1 — the **sustained** power allowed over the long term. |
@@ -157,6 +157,7 @@ sudo tools/power-tuning/set_power_profile.sh --profile Performance --sysWatt 35
 tools/power-tuning/set_power_profile.sh --profile Performance --dry-run
 ```
 
+> [!NOTE]
 > **`--sysWatt` is not honored on every platform.** The SysWatt cap only takes
 > effect on silicon that exposes the RAPL psys domain. On platforms without it,
 > `--sysWatt` is silently ignored and only the PkgWatt cap is enforced; on
@@ -185,7 +186,7 @@ sudo tools/power-tuning/set_power_profile.sh --pkgWatt 15 --pl1Tau 10
 ```
 
 | Option | Meaning |
-|---|---|
+| --- | --- |
 | `--pkgWatt W` | Package PL1 (sustained) target. Clamped to `[0.125 W, cTDP Level 2]` and snapped to the RAPL power-unit granularity (0.125 W). Default: Nominal TDP. |
 | `--sysWatt W` | psys/platform (SysWatt) cap. Applied only on platforms that expose the psys domain; ignored otherwise. Default: same as PkgWatt. |
 | `--burstRatio R` | Burst ratio (`>= 1.0`). `PL2 = pkgWatt × R`, clamped to cTDP Level 2. Also biases EPP/EPB toward performance. |
@@ -197,7 +198,7 @@ sudo tools/power-tuning/set_power_profile.sh --pkgWatt 15 --pl1Tau 10
 
 > [!NOTE]
 > `pt_mon.sh` is provided as a *reference* monitor. You can use it,
-> or any other power-monitoring tool you prefer (e.g. `turbostat`, `powertop`,
+> or any other power-monitoring tool you prefer (e.g., `turbostat`, `powertop`,
 > `intel_gpu_top`, a BMC/OEM utility, or reading
 > `/sys/class/powercap/intel-rapl*`). The power profile and stress steps are
 > independent of which monitor you choose.
@@ -220,7 +221,7 @@ sudo turbostat -S --interval 1 --num_iterations 60 \
 ```
 
 | Column | Meaning |
-|---|---|
+| --- | --- |
 | `PkgTmp` | CPU package temperature (°C). |
 | `PkgWatt` | Whole-package power (cores + iGPU + uncore) — the most reliable effective figure. |
 | `CorWatt` | CPU cores portion of the package. |
@@ -252,7 +253,7 @@ tools/power-tuning/stress_gen.sh --gpu 8 --duration 5m
 ```
 
 | Option | Meaning |
-|---|---|
+| --- | --- |
 | `--cpus N` | Number of CPU workers, `1..nproc` (default: all CPUs). |
 | `--load P` | Per-CPU load percentage, `1..100` (default `100`). |
 | `--gpu N` | Number of stress-ng iGPU worker processes, `0..12` (default `4`; `0` disables GPU load). This is a worker count, not a GPU count. Use a maximum of `4` for a 4 Xe-core iGPU and `8` for a 12 Xe-core iGPU. |
@@ -267,7 +268,7 @@ sudo pkill -x stress-ng
 ### Real AI inference load with `openvino_stress.sh`
 
 For a load that resembles a production edge workload rather than a synthetic one,
-`openvino_stress.sh` drives the CPU, GPU, or NPU with OpenVINO `benchmark_app`
+`openvino_stress.sh` drives the CPU, GPU, or NPU with OpenVINO™ `benchmark_app`
 running in a container (K3s pod or Docker, auto-detected). This is useful for
 measuring throughput-per-watt and for thermal qualification with a real
 neural-network compute pattern:
@@ -287,7 +288,7 @@ tools/power-tuning/openvino_stress.sh --cleanup
 ```
 
 | Option | Meaning |
-|---|---|
+| --- | --- |
 | `--device cpu\|gpu\|npu` | Target accelerator (default `cpu`). |
 | `--runtime k3s\|docker` | Container runtime (default: auto-detect). |
 | `--niter N` | Iteration count; `0` = time-based (default `0`). |
@@ -331,14 +332,14 @@ temperature approaches the throttle point.
 
 - **Thermals & acoustics:** higher profiles raise package temperature and fan
   noise; lower profiles run cooler and quieter (or fanless).
-- **Throttling:** if cooling can't keep up, the firmware clamps sustained power
+- **Throttling:** if cooling cannot keep up, the firmware clamps sustained power
   below the target. The script reports the effective (enforced) value and notes
   when firmware clamped PL1.
 - **`SysWatt = 0.00`:** on some Core Ultra silicon the psys counter is frozen.
-  The cap is still written, but turbostat can't observe it — use PkgWatt as the
+  The cap is still written, but turbostat cannot observe it — use PkgWatt as the
   effective figure. This is a firmware limitation, not a failure.
 - **Brief management gap:** applying a profile restarts `intel_lpmd.service`
-  (~2 s) during which the daemon isn't actively managing CPU states.
+  (~2 s) during which the daemon is not actively managing CPU states.
 - **Partial revert on reboot:** the RAPL power cap resets to firmware defaults
   on reboot, but the `intel_lpmd` config on disk does not — see below.
 
@@ -347,7 +348,7 @@ temperature approaches the throttle point.
 The script changes two independent things with different lifetimes:
 
 | What changes | Where it lives | Reverts on reboot? |
-|---|---|---|
+| --- | --- | --- |
 | RAPL cap (PL1/PL2 watts) | Volatile CPU RAPL MSRs (`0x610`/`0x65C`) + powercap sysfs | **Yes** — firmware re-initializes these on every boot. |
 | `intel_lpmd` config (EPP/EPB, ITMT, active CPUs) | `intel_lpmd_config.xml` on disk (and any model-specific file it overrides) | **No** — the file stays on disk and `intel_lpmd` re-reads it at the next boot. |
 
@@ -376,7 +377,7 @@ The same tools are also driven by agent skills (see
 [AI Agent Integration](agent-skills.md)):
 
 | Skill | Purpose |
-|---|---|
+| --- | --- |
 | `set-power-profile` | Apply a named power profile or set an explicit PkgWatt / SysWatt envelope. |
 | `monitor-power-thermal` | Run the live power/thermal monitor. |
 | `generate-platform-stress` | Generate configurable CPU / iGPU load. |
@@ -387,7 +388,7 @@ To drive them by natural language on a provisioned node, install an agent CLI on
 the target host and open it in the developer source tree (`/opt/edge/developer`),
 where the `skills/` directory and `tools/power-tuning/` scripts already live.
 
-### Using the skill on the Target Host
+### Use the skill on the Target Host
 
 Launch the agent from the developer source tree so it can discover the
 skills and scripts:

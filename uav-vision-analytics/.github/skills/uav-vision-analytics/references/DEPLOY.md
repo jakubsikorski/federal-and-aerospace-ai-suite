@@ -13,7 +13,7 @@
 | `broker` | `eclipse-mosquitto:2.0.22` | `1883` | MQTT broker for detection metadata |
 | `px4` | `px4io/px4-sitl:latest` | — | PX4 SITL flight controller simulator (requires `10040_sihsim_quadx.post` volume mount) |
 | `mavlink-router` | custom build | — | Routes MAVLink :14550 → :14541 |
-| `metrics-manager` | `intel/metrics-manager:2026.1.0-*` | — | CPU/GPU/NPU/power metrics collection |
+| `metrics-manager` | `intel/metrics-manager:2026.3.0-*` | — | CPU/GPU/NPU/power metrics collection |
 
 ### px4 Service (pymavlink mode)
 

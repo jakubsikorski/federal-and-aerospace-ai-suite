@@ -9,7 +9,7 @@ name: tsn-traffic-node
 
 services:
   metrics-manager:
-    image: docker.io/intel/metrics-manager:2026.2.0
+    image: docker.io/intel/metrics-manager:2026.3.0-rc1
     privileged: true
     pid: host
     volumes:

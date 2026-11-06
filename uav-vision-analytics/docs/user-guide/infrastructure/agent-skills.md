@@ -21,7 +21,7 @@ Some skills are meant to run from the developer host, while others are meant to 
 | `set-thermal-profile` | Sets the thermald thermal escalation policy — generates, validates, applies, and verifies staged Fan/Processor/powerclamp trip points (cool, warm, hot, thermal-max, or custom) | Provisioned host |
 | `monitor-power-thermal` | Monitors package temperature and RAPL power domains and logs results (`pt_mon.txt`) | Provisioned host |
 | `generate-platform-stress` | Generates configurable CPU and integrated-GPU load with stress-ng — control worker count, per-CPU load percentage, GPU worker count, and duration | Provisioned host |
-| `generate-openvino-stress` | Generates sustained AI inference load on CPU, GPU, or NPU using OpenVINO `benchmark_app` in a K3s pod or Docker container for realistic power/thermal qualification | Provisioned host |
+| `generate-openvino-stress` | Generates sustained AI inference load on CPU, GPU, or NPU using OpenVINO™ `benchmark_app` in a K3s pod or Docker container for realistic power/thermal qualification | Provisioned host |
 | `combined-power-thermal-profiling` | Orchestrates a full profiling session — chains set-power-profile → set-thermal-profile → monitor-power-thermal → generate-platform-stress and emits one consolidated enclosure report with a throttle/headroom verdict | Provisioned host |
 
 ## How to Use Skills

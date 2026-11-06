@@ -8,9 +8,12 @@ SPDX-License-Identifier: Apache-2.0
 This guide walks you through running the Phase 1 build on a **macOS** machine (any chip)
 using a Ubuntu 24.04 x86_64 virtual machine in UTM.
 
+> [!NOTE]
 > The build scripts require Linux. macOS is not directly supported.
 > This guide uses UTM (free) with Ubuntu 24.04 Desktop x86_64 as the build environment.
-
+>
+> ---
+>
 > **Performance note:** On Apple Silicon Macs, UTM runs x86_64 VMs via QEMU software
 > emulation (TCG) — there is no KVM hardware acceleration for x86 on ARM hosts.
 > The build will complete correctly but will be **3–5× slower** than on native x86
@@ -37,12 +40,11 @@ using a Ubuntu 24.04 x86_64 virtual machine in UTM.
 
 Download the **Server amd64 ISO** from the Ubuntu releases page:
 
-```
-https://releases.ubuntu.com/noble/ubuntu-24.04.4-live-server-amd64.iso
-```
+- [Ubuntu 24.04 ISO](https://releases.ubuntu.com/noble/ubuntu-24.04.4-live-server-amd64.iso)
 
 File: `ubuntu-24.04.4-live-server-amd64.iso` (3.2 GB)
 
+> [!TIP]
 > Use the **server** ISO — the build runs entirely in a terminal inside Docker
 > containers. No desktop environment is needed, and the server ISO is half the
 > size and installs in roughly a third of the time.
@@ -128,7 +130,7 @@ nano proxy.env
 
 Fill in:
 
-```
+```text
 HTTP_PROXY="http://proxy.mycompany.com:8080"
 HTTPS_PROXY="http://proxy.mycompany.com:8080"
 NO_PROXY="localhost,127.0.0.0/8"
@@ -156,17 +158,18 @@ The first build downloads base images, installs packages, and assembles the USB
 artifacts. Expected duration:
 
 | Mac type | Estimated build time |
-|---|---|
+| --- | --- |
 | Apple Silicon (QEMU TCG emulation) | 2–3 hours |
 | Intel Mac (HVF acceleration) | 15–30 minutes |
 
+> [!NOTE]
 > **Total end-to-end time on Apple Silicon** (UTM setup + Ubuntu install + build):
 > approximately **2–3 hours** for a first-time run after the VM is already set up,
 > or **4–5 hours** including VM creation and Ubuntu installation.
 
 Build output appears at:
 
-```
+```text
 infrastructure/build-artifacts/out/usb-installation-files.tar.gz
 ```
 
@@ -196,7 +199,8 @@ sudo tar -xzf usb-installation-files.tar.gz
 sudo ./bootable-usb-prepare.sh /dev/sdX usb-bootable-files.tar.gz config-file
 ```
 
-> **Double-check the device path** — this will erase the target device.
+> [!CAUTION]
+> **Double-check the device path** — this will erase the target device!
 
 After the script completes:
 
@@ -208,7 +212,7 @@ After the script completes:
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
-|---|---|---|
+| --- | --- | --- |
 | `Cannot run docker without sudo` | User not in `docker` group | `sudo usermod -aG docker $USER && newgrp docker` |
 | `docker pull` fails / timeout | Proxy not configured | Fill in `proxy.env` before running `make build` |
 | VM very slow / unresponsive | QEMU TCG on Apple Silicon | Reduce VM RAM to free host memory; close other apps; increase VM CPU cores |

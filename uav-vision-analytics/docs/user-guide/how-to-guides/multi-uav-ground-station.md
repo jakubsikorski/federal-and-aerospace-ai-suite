@@ -59,7 +59,7 @@ automatically:
 - VSS stream registrations (if the search overlay is enabled) use
   `uav-<host>--<camera>`.
 
-You don't need to rename cameras to avoid collisions across a fleet — just
+You do not need to rename cameras to avoid collisions across a fleet — just
 be aware result/relay names include the host for this reason.
 
 ### 5. Generate a Flight Summary for a specific UAV
@@ -94,6 +94,6 @@ Flight Summary still generating after disconnect, lost tabs after a backend
 restart). For the UAV/Camera search filter, see
 [Searching Live Video with VSS — Scope results to one UAV or camera](./vss-live-search.md#4-scope-results-to-one-uav-or-camera-multi-uav-setups).
 
-See also the ground station's own
-[README — Multiple UAVs at once](../../../../uav-ground-station/README.md#multiple-uavs-at-once)
-for implementation detail.
+See also the Ground Station's own
+[README — Multiple UAVs at once](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/blob/main/uav-ground-station/README.md#multiple-uavs-at-once)
+for the implementation details.

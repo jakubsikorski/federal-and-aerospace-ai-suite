@@ -11,7 +11,8 @@
 #   It builds zip artifacts from the repository root:
 #     - handheld-multi-modal.zip         (one app)
 #     - deterministic-threat-detection.zip (one app)
-#     - uav-mission-apps.zip (two apps, one zip)
+#     - uav-mission-apps.zip (three folders, one zip: uav-mission-compute-sdk,
+#       uav-vision-analytics, uav-ground-station)
 #
 #   Where those zips end up depends on what triggered the workflow:
 #
@@ -144,6 +145,7 @@ jobs:
             uav-mission-apps:
               - 'uav-mission-compute-sdk/**'
               - 'uav-vision-analytics/**'
+              - 'uav-ground-station/**'
               - 'Makefile'
               - '.github/workflows/fedaero.yaml'
 
@@ -331,6 +333,6 @@ jobs:
           GH_TOKEN: ${{ secrets.SIV_USER_TOKEN_GH }}
           GH_REPO: ${{ github.repository }}
         run: |
-          notes=$'Immutable versioned release built from `${{ github.sha }}`\n\nContains:\n- `handheld-multi-modal.zip` — handheld multi-modal operator console\n- `deterministic-threat-detection.zip` — deterministic threat detection app\n- `uav-mission-apps.zip` — UAV Mission Compute SDK + UAV Vision Analytics'
+          notes=$'Immutable versioned release built from `${{ github.sha }}`\n\nContains:\n- `handheld-multi-modal.zip` — handheld multi-modal operator console\n- `deterministic-threat-detection.zip` — deterministic threat detection app\n- `uav-mission-apps.zip` — UAV Mission Compute SDK + UAV Vision Analytics + UAV Ground Station'
           gh release create --title "Federal and Aerospace | Edge AI Suites v${{ env.VERSION }}" \
             --notes "$notes" v${{ env.VERSION }} assets/*.zip

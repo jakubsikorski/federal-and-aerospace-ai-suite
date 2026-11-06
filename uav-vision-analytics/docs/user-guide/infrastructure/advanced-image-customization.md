@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # Advanced Image Customization (Using Image Composer Tool)
 
-The [Image Composer Tool (ICT)](https://github.com/open-edge-platform/image-composer-tool/tree/main)
+The [Image Composer Tool (ICT)](https://docs.openedgeplatform.intel.com/dev/platform-software/image-composer-tool/index.html)
 is a command-line tool for building custom Linux images from pre-built packages.
 To get a bootable RAW or ISO image, you define the target OS, packages, kernel, and disk layout.
 ICT supports multiple distributions including Ubuntu, Azure Linux, and Red Hat compatible
@@ -21,7 +21,7 @@ This article will show you how to:
 - [Build OS image using default template](#build-os-image-using-default-template)
 - [Package the image into artifacts](#package-the-image-into-artifacts)
 - [Package curation and template customization](#package-curation-and-template-customization)
-- [Troubleshoot the process](#troubleshoot)
+- [Troubleshooting](#troubleshooting)
 
 ## Build OS image using default template
 
@@ -251,7 +251,7 @@ cp "$TEMPLATE" \
    "$(dirname "$TEMPLATE")/my-template.yml"
 ```
 
-Validate and build this variant using the same commands as the default template (see [Validate the template](#validate-the-template) and [Build the image](#build-the-image) above), substituting `my-template.yml` for `$TEMPLATE`. See [Troubleshoot](#troubleshoot) below if you run into issues.
+Validate and build this variant using the same commands as the default template (see [Validate the template](#validate-the-template) and [Build the image](#build-the-image) above), substituting `my-template.yml` for `$TEMPLATE`. See [Troubleshooting](#troubleshooting) below if you run into issues.
 
 Expected output artifact type:
 
@@ -268,7 +268,7 @@ Follow these rules for reliable curation:
 
 If rollback is needed, restore backup files produced by the skill for each modified target file and re-run validation.
 
-## Troubleshoot
+## Troubleshooting
 
 ### Package not found or conflicting versions
 

@@ -412,7 +412,7 @@ services:
         condition: service_healthy
 
   metrics-manager:
-    image: intel/metrics-manager:2026.1.0
+    image: intel/metrics-manager:2026.3.0-rc1
     container_name: metrics-manager
     profiles: ["observability"]
     restart: unless-stopped

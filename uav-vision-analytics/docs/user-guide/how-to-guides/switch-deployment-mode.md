@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: (C) 2026 Intel Corporation
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Switching Between pymavlink and UAV Mission Compute SDK Deployment Modes
+# Switch Between Pymavlink and UAV Mission Compute SDK Deployment Modes
 
 UAV Vision Analytics supports two independent deployment modes. This tutorial
 explains the architecture difference, how to switch between them cleanly, and
@@ -11,7 +11,7 @@ the `HOST_IP` binding requirement that trips up first-time UAVSDK mode setup.
 
 ## The two modes
 
-| | Standalone (pymavlink) | UAV Mission Compute SDK |
+| | Standalone (Pymavlink) | UAV Mission Compute SDK |
 | --- | --- | --- |
 | Compose file | `docker-compose-pymavlink.yml` | `docker-compose-uavsdk.yml` |
 | `make` targets | `make pymav-up` / `make pymav-down` | `make uavsdk-up` / `make uavsdk-down` |

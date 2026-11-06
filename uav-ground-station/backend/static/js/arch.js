@@ -61,7 +61,7 @@
       image: "eclipse-mosquitto:2.0.22", apis: ["MQTT uav/caption/<camera>"] },
     "uav-metrics": { p: "oep", x: 36, y: 498, w: 250, h: 62, icon: "gauge", t: "Metrics Manager", s: ["UAV board CPU · GPU · NPU"],
       kind: "Telemetry service", role: "Companion-board utilization shown in the \u201cUAV Companion Board Utilization\u201d chart.",
-      image: "intel/metrics-manager:2026.2.0", apis: ["GET /metrics/stream (SSE), via nginx /metrics/"] },
+      image: "intel/metrics-manager:2026.3.0-rc1", apis: ["GET /metrics/stream (SSE), via nginx /metrics/"] },
     nginx: { p: "oss", x: 318, y: 146, w: 100, h: 420, icon: "shield", t: "nginx", s: ["gateway", "", ":443 HTTPS", " / → DLSPS", " /metrics/", "", ":8555 RTSP", "", ":1883 MQTT"],
       kind: "TLS gateway (UAV host)", role: "The only entry point into the UAV host: HTTPS for the pipeline REST API and metrics; TCP passthrough for RTSP and MQTT.",
       image: "nginx:1.27-alpine", apis: [":443 / → Pipeline Server REST", ":443 /metrics/ → Metrics Manager", ":8555 → RTSP", ":1883 → MQTT"] },
@@ -80,7 +80,7 @@
       image: "bluenviron/mediamtx:1.21.2", apis: ["RTSP pull from UAV :8555", "WHEP out :8889", "REST /v3 — paths configured by viz-backend"] },
     "gs-metrics": { p: "oep", x: 636, y: 440, w: 140, h: 80, icon: "gauge", t: "Metrics Mgr", s: ["this machine", "CPU · GPU · NPU"],
       kind: "Telemetry service", role: "Ground-station utilization shown in the \u201cUAV Ground Station Utilization\u201d chart.",
-      image: "intel/metrics-manager:2026.2.0", apis: ["GET /metrics/stream (SSE)"] },
+      image: "intel/metrics-manager:2026.3.0-rc1", apis: ["GET /metrics/stream (SSE)"] },
 
     pm: { p: "oep", vss: true, x: 840, y: 52, w: 324, h: 96, icon: "server", t: "Pipeline Manager", tag: ":3000",
       s: ["VSS orchestrator API"], ep: ["POST /search/query", "POST·PATCH·DELETE /streams"],

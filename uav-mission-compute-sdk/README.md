@@ -16,7 +16,7 @@ Multi-camera UAV simulation with Intel Edge AI — PX4 + Gazebo + OpenVINO visio
 ## Where to Start
 
 | I want to… | Go here |
-|---|---|
+| --- | --- |
 | Run the demo end-to-end | [Quick Start](#quick-start) below |
 | Understand the full architecture | [docs/user-guide/how-it-works.md](docs/user-guide/how-it-works.md) |
 | Configure cameras, switch USB/sim | [docs/user-guide/camera-modes.md](docs/user-guide/camera-modes.md) |
@@ -107,7 +107,7 @@ flowchart LR
 ## Camera Modes
 
 | Mode | Command | PX4 | Cameras |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Simulated (default) | `make up-sim-camera` | Gazebo SITL | 3 virtual cameras (nadir, forward, rear) |
 | Real USB camera | `make up-usb-camera` | SIH (no Gazebo) | 1 USB/V4L2 device |
 | Intel RealSense | `make up-realsense-camera` | SIH (no Gazebo) | RealSense D400 series — IR + depth (beyond visual spectrum) |
@@ -131,7 +131,7 @@ make logs                  # Tail core infra logs
 
 ## Structure
 
-```
+```text
 Makefile                     Shortcuts for common dev workflows
 infra/                       Infrastructure definitions
   px4-sim/                   PX4 SITL + Gazebo image; also used for remote FC deploy
@@ -158,12 +158,12 @@ docker-compose.ethernet.yml  Override for remote PX4 FC over Ethernet
 ## Key Ports
 
 | Service | URL | Purpose |
-|---|---|---|
-| REST API | http://localhost:8080 | UAV commands (arm, takeoff, land, goto) |
-| RTSP Streams | rtsp://localhost:8554/uav-1/{cam} | Raw + annotated video |
-| MQTT broker | localhost:1884 | Telemetry + detection events |
-| Grafana | http://localhost:3000 | Flight telemetry + platform health dashboards |
-| InfluxDB | http://localhost:8086 | Time-series data UI |
+| --- | --- | --- |
+| REST API | `http://localhost:8080` | UAV commands (arm, takeoff, land, goto) |
+| RTSP Streams | `rtsp://localhost:8554/uav-1/{cam}` | Raw + annotated video |
+| MQTT broker | `localhost:1884` | Telemetry + detection events |
+| Grafana | `http://localhost:3000` | Flight telemetry + platform health dashboards |
+| InfluxDB | `http://localhost:8086` | Time-series data UI |
 
 ## Disabling Observability (Save ~300 MB RAM)
 
@@ -181,6 +181,7 @@ make up-sim-camera         # includes Grafana + InfluxDB
 ```
 
 Or stop observability on an already-running stack:
+
 ```bash
 docker compose stop grafana influxdb topic-extractor metrics-manager
 ```
@@ -191,10 +192,10 @@ docker compose stop grafana influxdb topic-extractor metrics-manager
 
 **Notice for FFmpeg:**
 
-FFmpeg is an open source project licensed under LGPL and GPL. See https://www.ffmpeg.org/legal.html. You are solely responsible for determining if your use of FFmpeg requires any additional licenses. Intel is not responsible for obtaining any such licenses, nor liable for any licensing fees due, in connection with your use of FFmpeg.
+FFmpeg is an open source project licensed under LGPL and GPL. See <https://www.ffmpeg.org/legal.html>. You are solely responsible for determining if your use of FFmpeg requires any additional licenses. Intel is not responsible for obtaining any such licenses, nor liable for any licensing fees due, in connection with your use of FFmpeg.
 
 **Notice for GStreamer:**
 
-GStreamer is an open source framework licensed under LGPL. See https://gstreamer.freedesktop.org/documentation/frequently-asked-questions/licensing.html. You are solely responsible for determining if your use of GStreamer requires any additional licenses. Intel is not responsible for obtaining any such licenses, nor liable for any licensing fees due, in connection with your use of GStreamer.
+GStreamer is an open source framework licensed under LGPL. See <https://gstreamer.freedesktop.org/documentation/frequently-asked-questions/licensing.html>. You are solely responsible for determining if your use of GStreamer requires any additional licenses. Intel is not responsible for obtaining any such licenses, nor liable for any licensing fees due, in connection with your use of GStreamer.
 
 Intel is committed to respecting human rights and avoiding complicity in human rights abuses. See Intel's [Global Human Rights Principles](https://www.intel.com/content/www/us/en/policy/policy-human-rights.html). Intel's products and software are intended only to be used in applications that do not cause or contribute to a violation of an internationally recognized human right.

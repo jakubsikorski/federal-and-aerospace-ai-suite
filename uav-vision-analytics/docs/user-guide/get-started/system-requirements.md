@@ -84,6 +84,7 @@ The target system is the Intel edge node on which the provisioned OS and workloa
 - `ffmpeg` (for RTSP stream playback and recording)
 - `python3.12-venv` (for creating a Python virtual environment)
 
+> [!NOTE]
 > `python3.12-venv` is required by `make model` to create a Python virtual environment.
 > `ffmpeg` provides `ffplay` for viewing the RTSP output stream and `ffmpeg` for recording.
 

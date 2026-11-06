@@ -10,7 +10,7 @@
   - **Two camera input modes**: simulated 3-camera Gazebo profile and real V4L2 USB profile with Docker Compose profile-based mutual exclusion.
   - **RTSP-first video pipeline** via MediaMTX with H.264 streams for raw and processed feeds.
   - **Companion telemetry and control bridge** exposing MAVLink-to-MQTT telemetry plus REST command APIs.
-  - **Intel GPU AI inference pipeline** using OpenVINO + DL Streamer (YOLOv2-tiny), with detections published to MQTT topics.
+  - **Intel GPU AI inference pipeline** using OpenVINO™ + DL Streamer (YOLOv2-tiny), with detections published to MQTT topics.
   - **Observability stack included by default** (InfluxDB + Grafana + telemetry extractors), with lean startup targets available for reduced memory usage.
   - **Remote PX4 over Ethernet evaluation workflow** is available for testing companion compute with a separate flight-controller host.
   - **Benchmarking workflows** for passive telemetry, bridge stress sweep, and client scaling sweep, including optional HTML reports.
