@@ -183,7 +183,7 @@ make -k test-live   # running application: test-history, test-crops-live
 - `test-live` needs `make up` or `make demo-up` first; `test-history` expects the demo cameras.
 - Each test target prints one `PASS` or `FAIL` line. Its full output, including the
   failure-path logs the checks provoke on purpose, is shown only when it fails;
-  `TEST_VERBOSE=1` streams it while the target runs, then prints the result line.
+  `TEST_VERBOSE=1` always shows it.
 - `-k` runs every check even after one fails; Make still exits non-zero.
 - `COVERAGE_OUTPUT=<dir>` writes `coverage.xml` for CI reporting, including when the
   coverage gate fails.

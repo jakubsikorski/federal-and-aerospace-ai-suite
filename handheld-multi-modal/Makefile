@@ -39,8 +39,7 @@ ANNOTATED_IDS := $(patsubst cam%,annotated%,$(CAMERA_IDS))
   pipelines-restart down clean clean-demo clean-history clean-all \
   demo-stop demo-down demo-status demo-pipelines-restart \
   bundle bundle-load preflight licenses setup tls asset-permissions model-downloader-up \
-  check test test-ui test-assets test-history test-image test-coverage test-crops \
-  test-crops-live test-all test-live
+  check
 
 help:
 	@echo 'Handheld operator application'

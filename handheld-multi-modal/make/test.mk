@@ -1,24 +1,28 @@
 # SPDX-FileCopyrightText: (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-# Test targets, included from ../Makefile (uses its SHELL, .ONESHELL and COMPOSE).
-#
-# Every test runs in a container, so the host needs only Docker and Make.
-#   make test-all    offline suite; no started application, models or network
+# Test targets, included from ../Makefile (uses its SHELL and COMPOSE).
+# Every test runs in a container; the host needs only Docker and Make.
+#   make test-all    offline: no started application, models or network
 #   make test-live   needs the started application (make up or make demo-up)
 
-# --- Settings ----------------------------------------------------------------
-
+# TEST_VERBOSE=1 shows every test's output, not only that of failed tests.
+export TEST_VERBOSE ?=
 COVERAGE_MIN ?= 75
 COVERAGE_OUTPUT ?=
+FUZZ_SEED ?= 504
+FUZZ_MUTATIONS ?= 32
 # Image for `make test` and `make test-fuzz`; the deployed Backend by default.
 TEST_IMAGE ?= handheld/backend:dev
 
-# Built from the Backend Dockerfile's `test` stage: Python dependencies,
-# coverage, Make, headless Firefox ESR and a pinned geckodriver.
+# Backend Dockerfile `test` stage: dependencies, coverage, Firefox, geckodriver.
 OFFLINE_IMAGE := handheld/backend:test
-# The same DLSPS image the application runs, read from the Compose file.
+# The DLSPS image the application runs, read from the Compose file.
 DLSPS_IMAGE := $(shell awk '/^  dlsps:/{f=1} f&&/image:/{print $$2; exit}' compose/handheld-multi-modal.yaml)
+
+# Prints one PASS/FAIL line per target, then the output if the test failed or
+# TEST_VERBOSE=1; see make/run-test.sh.
+RUN_TEST = bash make/run-test.sh $@
 
 # Non-root, no network, read-only root file system, no capabilities.
 SANDBOX := docker run --rm \
@@ -30,68 +34,23 @@ SANDBOX := docker run --rm \
   --security-opt no-new-privileges \
   -e PYTHONDONTWRITEBYTECODE=1
 
-# --- Result lines --------------------------------------------------------------
-# `run_test <label> <command...>` prints one line such as
-#   test-coverage    PASS  25s  118 checks, line coverage 92% (minimum 75%)
-# The command's output, including the failure-path logs the checks provoke on
-# purpose, is printed only when it fails. TEST_VERBOSE=1 streams it as it runs
-# and still ends with the result line.
-define run_test
-run_test() {
-  local label=$$1; shift
-  local log rc=0 start=$$SECONDS verbose=$${TEST_VERBOSE:-}
-  log=$$(mktemp)
-  trap 'rm -f "$$log"' RETURN
-  if [[ $$verbose == 1 ]]; then
-    "$$@" 2>&1 | tee "$$log" || rc=$${PIPESTATUS[0]}
-  else
-    printf '%-16s ' "$$label"
-    "$$@" >"$$log" 2>&1 || rc=$$?
-  fi
-
-  # Summary from the output: checks passed, coverage total, fuzz findings.
-  local checks coverage findings summary=()
-  checks=$$(grep -cE '^(ok test_|PASS)' "$$log" || true)
-  coverage=$$(awk '/^TOTAL/ {print $$NF}' "$$log")
-  findings=$$(grep -oE '"findings": [0-9]+' "$$log" | tail -1 | grep -oE '[0-9]+$$' || true)
-  ((checks == 1)) && summary+=("1 check")
-  ((checks > 1)) && summary+=("$$checks checks")
-  [[ -n $$coverage ]] && summary+=("line coverage $$coverage (minimum $(COVERAGE_MIN)%)")
-  [[ -n $$findings ]] && summary+=("$$findings findings")
-
-  local elapsed=$$((SECONDS - start))s details='' item
-  for item in "$${summary[@]}"; do details+="$${details:+, }$$item"; done
-  [[ $$verbose == 1 ]] && printf '%-16s ' "$$label"
-  if ((rc == 0)); then
-    echo "PASS  $$elapsed$${details:+  $$details}"
-  elif [[ $$verbose == 1 ]]; then
-    echo "FAIL  $$elapsed (exit $$rc)"
-  else
-    echo "FAIL  $$elapsed (exit $$rc); output:"
-    cat "$$log"
-  fi
-  return $$rc
-}
-endef
-
-# --- Suites --------------------------------------------------------------------
+.PHONY: test-all test-live test-image test-coverage test-crops test-assets test-ui \
+  test test-fuzz test-history test-crops-live
 
 test-all: test-coverage test-crops test-assets test-ui
 
 test-live: test-history test-crops-live
 
-# --- Offline tests -----------------------------------------------------------
+# --- Offline ----------------------------------------------------------------
 
 test-image:
-	@$(run_test)
-	run_test test-image docker build -q --target test -t $(OFFLINE_IMAGE) backend
+	@$(RUN_TEST) docker build -q --target test -t $(OFFLINE_IMAGE) backend
 
-# Backend checks with a line coverage gate; COVERAGE_OUTPUT=<dir> adds coverage.xml,
+# Backend checks with a line coverage gate. COVERAGE_OUTPUT=<dir> adds coverage.xml,
 # written before the gate so it is kept when coverage is below the minimum.
 test-coverage: test-image
-	@$(run_test)
-	$(if $(COVERAGE_OUTPUT),mkdir -p "$(COVERAGE_OUTPUT)")
-	run_test test-coverage $(SANDBOX) \
+	@$(if $(COVERAGE_OUTPUT),mkdir -p "$(COVERAGE_OUTPUT)")
+	$(RUN_TEST) $(SANDBOX) \
 	  -e COVERAGE_FILE=/tmp/.coverage \
 	  -v "$(CURDIR):/srv:ro" \
 	  $(if $(COVERAGE_OUTPUT),-v "$(abspath $(COVERAGE_OUTPUT)):/coverage") \
@@ -103,8 +62,7 @@ test-coverage: test-image
 
 # Crop producer checks in the DLSPS image, without the application or an NPU.
 test-crops:
-	@$(run_test)
-	run_test test-crops $(SANDBOX) \
+	@$(RUN_TEST) $(SANDBOX) \
 	  -e CROP_TEST_TMPDIR=/tmp/crop-test \
 	  -v "$(CURDIR)/scripts/dlsps:/opt/handheld-crops:ro" \
 	  -w /opt/handheld-crops \
@@ -113,16 +71,14 @@ test-crops:
 
 # Asset preparation and Make dry-run checks.
 test-assets: test-image
-	@$(run_test)
-	run_test test-assets $(SANDBOX) \
+	@$(RUN_TEST) $(SANDBOX) \
 	  -v "$(CURDIR):/srv:ro" \
 	  -w /srv \
 	  $(OFFLINE_IMAGE) python3 scripts/test_demo_assets.py
 
-# Browser checks in headless Firefox; Firefox needs the larger /dev/shm.
+# Browser checks in headless Firefox, which needs the larger /dev/shm.
 test-ui: test-image
-	@$(run_test)
-	run_test test-ui $(SANDBOX) \
+	@$(RUN_TEST) $(SANDBOX) \
 	  --shm-size 1g \
 	  -v "$(CURDIR):/srv:ro" \
 	  -w /srv \
@@ -130,34 +86,28 @@ test-ui: test-image
 
 # Backend checks in the deployed Backend image, without coverage.
 test:
-	@$(run_test)
-	run_test test docker run --rm \
+	@$(RUN_TEST) docker run --rm \
 	  --network none \
 	  -v "$(CURDIR):/srv" \
 	  -w /srv/backend \
 	  $(TEST_IMAGE) python3 test_backend.py
 
 # REST API fuzzing (backend/FUZZING.md); not part of test-all.
-.PHONY: test-fuzz
 test-fuzz:
-	@$(run_test)
-	mkdir -p docs/application/evidence/SDL504-api-fuzz
-	run_test test-fuzz $(SANDBOX) \
+	@mkdir -p docs/application/evidence/SDL504-api-fuzz
+	$(RUN_TEST) $(SANDBOX) \
 	  --memory 1g --cpus 2 --pids-limit 128 \
 	  -v "$(CURDIR):/srv:ro" \
 	  -v "$(CURDIR)/docs/application/evidence/SDL504-api-fuzz:/evidence" \
 	  -w /srv/backend \
 	  $(TEST_IMAGE) python3 fuzz_api.py \
-	    --output /evidence \
-	    --seed "$(or $(FUZZ_SEED),504)" \
-	    --mutations "$(or $(FUZZ_MUTATIONS),32)"
+	    --output /evidence --seed "$(FUZZ_SEED)" --mutations "$(FUZZ_MUTATIONS)"
 
-# --- Tests against the started application ----------------------------------
+# --- Against the started application ----------------------------------------
 
 # History queries against the demo cameras.
 test-history:
-	@$(run_test)
-	run_test test-history docker run --rm \
+	@$(RUN_TEST) docker run --rm \
 	  --network host \
 	  --user "$$(id -u):$$(id -g)" \
 	  -e ASSET_ROOT=/srv \
@@ -168,6 +118,5 @@ test-history:
 
 # Real NPU and VA crop path inside the running DLSPS service.
 test-crops-live:
-	@$(run_test)
-	run_test test-crops-live $(COMPOSE) exec -T dlsps \
+	@$(RUN_TEST) $(COMPOSE) exec -T dlsps \
 	  python3 /opt/handheld-crops/test_crops.py --live --output /tmp/crop-live
