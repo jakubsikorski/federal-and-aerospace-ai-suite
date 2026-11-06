@@ -10,7 +10,9 @@
 export TEST_VERBOSE ?=
 COVERAGE_MIN ?= 75
 COVERAGE_OUTPUT ?=
-FUZZ_SEED ?= 504
+# Random unless set; the seed is printed and recorded in the evidence directory name.
+FUZZ_SEED ?= $(shell echo $$RANDOM)
+FUZZ_SEED := $(FUZZ_SEED)
 FUZZ_MUTATIONS ?= 32
 # Image for `make test` and `make test-fuzz`; the deployed Backend by default.
 TEST_IMAGE ?= handheld/backend:dev
@@ -95,7 +97,7 @@ test:
 # REST API fuzzing (backend/FUZZING.md); not part of test-all.
 test-fuzz:
 	@mkdir -p docs/application/evidence/SDL504-api-fuzz
-	$(RUN_TEST) $(SANDBOX) \
+	bash make/run-test.sh "$@ (seed $(FUZZ_SEED))" $(SANDBOX) \
 	  --memory 1g --cpus 2 --pids-limit 128 \
 	  -v "$(CURDIR):/srv:ro" \
 	  -v "$(CURDIR)/docs/application/evidence/SDL504-api-fuzz:/evidence" \

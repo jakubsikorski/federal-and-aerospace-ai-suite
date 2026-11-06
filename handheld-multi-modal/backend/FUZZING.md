@@ -16,7 +16,8 @@ Each run writes a timestamped directory under
 `docs/application/evidence/SDL504-api-fuzz/`. The summary lists every OpenAPI
 operation and its coverage; the JSONL stores exact request bytes (base64),
 parameters, response excerpts and case IDs. Findings make the command fail.
-Use the same seed and mutation count to reproduce the campaign; fixture-generated
+Each `make test-fuzz` run uses a random seed, printed on its result line and in the
+directory name. Pass the same `FUZZ_SEED` and mutation count to reproduce a campaign; fixture-generated
 rule IDs and timestamps vary. No dependencies are installed.
 
 The fuzzer uses the actual FastAPI handlers, temporary SQLite/crop/mission
