@@ -5,9 +5,10 @@
 /deterministic-threat-detection/              @rrajore @sugnanprabhu @ajagadi1 @xwu2intel
 /deterministic-threat-detection/docs/         @rrajore @sugnanprabhu @ajagadi1 @xwu2intel @open-edge-platform/open-edge-platform-docs-write
 /deterministic-threat-detection/README.md     @rrajore @sugnanprabhu @ajagadi1 @xwu2intel @open-edge-platform/open-edge-platform-docs-write
-/uav-vision-analytics                         @rrajore @sugnanprabhu @ajagadi1 @xwu2intel @pperycz
-/uav-vision-analytics/docs/                   @rrajore @sugnanprabhu @ajagadi1 @xwu2intel @pperycz @open-edge-platform/open-edge-platform-docs-write
-/uav-vision-analytics/README.md               @rrajore @sugnanprabhu @ajagadi1 @xwu2intel @pperycz @open-edge-platform/open-edge-platform-docs-write
+/uav-ground-station                           @rrajore @sugnanprabhu @ajagadi1 @xwu2intel @pperycz @guptagunjan @ajagadi1
+/uav-vision-analytics                         @rrajore @sugnanprabhu @ajagadi1 @xwu2intel @pperycz @guptagunjan @ajagadi1
+/uav-vision-analytics/docs/                   @rrajore @sugnanprabhu @ajagadi1 @xwu2intel @pperycz @guptagunjan @ajagadi1 @open-edge-platform/open-edge-platform-docs-write
+/uav-vision-analytics/README.md               @rrajore @sugnanprabhu @ajagadi1 @xwu2intel @pperycz @guptagunjan @ajagadi1 @open-edge-platform/open-edge-platform-docs-write
 /uav-mission-compute-sdk                      @k-mochi @nathsudi @rranjan3 @pperycz @abjyoti
 /uav-mission-compute-sdk/docs/                @k-mochi @nathsudi @rranjan3 @pperycz @abjyoti @open-edge-platform/open-edge-platform-docs-write
 /uav-mission-compute-sdk/README.md            @k-mochi @nathsudi @rranjan3 @pperycz @abjyoti @open-edge-platform/open-edge-platform-docs-write
