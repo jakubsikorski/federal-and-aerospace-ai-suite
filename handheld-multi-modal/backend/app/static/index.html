@@ -363,6 +363,44 @@ SPDX-License-Identifier: Apache-2.0
     border-left-color: var(--line); background: transparent; color: var(--muted); font-weight: 600; }
   #container-view button.service-card:hover { color: var(--text); border-color: var(--accent); }
   #workspace:not(.resources-expanded) #container-view { overflow: hidden; }
+  .view-switch { display: flex; gap: 2px; }
+  .view-switch button { font: inherit; min-height: 44px; padding: 6px 12px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
+  .view-switch button[aria-pressed="true"] { color: var(--text); border-color: var(--accent); background: var(--selected); }
+  #performance-view { display: none; grid-row: 2 / 4; min-height: 0; overflow: auto; padding: 8px 10px; }
+  #telemetry.performance-mode #performance-view { display: block; }
+  #telemetry.performance-mode #telemetry-grid, #telemetry.performance-mode #trend,
+  #telemetry.performance-mode #diagnostics, #telemetry.performance-mode #toggle-diagnostics { display: none; }
+  #kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 6px; }
+  .kpi { display: flex; flex-direction: column; justify-content: flex-start; min-width: 0; min-height: 44px; font: inherit; color: inherit; text-align: left; cursor: pointer; padding: 6px 8px; border: 1px solid var(--line); border-left: 3px solid var(--line); border-radius: 8px; background: var(--bg); }
+  .kpi span, .kpi strong, .kpi small { display: block; }
+  .kpi span { color: var(--muted); font-size: 12px; }
+  .kpi strong { font-size: 20px; font-variant-numeric: tabular-nums; line-height: 1.3; white-space: nowrap; }
+  .kpi small { font-size: 12px; line-height: 1.3; color: var(--muted); overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .kpi .kpi-status { font-weight: 600; }
+  .kpi[aria-pressed="true"] { border-color: var(--accent); background: var(--selected); }
+  #kpi-explain { margin: 6px 0 0; font-size: 13px; }
+  .kpi[data-status="on_target"] { border-left-color: var(--good); }
+  .kpi[data-status="on_target"] .kpi-status { color: var(--good); }
+  .kpi[data-status="missed"] { border-left-color: var(--bad); }
+  .kpi[data-status="missed"] .kpi-status { color: var(--bad); }
+  #camera-performance { width: 100%; margin-top: 8px; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+  #camera-performance th, #camera-performance td { padding: 8px 6px; text-align: left; border-bottom: 1px solid var(--line); }
+  #camera-performance th { color: var(--muted); font-weight: 600; }
+  #camera-performance tr[data-health="dropping"] td, #camera-performance tr[data-health="delayed"] td,
+  #camera-performance tr[data-health="offline"] td { color: var(--warn); }
+  #perf-note { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+  #latency-badge[data-health="dropping"], #latency-badge[data-health="delayed"] { color: var(--warn); }
+  #answer-timing { padding: 0 0 6px; font-size: 12px; color: var(--muted); }
+  #answer-timing summary { cursor: pointer; display: flex; align-items: center; min-height: 44px; }
+  #answer-timing [data-status="on_target"] { color: var(--good); }
+  #answer-timing [data-status="missed"] { color: var(--warn); }
+  .stage-bar { display: flex; height: 8px; margin: 4px 0; border-radius: 4px; overflow: hidden; background: var(--line); }
+  .stage-bar i { display: block; min-width: 2px; }
+  [data-stage="listening"] { --stage: #8aa8c8; } [data-stage="hear"] { --stage: var(--accent); }
+  [data-stage="think"] { --stage: #c7a6ff; } [data-stage="speak"] { --stage: var(--good); }
+  .stage-bar i { background: var(--stage); }
+  .stage-legend span { margin-right: 10px; white-space: nowrap; }
+  .stage-legend span::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 4px; border-radius: 2px; background: var(--stage); }
   #chart-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; }
   .legend-item { display: inline-flex; align-items: center; gap: 5px; }
   .swatch { width: 16px; border-top: 3px solid; }
@@ -819,7 +857,7 @@ SPDX-License-Identifier: Apache-2.0
     <div id="lower">
       <section id="telemetry" class="panel" aria-labelledby="telemetry-heading">
         <div class="panel-head">
-          <h2 id="telemetry-heading">Resources</h2>
+          <h2 id="telemetry-heading" class="view-switch"><button id="view-resources" type="button" aria-pressed="true">Resources</button><button id="view-performance" type="button" aria-pressed="false" aria-controls="performance-view">Performance</button></h2>
           <small id="telemetry-status">Waiting</small>
           <button id="toggle-diagnostics" class="quiet-button" aria-expanded="false" aria-controls="diagnostics">Details</button>
           <button id="expand-telemetry" class="quiet-button" aria-pressed="false" aria-label="Expand resource chart">Expand</button>
@@ -832,6 +870,15 @@ SPDX-License-Identifier: Apache-2.0
           <div id="chart-note"></div>
         </div>
         <div id="diagnostics" aria-label="Resource details" hidden></div>
+        <div id="performance-view" aria-label="Performance, last 5 minutes">
+          <div id="kpi-grid"></div>
+          <p id="kpi-explain" role="status" hidden></p>
+          <table id="camera-performance" hidden>
+            <thead><tr><th scope="col">Camera</th><th scope="col">Health</th><th scope="col">Frames/s</th><th scope="col">Skipped</th><th scope="col">Detect</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <p id="perf-note">Waiting for measurements…</p>
+        </div>
       </section>
     </div>
 
@@ -936,6 +983,7 @@ SPDX-License-Identifier: Apache-2.0
               <div id="assistant-answer" role="status">Ask about this application, your mission, or recorded objects. Try “What can you do?”</div>
               <div id="assistant-progress" role="status"></div>
               <div id="assistant-speech-line" role="status"></div>
+              <div id="answer-timing" role="status" hidden></div>
               <button id="replay-answer" class="quiet-button" type="button" hidden>Replay answer</button>
               <div id="answer-actions" aria-label="Follow-up actions"></div>
               <div id="assistant-scope"></div>
@@ -981,6 +1029,7 @@ const $ = (id) => document.getElementById(id);
 const state = {
   streams: [], selected: null, current: {}, recent: {}, alerts: [], incidents: [], announced: null,
   telemetry: null, history: new Map(), whep: null, events: null,
+  performance: null, telemetryView: "resources", kpiOpen: null, answerTiming: null, videoDelayText: null,
   whepSerial: 0, whepFailures: 0, whepLeaving: false,
   filter: {mode: "current", classLabel: "", hasImage: false},
   // History paging: page 0 is the live list; older pages are fetched snapshots.
@@ -1508,10 +1557,9 @@ async function detachWhep() {
   clearTimeout(previous.retryTimer);
   await releaseWhep(previous);
 }
-function stopLatency() { clearInterval(state.latencyTimer); state.latencyTimer = null; $("latency-badge").classList.remove("show"); }
+function stopLatency() { clearInterval(state.latencyTimer); state.latencyTimer = null; state.videoDelayText = null; renderVideoBadge(); }
 function startLatency(current) {
   stopLatency();
-  const badge = $("latency-badge");
   state.latencyTimer = setInterval(async () => {
     if (state.whep !== current || !current.pc?.getStats) return stopLatency();
     try {
@@ -1520,11 +1568,32 @@ function startLatency(current) {
         if (report.type === "inbound-rtp" && report.kind === "video" && report.jitterBufferEmittedCount) jitter = report.jitterBufferDelay / report.jitterBufferEmittedCount;
         if (report.type === "candidate-pair" && (report.nominated || report.state === "succeeded") && report.currentRoundTripTime) rtt = Math.max(rtt, report.currentRoundTripTime / 2);
       });
-      if (jitter == null && !rtt) return badge.classList.remove("show");
-      badge.textContent = "≈ " + Math.round((Number(jitter || 0) + rtt) * 1000) + " ms delay (receiver est.)";
-      badge.classList.add("show");
-    } catch { badge.classList.remove("show"); }
+      state.videoDelayText = jitter == null && !rtt ? null
+        : "≈ " + Math.round((Number(jitter || 0) + rtt) * 1000) + " ms delay (receiver est.)";
+    } catch { state.videoDelayText = null; }
+    renderVideoBadge();
   }, 1000);
+}
+const CAMERA_HEALTH = {smooth: "Smooth", starting: "Measuring", dropping: "Dropping frames", delayed: "Delayed",
+  offline: "Offline", no_data: "No frames"};
+// The selected camera's detection delay and frame rate, then the browser's video delay.
+function renderVideoBadge() {
+  const badge = $("latency-badge");
+  const camera = state.selected && state.selected !== "all" ? state.performance?.cameras?.[state.selected] : null;
+  const parts = [];
+  if (camera?.health === "starting") parts.push("Measuring camera…");
+  else if (camera && camera.health !== "no_data" && camera.health !== "offline") {
+    if (camera.health !== "smooth") parts.push(CAMERA_HEALTH[camera.health] || camera.health);
+    const delay = camera.detection_delay_seconds?.p50;
+    if (delay != null) parts.push("Detect " + perfSeconds(delay));
+    if (camera.processed_fps != null) parts.push(camera.processed_fps + (camera.source_fps ? "/" + camera.source_fps : "") + " fps");
+  }
+  if (state.videoDelayText) parts.push(state.videoDelayText);
+  badge.textContent = parts.join(" · ");
+  badge.dataset.health = camera?.health || "";
+  badge.title = [camera?.reason, camera ? "Detect: camera frame decoded to detection received (typical, last 30 s). Frames/s: processed/camera." : null,
+    state.videoDelayText ? "Video delay is estimated by this browser." : null].filter(Boolean).join("\n");
+  badge.classList.toggle("show", parts.length > 0);
 }
 
 function retryWhep(current, reason) {
@@ -2245,10 +2314,12 @@ function latencyLine(incident) {
   const chip = document.createElement("span");
   chip.className = "incident-latency";
   chip.textContent = format(Math.max(...detail.map(([, value]) => value)));
-  chip.title = "Seconds after the detector first saw this object\n"
+  chip.title = (latency.time_to_alert != null ? "Time to alert (camera frame to alert raised): " + perfSeconds(latency.time_to_alert) + "\n" : "")
+    + "Seconds after the detector first saw this object\n"
     + detail.map(([name, value]) => name + ": " + format(value)).join("\n")
     + "\nLive video has its own delay, shown on the video.";
-  chip.setAttribute("aria-label", "Alert latency " + chip.textContent);
+  chip.setAttribute("aria-label", "Alert latency " + chip.textContent
+    + (latency.time_to_alert != null ? ", time to alert " + perfSeconds(latency.time_to_alert) : ""));
   return chip;
 }
 
@@ -2527,6 +2598,8 @@ async function endVoice(send=true) {
   const turn=voice.turn;
   if(!turn || turn.ending) return;
   turn.ending=true;
+  const endedAt=performance.now();
+  let timing=null;
   cleanCapture(turn);
   if(!send) { turn.abort.abort(); voice.version++; }
   try {
@@ -2541,12 +2614,15 @@ async function endVoice(send=true) {
     }
     $('voice-talk').textContent='Transcribing…'; $('voice-talk').disabled=true;
     voiceStatus('Transcribing…');
+    const speechEnd=turn.speechEnd ?? endedAt;
+    timing=newAnswerTiming(true,{speechEnd,start:speechEnd,sent:performance.now()});
     const response=await fetch('/api/voice/transcribe'+(state.audioOn?'?speak=true':''),{method:'POST',headers:{'content-type':'audio/wav'},
       body:pcmWav(turn.parts,turn.rate),signal:AbortSignal.any([turn.abort.signal,AbortSignal.timeout(70000)])});
     const body=await response.json();
     if(turn.version!==voice.version) return;
     if(!response.ok || body.error) throw new Error(body.error?.message || body.detail || 'Transcription failed.');
     if(!body.data.text.trim()) { voiceStatus('No words recognized. Try again or type your question.'); return; }
+    timing.heard=performance.now(); timing.ready=true;
     $('ask-text').value=body.data.text;
     updateQuestionFilters();
     voiceStatus('Recognized. Getting your answer…');
@@ -2555,7 +2631,10 @@ async function endVoice(send=true) {
       timezone:Intl.DateTimeFormat().resolvedOptions().timeZone});
     if(turn.version===voice.version && !$('assistant-editor-error').textContent) voiceStatus('Answer received. Ready to talk again.');
   } catch(error) {
-    if(turn.version===voice.version && error.name!=='AbortError') voiceStatus(error.message+' You can still type your question.');
+    if(turn.version===voice.version && error.name!=='AbortError') {
+      voiceStatus(error.message+' You can still type your question.');
+      if(timing && !timing.ready) finishAnswerTiming(timing,'failed');
+    }
   } finally {
     if(voice.turn===turn) voice.turn=null;
     if(!voice.turn) { $('voice-talk').textContent='Talk'; $('voice-talk').disabled=false; $('voice-cancel').hidden=!state.assistantBusy; $('ask-submit').disabled=state.assistantBusy; $('ask-text').disabled=state.assistantBusy; $('search-fields').inert=state.assistantBusy; }
@@ -2612,9 +2691,11 @@ async function beginVoice() {
       const data=event.inputBuffer.getChannelData(0), dt=data.length/turn.rate;
       turn.parts.push(new Float32Array(data)); seconds+=dt;
       const loud=Math.sqrt(data.reduce((sum,v)=>sum+v*v,0)/data.length)>0.01;
-      if(loud) { turn.heard=true; quiet=0; } else quiet+=dt;
+      if(loud) { turn.heard=true; quiet=0; turn.lastLoud=performance.now(); } else quiet+=dt;
       voiceStatus('Listening… '+Math.max(0,Math.ceil(15-seconds))+' s left · auto-send after silence');
-      if(seconds>=15 || (turn.heard && quiet>=1.5)) endVoice();
+      // Auto-send: the operator stopped speaking at the last loud buffer, not now.
+      if(turn.heard && quiet>=1.5) { turn.speechEnd=turn.lastLoud; endVoice(); }
+      else if(seconds>=15) endVoice();
     };
     $('voice-talk').setAttribute('aria-pressed','true'); $('voice-talk').textContent='Send question';
     voiceStatus('Listening… tap Send question when finished');
@@ -2719,6 +2800,85 @@ function reportPlayback(id, event) {
   postApi("/api/speech/" + encodeURIComponent(id) + "/playback", {event}).catch(() => {});
 }
 
+// Spoken-answer timing on this browser's monotonic clock: from the end of the
+// operator's speech to the first sound of the answer (not the "Checking." cue).
+function newAnswerTiming(voiceTurn, fields = {}) {
+  clearTimeout(state.answerTiming?.timer);
+  state.answerTiming = {voice: voiceTurn, audio: state.audioOn, ...fields};
+  renderAnswerTiming();
+  return state.answerTiming;
+}
+function noteAnswerPlayback(item, event) {
+  const timing = state.answerTiming;
+  if (!timing?.voice || timing.done || item.kind !== "answer") return;
+  if (event === "blocked") return finishAnswerTiming(timing, "blocked");
+  if (event === "playing" && item.ack) { timing.ack ??= performance.now(); return; }
+  // Answer speech is made from answer text; audio before it is not this answer.
+  if (item.ack || timing.firstText == null) return;
+  if (event === "playing") timing.playing = performance.now();
+  finishAnswerTiming(timing, event === "playing" ? "spoken" : "failed");
+}
+function finishAnswerTiming(timing, outcome) {
+  if (timing.done) return;
+  timing.done = true; timing.outcome = outcome;
+  clearTimeout(timing.timer);
+  if (timing.voice && timing.audio && ["spoken", "blocked", "failed"].includes(outcome)) {
+    const mark = {kind: "voice_turn", outcome};
+    if (outcome === "spoken") {
+      const ms = (value) => Math.min(120000, Math.max(0, Math.round(value)));
+      let previous = timing.speechEnd;
+      const at = (key) => (previous = Math.max(previous, timing[key] ?? previous));
+      const sent = at("sent"), heard = at("heard"), first = at("firstText"), playing = at("playing");
+      timing.stages = {listening: ms(sent - timing.speechEnd), hear: ms(heard - sent),
+        think: ms(first - heard), speak: ms(playing - first)};
+      timing.total = ms(playing - timing.speechEnd);
+      Object.assign(mark, {spoken_answer_ms: timing.total, stages: timing.stages});
+      if (timing.ack != null) mark.ack_ms = ms(timing.ack - timing.speechEnd);
+    }
+    postApi("/api/performance/marks", mark).catch(() => {});
+  }
+  renderAnswerTiming();
+}
+// After the answer text: wait for its first sound, or record why it was not timed.
+function settleAnswerTiming(timing, received, aborted) {
+  if (timing.done) return;
+  if (aborted) return finishAnswerTiming(timing, "cancelled");
+  if (!received) return finishAnswerTiming(timing, "failed");
+  if (!timing.voice) return finishAnswerTiming(timing, "answered");
+  if (!timing.audio || !state.audioOn) return finishAnswerTiming(timing, "audio_off");
+  timing.timer = setTimeout(() => finishAnswerTiming(timing, state.audioOn ? "failed" : "audio_off"), 30000);
+}
+function renderAnswerTiming() {
+  const box = $("answer-timing"), timing = state.answerTiming;
+  const first = timing?.firstText != null ? perfSeconds((timing.firstText - timing.start) / 1000) : null;
+  let content = null;
+  if (timing?.outcome === "spoken") {
+    const target = state.performance?.kpis?.spoken_answer?.target ?? 3, seconds = timing.total / 1000;
+    const details = document.createElement("details"), summary = document.createElement("summary");
+    summary.dataset.status = seconds < target ? "on_target" : "missed";
+    summary.textContent = `Answered aloud in ${perfSeconds(seconds)} · ${seconds < target ? "✓ within" : "! over"} ${perfSeconds(target)} target`;
+    const bar = document.createElement("div"), legend = document.createElement("div");
+    bar.className = "stage-bar"; legend.className = "stage-legend";
+    for (const [name, value] of Object.entries(timing.stages)) {
+      const part = document.createElement("i"), label = document.createElement("span");
+      part.dataset.stage = label.dataset.stage = name; part.style.flexGrow = String(value);
+      label.textContent = titleCase(name) + " " + perfSeconds(value / 1000);
+      bar.append(part); legend.append(label);
+    }
+    bar.setAttribute("role", "img"); bar.setAttribute("aria-label", "Stages: " + legend.textContent);
+    const note = document.createElement("small");
+    note.textContent = "From the end of your speech to the first sound of the answer."
+      + (timing.ack != null ? ` Acknowledged after ${perfSeconds((timing.ack - timing.speechEnd) / 1000)}.` : "");
+    details.append(summary, bar, legend, note);
+    content = details;
+  } else if (timing?.voice && timing.done && timing.outcome !== "cancelled") {
+    content = "Spoken answer not timed · " + ({blocked: "browser blocked audio", audio_off: "Audio is off"}[timing.outcome]
+      || "no spoken answer was heard") + (first ? " · first words in " + first : "");
+  } else if (timing && !timing.voice && first) content = "First words in " + first;
+  box.replaceChildren(...(content ? [content] : []));
+  box.hidden = !content;
+}
+
 function playChime() {
   if (!state.audioOn) return;
   try {
@@ -2744,12 +2904,14 @@ function startPlayback(current, preloaded = null) {
     if (!mine() || state.playback.status === "failed") return;
     state.playback = {id, status: "failed", error};
     reportPlayback(id, "error");
+    noteAnswerPlayback(current, "failed");
     renderSpeech();
   };
   audio.onplaying = () => {
     if (!mine() || state.playback.status === "playing") return;
     state.playback = {id, status: "playing"};
     reportPlayback(id, "started");
+    noteAnswerPlayback(current, "playing");
     renderSpeech();
   };
   audio.onended = () => {
@@ -2770,6 +2932,7 @@ function startPlayback(current, preloaded = null) {
   audio.play().catch((error) => {
     if (error?.name === "NotAllowedError") {
       // Autoplay was revoked: the operator has to tap Audio on again.
+      noteAnswerPlayback(current, "blocked");
       state.audioOn = false;
       renderAudioToggle();
       fail("browser blocked audio; tap Audio on");
@@ -3859,6 +4022,103 @@ function renderTelemetryState() {
     ...metrics.filter((m) => metricState(m) !== "live").map((m) => m.label + ": " + metricState(m))].filter(Boolean).join(" · ");
 }
 
+function perfSeconds(seconds) {
+  if (seconds == null) return "—";
+  return seconds < 1 ? Math.round(seconds * 1000) + " ms" : seconds.toFixed(1) + " s";
+}
+// Text, not colour alone, carries the status; too few samples is never a pass.
+const KPI_STATUS = {on_target: "✓ Meets target", missed: "! Misses target", insufficient: "Not enough data yet",
+  no_data: "No data yet", info: "Information only"};
+
+function setTelemetryView(view) {
+  state.telemetryView = view;
+  $("telemetry").classList.toggle("performance-mode", view === "performance");
+  $("view-resources").setAttribute("aria-pressed", String(view === "resources"));
+  $("view-performance").setAttribute("aria-pressed", String(view === "performance"));
+  if (view === "performance") renderPerformance();
+  else if (state.telemetry) renderTelemetry();
+}
+$("view-resources").onclick = () => setTelemetryView("resources");
+$("view-performance").onclick = () => setTelemetryView("performance");
+
+function renderPerformance() {
+  renderVideoBadge();
+  if (state.telemetryView !== "performance") return;
+  const snapshot = state.performance, kpis = snapshot?.kpis;
+  if (!kpis) {
+    $("kpi-grid").replaceChildren(); $("camera-performance").hidden = true; $("kpi-explain").hidden = true;
+    $("perf-note").textContent = "Waiting for measurements…";
+    return;
+  }
+  const {time_to_alert: alert, spoken_answer: voice, cameras, answer_speed: speed, memory} = kpis;
+  const typical = (summary, noun) => `95% of ${summary.count} ${noun} · typical ${perfSeconds(summary.p50)}`;
+  const stages = Object.entries(voice.stages || {}).filter(([, value]) => value != null)
+    .map(([name, value]) => titleCase(name) + " " + perfSeconds(value)).join(", ");
+  const worst = Object.entries(snapshot.cameras || {}).find(([, camera]) => camera.reason && camera.health !== "starting");
+  const tiles = [
+    {id: "alert", label: "Time to alert", status: alert.status, value: perfSeconds(alert.p95),
+      detail: alert.count ? typical(alert, "alerts")
+        : "No alerts yet" + (alert.detection_delay_p50 != null ? " · detect " + perfSeconds(alert.detection_delay_p50) : ""),
+      target: "Target under " + perfSeconds(alert.target),
+      title: "Camera frame decoded to alert raised, for alerts raised when the object first appears."},
+    {id: "voice", label: "Spoken answer", status: voice.status, value: perfSeconds(voice.p95),
+      detail: voice.count ? typical(voice, "voice questions") : "Ask by voice with Audio on",
+      target: "Target under " + perfSeconds(voice.target) + (voice.untimed ? ` · ${voice.untimed} not timed` : ""),
+      title: "End of your spoken question to the first sound of the answer."
+        + (stages ? "\nTypical stages: " + stages : "")
+        + (voice.acknowledged_p50 != null ? "\nAcknowledged after " + perfSeconds(voice.acknowledged_p50) : "")},
+    {id: "cameras", label: "Smooth cameras", status: cameras.status,
+      value: cameras.running ? `${cameras.smooth} of ${cameras.running}` : "—",
+      detail: worst ? cameraLabel(worst[0]) + ": " + worst[1].reason
+        : cameras.running ? "No dropped frames or delay" : "No camera is sending frames",
+      target: `Target ${cameras.target} or more smooth`,
+      title: "Smooth: no more than 10% of frames skipped, keeping up with the camera, detection delay on target."},
+    {id: "speed", label: "Answer speed", status: speed.status,
+      value: speed.p50 == null ? "—" : "~" + speed.p50 + " words/s",
+      detail: speed.first_words_p50 != null ? "First words typical " + perfSeconds(speed.first_words_p50) : "Ask a question",
+      target: speed.tokens_per_second == null ? "Tokens/s: needs Chat Q&A update"
+        : `${speed.tokens_per_second} tokens/s · target ${speed.token_target}`,
+      title: "Approximate: streamed words per second, not model tokens."},
+    {id: "memory", label: "Peak memory", status: memory.status,
+      value: memory.peak == null ? "—" : Math.round(memory.peak) + "%",
+      detail: memory.last == null ? "Waiting for readings" : "Now " + Math.round(memory.last) + "% of host RAM",
+      target: "Target under " + memory.target + "%", title: "Highest host memory use in the window."},
+  ];
+  $("kpi-grid").replaceChildren(...tiles.map((tile) => {
+    const box = document.createElement("button");
+    box.type = "button"; box.className = "kpi"; box.dataset.kpi = tile.id; box.dataset.status = tile.status;
+    box.setAttribute("aria-pressed", String(state.kpiOpen === tile.id)); box.setAttribute("aria-controls", "kpi-explain");
+    box.onclick = () => { state.kpiOpen = state.kpiOpen === tile.id ? null : tile.id; renderPerformance(); };
+    const status = KPI_STATUS[tile.status] || tile.status;
+    for (const [tag, text, cls] of [["span", tile.label], ["strong", tile.value], ["small", tile.detail],
+      ["small", tile.target], ["small", status, "kpi-status"]]) {
+      const node = document.createElement(tag); node.textContent = text;
+      if (cls) node.className = cls;
+      box.append(node);
+    }
+    return box;
+  }));
+  const rows = Object.entries(snapshot.cameras || {}).map(([streamId, camera]) => {
+    const row = document.createElement("tr"); row.dataset.health = camera.health; row.title = camera.reason || "";
+    const fps = camera.processed_fps == null ? "—" : camera.processed_fps + (camera.source_fps ? " / " + camera.source_fps : "");
+    for (const text of [cameraLabel(streamId), CAMERA_HEALTH[camera.health] || camera.health, fps,
+      camera.drop_percent == null ? "—" : camera.drop_percent + "%", perfSeconds(camera.detection_delay_seconds?.p50)]) {
+      const cell = document.createElement("td"); cell.textContent = text; row.append(cell);
+    }
+    return row;
+  });
+  const open = tiles.find((tile) => tile.id === state.kpiOpen);
+  $("kpi-explain").hidden = !open;
+  $("kpi-explain").textContent = open ? open.label + ": " + open.title.replaceAll("\n", " · ") : "";
+  $("camera-performance").tBodies[0].replaceChildren(...rows);
+  $("camera-performance").hidden = !rows.length;
+  $("perf-note").textContent = `Last ${Math.round(snapshot.window_seconds / 60)} min on this device · `
+    + "headline is the 95th percentile (95% of samples at or below) · Detect and frames/s cover the last 30 s.";
+}
+function cameraLabel(streamId) {
+  return state.streams.find((stream) => stream.stream_id === streamId)?.display_name || streamId;
+}
+
 function candidateState(candidate) {
   if (!candidate) return "No stored image";
   const labels = {
@@ -4393,6 +4653,15 @@ async function submitAssistant(payload, label = null) {
   payload = {...payload, conversation_id: conversationId};
   delete payload.speak;
   if (state.audioOn && payload.text) payload.speak = true;
+  let timing = null;
+  if (payload.text && !payload.page_token) {
+    const pending = state.answerTiming;
+    timing = pending?.ready && !pending.asked ? pending : newAnswerTiming(false, {start: performance.now()});
+    timing.asked = true;
+  } else if (!payload.page_token && state.answerTiming) {
+    clearTimeout(state.answerTiming.timer); state.answerTiming = null; renderAnswerTiming();
+  }
+  const firstText = () => { if (timing && timing.firstText == null) { timing.firstText = performance.now(); renderAnswerTiming(); } };
   if (!payload.page_token) {
     archiveAssistantTurn();
     state.assistantContext = {text: label || payload.text || "Filtered search", payload: structuredClone(payload)};
@@ -4422,7 +4691,7 @@ async function submitAssistant(payload, label = null) {
   $("assistant-scope").textContent = "";
   $("assistant-warnings").textContent = "";
   $("assistant-answer").textContent = "";
-  let stage = "Sending question…", received = false, starting = false;
+  let stage = "Sending question…", received = false, starting = false, aborted = false;
   const started = Date.now();
   const progress = () => { if (requestVersion !== assistantRequestVersion) return; $("assistant-progress").textContent = `${stage} ${Math.floor((Date.now() - started) / 1000)}s`; };
   progress();
@@ -4440,6 +4709,7 @@ async function submitAssistant(payload, label = null) {
       const body = await response.json();
       if (body.error) throw new Error(body.error.message);
       if (requestVersion !== assistantRequestVersion) return;
+      firstText();
       renderAssistant(body.data); received = true;
     } else {
       const reader = response.body.getReader(), decoder = new TextDecoder();
@@ -4453,6 +4723,7 @@ async function submitAssistant(payload, label = null) {
           const event = JSON.parse(pending.slice(0, newline));
           pending = pending.slice(newline + 1);
           if (requestVersion !== assistantRequestVersion) continue;
+          if (event.delta || event.answer) firstText();
           if (event.delta) {
             $("assistant-panel").classList.remove("has-results");
             $("assistant-answer").textContent += event.delta;
@@ -4468,6 +4739,7 @@ async function submitAssistant(payload, label = null) {
     }
   } catch (error) {
     if (requestVersion !== assistantRequestVersion) return;
+    aborted = error.name === "AbortError";
     // Connection refused right after start: the model is usually still loading or downloading.
     starting = error.message.includes("not answering yet");
     if (!received && !$("assistant-answer").textContent.trim()) $("assistant-answer").textContent =
@@ -4484,6 +4756,7 @@ async function submitAssistant(payload, label = null) {
   } finally {
     clearInterval(timer);
     if (requestVersion !== assistantRequestVersion) return;
+    if (timing) settleAnswerTiming(timing, received, aborted);
     if (received && payload.text) $("ask-text").value = "";
     updateQuestionFilters();
     $("assistant-progress").textContent = "";
@@ -4727,6 +5000,11 @@ function connectEvents() {
     state.telemetry = JSON.parse(event.data);
     rememberTelemetry(state.telemetry);
     renderTelemetry();
+  });
+  events.addEventListener("performance", (event) => {
+    if (state.events !== events) return;
+    state.performance = JSON.parse(event.data);
+    renderPerformance();
   });
 }
 

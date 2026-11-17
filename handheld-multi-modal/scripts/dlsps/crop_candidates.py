@@ -107,6 +107,24 @@ class Settings:
         return settings
 
 
+# Written by frame_ingress.py; gvapython loads each module by path, so no import.
+INGRESS_KEY = "handheld_ingress"
+
+
+def ingress_timing(stamp, now_mono_ns):
+    """Frame arrival time, time spent in the pipeline and decoded frame count.
+
+    Both callbacks run in one DLSPS process, so the monotonic clock is shared.
+    A malformed stamp yields nothing rather than a misleading latency."""
+    wall, mono, sequence = stamp.get("wall"), stamp.get("mono_ns"), stamp.get("sequence")
+    if (not isinstance(wall, (int, float)) or isinstance(wall, bool) or not math.isfinite(wall)
+            or not isinstance(mono, int) or isinstance(mono, bool) or mono > now_mono_ns
+            or not isinstance(sequence, int) or isinstance(sequence, bool) or sequence < 1):
+        return {}
+    return {"ingress_at": wall, "pipeline_ms": round((now_mono_ns - mono) / 1e6, 2),
+            "frames_in": sequence}
+
+
 def crop_rect(box, width, height, padding=0.25, aspect_ratio=4 / 3):
     """Return integer xywh containing the visible ROI, plus boundary flags."""
     x, y, w, h = box
@@ -666,8 +684,21 @@ class CropCandidates:
                    "frame_sequence": self.frame_sequence, "observed_at": time.time()}
         found = False
         objects = []
+        messages = []
         for message in list(frame.messages()):
             data = json.loads(message)
+            stamp = data.get(INGRESS_KEY) if isinstance(data, dict) else None
+            if isinstance(stamp, dict):
+                # Consumed here: the publisher merges every frame message into one payload.
+                frame.remove_message(message)
+                context.update(ingress_timing(stamp, time.monotonic_ns()))
+            else:
+                messages.append((message, data))
+        info = frame.video_info()
+        fps_n, fps_d = getattr(info, "fps_n", 0), getattr(info, "fps_d", 0)
+        if isinstance(fps_n, int) and isinstance(fps_d, int) and fps_n > 0 and fps_d > 0:
+            context["source_fps"] = round(fps_n / fps_d, 3)
+        for message, data in messages:
             if isinstance(data, dict) and ("objects" in data or "resolution" in data):
                 objects.extend(data.get("objects") or [])
                 data["crop_context"] = context

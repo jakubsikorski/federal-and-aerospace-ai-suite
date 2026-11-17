@@ -40,6 +40,7 @@ alerted object that is on camera now. On a handheld, run the browser in full scr
   - [How Rules Match](#how-rules-match)
   - [Drawing a Zone](#drawing-a-zone)
 - [Resources](#resources)
+  - [Performance](#performance)
 - [Voice Questions and Spoken Answers](#voice-questions-and-spoken-answers)
   - [Listening](#listening)
   - [Spoken Answers](#spoken-answers)
@@ -364,6 +365,31 @@ vehicles move, because an object counts by where its feet or wheels touch the gr
    **+N more · Expand** to see all of them.
 3. **Expand** - show a larger chart.
 4. **Details** - show the raw readings.
+
+### Performance
+
+Tap **Performance** in the Resources heading to switch views. Tap **Resources** to switch
+back. Measurements cover the last 5 minutes.
+
+1. **Time to alert** - how quickly an alert is raised after an object first appears in the
+   camera image (95% of alerts are faster than the value shown).
+2. **Spoken answer** - from the end of your spoken question to the first sound of the answer.
+   Only voice questions asked with **Audio on** are counted.
+3. **Smooth cameras** - cameras that keep up with their frame rate without skipping frames or
+   detecting late. The table below the tiles shows frames per second, skipped frames, and
+   detection time for each camera.
+4. **Answer speed** - approximate words per second while the answer is written, and how soon
+   the first words appear.
+5. **Peak memory** - the highest host memory use.
+
+Each tile shows its target and **Meets target**, **Misses target**, or **No data yet**.
+Tap a tile to see what it measures and, for **Spoken answer**, the typical time of each stage.
+Tap it again to hide the explanation. Targets are set under `performance_targets` in `config/backend/backend.yaml`.
+
+The live video badge shows detection time and frames per second for the selected camera. After a
+spoken answer, a line under the assistant such as **Answered aloud in 2.4 s** shows the time
+to the first sound; open it to see the listening, hearing, thinking, and speaking stages. The alert latency chip
+tooltip starts with the time to alert.
 
 ## Voice Questions and Spoken Answers
 

@@ -153,7 +153,7 @@ def test_migrate_is_idempotent_and_sync_preserves_run_state():
 
 def _observation(stream_id, tracker_id, label="person", observed_at=1000.0, session="s1",
                  generation="g1", confidence=0.9, detection_rect=None, frame_width=None,
-                 frame_height=None, object_touches_frame=None):
+                 frame_height=None, object_touches_frame=None, extra_context=None):
     obj = {"id": tracker_id, "detection": {"label": label, "confidence": confidence}}
     if detection_rect is not None:
         obj["detection_rect"] = detection_rect
@@ -166,7 +166,7 @@ def _observation(stream_id, tracker_id, label="person", observed_at=1000.0, sess
     return json.dumps({"metadata": {
         "crop_context": {"stream_id": stream_id, "tracking_session_id": session,
                          "history_generation": generation, "observed_at": observed_at,
-                         "frame_sequence": 1},
+                         "frame_sequence": 1, **(extra_context or {})},
         "objects": [obj],
     }, "blob": ""}).encode()
 
@@ -3052,6 +3052,159 @@ def test_profile_validation_and_required_source_startup():
 
 
 
+# -- performance KPIs ------------------------------------------------
+def test_performance_frame_rates_drops_health_and_session_reset():
+    from app.performance import Performance
+
+    clock = [100.0]
+    perf = Performance({}, clock=lambda: clock[0], wall=lambda: 5000.0)
+
+    def frame(frames_in, frames_out, session="s1", **extra):
+        perf.frame("cam1", {"tracking_session_id": session, "frame_sequence": frames_out,
+                            "frames_in": frames_in, "source_fps": 30.0, "pipeline_ms": 40.0,
+                            "ingress_at": 4999.9, **extra})
+
+    frame(30, 30)
+    assert perf.snapshot(["cam1"])["cameras"]["cam1"]["health"] == "starting"
+    for second in range(1, 7):
+        clock[0] = 100.0 + second
+        frame(30 + 30 * second, 30 + 30 * second)
+    snap = perf.snapshot(["cam1", "cam2"])
+    camera = snap["cameras"]["cam1"]
+    assert (camera["processed_fps"], camera["ingress_fps"], camera["drop_percent"]) == (30.0, 30.0, 0.0), camera
+    assert camera["health"] == "smooth" and snap["cameras"]["cam2"] == {"health": "no_data"}
+    assert camera["detection_delay_seconds"]["p50"] == 0.1 and camera["pipeline_seconds"]["p50"] == 0.04
+    # One smooth camera cannot show a three-camera capacity, but it is not a miss.
+    assert snap["kpis"]["cameras"] == {"smooth": 1, "running": 1, "target": 3, "status": "insufficient"}
+    assert snap["kpis"]["time_to_alert"]["detection_delay_p50"] == 0.1
+    # The leaky queue skips half of the decoded frames.
+    for step in range(1, 7):
+        clock[0] = 106.0 + step
+        frame(210 + 30 * step, 210 + 15 * step)
+    camera = perf.snapshot(["cam1"])["cameras"]["cam1"]
+    assert (camera["health"], camera["drop_percent"], camera["processed_fps"]) == ("dropping", 50.0, 15.0), camera
+    assert perf.snapshot(["cam1"])["kpis"]["cameras"]["status"] == "missed"
+    # A restarted pipeline counts from 1 again: no negative rate.
+    clock[0] += 1
+    frame(1, 1, session="s2")
+    assert perf.snapshot(["cam1"])["cameras"]["cam1"]["health"] == "starting"
+    clock[0] += 10
+    assert perf.snapshot(["cam1"])["cameras"]["cam1"]["health"] == "offline"
+    # Without the ingress stamp frames still count; disagreeing clocks are not a delay.
+    before = len(perf.cameras["cam1"].delay.samples)
+    frame(None, 2, session="s2", ingress_at=6000.0)
+    frame(None, 3, session="s2", frame_sequence=True)
+    assert len(perf.cameras["cam1"].delay.samples) == before
+    assert [c[1:] for c in perf.cameras["cam1"].counts] == [(1, 1), (None, 2)]
+
+
+def test_performance_status_needs_samples_and_valid_targets():
+    from app.performance import DEFAULT_TARGETS, Performance, summary, targets
+
+    assert summary([], 1.0)["status"] == "no_data"
+    assert summary([0.1] * 4, 1.0)["status"] == "insufficient"
+    assert summary([0.1] * 19 + [2.0], 1.0)["status"] == "on_target"
+    assert summary([0.1] * 18 + [2.0] * 2, 1.0)["status"] == "missed"
+    assert summary([0.1] * 5, None)["status"] == "info"
+    assert targets({"performance_targets": {"memory_percent": 70, "smooth_cameras": True,
+                                            "spoken_answer_seconds": -1, "unknown": 1}}) == {
+        **DEFAULT_TARGETS, "memory_percent": 70}
+    clock = [0.0]
+    perf = Performance({}, clock=lambda: clock[0])
+
+    def telemetry(value, sampled, state="ok"):
+        return {"metrics": [{"id": "memory_used_percent", "state": state,
+                             "value": value, "sampled_utc": sampled}]}
+
+    for second in range(6):
+        clock[0] = second
+        perf.snapshot([], telemetry(50 + second, f"t{second}"))
+        perf.snapshot([], telemetry(99, f"t{second}"))  # the same sample, read by a second client
+        perf.snapshot([], telemetry(99, f"s{second}", state="stale"))
+    memory = perf.snapshot([])["kpis"]["memory"]
+    assert (memory["count"], memory["peak"], memory["last"], memory["status"]) == (6, 55, 55, "on_target"), memory
+    perf.answer_streamed(0.5, 2.5, "one two three four five six seven eight nine ten")
+    perf.answer_streamed(0.4, 0.5, "too short to time")
+    speed = perf.snapshot([])["kpis"]["answer_speed"]
+    assert (speed["last"], speed["count"], speed["first_words_p50"]) == (5.0, 1, 0.4), speed
+    assert speed["approximate"] and speed["tokens_per_second"] is None and speed["target"] is None
+    perf.alert_raised(float("nan"))
+    perf.alert_raised(-1)
+    assert perf.snapshot([])["kpis"]["time_to_alert"]["count"] == 0
+    clock[0] += 400
+    assert perf.snapshot([])["kpis"]["memory"]["status"] == "no_data", "old samples must age out"
+
+
+def test_voice_marks_are_validated_and_time_the_spoken_answer():
+    import asyncio
+    from app.main import create_app
+    from app.performance import Performance
+
+    async def check():
+        app = create_app()
+        app.state.performance = Performance({})
+        app.state.cfg = {"streams": [{"stream_id": "cam1"}, {"stream_id": "cam2", "enabled": False}]}
+        app.state.telemetry = types.SimpleNamespace(snapshot=lambda: {"metrics": []})
+        spoken = {"kind": "voice_turn", "outcome": "spoken"}
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                     base_url="http://test") as client:
+            assert (await client.post("/api/performance/marks", content=b"x")).status_code == 422
+            for bad in (spoken, {**spoken, "spoken_answer_ms": -1}, {**spoken, "spoken_answer_ms": 120001},
+                        {**spoken, "spoken_answer_ms": True}, {**spoken, "spoken_answer_ms": 1.5},
+                        {**spoken, "spoken_answer_ms": 1, "stages": {"other": 1}},
+                        {**spoken, "spoken_answer_ms": 1, "stages": []},
+                        {**spoken, "spoken_answer_ms": 1, "ack_ms": None},
+                        {**spoken, "spoken_answer_ms": 1, "question": "where?"},
+                        {"kind": "voice_turn", "outcome": "blocked", "spoken_answer_ms": 5},
+                        {"kind": "voice_turn", "outcome": "done"}, {"kind": "other", "outcome": "failed"}, []):
+                assert (await client.post("/api/performance/marks", json=bad)).status_code == 422, bad
+            for total in (2400, 2600, 2500, 2800, 3500):
+                response = await client.post("/api/performance/marks", json={
+                    **spoken, "spoken_answer_ms": total, "ack_ms": 700,
+                    "stages": {"listening": 1500, "hear": 300, "think": 400, "speak": 200}})
+                assert response.status_code == 200 and response.json()["data"] == {"recorded": "spoken"}
+            assert (await client.post("/api/performance/marks", json={
+                "kind": "voice_turn", "outcome": "blocked"})).status_code == 200
+            return (await client.get("/api/performance")).json()["data"]
+
+    body = asyncio.run(check())
+    voice = body["kpis"]["spoken_answer"]
+    assert (voice["count"], voice["p50"], voice["p95"], voice["status"]) == (5, 2.6, 3.5, "missed"), voice
+    assert voice["stages"] == {"listening": 1.5, "hear": 0.3, "think": 0.4, "speak": 0.2}
+    assert voice["acknowledged_p50"] == 0.7 and voice["untimed"] == 1
+    assert body["cameras"] == {"cam1": {"health": "no_data"}}, "disabled cameras are not listed"
+
+
+def test_time_to_alert_counts_only_alerts_raised_on_appearance():
+    from app.main import _latency
+    from app.performance import Performance
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ing = _ingest(tmp, min_track_observations=3)
+        alerts = _alerts(ing, str(Path(tmp) / "ingest.db"), _SaidArbiter())
+        perf = Performance({})
+        ing.performance = alerts.performance = perf
+        alerts.create(ing.conn, {"class_label": "person", "stream_id": "cam1"})
+        alerts.create(ing.conn, {"class_label": "car", "dwell_seconds": 1})
+        alerts.create(ing.conn, {"class_label": "person", "stream_id": "cam2", "min_confidence": 0.95})
+        now = time.time()
+        stamp = {"ingress_at": now - 0.25, "frames_in": 1}
+        _observe(ing, "cam1", 1, count=3, start=now, extra_context=stamp)
+        # Waits on purpose: a dwell, and a confidence reached only later.
+        _observe(ing, "cam2", 5, count=15, label="car", start=now, extra_context=stamp)
+        _observe(ing, "cam2", 6, count=3, start=now + 2, confidence=0.9, extra_context=stamp)
+        _observe(ing, "cam2", 6, count=1, start=now + 3, confidence=0.99, extra_context=stamp)
+        assert ing.conn.execute("SELECT count(*) FROM rule_matches").fetchone()[0] == 3
+        measured = perf.snapshot([])["kpis"]["time_to_alert"]
+        assert measured["count"] == 1 and 0.25 <= measured["last"] < 2, measured
+        state = types.SimpleNamespace(alerts=alerts, arbiter=types.SimpleNamespace(timing=lambda ref: {}))
+        readouts = [_latency(state, match_id)["time_to_alert"] for match_id in alerts.latency]
+        assert all(value is not None and value >= 0.25 for value in readouts), readouts
+        assert perf.snapshot(["cam1"])["cameras"]["cam1"]["detection_delay_seconds"]["count"] == 3
+        ing.conn.close()
+        alerts.close()
+
+
 # -- rules, dispatch and the audio arbiter ---------------------------
 class _SaidArbiter:
     def __init__(self):
@@ -4423,11 +4576,14 @@ def test_voice_acknowledgement_plays_first_and_is_separate_from_the_answer():
         # Cached by the warm-up: no second synthesis, playable at once.
         _wait_text_current(arbiter, "Checking.")
         assert calls.count("Checking.") == 1 and arbiter.snapshot()["current"]["cached"]
+        assert arbiter.snapshot()["current"]["ack"], "the browser must not time the cue as the answer"
         # The browser never confirms the cue: the answer must still be spoken whole.
         arbiter.say_answer("Two people are near the door. Both arrived recently.", generation)
         arbiter.end_answer(generation)
         for expected in ("Two people are near the door.", "Both arrived recently."):
-            assert arbiter.ack(_wait_text_current(arbiter, expected), "ended")
+            speech_id = _wait_text_current(arbiter, expected)
+            assert not arbiter.snapshot()["current"]["ack"]
+            assert arbiter.ack(speech_id, "ended")
         _settle(arbiter)
         order = [e["text"] for e in arbiter.trace if e["event"] == "playing"]
         assert order == ["Checking.", "Two people are near the door.", "Both arrived recently.",
@@ -4713,6 +4869,8 @@ def test_live_and_rule_work_leave_event_loop_responsive():
             app.state.cfg = {"db_path": db, "streams": []}
             app.state.ingest = types.SimpleNamespace(snapshot=lambda: {})
             app.state.telemetry = types.SimpleNamespace(snapshot=lambda: {"metrics": []})
+            from app.performance import Performance
+            app.state.performance = Performance({})
             app.state.alerts = types.SimpleNamespace(create=operation, update=operation,
                 act=lambda *a: bool(operation(*a)), confirmed=set(), latency={}, version=0,
                 mark_in_view=lambda *a: None)
@@ -4723,7 +4881,8 @@ def test_live_and_rule_work_leave_event_loop_responsive():
             request = Request({"type": "http", "app": app, "method": "GET",
                                "path": "/api/stream", "headers": []}, receive=receive)
             batch = _live_events(request, (), False, True)
-            assert len(batch) == 2 and batch[0].startswith("event: alert")
+            assert len(batch) == 3 and batch[0].startswith("event: alert")
+            assert batch[2].startswith("event: performance")
             def slow_batch(*args):
                 operation()
                 time.sleep(.1)

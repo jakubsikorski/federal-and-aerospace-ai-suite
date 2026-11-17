@@ -171,6 +171,8 @@ class Alerts:
         self.confirmed: dict[str, str] = {}
         # match_id -> wall-clock stage times, process-local, for the latency readout.
         self.latency: dict[str, dict] = {}
+        # Performance collector for time to alert; optional.
+        self.performance = None
         # Bumped when an operator-visible alert fact changes, so the live
         # stream pushes it at once instead of on the next 1 s data tick.
         self.version = 0
@@ -612,8 +614,18 @@ class Alerts:
                 (match_id, rule["rule_id"], track_id, _utc())).rowcount
             if not inserted:
                 continue  # already matched in an earlier process: never replayed
+            matched_at = time.time()
             self.latency[match_id] = {"detected_at": entry.get("first_at"),
-                                      "qualified_at": entry.get("last_at"), "matched_at": time.time()}
+                                      "ingress_at": entry.get("first_ingress_at"),
+                                      "qualified_at": entry.get("last_at"), "matched_at": matched_at}
+            # Time to alert: the first sighting's decoded frame to this alert. Only
+            # alerts raised on appearance count; a dwell or a later zone entry waits
+            # on purpose and is not pipeline latency.
+            ingress_at = entry.get("first_ingress_at")
+            if (self.performance is not None and entry.get("admitted_now")
+                    and rule.get("dwell_seconds") is None
+                    and isinstance(ingress_at, (int, float)) and not isinstance(ingress_at, bool)):
+                self.performance.alert_raised(matched_at - ingress_at)
             while len(self.latency) > 500:
                 self.latency.pop(next(iter(self.latency)))
             incident_id, notify, reopened = self._attach(conn, rule, entry, track_id, match_id)

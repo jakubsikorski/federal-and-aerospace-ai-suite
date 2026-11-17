@@ -23,8 +23,9 @@ import cv2
 import numpy as np
 from crop_candidates import (CropCandidates, OwnershipLost, Settings, Store, bgr_crop,
     bgr_from_payload, crop_payload, crop_payload_size, crop_quality, crop_rect,
-    frame_planes, json_observations, mapped_planes, observations)
+    frame_planes, ingress_timing, json_observations, mapped_planes, observations)
 from crop_probe import CropProbe
+from frame_ingress import FrameIngress
 
 SCRATCH = Path(os.environ.get("CROP_TEST_TMPDIR", Path.cwd() / ".crop-test-tmp"))
 SCRATCH.mkdir(parents=True, exist_ok=True)
@@ -551,6 +552,21 @@ def run():
             assert event["tracking_session_id"] == context["tracking_session_id"]
             assert event["tracker_id"] != event["region_id"]
             assert event["crop_rect"][2] > event["detection_rect"][2]
+        assert "pipeline_ms" not in context, "an unstamped frame must not report latency"
+        producer, ingress = make(root), FrameIngress()
+        stamped = Frame([1])
+        ingress.process_frame(stamped)
+        ingress.process_frame(stamped)
+        stamped.text[1:] = [stamped.text[2]]  # The leaky queue dropped the first decoded frame.
+        assert producer.process_frame(stamped)
+        producer.close()
+        assert len(stamped.messages()) == 1, "the arrival stamp must not reach the publisher"
+        timed = json.loads(stamped.messages()[0])["crop_context"]
+        assert timed["frames_in"] == 2 and timed["frame_sequence"] == 1, timed
+        assert 0 <= timed["pipeline_ms"] < 1000 and abs(timed["ingress_at"] - time.time()) < 5, timed
+        for bad in ({"wall": 1.0, "mono_ns": 10, "sequence": 0}, {"wall": float("nan"), "mono_ns": 1, "sequence": 1},
+                    {"wall": 1.0, "mono_ns": 11, "sequence": 1}, {"wall": True, "mono_ns": 1, "sequence": 1}):
+            assert ingress_timing(bad, 10) == {}, bad
         producer = make(root)
         empty = Frame([])
         empty.text = [json.dumps({"resolution":{"width":120,"height":100}})]

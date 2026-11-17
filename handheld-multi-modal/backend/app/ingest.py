@@ -160,6 +160,8 @@ class Ingest:
         self.counters: Counter = Counter()
         # Rule matcher; evaluated per observation of a logical track.
         self.alerts = None
+        # Performance collector (frame rates, detection delay); optional.
+        self.performance = None
         self.frames_since_commit = 0
         self.stopping = threading.Event()
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
@@ -248,6 +250,8 @@ class Ingest:
         if observed_at < self.last_observed.get(stream_id, 0.0):
             return
         self.last_observed[stream_id] = observed_at
+        if self.performance is not None:
+            self.performance.frame(stream_id, context)
 
         with self.lock:
             if stream_id in self.draining:
@@ -303,13 +307,14 @@ class Ingest:
             key = (stream_id, identity[0], identity[1], tracker_id)
             first_stamp, first_at, count = stamp, observed_at, 1
             first_frame = (context.get("frame_sequence"), context.get("source_frame_id"))
+            first_ingress = context.get("ingress_at")
             replay = [(obj, observed_at, stamp)]
             if key not in self.active:
                 seed = self.tentative.get(key)
                 if seed is None or observed_at - seed["last_at"] > self.gap:
                     seed = self.tentative[key] = {"stamp": stamp, "at": observed_at,
                                                   "count": 0, "peak": None, "frame": first_frame,
-                                                  "attributes": []}
+                                                  "ingress": first_ingress, "attributes": []}
                 seed["count"] += 1
                 # Classifier output seen before admission is replayed, with its own
                 # timestamp, once the track is stored (at most min_observations entries).
@@ -324,6 +329,7 @@ class Ingest:
                 del self.tentative[key]
                 first_stamp, first_at, count = seed["stamp"], seed["at"], seed["count"]
                 first_frame, confidence = seed["frame"], seed["peak"]
+                first_ingress = seed["ingress"]
                 replay = seed["attributes"]
             self.conn.execute(
                 """INSERT INTO tracks (stream_id, tracking_session_id, history_generation,
@@ -342,12 +348,13 @@ class Ingest:
             if key in self.parked:
                 self._attach_parked(key)
             entry = self.active.get(key)
-            if entry is None:
+            admitted = entry is None
+            if admitted:
                 self.active[key] = entry = {
                     "stream_id": stream_id, "tracker_id": tracker_id, "class_label": label,
                     "first_observed_utc": first_stamp, "observation_count": 0,
                     "peak_confidence": confidence, "confidence_freshness": FRESHNESS,
-                    "first_at": first_at,
+                    "first_at": first_at, "first_ingress_at": first_ingress,
                 }
                 if key in self.first_crop:
                     entry["first_crop_at"] = self.first_crop.pop(key)
@@ -375,7 +382,11 @@ class Ingest:
                 if entry.get("track_id") is None:
                     entry["track_id"] = self._track_id(key)
                 if entry["track_id"] is not None:
+                    # A match on the admitting observation is an appearance alert,
+                    # the case time to alert measures.
+                    entry["admitted_now"] = admitted
                     self.alerts.evaluate(self.conn, entry["track_id"], entry)
+                    entry.pop("admitted_now", None)
 
         self.frames_since_commit += 1
         if self.frames_since_commit >= 30:

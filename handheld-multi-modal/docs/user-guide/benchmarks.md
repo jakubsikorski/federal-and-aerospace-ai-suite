@@ -13,10 +13,16 @@ The Handheld Multi-Modal application itself reports live CPU, memory, GPU, NPU, 
 telemetry in the **Resources** panel of the operator console. See the
 [Operator Guide](operator-guide.md#resources).
 
+The **Performance** tab next to Resources shows time to alert, time to spoken answer, smooth
+cameras, approximate answer speed, and peak memory against configurable targets. See the
+[Performance KPI Plan](./benchmarking/handheld-performance-kpi-plan.md) for definitions,
+the implemented measurements, and the upstream service requests.
+
 <!--hide_directive
 :::{toctree}
 :hidden:
 
 Edge Workloads and Benchmarks Guide <./benchmarking/run-edge-benchmarks.md>
+Performance KPI Plan <./benchmarking/handheld-performance-kpi-plan.md>
 :::
 hide_directive-->

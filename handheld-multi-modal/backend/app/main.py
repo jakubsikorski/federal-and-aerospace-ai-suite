@@ -43,6 +43,7 @@ from .mission import (
     MissionValidationError,
 )
 from .telemetry import Telemetry
+from .performance import Performance, parse_voice_mark
 from .placement import Placement
 from .core import (
     connect,
@@ -276,6 +277,7 @@ async def lifespan(app: FastAPI):
     app.state.services = Services(cfg["services"], cfg["timeout_seconds"])
     app.state.telemetry = Telemetry(app.state.services, cfg["telemetry_host"])
     app.state.placement = Placement(app.state.services, cfg)
+    app.state.performance = Performance(cfg)
     # Resolve the two settings that must agree with deployed component config
     # before anything uses them. Both fail the process with a named cause
     # rather than surfacing later as an unstartable camera or a missing
@@ -294,6 +296,7 @@ async def lifespan(app: FastAPI):
         on_corpus_change=app.state.assistant.reset_context,
     )
     app.state.assistant.mission = app.state.mission
+    app.state.assistant.performance = app.state.performance
     app.state.assistant.models = lambda: app.state.placement.snapshot({}, {})
     warm_chatqna_once(app.state.services, float(cfg.get("assistant_chat_timeout_seconds", 60)))
 
@@ -331,11 +334,13 @@ async def lifespan(app: FastAPI):
     app.state.alerts = alerting.Alerts(
         cfg, cfg["db_path"], app.state.arbiter,
         lambda: detector_labels(cfg["detector_metadata_path"]))
+    app.state.alerts.performance = app.state.performance
     # Ingest before pipelines: a subscriber that starts second misses the first
     # observations of every camera it is supposed to be watching.
     app.state.ingest = Ingest(cfg, cfg["db_path"])
     app.state.ingest.predicted_confidence = pipelines.PREDICTED_CONFIDENCE
     app.state.ingest.alerts = app.state.alerts
+    app.state.ingest.performance = app.state.performance
     app.state.alerts.writer = app.state.ingest.write
     # A previous process's open tracks are closed before anything
     # can query current state, so a restart cannot present them as live.
@@ -726,6 +731,22 @@ def create_app() -> FastAPI:
                 "code": "invalid_request", "message": str(exc)}))
         # 200 either way: a report for an utterance that already ended is stale, not an error.
         return envelope({"speech_id": speech_id, "event": event, "current": current})
+
+    # -- performance KPIs ---------------------------------------------------
+    @app.get("/api/performance")
+    def performance(request: Request):
+        return envelope(_performance(request.app.state))
+
+    @app.post("/api/performance/marks")
+    async def performance_mark(request: Request):
+        """Browser-measured voice turn: end of speech to the first answer sound."""
+        try:
+            mark = parse_voice_mark(await _json_body(request))
+        except ValueError as exc:
+            return JSONResponse(status_code=422, content=envelope(error={
+                "code": "invalid_request", "message": str(exc)}))
+        request.app.state.performance.voice_turn(**mark)
+        return envelope({"recorded": mark["outcome"]})
 
     @app.post("/api/speech/talk")
     async def speech_talk(request: Request):
@@ -1211,7 +1232,14 @@ def _live_events(request: Request, class_labels: tuple[str, ...],
             }))
         batch.append(_alert_payload(state, conn))
     batch.append(_event("telemetry", {"stream_id": None, **state.telemetry.snapshot()}))
+    batch.append(_event("performance", {"stream_id": None, **_performance(state)}))
     return batch
+
+
+def _performance(state) -> dict:
+    """KPI snapshot for the enabled cameras, with host memory from telemetry."""
+    streams = [s["stream_id"] for s in state.cfg["streams"] if s.get("enabled", True)]
+    return state.performance.snapshot(streams, state.telemetry.snapshot())
 
 
 def _alert_payload(state, conn: sqlite3.Connection) -> str:
@@ -1266,7 +1294,11 @@ def _latency(state, match_id: str | None) -> dict | None:
         "image_ready": base.get("image_at"),
     }
     detected = base["detected_at"]
+    ingress, matched = base.get("ingress_at"), base.get("matched_at")
     return {"detected_at": detected,
+            # Decoded frame of the first sighting to the alert, on the host wall clock.
+            "time_to_alert": (round(matched - ingress, 3)
+                              if ingress is not None and matched is not None else None),
             "seconds": {name: round(at - detected, 2) for name, at in stamps.items() if at is not None}}
 
 

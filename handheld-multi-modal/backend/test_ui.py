@@ -36,6 +36,7 @@ CAMERAS = [dict(stream_id='cam1', display_name='Camera 1', enabled=True, origin=
            dict(stream_id='cam9', display_name='Roof', enabled=True, origin='operator', running=True,
                 source={'kind': 'pull', 'url': 'rtsp://192.168.1.9/s'}, feed={'ok': True, 'reason': None})]
 CAMERA_REQUESTS = []
+PERF_MARKS = []
 
 
 def camera_view(**extra):
@@ -204,6 +205,10 @@ class Fixture(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == '/api/cameras':
             return self._camera_mutation()
+        if self.path == '/api/performance/marks':
+            length = int(self.headers.get('content-length', '0'))
+            PERF_MARKS.append(json.loads(self.rfile.read(length) or b'null'))
+            return self._json({'recorded': PERF_MARKS[-1].get('outcome')})
         if self.path == '/api/rules' or self.path.endswith('/speak'):
             return self._rule_mutation()
         if self.path.startswith('/api/speech/'):
@@ -847,6 +852,45 @@ def main():
                 state.whep = {pc:{getStats: async () => reports}}; startLatency(state.whep); await new Promise(r=>setTimeout(r,1100));
                 if (!$('latency-badge').textContent.includes('receiver est.')) return "latency badge missing";
                 stopLatency(); state.whep = null;
+                const perfShown = (id) => getComputedStyle($(id)).display !== 'none';
+                const perfSelected = state.selected; state.selected = 'cam1';
+                state.performance = {version:1, window_seconds:300, kpis:{
+                  time_to_alert:{p50:.25, p95:.35, count:12, target:.4, status:'on_target', unit:'s', detection_delay_p50:.12},
+                  spoken_answer:{p50:null, p95:null, count:2, target:3, status:'insufficient', unit:'s', stages:{}, acknowledged_p50:null, untimed:1},
+                  cameras:{smooth:1, running:2, target:3, status:'missed'},
+                  answer_speed:{p50:9.5, p95:11, count:6, target:null, status:'info', unit:'words/s', approximate:true,
+                    first_words_p50:.8, tokens_per_second:null, token_target:15},
+                  memory:{last:41, peak:52, count:30, target:80, unit:'%', status:'on_target'}},
+                  cameras:{cam1:{health:'smooth', reason:null, source_fps:30, processed_fps:29.8, drop_percent:0, detection_delay_seconds:{p50:.12}},
+                           cam2:{health:'dropping', reason:'25% of decoded frames skipped', source_fps:30, processed_fps:22.5, drop_percent:25, detection_delay_seconds:{p50:.2}}}};
+                renderPerformance();
+                if ($('latency-badge').textContent !== 'Detect 120 ms · 29.8/30 fps' || !$('latency-badge').classList.contains('show')) return "camera badge: " + $('latency-badge').textContent;
+                setTelemetryView('performance');
+                const perfTiles = [...$('kpi-grid').children].map(tile => tile.textContent);
+                if (!perfShown('performance-view') || perfShown('telemetry-grid') || perfTiles.length !== 5) return "performance view not shown";
+                if (!perfTiles[0].includes('350 ms') || !perfTiles[0].includes('Meets target')) return "time to alert tile: " + perfTiles[0];
+                if (!perfTiles[1].includes('Not enough data') || perfTiles[1].includes('Meets target')) return "too few samples shown as a pass: " + perfTiles[1];
+                if (!perfTiles[2].includes('1 of 2') || !perfTiles[2].includes('Camera 2: 25% of decoded frames skipped') || !perfTiles[2].includes('Misses target')) return "camera tile: " + perfTiles[2];
+                if (!perfTiles[3].includes('~9.5 words/s') || !perfTiles[3].includes('Tokens/s: needs Chat Q&A update')) return "speed tile: " + perfTiles[3];
+                $('kpi-grid').children[1].click();
+                if ($('kpi-explain').hidden || !$('kpi-explain').textContent.includes('first sound of the answer') || $('kpi-grid').children[1].getAttribute('aria-pressed') !== 'true') return "tap tile explanation: " + $('kpi-explain').textContent;
+                $('kpi-grid').children[1].click();
+                if (!$('kpi-explain').hidden) return "tile explanation not closed";
+                if ([...$('kpi-grid').children, $('view-resources'), $('view-performance')].some(el => el.getBoundingClientRect().height < 44)) return "performance touch target under 44px";
+                if ($('camera-performance').tBodies[0].rows.length !== 2 || $('camera-performance').tBodies[0].rows[1].dataset.health !== 'dropping') return "camera table";
+                setTelemetryView('resources');
+                if (perfShown('performance-view') || !perfShown('telemetry-grid')) return "resources view not restored";
+                const perfNow = performance.now();
+                const perfTiming = newAnswerTiming(true, {speechEnd: perfNow - 2000, start: perfNow - 2000, sent: perfNow - 1900, heard: perfNow - 1400, ready: true});
+                perfTiming.audio = true; perfTiming.firstText = perfNow - 600;
+                noteAnswerPlayback({kind:'answer', ack:true}, 'playing');
+                if (perfTiming.done || perfTiming.ack == null) return "acknowledgement ended the timing";
+                noteAnswerPlayback({kind:'answer'}, 'playing');
+                const perfFooter = $('answer-timing').textContent;
+                if (!perfTiming.done || $('answer-timing').hidden || !perfFooter.includes('Answered aloud in 2.0 s') || !perfFooter.includes('within 3.0 s target') || !perfFooter.includes('Think 800 ms')) return "answer footer: " + perfFooter;
+                const perfTyped = newAnswerTiming(false, {start: perfNow - 1200}); perfTyped.firstText = perfNow; renderAnswerTiming();
+                if ($('answer-timing').textContent !== 'First words in 1.2 s') return "typed footer: " + $('answer-timing').textContent;
+                state.answerTiming = null; renderAnswerTiming(); state.performance = null; state.selected = perfSelected; renderPerformance();
                 if ($('cameras').scrollWidth <= $('cameras').clientWidth || !$('cameras').hasAttribute('data-overflow') || getComputedStyle($('cameras')).boxShadow !== 'none') return "camera tab overflow has no neutral scroll affordance";
                 renderConnectionState(true); $('connection').textContent = 'Connection lost · retrying'; $('connection').className = 'lost';
                 if (!$('tracks-panel').classList.contains('stale') || !$('connection').textContent.includes('Connection lost')) return "connection lost state missing";
@@ -856,6 +900,11 @@ def main():
               })()`).then(done).catch(e=>done(String(e)));
             ''')
             assert new_ui is True, new_ui
+            for _ in range(50):
+                if PERF_MARKS: break
+                time.sleep(.05)
+            assert len(PERF_MARKS) == 1 and PERF_MARKS[0]['outcome'] == 'spoken' and set(PERF_MARKS[0]['stages']) == {'listening', 'hear', 'think', 'speak'} \
+                and 1990 <= PERF_MARKS[0]['spoken_answer_ms'] <= 2500 and PERF_MARKS[0]['stages']['think'] == 800 and 'ack_ms' in PERF_MARKS[0], PERF_MARKS
             result = async_js('''const done = arguments[arguments.length - 1];
               window.eval(`(async () => {
                 if (state.filter.mode !== "current" || $("track-mode").value !== "current") return "wrong default view";
@@ -1875,6 +1924,22 @@ def main():
                 shot('camera-grid-pager.png')
                 js('return window.eval(' + json.dumps('selectCamera("cam1"); state.evidenceView="compact"; renderTracks(true);') + ')')
                 shot('compact-evidence.png')
+                js('return window.eval(' + json.dumps('''(() => {
+                  const delay = {p50:.12}, slow = {p50:.2};
+                  state.performance = {version:1, window_seconds:300, kpis:{
+                    time_to_alert:{p50:.25, p95:.35, count:12, target:.4, status:"on_target", detection_delay_p50:.12},
+                    spoken_answer:{p50:2.4, p95:2.8, count:14, target:3, status:"on_target", stages:{listening:1.5, hear:.3, think:.4, speak:.14}, acknowledged_p50:.8, untimed:1},
+                    cameras:{smooth:2, running:3, target:3, status:"missed"},
+                    answer_speed:{p50:9.5, count:6, status:"info", first_words_p50:.8, tokens_per_second:null, token_target:15},
+                    memory:{last:41, peak:52, count:30, target:80, status:"on_target"}},
+                    cameras:{cam1:{health:"smooth", source_fps:30, processed_fps:29.8, drop_percent:0, detection_delay_seconds:delay},
+                             cam2:{health:"dropping", reason:"25% of decoded frames skipped", source_fps:30, processed_fps:22.5, drop_percent:25, detection_delay_seconds:slow},
+                             cam4:{health:"smooth", source_fps:30, processed_fps:30, drop_percent:0, detection_delay_seconds:delay}}};
+                  selectCamera("cam1"); state.kpiOpen = "voice"; setTelemetryView("performance");
+                })()''') + ')')
+                time.sleep(0.3)
+                shot('performance.png')
+                js('return window.eval(' + json.dumps('state.kpiOpen = null; setTelemetryView("resources"); state.performance = null; renderPerformance();') + ')')
                 async_js('''const done = arguments[arguments.length - 1]; window.eval(`(async () => { await openDrawer(visibleTracks()[0]); return true; })()`).then(done).catch(e => done(String(e)));''')
                 shot('drawer.png')
                 js('return window.eval(' + json.dumps('localStorage.setItem("operator.lastActive", String(Date.now()-360000)); state.awayChecked=false; state.incidents[0].opened_utc=new Date().toISOString(); showAwaySummary();') + ')')

@@ -1239,6 +1239,8 @@ class Assistant:
         self.page_secret = secrets.token_bytes(32)
         self.mission = mission
         self.models = None
+        # Performance collector for approximate answer speed; optional.
+        self.performance = None
         self._context_lock = threading.RLock()
         self._conversation_id = ContextVar("conversation_id", default="")
         self._conversations = {"": Conversation()}
@@ -1353,8 +1355,11 @@ class Assistant:
             raise ServiceUnavailable("Chat Q&A streaming request failed; not retried") from exc
         if not answer.strip():
             raise ServiceUnavailable("Chat Q&A completion is empty")
+        generation = time.monotonic() - started
         emit({"timing": {"first_text_ms": round((first_text or 0) * 1000),
-                         "generation_ms": round((time.monotonic() - started) * 1000)}})
+                         "generation_ms": round(generation * 1000)}})
+        if self.performance is not None:
+            self.performance.answer_streamed(first_text or 0.0, generation, answer)
         return answer.strip()
 
     def complete(self, prompt: str) -> str:

@@ -320,7 +320,10 @@ class Arbiter:
             if generation is not None and generation != self.answer_generation:
                 self._event("ack_stale", None)
                 return None
-            return self.say("answer", text, group="answer")
+            item = self.say("answer", text, group="answer")
+            # Marked so the browser times the spoken answer, not this cue.
+            item["ack"] = True
+            return item
 
     def warm(self, text: str, idle_seconds: float = 0.0) -> bool:
         """Wake the TTS device and keep the cue cached; never queued or played.
@@ -480,7 +483,7 @@ class Arbiter:
                 "current": None if current is None else {
                     key: current.get(key) for key in
                     ("id", "kind", "priority", "text", "ref", "mode", "duration_s", "cancelled")
-                } | {"cached": current.get("cached", False),
+                } | {"cached": current.get("cached", False), "ack": bool(current.get("ack")),
                      "audio_base64": (current.get("audio_base64")
                                       if current.get("mode") == "audio" else None)},
                 "next": self._ready_next(current),
