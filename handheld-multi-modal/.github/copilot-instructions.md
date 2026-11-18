@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 # Repository Instructions
 
 Follow [AGENTS.md](../AGENTS.md). This is the Handheld Multi-Modal application, built on
-stock images from Open Edge Platform.
+published container images from Open Edge Platform.
 
 Use the stock Chat Q&A `/chat` endpoint for general and document questions with the configured
 prompt template. Do not clear the mission document corpus for general chat and do not claim

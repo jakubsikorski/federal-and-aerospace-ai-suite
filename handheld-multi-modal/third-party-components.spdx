@@ -38,7 +38,7 @@ FilesAnalyzed: false
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: Apache-2.0
 PackageCopyrightText: <text>Copyright (C) 2026 Intel Corporation</text>
-PackageSummary: <text>Local operator console for handheld edge devices built from stock images from Open Edge Platform and a FastAPI backend: live camera analytics with DL Streamer Pipeline Server, evidence history, mission documents via Chat Q&A, alerts, speech-to-text and text-to-speech, and hardware telemetry, packaged as a Docker Compose deployment.</text>
+PackageSummary: <text>Local operator console for handheld edge devices built from published container images from Open Edge Platform and a FastAPI backend: live camera analytics with DL Streamer Pipeline Server, evidence history, mission documents via Chat Q&A, alerts, speech-to-text and text-to-speech, and hardware telemetry, packaged as a Docker Compose deployment.</text>
 
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-handheld-multi-modal
 

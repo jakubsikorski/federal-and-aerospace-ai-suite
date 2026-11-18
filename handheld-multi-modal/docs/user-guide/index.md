@@ -24,7 +24,7 @@ scenarios, optimized for Intel® edge hardware. It combines live camera analytic
 evidence search, mission documents, rule-based alerts, and voice interaction in a
 single browser UI that runs entirely on the device.
 
-The Handheld Multi-Modal application is built from stock images from Open Edge Platform,
+The Handheld Multi-Modal application is built from published container images from Open Edge Platform,
 open source media and messaging components, and an
 application Backend with a browser UI. Video analytics run on the NPU, the language and
 speech-to-text models run on the GPU, and text-to-speech runs on the CPU. Models and
@@ -91,7 +91,7 @@ an interactive architecture page at `/architecture.html`.
 | FFmpeg | `bluenviron/mediamtx:1.21.3-ffmpeg` | Demo camera publishers only |
 | Backend and UI | `handheld/backend:dev` (built locally) | Application logic; calls stock microservice APIs only |
 
-Open Edge Platform services use unmodified stock images. Exact image tags are pinned in
+Open Edge Platform services use unmodified published container images. Exact image tags are pinned in
 [`compose/handheld-multi-modal.yaml`](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/blob/main/handheld-multi-modal/compose/handheld-multi-modal.yaml).
 
 Model sources and licenses are listed in

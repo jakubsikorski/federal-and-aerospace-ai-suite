@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 
 The Handheld Multi-Modal application is an operator console for Intel® edge devices that fuses
 live camera analytics, evidence search, mission documents, alerts, and speech. It runs entirely
-on the device and is built from stock images from Open Edge Platform,
+on the device and is built from published container images from Open Edge Platform,
 plus an application Backend and browser UI. Models are downloaded on the first start; after that,
 all inference runs locally, the application works offline, and data does not leave the device.
 
@@ -61,7 +61,7 @@ third-party-components.spdx  Software bill of materials of third-party component
 | FFmpeg | `bluenviron/mediamtx:1.21.3-ffmpeg` | Demo cameras only |
 | Backend + UI | `handheld/backend:dev` (built from `backend/`) | Application logic; calls the microservice APIs only |
 
-Open Edge Platform services use unmodified stock images. Exact image tags are pinned in
+Open Edge Platform services use unmodified published container images. Exact image tags are pinned in
 [`compose/handheld-multi-modal.yaml`](compose/handheld-multi-modal.yaml).
 
 [![Architecture diagram](docs/user-guide/_assets/architecture.svg)](docs/user-guide/_assets/architecture.svg)
