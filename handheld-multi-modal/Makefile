@@ -202,10 +202,20 @@ json_ready() {
 
 endef
 
-# Deletes assets that containers may own (crops belong to DLSPS UID 1999).
-define as_root
-$(ASSET_COMPOSE) run --rm --no-deps --user 0:0 --entrypoint /bin/sh \
-  -v "$$ASSET_ROOT:/assets" model-downloader -ec
+# Deletes asset paths relative to ASSET_ROOT. Files owned by containers (crops
+# belong to DLSPS UID 1999) need root, so they are removed in a container from
+# an image already on this machine. Cleaning never downloads an image; without
+# one it warns with the sudo command and carries on.
+define remove_assets
+if ! rm -rf -- $(addprefix "$$ASSET_ROOT"/,$(1)) 2>/dev/null; then
+  removed=
+  for image in $$($(ASSET_COMPOSE) --profile assets config --images | sort -u); do
+    docker image inspect "$$image" >/dev/null 2>&1 || continue
+    docker run --rm --network none --user 0:0 --entrypoint /bin/sh -v "$$ASSET_ROOT:/assets" \
+      "$$image" -c 'rm -rf -- "$$@"' sh $(addprefix /assets/,$(1)) 2>/dev/null && { removed=1; break; }
+  done
+  [[ $$removed ]] || echo "Warning: files owned by containers remain and no local image can remove them. Run: sudo rm -rf $(addprefix "$$ASSET_ROOT"/,$(1))" >&2
+fi
 endef
 
 define confirm
@@ -485,20 +495,20 @@ clean: down
 
 clean-demo:
 	$(COMPOSE) rm -sf cam1 cam2
-	$(as_root) 'rm -rf /assets/data/dlsps/demo-video'
+	$(call remove_assets,data/dlsps/demo-video)
 	$(ASSET_COMPOSE) down --remove-orphans
 
 clean-history:
 	@$(call confirm,camera history$(comma) evidence images$(comma) rules$(comma) alerts and mission documents)
 	make --no-print-directory down
-	$(as_root) 'rm -rf /assets/data/backend /assets/data/dlsps/crops'
+	$(call remove_assets,data/backend data/dlsps/crops)
 	$(ASSET_COMPOSE) down --remove-orphans
 	echo 'History deleted. Start again with make up or make demo-up.'
 
 clean-all:
 	@$(call confirm,all history and every downloaded model$(comma) video$(comma) cache and TLS key)
 	$(COMPOSE) --profile assets down --volumes --remove-orphans
-	$(as_root) 'rm -rf /assets/data /assets/config/tls /assets/config/devices.yaml /assets/config/mediamtx.yml'
+	$(call remove_assets,data config/tls config/devices.yaml config/mediamtx.yml)
 	$(ASSET_COMPOSE) down --volumes --remove-orphans
 	echo 'Removed. Container images remain; make up or make demo-up downloads everything again.'
 

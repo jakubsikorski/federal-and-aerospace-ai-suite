@@ -35,7 +35,8 @@ make clean-all CONFIRM=yes      # everything above + models, caches, TLS keys
 ```
 
 `clean-history` and `clean-all` refuse to run without `CONFIRM=yes`. Container images are never
-removed.
+removed or downloaded. Camera crops are owned by a container user; if no application image is
+left to delete them, the command finishes and prints the `sudo rm -rf` command to run.
 
 | Option | Default | Meaning |
 |---|---|---|
