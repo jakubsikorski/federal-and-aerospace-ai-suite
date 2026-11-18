@@ -43,7 +43,7 @@ x-gpu-healthcheck: &gpu-healthcheck
 # See scripts/dlsps/README.md.
 services:
   model-downloader:
-    image: intel/model-download:2026.3.0-rc1@sha256:76d252106b15150fa1aced5fd3af1b0126f474b5546e37dd6a2d98838e45d177
+    image: intel/model-download:2026.3.0-rc1
     profiles: [assets]
     command: ["--plugins", "ultralytics"]
     restart: "no"
