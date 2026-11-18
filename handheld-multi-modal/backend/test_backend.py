@@ -331,6 +331,22 @@ def test_telemetry_package_power_selects_one_current_collector():
         assert power[0]["source_tags"] == expected["tags"]
         assert power[0]["unit"] == "W" and power[0]["state"] == "ok"
 
+    for powerstat_ts, rapl_ts, expected_index, expected_state in (
+        (1_999_999_990_000_000_000, 2_000_000_000_000_000_000, 1, "ok"),
+        (2_000_000_000_000_000_000, 1_999_999_990_000_000_000, 0, "ok"),
+        (1_999_999_990_000_000_000, 1_999_999_991_000_000_000, 0, "stale"),
+        (None, 2_000_000_000_000_000_000, 1, "ok"),
+        (1_999_999_995_000_000_000, 2_000_000_000_000_000_000, 0, "ok"),
+    ):
+        sources[0]["timestamp"], sources[1]["timestamp"] = powerstat_ts, rapl_ts
+        payload = {"metrics": {str(i): item for i, item in enumerate(sources)}}
+        power = normalize(payload, "handheld", now=2_000_000_000)["metrics"][0]
+        expected = sources[expected_index]
+        assert power["source"] == expected["name"]
+        assert power["value"] == expected["fields"]["value"]
+        assert power["source_tags"] == expected["tags"]
+        assert power["state"] == expected_state
+
     sources[0]["fields"]["value"] = 0
     sources[0]["timestamp"] = 1_999_999_990_000_000_000
     payload = {"metrics": {"package": sources[0]}}

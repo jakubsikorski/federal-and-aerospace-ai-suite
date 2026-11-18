@@ -75,6 +75,10 @@ def normalize(payload: dict, host: str, *, now: float | None = None) -> dict:
                 return float(found), item
         return None, None
 
+    def sample_stale(item: dict) -> bool:
+        item_ms = _epoch_ms(item.get("timestamp"))
+        return not item_ms or now_ms - item_ms > STALE_AFTER_SECONDS * 1000
+
     def add(metric_id: str, label: str, found, item, unit: str, *,
             scale: float = 1.0, metric_state: str | None = None,
             note: str | None = None, derived: bool = False):
@@ -82,7 +86,7 @@ def normalize(payload: dict, host: str, *, now: float | None = None) -> dict:
                 or isinstance(found, bool)):
             return
         item_ms = _epoch_ms(item.get("timestamp"))
-        item_stale = not item_ms or now_ms - item_ms > STALE_AFTER_SECONDS * 1000
+        item_stale = sample_stale(item)
         metrics.append({
             "id": metric_id,
             "label": label,
@@ -144,8 +148,10 @@ def normalize(payload: dict, host: str, *, now: float | None = None) -> dict:
     add("gpu_power_w", "GPU power domain", found, item, "W")
     found, item = value("powerstat_package_current_power_consumption_watts",
                        tags={"package_id": "0"})
-    if item is None:
-        found, item = value("rapl_power_power_w", tags={"domain": "package-0"})
+    rapl_found, rapl_item = value("rapl_power_power_w", tags={"domain": "package-0"})
+    if item is None or (sample_stale(item) and rapl_item is not None
+                        and not sample_stale(rapl_item)):
+        found, item = rapl_found, rapl_item
     add("package_power_w", "Package power", found, item, "W",
         note="package domain; not wall or GPU-only power")
 
