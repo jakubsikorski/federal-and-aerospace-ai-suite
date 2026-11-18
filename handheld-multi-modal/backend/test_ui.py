@@ -168,6 +168,7 @@ class Fixture(BaseHTTPRequestHandler):
                          ('gpu_engine_vcs_percent', 'GPU vcs engine', 22, '%'), ('gpu_engine_ccs_percent', 'GPU ccs engine', 16, '%'),
                          ('gpu_engine_bcs_percent', 'GPU bcs engine', 2, '%'), ('gpu_engine_rcs_percent', 'GPU rcs engine', 0, '%'),
                          ('gpu_engine_vecs_percent', 'GPU vecs engine', 38, '%'), ('npu_utilization_percent', 'NPU utilization', 35, '%'), ('package_power_w', 'Package power', 17.9, 'W'),
+                         ('gpu_power_w', 'GPU power domain', 0.2, 'W'), ('npu_power_w', 'NPU power', 0.3, 'W'),
                          ('npu_memory_mib', 'NPU memory', None, 'MiB'),
                          ('memory_total_bytes', 'Memory total', 32 * 1024 ** 3, 'bytes'),
                          ('memory_available_bytes', 'Memory available', 23 * 1024 ** 3, 'bytes')]
@@ -357,6 +358,27 @@ def main():
               state.telemetry.metrics.forEach(m=>{m.state="unavailable";m.value=null});renderTelemetry();
               const missing=gpu.querySelector("strong").textContent==="Unavailable";
               state.telemetry=structuredClone(original);
+              state.telemetry.metrics.forEach(m=>{m.sampled_utc=now;});
+              state.resource="power";renderTelemetry();
+              const powerTile=document.querySelector('[data-resource="power"]');
+              const power=powerTile.querySelector("span").textContent==="Power"
+                && powerTile.querySelector("strong").textContent==="17.9 W"
+                && powerTile.querySelector("small").textContent==="Package · View"
+                && $("chart-legend").children.length===3
+                && ["Package power · 17.9 W","GPU power domain · 0.2 W","NPU power · 0.3 W"]
+                  .every(text=>$("chart-legend").textContent.includes(text))
+                && $("chart-note").textContent.includes("do not sum");
+              state.telemetry.metrics=state.telemetry.metrics.filter(m=>m.id!=="package_power_w");
+              const gpuPower=state.telemetry.metrics.find(m=>m.id==="gpu_power_w");
+              gpuPower.value=0;
+              const npuPower=state.telemetry.metrics.find(m=>m.id==="npu_power_w");
+              npuPower.value=null;npuPower.state="unavailable";
+              renderTelemetry();
+              const partialPower=powerTile.querySelector("strong").textContent==="0.0 W"
+                && powerTile.querySelector("small").textContent==="GPU · View"
+                && $("chart-legend").children.length===2
+                && $("chart-legend").textContent.includes("NPU power · unavailable");
+              state.telemetry=structuredClone(original);
               state.telemetry.containers.forEach(row=>{row.sampled_utc=new Date(serverNow()).toISOString();row.state="ok";});
               state.resource="containers";renderTelemetry();const tile=document.querySelector('[data-resource="containers"]');
               if(!$("workspace").classList.contains("resources-expanded"))$("expand-telemetry").click();
@@ -390,7 +412,7 @@ def main():
               const fonts = size(turn.lastChild) === size($("assistant-answer")) && size(turn.lastChild) === "15px"
                 && size(turn.firstChild) === size($("assistant-submitted")) && size(turn.firstChild) === "14px";
               turn.remove();
-              return {priority,newest,noPeople,cars,maximum,partial,zero,stale,missing,containers,noContainers,mission,fonts};
+              return {priority,newest,noPeople,cars,maximum,partial,zero,stale,missing,power,partialPower,containers,noContainers,mission,fonts};
             })()'''
             checks=js('return window.eval(' + json.dumps(regression) + ')')
             assert all(checks.values()), checks

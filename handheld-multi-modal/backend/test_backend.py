@@ -255,13 +255,18 @@ def test_telemetry_preserves_zero_unavailable_and_real_units():
     payload = {"metrics": {
         "u": metric("cpu_usage_user", 10, cpu="cpu-total"),
         "s": metric("cpu_usage_system", 5, cpu="cpu-total"),
-        "f": metric("cpu_frequency_avg_frequency", 1_250_000),
+        "f": metric("cpu_frequency_avg_frequency_hz", 1_250_000_000),
         "mt": metric("mem_total", 32_000_000_000),
         "ma": metric("mem_available_percent", 75),
-        "g": metric("gpu_frequency", 450, type="cur_freq"),
-        "p": metric("gpu_power", 12.5, type="pkg_cur_power"),
+        "g": metric("gpu_frequency_cur_freq_hz", 450_000_000, type="cur_freq"),
+        "gp": metric("gpu_power_power_w", 0.1, type="gpu_cur_power"),
+        "p": metric("powerstat_package_current_power_consumption_watts", 12.5, package_id="0"),
         "n": metric("npu_utilization", 0),
-        "m": metric("npu_memory_mb", -1),
+        "np": metric("npu_power_w", 0.3),
+        "nt": metric("npu_temperature_c", 55),
+        "nf": metric("npu_frequency_hz", 1_525_000_000),
+        "nb": metric("npu_bandwidth_bytes_per_second", 4_000_000_000),
+        "m": metric("npu_memory_bytes", -1),
     }}
     answer = normalize(payload, "handheld", now=2_000_000_000)
     metrics = {item["id"]: item for item in answer["metrics"]}
@@ -270,13 +275,28 @@ def test_telemetry_preserves_zero_unavailable_and_real_units():
     assert metrics["cpu_frequency_mhz"]["unit"] == "MHz"
     assert metrics["memory_available_bytes"]["value"] == 24_000_000_000
     assert metrics["memory_available_bytes"]["derived"] is True
-    assert metrics["gpu_frequency_mhz"]["source"] == "gpu_frequency"
+    assert metrics["gpu_frequency_mhz"]["source"] == "gpu_frequency_cur_freq_hz"
+    assert metrics["gpu_frequency_mhz"]["value"] == 450
+    assert metrics["gpu_frequency_mhz"]["unit"] == "MHz"
+    assert metrics["gpu_power_w"]["value"] == 0.1
     assert metrics["package_power_w"]["value"] == 12.5
     assert metrics["npu_utilization_percent"]["value"] == 0
     assert metrics["npu_utilization_percent"]["state"] == "ok"
     assert metrics["npu_utilization_percent"]["sampled_utc"] == "2033-05-18T03:33:20Z"
     assert metrics["npu_memory_mib"]["value"] is None
     assert metrics["npu_memory_mib"]["state"] == "unavailable"
+    assert metrics["npu_power_w"]["value"] == 0.3
+    assert metrics["npu_temperature_c"]["value"] == 55
+    assert metrics["npu_frequency_raw"]["value"] == 1_525_000_000
+    assert metrics["npu_frequency_raw"]["unit"] == "Hz"
+    assert metrics["npu_bandwidth_raw"]["value"] == 4_000_000_000
+    assert metrics["npu_bandwidth_raw"]["unit"] == "bytes/s"
+
+    payload["metrics"]["m"]["fields"]["value"] = 128 * 1024 * 1024
+    answer = normalize(payload, "handheld", now=2_000_000_000)
+    memory = next(item for item in answer["metrics"] if item["id"] == "npu_memory_mib")
+    assert memory["value"] == 128 and memory["unit"] == "MiB"
+    assert memory["state"] == "ok" and memory["source"] == "npu_memory_bytes"
 
     payload["metrics"]["n"]["timestamp"] = 1_999_999_990_000_000_000
     answer = normalize(payload, "handheld", now=2_000_000_000)
@@ -288,6 +308,45 @@ def test_telemetry_preserves_zero_unavailable_and_real_units():
     mismatch = normalize(payload, "other-host", now=2_000_000_000)
     assert mismatch["status"] == "host_mismatch"
     assert mismatch["metrics"] == []
+
+
+def test_telemetry_package_power_selects_one_current_collector():
+    from app.telemetry import normalize
+
+    def metric(name, value, **tags):
+        return {"name": name, "tags": {"host": "handheld", **tags},
+                "fields": {"value": value}, "timestamp": 2_000_000_000_000_000_000}
+
+    sources = [
+        metric("powerstat_package_current_power_consumption_watts", 15.79, package_id="0"),
+        metric("rapl_power_power_w", 11.703, domain="package-0"),
+    ]
+    for index, expected in enumerate(sources):
+        payload = {"metrics": {str(i): item for i, item in enumerate(sources[index:])}}
+        power = [item for item in normalize(payload, "handheld", now=2_000_000_000)["metrics"]
+                 if item["id"] == "package_power_w"]
+        assert len(power) == 1, "overlapping power collectors must not be added together"
+        assert power[0]["value"] == expected["fields"]["value"]
+        assert power[0]["source"] == expected["name"]
+        assert power[0]["source_tags"] == expected["tags"]
+        assert power[0]["unit"] == "W" and power[0]["state"] == "ok"
+
+    sources[0]["fields"]["value"] = 0
+    sources[0]["timestamp"] = 1_999_999_990_000_000_000
+    payload = {"metrics": {"package": sources[0]}}
+    power = normalize(payload, "handheld", now=2_000_000_000)["metrics"][0]
+    assert power["value"] == 0 and power["state"] == "stale"
+
+    unrelated = [
+        metric("rapl_power_power_w", 5, domain="dram"),
+        metric("rapl_power_power_w", 25, domain="psys"),
+        metric("powerstat_package_thermal_design_power_watts", 30, package_id="0"),
+        metric("gpu_power_power_w", 1, type="gpu_cur_power"),
+        metric("gpu_power", 12.5, type="pkg_cur_power"),
+    ]
+    payload = {"metrics": {str(i): item for i, item in enumerate(unrelated)}}
+    assert not any(item["id"] == "package_power_w"
+                   for item in normalize(payload, "handheld", now=2_000_000_000)["metrics"])
 
 
 def test_telemetry_reports_per_container_cpu_and_memory():

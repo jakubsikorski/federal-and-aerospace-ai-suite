@@ -357,11 +357,13 @@ vehicles move, because an object counts by where its feet or wheels touch the gr
 
 ![Resources](_assets/guide-resources.jpg)
 
-1. **Tiles** - CPU, Memory (free RAM), GPU engines, NPU, Package power and Services. Tap a tile
+1. **Tiles** - CPU, Memory (free RAM), GPU engines, NPU, Power and Services. Tap a tile
    to show its chart.
 2. **Chart** - the last 5 minutes of the selected tile. For **Services**, you see one card per
    application service instead, with its share of CPU and memory use, busiest first. Tap
    **+N more · Expand** to see all of them.
+   **Power** shows separate package, GPU and NPU readings in watts. These domains may overlap;
+   do not add them together or treat them as wall power.
 3. **Expand** - show a larger chart.
 4. **Details** - show the raw readings.
 
