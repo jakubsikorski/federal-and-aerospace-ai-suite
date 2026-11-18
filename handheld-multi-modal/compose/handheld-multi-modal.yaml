@@ -264,12 +264,15 @@ services:
     user: "1000:1000"
     ports:
       - "127.0.0.1:8012:8011/tcp"
-    # CPU by default; TTS_DEVICE=GPU (config/devices.yaml) moves it to the GPU.
+    # CPU by default; Make records the selected device in config/speech/tts.env.
     # The cap keeps DLSPS decode/track headroom when it runs on CPU.
     cpus: 4
     group_add:
       - video
       - "${RENDER_GID:-992}"
+    env_file:
+      - path: ${ASSET_ROOT:-..}/config/speech/tts.env
+        required: false
     environment:
       HF_HOME: /app/text-to-speech/.cache/huggingface
       # Keep the Intel GPU kernel cache in the persistent cache volume (the
@@ -349,11 +352,13 @@ services:
     # No published port: the loopback-bound proxy is the only entry point.
     environment:
       BACKEND_CONFIG: /config/backend.yaml
+      TTS_DEVICE_FILE: /config/speech/tts.env
       # Every call Backend makes is to a sibling container. Without this the
       # inherited corporate proxy intercepts them and returns 504 immediately.
       <<: *proxy-env-blocked
     volumes:
       - ../config/backend/backend.yaml:/config/backend.yaml:ro
+      - ${ASSET_ROOT:-..}/config/speech:/config/speech:ro
       - ../config/dlsps/detector-profile.json:/config/detector-profile.json:ro
       # Display configured model placement without copying model/device values.
       - ../config/chatqna/config.yaml:/config/model-placement/chatqna.yaml:ro

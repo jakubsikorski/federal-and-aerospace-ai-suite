@@ -56,8 +56,10 @@ Pass the same overrides to later Make commands, for example
   detections and annotated video.
 - Both drain existing pipelines first. A failed startup stops the application and exits with a
   non-zero code; it never substitutes another model or device.
-- `make speech-device` restarts without demo feeds. In demo mode, use
-  `make demo-up TTS_DEVICE=GPU` instead.
+- `make speech-device TTS_DEVICE=GPU` changes only SpeechT5 and recreates only its container.
+  Camera configuration, video pipelines, the Backend, and other services stay unchanged.
+  The application must already be running; stopped or incomplete deployments are rejected
+  without changing settings. Use `TTS_DEVICE=CPU` to switch back.
 
 ## First Start and Offline Starts
 
@@ -74,8 +76,9 @@ image rebuild cannot reach the registry, Make starts the previously built image 
 warning. A changed `backend/requirements.txt` or a model change in `config/` needs Internet
 access again.
 
-`config/devices.yaml`, `config/mediamtx.yml`, and `config/tls/` are generated per device under
-`ASSET_ROOT`. Tracked configuration is not modified.
+`config/devices.yaml`, `config/speech/tts.env`, `config/mediamtx.yml`, and `config/tls/`
+are generated per device under `ASSET_ROOT`. The Backend reads the speech device selection
+without restarting. Tracked configuration is not modified.
 
 ## Readiness Check
 

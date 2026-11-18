@@ -1087,6 +1087,37 @@ def test_model_placement_separates_configuration_runtime_and_availability():
         finally:
             del os.environ["TTS_DEVICE"]
         assert services.tts()[0] == "microsoft/speecht5_tts on CPU", "CPU is the default speech device"
+        # A live device switch must update the same Backend objects without a restart.
+        from unittest.mock import patch
+        selection = root / "tts.env"
+        with patch.dict(os.environ, {"TTS_DEVICE_FILE": str(selection), "TTS_DEVICE": "CPU"}):
+            selection.write_text("TEXT_TO_SPEECH__MODELS__TTS__DEVICE=GPU\n")
+            try:
+                services.tts()
+                raise AssertionError("CPU speech must fail the new GPU selection")
+            except RuntimeError as exc:
+                assert "expected GPU" in str(exc)
+            for device in ("GPU", "CPU"):
+                selection.write_text(f"TEXT_TO_SPEECH__MODELS__TTS__DEVICE={device}\n")
+                replies["/v1/model-info"]["device"] = device
+                assert services.tts()[1]["device"] == device
+                placement.expires = 0
+                speech = placement.snapshot({}, {})["models"][3]
+                assert speech["configured_device"] == speech["runtime_device"] == device
+                assert speech["status"] == "ready"
+            for invalid in ("TEXT_TO_SPEECH__MODELS__TTS__DEVICE=NPU\n", "invalid\n"):
+                selection.write_text(invalid)
+                try:
+                    services.tts()
+                    raise AssertionError("invalid speech device selection was accepted")
+                except ValueError:
+                    pass
+            selection.unlink()
+            try:
+                services.tts()
+                raise AssertionError("missing speech device selection was ignored")
+            except FileNotFoundError:
+                pass
         replies["/pipelines/status"] = None
         placement.expires = 0
         result = placement.snapshot({"cam1": "owned"}, {"cam1": {"ok": True}})
@@ -5100,6 +5131,8 @@ def test_architecture_page_names_every_deployed_service():
     assert listed == set(compose["services"]), (listed ^ set(compose["services"]))
     for service in compose["services"].values():
         image = service["image"].split("@")[0]
+        if image.startswith("intel/"):
+            image = image.split(":")[0]
         if not image.startswith("handheld/"):
             assert image in page, image
     assert 'href="/architecture.html"' in (repo / "backend/app/static/index.html").read_text()

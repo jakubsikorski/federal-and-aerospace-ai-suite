@@ -18,11 +18,25 @@ import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable
 
 import httpx
 
 log = logging.getLogger(__name__)
+
+
+def tts_device(default: str = "CPU") -> str:
+    path = os.environ.get("TTS_DEVICE_FILE")
+    if path:
+        key, separator, device = Path(path).read_text().strip().partition("=")
+        if key != "TEXT_TO_SPEECH__MODELS__TTS__DEVICE" or not separator:
+            raise ValueError("invalid speech device configuration")
+    else:
+        device = os.environ.get("TTS_DEVICE") or default
+    if device not in {"CPU", "GPU"}:
+        raise ValueError("speech device must be CPU or GPU")
+    return device
 
 
 @dataclass
@@ -91,7 +105,7 @@ class Services:
     def tts(self) -> tuple[str, dict | None]:
         """/v1/model-info proves both provenance-approved model and the selected placement."""
         body = self._get("tts", "/v1/model-info").json()
-        expected = os.environ.get("TTS_DEVICE") or "CPU"
+        expected = tts_device()
         if body.get("device") != expected:
             raise RuntimeError(f"TTS device is {body.get('device')!r}, expected {expected}")
         return f"{body.get('model')} on {body.get('device')}", {

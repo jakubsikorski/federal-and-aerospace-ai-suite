@@ -43,6 +43,74 @@ def check_localhost_only():
     assert all(server.get('clientOnly') for server in mediamtx['webrtcICEServers2'])
 
 
+def check_speech_device_isolated(root):
+    commands = root / 'commands.bash'
+    commands.write_text(
+        '#!/usr/bin/env bash\n'
+        '# SPDX-FileCopyrightText: (C) 2026 Intel Corporation\n'
+        '# SPDX-License-Identifier: Apache-2.0\n'
+        'set -euo pipefail\n'
+        'docker() {\n'
+        '  printf "%s\\n" "$*" >> "$COMMAND_LOG"\n'
+        '  if [[ "$*" == *" ps --status running --services" ]]; then\n'
+        '    printf "%s\\n" "$RUNNING_SERVICES"\n'
+        '  fi\n'
+        '}\n'
+        'curl() { printf \'{"device":"%s"}\\n\' "$TTS_DEVICE"; }\n')
+    services = ['coturn', 'mediamtx', 'mqtt', 'metrics', 'dlsps', 'alert-agent',
+                'chatqna', 'audio-analyzer', 'tts', 'backend', 'proxy']
+    for camera_count in (0, 1, 2):
+        deployment = root / f'deployment-{camera_count}'
+        (deployment / 'config/tls').mkdir(parents=True)
+        for name in ('server.crt', 'server.key'):
+            (deployment / 'config/tls' / name).write_text('fixture TLS material\n')
+        command = ['make', '--no-print-directory', '-C', str(assets.REPO),
+                   f'ASSET_ROOT={deployment}', 'RENDER_GID=12345', 'ACCEL_GID=23456']
+        subprocess.run(command + ['setup', '-o', 'tls', 'TTS_DEVICE=CPU',
+                                  f'CAMERAS={camera_count or 2}',
+                                  f'DEMO_FEEDS={"yes" if camera_count else ""}'],
+                       check=True, capture_output=True, text=True)
+        devices = deployment / 'config/devices.yaml'
+        devices.write_text(devices.read_text() + '  custom:\n    cpus: 2\n')
+        (deployment / 'data/backend/history.fixture').write_bytes(b'camera history')
+        selection = deployment / 'config/speech/tts.env'
+        unchanged = {path: path.read_bytes() for path in deployment.rglob('*')
+                     if path.is_file() and path != selection}
+        log = root / f'commands-{camera_count}.log'
+        env = dict(os.environ, BASH_ENV=str(commands), COMMAND_LOG=str(log),
+                   RUNNING_SERVICES='\n'.join(services))
+        for device in ('GPU', 'CPU'):
+            result = subprocess.run(command + ['speech-device', '-o', 'preflight',
+                                               f'TTS_DEVICE={device}', 'CAMERAS=2',
+                                               'RENDER_GID=34567', 'ACCEL_GID=45678'],
+                                    env=env, capture_output=True, text=True)
+            assert result.returncode == 0, result.stdout + result.stderr
+            assert selection.read_text() == f'TEXT_TO_SPEECH__MODELS__TTS__DEVICE={device}\n'
+            assert all(path.read_bytes() == content for path, content in unchanged.items()), \
+                'speech-device changed deployment configuration, TLS or history'
+            assert {path for path in deployment.rglob('*') if path.is_file()} == set(unchanged) | {selection}
+        calls = log.read_text().splitlines()
+        assert len(calls) == 4, calls
+        assert all(call.endswith(' ps --status running --services') for call in calls[::2]), calls
+        assert all(call.endswith(' up -d --no-deps tts') for call in calls[1::2]), calls
+        if camera_count == 0:
+            for missing in [None, *services]:
+                log.unlink()
+                env['RUNNING_SERVICES'] = '\n'.join(s for s in services if s != missing) if missing else ''
+                before = {path: (path.read_bytes(), path.stat().st_mtime_ns)
+                          for path in deployment.rglob('*') if path.is_file()}
+                result = subprocess.run(command + ['speech-device', '-o', 'preflight',
+                                                   'TTS_DEVICE=GPU'],
+                                        env=env, capture_output=True, text=True)
+                assert result.returncode != 0, 'speech-device accepted a stopped or incomplete application'
+                assert 'run make up or make demo-up' in result.stderr, result.stderr
+                assert before == {path: (path.read_bytes(), path.stat().st_mtime_ns)
+                                  for path in deployment.rglob('*') if path.is_file()}, \
+                    'speech-device changed settings before rejecting the stopped application'
+                calls = log.read_text().splitlines()
+                assert len(calls) == 1 and calls[0].endswith(' ps --status running --services'), calls
+
+
 def main():
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
@@ -193,6 +261,7 @@ def main():
         assert groups == [list(dict.fromkeys(['12345', '23456', str(os.getgid())])),
                           list(dict.fromkeys(['12345', str(os.getgid())]))]
         assert not (group_root / 'config/mediamtx.yml').exists(), 'MediaMTX needs no per-device LAN copy'
+        check_speech_device_isolated(root)
     check_localhost_only()
     # The committed example packet is exactly what the generator produces.
     assert assets.MISSION_EXAMPLE.read_bytes() == assets._pdf_bytes(assets.MISSION_DEMO_LINES), \
