@@ -7,8 +7,8 @@ description: Use when configuring the stock Open Edge Platform Text To Speech se
 
 # Text To Speech
 
-Image `intel/text-to-speech:2026.2.0`, source `edge-ai-libraries`
-(release-2026.2.0). Compose service `tts`; host `127.0.0.1:8012` maps to
+Stock image `intel/text-to-speech` (tag pinned in `compose/handheld-multi-modal.yaml`),
+source `edge-ai-libraries`. Compose service `tts`; host `127.0.0.1:8012` maps to
 container port `8011`.
 
 ## Configuration

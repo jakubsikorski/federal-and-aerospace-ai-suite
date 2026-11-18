@@ -7,8 +7,8 @@ description: Use when reading or extending handheld resource telemetry from the 
 
 # Metrics Manager
 
-Image `intel/metrics-manager:2026.2.0`, source `edge-ai-libraries`
-`microservices/metrics-manager/` (release-2026.2.0). Compose service
+Stock image `intel/metrics-manager` (tag pinned in `compose/handheld-multi-modal.yaml`),
+source `edge-ai-libraries/microservices/metrics-manager/`. Compose service
 `metrics`; host ports `127.0.0.1:9090` (API), `9273` (Prometheus export) and
 `8186` (custom metrics input).
 
