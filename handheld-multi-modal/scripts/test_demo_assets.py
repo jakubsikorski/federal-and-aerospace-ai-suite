@@ -9,6 +9,7 @@ import io
 import json
 import os
 from pathlib import Path
+import runpy
 import subprocess
 import sys
 import tempfile
@@ -111,9 +112,73 @@ def check_speech_device_isolated(root):
                 assert len(calls) == 1 and calls[0].endswith(' ps --status running --services'), calls
 
 
+def check_live_speech_device(root):
+    with patch('ssl.create_default_context'), patch('urllib.request.build_opener'):
+        checker = runpy.run_path(str(assets.REPO / 'scripts/check_live.py'))
+    namespace = checker['main'].__globals__
+    deployment = root / 'live-check'
+    (deployment / 'config/speech').mkdir(parents=True)
+    selection = deployment / 'config/speech/tts.env'
+    # Stale deployment YAML must not override the live speech selection.
+    (deployment / 'config/devices.yaml').write_text(
+        'TEXT_TO_SPEECH__MODELS__TTS__DEVICE: CPU\n')
+    expected_model = checker['configured'](
+        assets.REPO / 'config/chatqna/config.yaml', r'^\s*LLM_MODEL_ID:\s*"([^"]+)"')
+    for device in ('GPU', 'CPU'):
+        calls = []
+
+        def call(url, *args, **kwargs):
+            calls.append(url)
+            if url.endswith('/api/streams'):
+                return {'data': []}
+            if url.endswith('/v3/paths/list'):
+                return {'items': []}
+            if url.endswith('/pipelines/status'):
+                return []
+            if url.endswith('/api/metrics'):
+                return {'data': {'status': 'ok', 'metrics': [{}]}}
+            if url.endswith('/model'):
+                return {'llm_model': expected_model}
+            if url.endswith('/chat'):
+                return {'status': 'Success', 'metadata': 'Answer: 4'}
+            if url.endswith('/v1/model-info'):
+                return {'device': device, 'model': 'microsoft/speecht5_tts'}
+            if url.endswith('/v1/audio/speech'):
+                return b'RIFF' + b'\0' * 1024
+            if url.endswith('/v1/audio/transcriptions'):
+                return {'text': 'Camera two is ready.'}
+            if url.endswith('/api/v1/health'):
+                return {'status': 'healthy'}
+            if url.endswith('/health'):
+                return {'status': 'ok'}
+            if url == 'https://127.0.0.1:8443/':
+                return b'<button id="pause-updates">'
+            raise AssertionError(f'unexpected live-check request: {url}')
+
+        selection.write_text(f'TEXT_TO_SPEECH__MODELS__TTS__DEVICE={device}\n')
+        with patch.dict(namespace, ASSET_ROOT=deployment, call=call, failed=False), \
+                contextlib.redirect_stdout(io.StringIO()):
+            assert checker['main']() == 0
+        assert any(url.endswith('/v1/audio/speech') for url in calls)
+        assert any(url.endswith('/v1/audio/transcriptions') for url in calls)
+    for contents in (None, '', 'TEXT_TO_SPEECH__MODELS__TTS__DEVICE=NPU\n'):
+        if contents is None:
+            selection.unlink()
+        else:
+            selection.write_text(contents)
+        calls.clear()
+        output = io.StringIO()
+        with patch.dict(namespace, ASSET_ROOT=deployment, call=call, failed=False), \
+                contextlib.redirect_stdout(output):
+            assert checker['main']() == 1
+        assert 'missing or invalid config/speech/tts.env' in output.getvalue()
+        assert not any(url.endswith('/v1/audio/speech') for url in calls)
+
+
 def main():
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
+        check_live_speech_device(root)
         calls = []
         def api(path, body=None):
             calls.append(path)
