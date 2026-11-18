@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import runpy
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -175,10 +176,38 @@ def check_live_speech_device(root):
         assert not any(url.endswith('/v1/audio/speech') for url in calls)
 
 
+def check_asset_recovery_quoting(root):
+    commands = root / 'recovery-commands.bash'
+    commands.write_text(
+        '#!/usr/bin/env bash\n'
+        '# SPDX-FileCopyrightText: (C) 2026 Intel Corporation\n'
+        '# SPDX-License-Identifier: Apache-2.0\n'
+        'set -euo pipefail\n'
+        'rm() { return 1; }\n'
+        'docker() { return 0; }\n')
+    recipe = (
+        '.PHONY: test-recovery-command\n'
+        'test-recovery-command:\n'
+        '\t@ASSET_ROOT="$$RECOVERY_ROOT"\n'
+        '\t$(call remove_assets,data config/tls)\n')
+    for name in ('handheld data', 'handheld\'"$;*[]\\data'):
+        deployment = str(root / name)
+        env = dict(os.environ, BASH_ENV=str(commands), RECOVERY_ROOT=deployment)
+        result = subprocess.run(
+            ['make', '--no-print-directory', '-C', str(assets.REPO),
+             '-f', 'Makefile', '-f', '-', 'test-recovery-command'],
+            input=recipe, env=env, capture_output=True, text=True, check=True)
+        recovery = result.stderr.split('Run: ', 1)[1].strip()
+        assert shlex.split(recovery) == [
+            'sudo', 'rm', '-rf', '--', deployment + '/data', deployment + '/config/tls',
+        ], recovery
+
+
 def main():
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         check_live_speech_device(root)
+        check_asset_recovery_quoting(root)
         calls = []
         def api(path, body=None):
             calls.append(path)

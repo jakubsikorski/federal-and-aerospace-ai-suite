@@ -214,7 +214,11 @@ if ! rm -rf -- $(addprefix "$$ASSET_ROOT"/,$(1)) 2>/dev/null; then
     docker run --rm --network none --user 0:0 --entrypoint /bin/sh -v "$$ASSET_ROOT:/assets" \
       "$$image" -c 'rm -rf -- "$$@"' sh $(addprefix /assets/,$(1)) 2>/dev/null && { removed=1; break; }
   done
-  [[ $$removed ]] || echo "Warning: files owned by containers remain and no local image can remove them. Run: sudo rm -rf $(addprefix "$$ASSET_ROOT"/,$(1))" >&2
+  if [[ ! $$removed ]]; then
+    printf 'Warning: files owned by containers remain and no local image can remove them. Run: sudo rm -rf --' >&2
+    printf ' %q' $(addprefix "$$ASSET_ROOT"/,$(1)) >&2
+    printf '\n' >&2
+  fi
 fi
 endef
 
