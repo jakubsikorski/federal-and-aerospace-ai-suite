@@ -46,6 +46,12 @@ curl -fsS -o out.wav http://127.0.0.1:8012/v1/audio/speech \
   `audio_base64`, sampling rate, duration and model and voice metadata.
 - The request `model` field is metadata only; it does not select a model.
 - `GET /v1/audio/voices` lists voices.
+- `POST /v1/audio/speech/stream` returns SSE events with one base64 WAV
+  phrase each, then `[DONE]`. SpeechT5 sends a single event after full
+  synthesis, so it does not start playback sooner; the Backend uses
+  `/v1/audio/speech`.
+- `GET /v1/performance` reports only the last request latency (first chunk
+  for streamed requests).
 - `/health` does not prove synthesis works; check the `device` field from
   `/v1/model-info` and a real WAV.
 

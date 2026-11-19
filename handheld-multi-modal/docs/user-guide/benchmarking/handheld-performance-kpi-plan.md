@@ -146,7 +146,7 @@ into the published payload) and adds to `crop_context`:
 
 Counts are cumulative per tracking session; the Backend derives rates from
 deltas, so a lost MQTT message does not break them. Verified in the
-`intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24` image with a real
+stock `intel/dlstreamer-pipeline-server` image (tag pinned in Compose) with a real
 GStreamer pipeline (one merged message per frame, stamp removed,
 `pipeline_ms` ≈ 1 ms on `videotestsrc`), and covered offline by
 `make test-crops`.
@@ -267,9 +267,11 @@ are stored.
 ## 3. Phase B — upstream requests (hand-off specification)
 
 Source checked: [`open-edge-platform/edge-ai-libraries`](https://github.com/open-edge-platform/edge-ai-libraries)
-at tag `v2026.2.0-rc3`, the closest tag to the pinned `2026.2.0` images. File
-references below are relative to that tag. Confirm against the released image
-source before implementation.
+at tag `v2026.3.0-rc1`, the source of the stock images pinned in Compose. File
+references below are relative to that tag. Each "Current state" was re-checked
+against the previous tag (`v2026.2.0-rc3`); changes are listed under
+**New in this release**. None of the requested values below is exposed yet.
+Confirm against the released image source before implementation.
 
 ### Common contract for all services
 
@@ -299,7 +301,7 @@ the same way:
 **Current state**
 
 - `POST /v1/chatqna/chat` takes `{input, stream=true}`
-  ([`app/server.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.2.0-rc3/sample-applications/chat-question-and-answer-core/app/server.py)).
+  ([`app/server.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.3.0-rc1/sample-applications/chat-question-and-answer-core/app/server.py)).
   Streaming yields raw `data: {chunk}\n\n` frames with no event name, usage, or
   timing (`app/chain.py` `process_query`). Non-streaming returns
   `{"status", "metadata"}` and only logs elapsed time.
@@ -307,14 +309,32 @@ the same way:
   (`app/openvino_backend.py`), not `openvino_genai.LLMPipeline`, so OpenVINO
   GenAI `PerfMetrics` (TTFT, TPOT, throughput) is not available at the call site.
   The tokenizer is reachable as `llm.pipeline.tokenizer`.
-- The LLM is exported with a fixed `weight_format="int8"`
-  (`app/openvino_backend.py` `OVModelForCausalLM.from_pretrained`). The GPU image
-  runs the same code. **The 4-bit stretch profile cannot be deployed or measured
-  today.**
+- On CPU and GPU, the LLM is exported with a fixed `weight_format="int8"`
+  (`app/openvino_backend.py` `OVModelForCausalLM.from_pretrained`). **The 4-bit
+  stretch profile cannot be deployed on CPU or GPU** (see the NPU path below).
 - RAG is `retriever (FAISS) → optional ContextualCompressionRetriever (reranker)
   → prompt → llm → StrOutputParser` (`app/chain.py` `build_chain`, `get_retriever`).
 - `GET /model` returns only the configured model ID. No `/metrics`, Prometheus,
-  or OpenTelemetry. No admission lock or queue around generation.
+  or OpenTelemetry.
+
+**New in this release**
+
+- A process-wide `_generation_lock` (`app/chain.py`) now serializes generation,
+  so concurrent questions queue implicitly. The wait is not measured, which
+  makes `queue_wait_s` more important: without it, queue time shows up as TTFT.
+- Streaming generation is cancelled when the client disconnects.
+- With sources enabled, streaming sends `event: sources` before the answer
+  `data:` frames; non-streaming adds `sources`. There is still no usage or
+  timing event, so the opt-in metrics event below is still needed.
+- **NPU path:** with the LLM on NPU, the model is exported as int4 channel-wise
+  and runs through OpenVINO GenAI (`GenAILLM`, `app/openvino_xpu.py`) with a
+  prompt-token limit (`NPU_MAX_PROMPT_LEN`). `GenAILLM` has a `count_tokens`
+  helper (used for prompt fitting) and streams through a text callback, so
+  exact token counts and GenAI `PerfMetrics` are reachable on this path but
+  not returned. CPU and GPU keep the `HuggingFacePipeline` int8 path, so the
+  4-bit stretch profile is still only possible on NPU.
+- The image is now a single `core` image for all devices; the upstream Compose
+  service is `chatqna-core-openvino`.
 
 **Requested values**
 
@@ -322,7 +342,7 @@ the same way:
 | --- | --- | --- |
 | `input_tokens` | Tokens in the fully rendered prompt (system + context + question) | `len(tokenizer(rendered_prompt).input_ids)` |
 | `output_tokens` | Generated tokens, excluding the echoed prompt | Token IDs from the generation streamer, or `len(tokenizer(answer, add_special_tokens=False).input_ids)` |
-| `queue_wait_s` | Request arrival → generation admitted | New `asyncio.Semaphore` (configurable concurrency) around chain execution |
+| `queue_wait_s` | Request arrival → generation admitted | Timestamp before and after acquiring the existing `_generation_lock` in `app/chain.py` |
 | `retrieval_s` | Query embedding + FAISS search | Wrap the base retriever (`Runnable` timing or LangChain callback `on_retriever_start/end`) |
 | `rerank_s` | Reranker compression | Wrap the compressor separately |
 | `ttft_s` | Generation start → first generated token | Timestamp of the first token from the streamer, measured from the LLM call start (exclude retrieval) |
@@ -363,8 +383,9 @@ Two implementation options:
   `weight_format_requested`, `weight_format_verified` (from the exported
   model's `openvino_config.json` / IR `rt_info` / weight element types),
   `model_revision`, `load_seconds`, `warmup_seconds`.
-- **Configuration:** `LLM_WEIGHT_FORMAT` (`int8` default, `int4`, `fp16`),
-  with INT4 group size/ratio, so the stretch profile can be deployed.
+- **Configuration:** `LLM_WEIGHT_FORMAT` (`int8` default, `int4`, `fp16`)
+  for CPU and GPU, with INT4 group size/ratio, so the stretch profile can be
+  deployed off NPU.
 
 **Handheld use:** opts into `include_metrics`, replaces the approximate words/s
 with exact tokens/s, compares against the 15 tokens/s target only when
@@ -375,16 +396,40 @@ with exact tokens/s, compares against the 15 tokens/s target only when
 
 **Current state**
 
-- `POST /v1/audio/transcriptions` (OpenAI-compatible; `json`, `text`, `srt`,
-  `vtt`, and a `verbose_json`-like default with `duration` and `segments`)
-  ([`api/openai_endpoints.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.2.0-rc3/microservices/audio-analyzer/api/openai_endpoints.py)).
+- `POST /v1/audio/transcriptions` (OpenAI-compatible; `response_format`
+  `json` (default, `{"text"}`), `verbose_json` (with `duration` and
+  `segments`), `text`, `srt`, `vtt`; `stream=true` sends SSE text deltas and a
+  final transcript event for `json`/`verbose_json`)
+  ([`api/openai_endpoints.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.3.0-rc1/microservices/audio-analyzer/api/openai_endpoints.py)).
 - Uses `openvino_genai.WhisperPipeline`; audio loaded with `soundfile`,
   resampled with `librosa`; `generate()` is serialized by a module-level
-  `_TRANSCRIBE_LOCK` (`components/asr/openvino_genai/whisper.py`).
+  `_TRANSCRIBE_LOCK` (`components/asr/openvino_genai/whisper.py`). No
+  `result.perf_metrics` is read.
 - `/v1/performance` returns only the **last** ASR latency in ms
   (`utils/latency_store.py`); with several clients it cannot be attributed to
   a request. `/v1/model-info` reports configured `weight_format`, not verified
   precision. Load and warmup are logged without durations. No `/metrics`.
+
+**New in this release**
+
+- `POST /v1/audio/transcriptions` now honors an optional per-request `device`
+  (`CPU`, `GPU`, `NPU`); unsupported or unavailable devices return 400. A
+  `diarization` field can turn diarization off per request. Because the device
+  can now vary per request, the `performance` object below must include the
+  resolved `device`.
+- The VSS-style job route rejects a `model_name` that does not match the
+  configured model (400) instead of logging a warning.
+- English-only (`.en`) Whisper checkpoints drop the `language` hint instead of
+  failing.
+- The realtime WebSocket `/v1/realtime` adds `input_audio_buffer.preview`
+  (a throwaway transcript of the trailing ~2 s while the user is still
+  speaking), `sequence` numbers on transcript events, and a `low_latency`
+  session mode in which a full-buffer preview can be reused by the commit.
+  `config.yaml` can define a smaller `preview:` ASR model. These lower the
+  perceived ASR delay for clients that stream microphone audio; the Handheld
+  uploads one bounded WAV per utterance, so they do not apply today.
+- The Handheld client (`model=whisper-1`, `response_format=json`, `/health`)
+  is unaffected.
 
 **Requested values**
 
@@ -420,8 +465,8 @@ time, and shows model-only RTF instead of API RTF.
 
 **Current state**
 
-- `POST /v1/audio/speech` returns a fully buffered WAV (or JSON with base64);
-  **no streaming** ([`api/openai_endpoints.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.2.0-rc3/microservices/text-to-speech/api/openai_endpoints.py)).
+- `POST /v1/audio/speech` returns a fully buffered WAV (or JSON with base64)
+  ([`api/openai_endpoints.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.3.0-rc1/microservices/text-to-speech/api/openai_endpoints.py)).
 - SpeechT5 runs through `openvino_genai.Text2SpeechPipeline`; text
   normalization is `normalize_for_speech`; `generate()` is serialized by an
   inference lock (`components/tts/openvino/speecht5.py`). Acoustic model and
@@ -430,6 +475,23 @@ time, and shows model-only RTF instead of API RTF.
 - `/v1/performance` returns only the last latency in ms (`pipeline.py`,
   `utils/latency_store.py`). Startup warmup is logged without duration. No
   `/metrics`.
+
+**New in this release**
+
+- `POST /v1/audio/speech/stream`
+  ([`api/streaming_endpoints.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.3.0-rc1/microservices/text-to-speech/api/streaming_endpoints.py))
+  returns SSE `data:` events, each a JSON object with `index`, `duration`,
+  `sampling_rate`, `voice` and one phrase as base64 WAV, then `[DONE]`.
+  `POST /v1/audio/speech` is unchanged.
+- Only backends with incremental decoding (Kokoro) emit several phrases.
+  SpeechT5, which the Handheld uses, emits **one** event after full synthesis,
+  so the stream does not reduce time to first audio for the Handheld today.
+- For streamed requests, `/v1/performance` now records latency to the first
+  chunk instead of total synthesis. It is still a last-value store, not per
+  request.
+- The optional streaming request below is therefore **partly met**: the
+  transport exists. Still missing are per-phrase streaming for SpeechT5 and
+  `time_to_first_audio_s` in the first event.
 
 **Requested values**
 
@@ -453,12 +515,12 @@ time, and shows model-only RTF instead of API RTF.
   `tts_input_characters_total`; gauge `tts_requests_in_flight`; gauges
   `tts_model_load_seconds`, `tts_warmup_seconds`.
 - `/v1/model-info`: add `precision_verified` and load/warmup durations.
-- **Optional, highest UX value:** a streaming mode
-  (`"stream": true`) that splits normalized text into sentences and returns
-  each sentence's audio as soon as it is ready (chunked PCM with a fixed
-  header, or one framed WAV per sentence), with `time_to_first_audio_s` in the
-  first frame. The Handheld arbiter already splits answers into chunks, so
-  this mainly helps longer first sentences.
+- **Optional, highest UX value:** phrase-level output on the existing
+  `/v1/audio/speech/stream` for SpeechT5: split normalized text into sentences
+  and send each sentence's audio as soon as it is ready, with
+  `time_to_first_audio_s` and the `performance` values in the events. The
+  Handheld arbiter already splits answers into chunks, so this mainly helps
+  longer first sentences.
 
 **Handheld use:** splits the "Speak" stage into queue wait and synthesis, and
 shows TTS RTF from the service.
@@ -469,13 +531,14 @@ Phase A covers the Handheld needs with application callbacks. These upstream
 changes would benefit all DLSPS users and remove the need for the ingress
 callback:
 
-**Current state** ([`src/server/gstreamer_pipeline.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.2.0-rc3/microservices/dlstreamer-pipeline-server/src/server/gstreamer_pipeline.py)):
+**Current state** ([`src/server/gstreamer_pipeline.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.3.0-rc1/microservices/dlstreamer-pipeline-server/src/server/gstreamer_pipeline.py)):
 status has `avg_fps` (lifetime), `frame_fps` (about 1 s window), and, when
 probes match, `avg_pipeline_latency`/`frame_latency`. Latency pairs a probe on
 the source element's pad with an appsink probe through a FIFO, which
 mispairs when any queue drops frames or when source buffers are not one per
 frame. OpenTelemetry export exists with only `cpu_usage_percentage`,
 `memory_usage_bytes`, and `fps_per_pipeline` (`src/opentelemetry/opentelemetryexport.py`).
+No relevant change in this release.
 
 **Requested**
 
@@ -491,10 +554,11 @@ frame. OpenTelemetry export exists with only `cpu_usage_percentage`,
 
 `POST /alerts` and `POST /actions/execute` exist; `duration_ms` covers only the
 action execution, and `/metrics` is explicitly 404
-([`src/main.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.2.0-rc3/microservices/alert-agent-service/src/main.py)).
+([`src/main.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.3.0-rc1/microservices/alert-agent-service/src/main.py)).
 Request: an `alert_agent_ingest_to_dispatch_seconds` histogram (route entry →
 dispatch completion) with `{mode, outcome}` labels, plus request counters.
-Handheld already measures its own dispatch call, so this is low priority.
+Handheld already measures its own dispatch call, so this is low priority. No
+relevant change in this release.
 
 ### Not requested
 
@@ -688,13 +752,13 @@ Handheld:
 - [Panel UI](../../../backend/app/static/index.html)
 - [Edge Workloads and Benchmarks guide](run-edge-benchmarks.md)
 
-Upstream (tag `v2026.2.0-rc3`):
+Upstream (tag `v2026.3.0-rc1`):
 
-- [Chat Q&A Core](https://github.com/open-edge-platform/edge-ai-libraries/tree/v2026.2.0-rc3/sample-applications/chat-question-and-answer-core)
-- [Audio Analyzer](https://github.com/open-edge-platform/edge-ai-libraries/tree/v2026.2.0-rc3/microservices/audio-analyzer)
-- [Text To Speech](https://github.com/open-edge-platform/edge-ai-libraries/tree/v2026.2.0-rc3/microservices/text-to-speech)
-- [DL Streamer Pipeline Server](https://github.com/open-edge-platform/edge-ai-libraries/tree/v2026.2.0-rc3/microservices/dlstreamer-pipeline-server)
-- [Alert Agent](https://github.com/open-edge-platform/edge-ai-libraries/tree/v2026.2.0-rc3/microservices/alert-agent-service)
+- [Chat Q&A Core](https://github.com/open-edge-platform/edge-ai-libraries/tree/v2026.3.0-rc1/sample-applications/chat-question-and-answer-core)
+- [Audio Analyzer](https://github.com/open-edge-platform/edge-ai-libraries/tree/v2026.3.0-rc1/microservices/audio-analyzer)
+- [Text To Speech](https://github.com/open-edge-platform/edge-ai-libraries/tree/v2026.3.0-rc1/microservices/text-to-speech)
+- [DL Streamer Pipeline Server](https://github.com/open-edge-platform/edge-ai-libraries/tree/v2026.3.0-rc1/microservices/dlstreamer-pipeline-server)
+- [Alert Agent](https://github.com/open-edge-platform/edge-ai-libraries/tree/v2026.3.0-rc1/microservices/alert-agent-service)
 
 Standards:
 

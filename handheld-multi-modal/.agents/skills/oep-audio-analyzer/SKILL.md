@@ -48,5 +48,13 @@ curl -fsS --max-time 180 http://127.0.0.1:8011/v1/audio/transcriptions \
 - `model` must be `whisper-1` (compatibility alias); `whisper-medium` fails
   validation. The server configuration selects the real checkpoint.
 - The response is `{"text": "..."}` with an `X-Session-ID` header.
+- Optional form fields: `device` (`CPU`, `GPU`, `NPU`) overrides the
+  configured ASR device for one request and returns 400 when unsupported or
+  unavailable; `stream=true` returns SSE text deltas (`json`/`verbose_json`
+  only). The Backend uses neither.
+- `GET /v1/performance` reports only the last request latency; it is not
+  per request. `WS /v1/realtime` (with `input_audio_buffer.preview` and a
+  `low_latency` mode) targets live microphone streaming, which the Backend
+  does not use.
 - `/health` does not prove GPU execution. Check the export log and a real
   transcription.
