@@ -4,8 +4,8 @@ import json
 import paho.mqtt.client as mqtt
 from gstgva import VideoFrame
 
-MQTT_BROKER      = 'host.docker.internal'
-MQTT_PORT        = 1884
+MQTT_BROKER      = os.environ.get('MQTT_HOST', 'host.docker.internal')
+MQTT_PORT        = int(os.environ.get('MQTT_PORT', '1883'))
 UAV_ID           = os.environ.get('UAV_ID', 'uav-1')
 MQTT_TOPIC_PREFIX = f'uav/{UAV_ID}/telemetry/#'
 

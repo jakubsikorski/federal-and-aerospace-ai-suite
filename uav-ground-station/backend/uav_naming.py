@@ -53,12 +53,29 @@ def is_managed_name(name: str) -> bool:
     return bool(MANAGED_NAME.fullmatch(name or "") or LEGACY_NAME.fullmatch(name or ""))
 
 
+def owns(name: str, host: str) -> bool:
+    """True if `name` is a host-qualified stream name built for `host`. Unlike
+    the registry this needs no state, so it still holds for a host whose
+    cameras are stopped or after a restart of this container."""
+    return (name or "").startswith(f"uav-{host_tag(host)}--")
+
+
+def camera_of(name: str) -> Optional[str]:
+    """Camera part of a host-qualified stream name, or None."""
+    if not MANAGED_NAME.fullmatch(name or ""):
+        return None
+    return name.split("--", 1)[1]
+
+
 # --- (host, camera) registry, authoritative source for "whose stream is this" ---
 # stream_name -> (host, camera). Written by vss_live_sync.py on every
 # reconciliation pass; read by vss_search.py when a request asks to be
 # scoped to one host's footage, or to attach camera/host metadata to a
 # result so the UI can show "which drone/camera did this clip come from".
 _registry: dict = {}
+# host -> cameras of every stream seen for it in VSS (running or not), so the
+# search filters still offer a UAV whose cameras are currently stopped.
+_known: dict = {}
 
 
 def register(name: str, host: str, camera: str) -> None:
@@ -99,12 +116,24 @@ def stream_names_for_host(host: str) -> set:
     return {name for name, (h, _camera) in _registry.items() if h == host}
 
 
+def note_known(host: str, cameras) -> None:
+    cams = set(cameras)
+    if cams:
+        _known[host] = cams
+    else:
+        _known.pop(host, None)
+
+
+def forget_host(host: str) -> None:
+    _known.pop(host, None)
+
+
 def hosts_and_cameras() -> dict:
-    """{host: sorted [camera, ...]} for every currently-managed stream in the
-    registry -- i.e. every UAV host + camera combination that's currently
-    live-indexed. Used to populate the search UI's "UAV" / "Camera" filter
-    dropdowns (see vss_search.py's GET /api/search/sources)."""
-    out: dict = {}
+    """{host: sorted [camera, ...]} for every UAV host + camera combination that
+    is live-indexed or has indexed footage kept in VSS. Used to populate the
+    search UI's "UAV" / "Camera" filter dropdowns (see vss_search.py's
+    GET /api/search/sources)."""
+    out: dict = {h: set(c) for h, c in _known.items()}
     for _name, (host, camera) in _registry.items():
         out.setdefault(host, set()).add(camera)
     return {host: sorted(cams) for host, cams in out.items()}

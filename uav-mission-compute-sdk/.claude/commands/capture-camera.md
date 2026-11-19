@@ -28,7 +28,7 @@ sleep 2
 ### Quick capture single frame (requires ffmpeg)
 ```bash
 # Replace <camera> with: nadir (usb mode) or nadir/forward/rear (sim mode)
-ffmpeg -i rtsp://localhost:8554/uav-1/<camera> -frames:v 1 /tmp/<camera>_frame.jpg -y
+ffmpeg -rtsp_transport tcp -i rtsp://localhost:8554/uav-1/<camera> -frames:v 1 /tmp/<camera>_frame.jpg -y
 
 # Verify it's a valid JPEG
 file /tmp/<camera>_frame.jpg
@@ -38,7 +38,7 @@ file /tmp/<camera>_frame.jpg
 ```bash
 # Sim mode only
 for cam in nadir forward rear; do
-  ffmpeg -i rtsp://localhost:8554/uav-1/${cam} -frames:v 1 /tmp/${cam}_frame.jpg -y 2>&1 | grep -q "frame=" && echo "✓ ${cam} captured" || echo "✗ ${cam} failed" &
+  ffmpeg -rtsp_transport tcp -i rtsp://localhost:8554/uav-1/${cam} -frames:v 1 /tmp/${cam}_frame.jpg -y 2>&1 | grep -q "frame=" && echo "✓ ${cam} captured" || echo "✗ ${cam} failed" &
 done
 wait
 ls -lh /tmp/{nadir,forward,rear}_frame.jpg
@@ -46,12 +46,12 @@ ls -lh /tmp/{nadir,forward,rear}_frame.jpg
 
 ### Record 5-second video clip
 ```bash
-ffmpeg -i rtsp://localhost:8554/uav-1/nadir -t 5 -c copy /tmp/nadir_clip.mp4
+ffmpeg -rtsp_transport tcp -i rtsp://localhost:8554/uav-1/nadir -t 5 -c copy /tmp/nadir_clip.mp4
 ```
 
 ### View live stream (requires ffplay)
 ```bash
-ffplay rtsp://localhost:8554/uav-1/nadir
+ffplay -rtsp_transport tcp rtsp://localhost:8554/uav-1/nadir
 ```
 
 If you still get 404, camera publisher is not active yet:

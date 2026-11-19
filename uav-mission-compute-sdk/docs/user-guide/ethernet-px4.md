@@ -297,7 +297,7 @@ infra/scripts/
 
 **`docker compose build` fails on FC machine**
 - Set `HTTP_PROXY` / `HTTPS_PROXY` before building if behind a corporate proxy
-- mavlink-router builds from source (Ubuntu 22.04) — requires internet on first build
+- mavlink-router builds from source (Ubuntu 24.04) — requires internet on first build
 
 **Port 14541 unreachable**
 - Allow the port: `sudo ufw allow 14541/udp` on FC machine

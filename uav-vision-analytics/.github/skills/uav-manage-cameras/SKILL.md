@@ -128,7 +128,7 @@ remembered version (the format can change between app releases).
    found" warnings for the changed camera(s).
 3. `make cameras-status` (if the stack is armed/running) shows the camera's
    actual running pipeline matching the file.
-4. `ffplay rtsp://<HOST_IP>:8555/uav-<id>` (or the ground-station dashboard)
+4. `ffplay -rtsp_transport tcp rtsp://<HOST_IP>:8555/uav-<id>` (or the ground-station dashboard)
    shows the expected video for the changed camera.
 5. For a removed/disabled camera: it no longer appears in `make cameras-status`
    after the next arm/disarm cycle.

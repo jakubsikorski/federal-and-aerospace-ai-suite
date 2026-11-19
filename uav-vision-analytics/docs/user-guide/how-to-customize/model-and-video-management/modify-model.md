@@ -87,7 +87,7 @@ For a pipeline started by hand, pass the container path in
 
 ```bash
 make cameras-status
-ffplay rtsp://<HOST_IP>:8555/uav-front-camera
+ffplay -rtsp_transport tcp rtsp://<HOST_IP>:8555/uav-front-camera
 ```
 
 Boxes and labels should reflect the new model's classes. The detection log

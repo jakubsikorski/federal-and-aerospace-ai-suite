@@ -256,12 +256,14 @@ To use another device change the pipeline name (`uav_object_detection_gpu`, `uav
 
 Install ffmpeg first if not present using `sudo apt install ffmpeg`.
 
-Any of the annotated streams can be viewed with `ffplay <RTSP_PATH>`:
+Any of the annotated streams can be viewed with `ffplay -rtsp_transport tcp <RTSP_PATH>`.
+The stream is served over RTSP/TCP only (port 8555 is the only port published). Without
+`-rtsp_transport tcp`, ffplay negotiates UDP and the window stays blank.
 
 ```bash
-ffplay rtsp://<HOST_IP>:8555/uav-nadir-camera      # nadir camera
-ffplay rtsp://<HOST_IP>:8555/uav-forward-camera    # forward camera
-ffplay rtsp://<HOST_IP>:8555/uav-rear-camera       # rear camera
+ffplay -rtsp_transport tcp rtsp://<HOST_IP>:8555/uav-nadir-camera      # nadir camera
+ffplay -rtsp_transport tcp rtsp://<HOST_IP>:8555/uav-forward-camera    # forward camera
+ffplay -rtsp_transport tcp rtsp://<HOST_IP>:8555/uav-rear-camera       # rear camera
 ```
 
 #### Capture all the video streams
@@ -325,7 +327,7 @@ the [UAV Ground Station README](https://github.com/open-edge-platform/federal-an
 > over indexed footage, run `make up-vss` instead of `make up` (it brings up
 > everything `make up` does, plus 8 extra VSS containers) — it needs its own
 > required `.env` variables first (MinIO/Postgres credentials, an embedding
-> model, and a detection model). See [VSS search in the UAV Ground Station README](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/blob/main/uav-ground-station/README.md#vss-search),
+> model, and a detection model). See [VSS search in the UAV Ground Station Get Started guide](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/blob/main/uav-ground-station/docs/user-guide/get-started.md#vss-search),
 > and [tune the VSS search results](../how-to-customize/search-tuning/vss-search-tuning.md)
 > once it is running.
 

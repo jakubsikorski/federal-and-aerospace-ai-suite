@@ -161,7 +161,27 @@ make cameras-status    # compare the file with the running pipelines
 
 #### Option B — Manual REST API
 
-Start a single pipeline directly without the pipeline manager. Useful for testing individual pipelines or custom configurations. The pipeline is chosen by name (`uav_object_detection_<det>` for detection only, `uav_object_detection_<det>_<vlm>` with captions, see [Configure the Cameras](../how-to-customize/camera-management/configure-cameras.md)); everything in `parameters` is optional and defaults to the pipeline's own values.
+Start a single pipeline directly, without the pipeline manager and without
+editing `configs/cameras-pymavlink.yaml` — useful for a quick test or a
+one-off pipeline with custom parameters.
+
+**Pick a pipeline name.** Pipelines are pre-defined in
+`configs/config-pymavlink.json`; pick one by name, do not build a
+pipeline in the request. The name encodes where detection (and, if
+captioning, the VLM) runs — there is no separate "device" field to set:
+
+| Name pattern | Meaning |
+| --- | --- |
+| `uav_object_detection_<det>` | Detection only. `<det>` is `cpu`, `gpu`, or `npu` — where `gvadetect` runs. |
+| `uav_object_detection_<det>_<vlm>` | Detection **and** scene captions. `<det>` as above; `<vlm>` is `cpu` or `gpu` — where the captioning VLM runs (the VLM never runs on the NPU). |
+
+For example: `uav_object_detection_gpu` (detection only, on the GPU),
+`uav_object_detection_npu_gpu` (detection on the NPU, captions on the GPU).
+**To use a different device, start a different pipeline name** — there are
+nine combinations in total; see
+[Modify Pipelines — pipeline naming](../how-to-customize/pipeline-management/modify-pipelines.md#pipeline-naming)
+for the full list, including the live-camera (`uav_camera_<det>[_<vlm>]`)
+names used with a RealSense/USB camera.
 
 ```bash
 # detection on the GPU, no captions
@@ -177,10 +197,22 @@ INSTANCE_ID=$(curl -k -s -X POST \
     }
   }' | tr -d '"')
 echo "Instance ID: $INSTANCE_ID"
+
+# Verify it reached RUNNING state (not ERROR)
+curl -k -s https://<HOST_IP>/pipelines/${INSTANCE_ID}/status | python3 -m json.tool
 ```
 
 > [!TIP]
-> **Useful request values**: the pipeline name picks the detection device (and the VLM device); `destination.frame.path` is the stream name; `destination.frame.overlay: false` hides the boxes and the telemetry text; `parameters.video`, `detection_model`, `captioner_model_path`, `captioner_prompt`, and `mqtt_topic` (captioning pipelines) override the defaults. To keep a per-frame detection log, add `"metadata": {"type": "file", "path": "/tmp/results.jsonl", "format": "json-lines"}` to `destination`.
+> **Useful request values**: `destination.frame.path` is the stream name
+> (`rtsp://<HOST_IP>:8555/<path>`); `destination.frame.overlay: false` hides
+> the boxes and the telemetry text; `parameters.video`, `detection_model`,
+> `captioner_model_path`, `captioner_prompt`, and `mqtt_topic` (captioning
+> pipelines only) override the pipeline's defaults — everything in
+> `parameters` is optional. To keep a per-frame detection log, add
+> `"metadata": {"type": "file", "path": "/tmp/results.jsonl", "format":
+> "json-lines"}` to `destination`. The full parameter list per pipeline, and
+> how to list every available pipeline name, is in
+> [Manage Pipelines — REST API](../how-to-customize/pipeline-management/manage-pipelines.md#rest-api).
 
 ### 5. View the output stream
 
@@ -188,12 +220,14 @@ echo "Instance ID: $INSTANCE_ID"
 
 Install ffmpeg first if not present using `sudo apt install ffmpeg`.
 
-Any of the annotated streams can be viewed with `ffplay <RTSP_PATH>`:
+Any of the annotated streams can be viewed with `ffplay -rtsp_transport tcp <RTSP_PATH>`.
+The stream is served over RTSP/TCP only (port 8555 is the only port published). Without
+`-rtsp_transport tcp`, ffplay negotiates UDP and the window stays blank.
 
 ```bash
-ffplay rtsp://<HOST_IP>:8555/uav-front-camera   # one stream per camera of configs/cameras-pymavlink.yaml
-ffplay rtsp://<HOST_IP>:8555/uav-bottom-camera
-ffplay rtsp://<HOST_IP>:8555/uav-back-camera
+ffplay -rtsp_transport tcp rtsp://<HOST_IP>:8555/uav-front-camera   # one stream per camera of configs/cameras-pymavlink.yaml
+ffplay -rtsp_transport tcp rtsp://<HOST_IP>:8555/uav-bottom-camera
+ffplay -rtsp_transport tcp rtsp://<HOST_IP>:8555/uav-back-camera
 ```
 
 #### View scene captions
@@ -231,7 +265,7 @@ ports`443`, `1883` and `8555` of this host. See the [UAV Ground Station README](
 > over indexed footage, run `make up-vss` instead of `make up` (it brings up
 > everything `make up` does, plus 8 extra VSS containers) — it needs its own
 > required `.env` variables first (MinIO/Postgres credentials, an embedding
-> model, and a detection model). See [VSS search in the UAV Ground Station README](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/blob/main/uav-ground-station/README.md#vss-search),
+> model, and a detection model). See [VSS search in the UAV Ground Station Get Started guide](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/blob/main/uav-ground-station/docs/user-guide/get-started.md#vss-search),
 > and [tune the VSS search results](../how-to-customize/search-tuning/vss-search-tuning.md)
 > once it is running.
 

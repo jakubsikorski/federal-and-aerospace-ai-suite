@@ -277,7 +277,7 @@ docker-compose, or scripts is a syntax error (or, for `cameras-*.yaml`, a
    /home/pipeline-server/scripts/pipeline_manager.py --start-now`; in UAVSDK mode the
    SDK camera streams exist only while the vehicle is armed and flying.
 8. On ARMED signal: pipelines start; RTSP streams appear at `:8555` as `uav-<camera>`.
-9. `ffplay rtsp://localhost:8555/uav-<camera>` shows annotated video with telemetry overlay.
+9. `ffplay -rtsp_transport tcp rtsp://localhost:8555/uav-<camera>` shows annotated video with telemetry overlay.
 10. For a captioning-enabled camera: `uav/caption/<camera>` on MQTT receives a new caption
     roughly every 5 seconds once the pipeline is running. If `mosquitto_sub` is not installed
     on the host, read it from the broker container: `docker exec uav-va-broker

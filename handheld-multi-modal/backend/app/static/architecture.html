@@ -140,7 +140,7 @@ SPDX-License-Identifier: Apache-2.0
 <header>
   <div class="titles">
     <h1>How this application is built</h1>
-    <p>Built on Intel Open Edge Platform <code>release-2026.2.0</code> microservices, run unmodified from their published images and used through their own APIs.</p>
+    <p>Built on published container images from Open Edge Platform, run unmodified and used through their own APIs.</p>
   </div>
   <a class="back" href="/"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>Back to app</a>
 </header>
@@ -211,6 +211,7 @@ commit; documentation: <a href="https://docs.openedgeplatform.intel.com/2026.2/i
 
 <details>
 <summary>All services — origin, images and roles</summary>
+<p class="note">Image repositories are listed below. Exact Open Edge Platform image tags are pinned in <code>compose/handheld-multi-modal.yaml</code>.</p>
 
 <div class="scroll">
 <table id="services">
@@ -219,13 +220,13 @@ commit; documentation: <a href="https://docs.openedgeplatform.intel.com/2026.2/i
 <tr data-service="mediamtx"><td>MediaMTX</td><td><span class="badge oss">Open source</span></td><td>Video relay: camera RTSP in, annotated WebRTC (WHIP in, WHEP out to the UI)</td><td>—</td><td><code>bluenviron/mediamtx:1.21.3</code></td></tr>
 <tr data-service="coturn"><td>Coturn</td><td><span class="badge oss">Open source</span></td><td>Loopback-only TURN relay for WebRTC media (SSH-tunnelled browsers)</td><td>—</td><td><code>coturn/coturn:4.18.0-alpine</code></td></tr>
 <tr data-service="mqtt"><td>Mosquitto</td><td><span class="badge oss">Open source</span></td><td>MQTT broker for detections and snip events; also the Alert Agent's broker</td><td>—</td><td><code>eclipse-mosquitto:2.0.22</code></td></tr>
-<tr data-service="dlsps"><td>DL Streamer Pipeline Server</td><td><span class="badge oep">Open Edge Platform</span></td><td>Decode, detect, track, annotate and crop snips for each camera</td><td>YOLO26s OpenVINO INT8 on NPU (fixed CPU/GPU alternatives); <code>gvatrack</code> on CPU; Intel hardware decode/encode</td><td><code>intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24</code></td></tr>
-<tr data-service="chatqna"><td>Chat Q&amp;A Core</td><td><span class="badge oep">Open Edge Platform</span></td><td>Language model, mission-document retrieval (RAG) and history query planning</td><td><code>Intel/neural-chat-7b-v3-3</code> on GPU; embeddings <code>ibm-granite/granite-embedding-125m-english</code> and reranker <code>cross-encoder/ms-marco-electra-base</code> on CPU</td><td><code>intel/chatqna:core_gpu_2026.2.0</code></td></tr>
-<tr data-service="audio-analyzer"><td>Audio Analyzer</td><td><span class="badge oep">Open Edge Platform</span></td><td>Speech to text for push-to-talk</td><td><code>whisper-medium</code> OpenVINO on GPU</td><td><code>intel/audio-analyzer:2026.2.0</code></td></tr>
-<tr data-service="tts"><td>Text To Speech</td><td><span class="badge oep">Open Edge Platform</span></td><td>Spoken answers and alert announcements</td><td>SpeechT5 on CPU (GPU switch available)</td><td><code>intel/text-to-speech:2026.2.0</code></td></tr>
-<tr data-service="alert-agent"><td>Alert Agent</td><td><span class="badge oep">Open Edge Platform</span></td><td>Rule-based alert action dispatch with deduplication (no LLM)</td><td>—</td><td><code>intel/alert-agent-service:2026.2.0</code></td></tr>
-<tr data-service="metrics"><td>Metrics Manager</td><td><span class="badge oep">Open Edge Platform</span></td><td>CPU, GPU, NPU, memory and temperature telemetry (system-wide)</td><td>—</td><td><code>intel/metrics-manager:2026.2.0</code></td></tr>
-<tr data-service="model-downloader"><td>Model Download</td><td><span class="badge oep">Open Edge Platform</span></td><td>Prepares the detector model during setup only</td><td>—</td><td><code>intel/model-download:2026.2.0</code></td></tr>
+<tr data-service="dlsps"><td>DL Streamer Pipeline Server</td><td><span class="badge oep">Open Edge Platform</span></td><td>Decode, detect, track, annotate and crop snips for each camera</td><td>YOLO26s OpenVINO INT8 on NPU (fixed CPU/GPU alternatives); <code>gvatrack</code> on CPU; Intel hardware decode/encode</td><td><code>intel/dlstreamer-pipeline-server</code></td></tr>
+<tr data-service="chatqna"><td>Chat Q&amp;A Core</td><td><span class="badge oep">Open Edge Platform</span></td><td>Language model, mission-document retrieval (RAG) and history query planning</td><td><code>Intel/neural-chat-7b-v3-3</code> on GPU; embeddings <code>ibm-granite/granite-embedding-125m-english</code> and reranker <code>cross-encoder/ms-marco-electra-base</code> on CPU</td><td><code>intel/chatqna</code></td></tr>
+<tr data-service="audio-analyzer"><td>Audio Analyzer</td><td><span class="badge oep">Open Edge Platform</span></td><td>Speech to text for push-to-talk</td><td><code>whisper-medium</code> OpenVINO on GPU</td><td><code>intel/audio-analyzer</code></td></tr>
+<tr data-service="tts"><td>Text To Speech</td><td><span class="badge oep">Open Edge Platform</span></td><td>Spoken answers and alert announcements</td><td>SpeechT5 on CPU (GPU switch available)</td><td><code>intel/text-to-speech</code></td></tr>
+<tr data-service="alert-agent"><td>Alert Agent</td><td><span class="badge oep">Open Edge Platform</span></td><td>Rule-based alert action dispatch with deduplication (no LLM)</td><td>—</td><td><code>intel/alert-agent-service</code></td></tr>
+<tr data-service="metrics"><td>Metrics Manager</td><td><span class="badge oep">Open Edge Platform</span></td><td>CPU, GPU, NPU, memory and temperature telemetry (system-wide)</td><td>—</td><td><code>intel/metrics-manager</code></td></tr>
+<tr data-service="model-downloader"><td>Model Download</td><td><span class="badge oep">Open Edge Platform</span></td><td>Prepares the detector model during setup only</td><td>—</td><td><code>intel/model-download</code></td></tr>
 <tr data-service="backend"><td>Application Backend</td><td><span class="badge app">Application</span></td><td>Rules, alerts, history, assistant routing, speech, telemetry, pipeline lifecycle; serves this UI</td><td>Uses the services above</td><td><code>handheld/backend</code> (built locally)</td></tr>
 <tr data-service="proxy"><td>nginx proxy</td><td><span class="badge oss">Open source</span></td><td>TLS for the UI, Backend API and WHEP signalling only</td><td>—</td><td><code>nginx:1.30.6-alpine</code></td></tr>
 </tbody>
@@ -280,7 +281,7 @@ const ICONS = {
 const SRC = "https://github.com/open-edge-platform/edge-ai-libraries/tree/c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9/";
 const PROVIDERS = {
   oep: {tab: "INTEL OPEN EDGE PLATFORM", name: "Open Edge Platform", title: "Open Edge Platform microservices",
-    text: "Intel stock microservices from Open Edge Platform release-2026.2.0, run from their published images without code changes. The application only configures them and calls their own APIs."},
+    text: "Published container images from Open Edge Platform, run without code changes. The application only configures them and calls their own APIs. Exact image tags are pinned in compose/handheld-multi-modal.yaml."},
   oss: {tab: "OPEN SOURCE", name: "Open source", title: "Open-source infrastructure",
     text: "Standard open-source media, messaging and web components, configured only."},
   app: {tab: "APPLICATION", name: "Application", title: "Application Backend",
@@ -301,7 +302,7 @@ const NODES = {
     ep: ["POST·GET·DELETE /pipelines"], chips: [["npu", "YOLO26s"], ["cpu", "tracker"]], live: "dlsps", kind: "Vision pipeline service",
     role: "One pipeline per camera: hardware decode, YOLO26s detection, tracking, box overlay, cropped evidence images and MQTT events.",
     runs: "YOLO26s OpenVINO INT8 on NPU (fixed CPU/GPU alternatives); gvatrack on CPU; Intel hardware decode/encode",
-    image: "intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24", src: "microservices/dlstreamer-pipeline-server",
+    image: "intel/dlstreamer-pipeline-server", src: "microservices/dlstreamer-pipeline-server",
     apis: ["POST /pipelines/user_defined_pipelines/{name} — start one pipeline per camera", "GET /pipelines/status · /pipelines/{id}/status — check",
       "DELETE /pipelines/{id} — stop", "MQTT publish detections/live, detections/snips", "WebRTC WHIP publish → MediaMTX"]},
   coturn: {p: "oss", x: 300, y: 262, w: 200, h: 76, icon: "turn", t: "Coturn", s: ["TURN relay, loopback only"],
@@ -326,30 +327,30 @@ const NODES = {
     chips: [["gpu", "neural-chat-7b"], ["cpu", "retrieval"]], live: "chatqna", kind: "Language service",
     role: "Answers general and mission questions and retrieves passages from uploaded mission documents. Stateless: the Backend supplies earlier turns for follow-ups.",
     runs: "Intel/neural-chat-7b-v3-3 on GPU; ibm-granite/granite-embedding-125m-english and cross-encoder/ms-marco-electra-base on CPU",
-    image: "intel/chatqna:core_gpu_2026.2.0", src: "sample-applications/chat-question-and-answer-core",
+    image: "intel/chatqna", src: "sample-applications/chat-question-and-answer-core",
     apis: ["POST /chat — answers (streamed to the UI)", "GET · POST · DELETE /documents — mission documents", "GET /model — model identity", "GET /health — readiness"]},
   "audio-analyzer": {p: "oep", icon: "mic", t: "Audio Analyzer", tag: "speech → text",
     ep: ["POST /v1/audio/transcriptions"], chips: [["gpu", "whisper-medium"]], live: "audio_analyzer", kind: "Speech-to-text service",
     role: "Transcribes push-to-talk questions.", runs: "whisper-medium OpenVINO on GPU",
-    image: "intel/audio-analyzer:2026.2.0", src: "microservices/audio-analyzer",
+    image: "intel/audio-analyzer", src: "microservices/audio-analyzer",
     apis: ["POST /v1/audio/transcriptions — push-to-talk audio", "GET /health — readiness"]},
   tts: {p: "oep", icon: "speaker", t: "Text To Speech", ep: ["POST /v1/audio/speech", "GET /v1/model-info"],
     chips: [["cpu", "SpeechT5"]], live: "tts", kind: "Speech service",
     role: "Speaks answers and alert announcements; the Backend decides what is spoken and when.",
     runs: "SpeechT5 on CPU (make speech-device TTS_DEVICE=GPU switches to GPU)",
-    image: "intel/text-to-speech:2026.2.0", src: "microservices/text-to-speech",
+    image: "intel/text-to-speech", src: "microservices/text-to-speech",
     apis: ["POST /v1/audio/speech — speech audio", "GET /v1/model-info — model and device"]},
   "alert-agent": {p: "oep", icon: "bell", t: "Alert Agent", tag: "no LLM", ep: ["POST /api/v1/actions/execute", "SSE /api/v1/events"],
     kind: "Alert service", role: "Receives each new alert from the Backend and applies rule-based action dispatch with de-duplication. No language model in the alert path.",
-    image: "intel/alert-agent-service:2026.2.0", src: "microservices/alert-agent-service",
+    image: "intel/alert-agent-service", src: "microservices/alert-agent-service",
     apis: ["POST /api/v1/actions/execute — dispatch each alert", "GET /api/v1/events (SSE) — action events", "GET /api/v1/health — readiness"]},
   metrics: {p: "oep", icon: "gauge", t: "Metrics Manager", ep: ["GET /api/v1/metrics/latest"],
     kind: "Telemetry service", role: "System-wide CPU, GPU, NPU, memory and temperature telemetry, aggregated by the Backend for the Resources chart.",
-    image: "intel/metrics-manager:2026.2.0", src: "microservices/metrics-manager",
+    image: "intel/metrics-manager", src: "microservices/metrics-manager",
     apis: ["GET /api/v1/metrics/latest — polled telemetry"]},
   "model-downloader": {p: "oep", icon: "download", t: "Model Download", tag: "setup only", ep: ["POST /api/v1/models/download"], setup: true,
     kind: "Model preparation service", role: "Runs during setup (make demo-prereq) to prepare the YOLO26s detector. Language and speech services download their own models.",
-    runs: "Exports YOLO26s to OpenVINO INT8", image: "intel/model-download:2026.2.0", src: "microservices/model-download",
+    runs: "Exports YOLO26s to OpenVINO INT8", image: "intel/model-download", src: "microservices/model-download",
     apis: ["POST /api/v1/models/download — export YOLO26s", "GET /api/v1/jobs/{id} — wait for the job"]},
 };
 // [id, class, from, to, path, label, label x, y, anchor, both ways]; Backend → right-column edges are added below.

@@ -587,7 +587,9 @@ async def _captions_stream_impl(host: str, topics: list):
     client.on_message = on_message
 
     try:
-        client.connect(host, REMOTE_MQTT_PORT, keepalive=30)
+        # In a thread: connect() blocks for up to the connect timeout, which would
+        # stall every other request while a broker is unreachable.
+        await loop.run_in_executor(None, lambda: client.connect(host, REMOTE_MQTT_PORT, keepalive=30))
     except OSError as exc:
         raise HTTPException(status_code=502, detail=f"Cannot reach MQTT broker at {host}:{REMOTE_MQTT_PORT}: {exc}")
 

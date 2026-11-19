@@ -82,7 +82,7 @@ services:
         max-file: "3"
 
   px4-sih:
-    image: px4io/px4-sitl:latest
+    image: px4io/px4-sitl:v1.18.0-beta1-660-g61907962c9
     container_name: px4-sitl
     hostname: px4-sitl
     profiles: ["usb-camera", "realsense-camera"]

@@ -74,12 +74,11 @@ class _Subscriber:
         client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         client.on_connect = self._on_connect
         client.on_message = self._on_message
-        try:
-            client.connect(self.host, REMOTE_MQTT_PORT, keepalive=30)
-        except OSError as exc:
-            logger.warning("caption-log: cannot reach MQTT broker %s:%s for %s/%s: %s",
-                            self.host, REMOTE_MQTT_PORT, self.host, self.camera, exc)
-            return
+        # Non-blocking, and retried by the network loop: a broker that is down
+        # for a moment must neither stall the backend nor leave this subscriber
+        # permanently dead (note_active() would keep refreshing a dead one).
+        client.reconnect_delay_set(min_delay=1, max_delay=30)
+        client.connect_async(self.host, REMOTE_MQTT_PORT, keepalive=30)
         client.loop_start()
         self._client = client
 

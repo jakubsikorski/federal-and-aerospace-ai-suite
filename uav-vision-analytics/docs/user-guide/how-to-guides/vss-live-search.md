@@ -49,6 +49,23 @@ crops) into Docker volumes — this can take a few minutes. With the default
 `make up` (no `-vss`), the search UI stays hidden and `/api/search*` routes
 return `404`.
 
+By default every VSS device (`VSS_INGEST_EMBEDDING_DEVICE`,
+`VSS_DETECTION_DEVICE`, `VSS_QUERY_EMBEDDING_DEVICE`) runs on `CPU`. Pick a
+different device for all three at once, at deploy time, without hand-editing
+`.env`:
+
+```bash
+make up-vss DEVICE=GPU    # or NPU, CPU
+make up-vss DEVICE=all    # auto-pick the best hardware 'make init' already detected
+```
+
+`DEVICE=all` prefers GPU, then NPU, then CPU, based on whatever `GPU_DEVICE`/
+`NPU_DEVICE` `make init` already found on this host. Omit `DEVICE` entirely to
+leave whatever is currently in `.env` untouched. See `uav-ground-station`'s
+[Configuration](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/blob/main/uav-ground-station/docs/user-guide/configuration.md)
+guide for what each of the three device variables individually controls if
+you want ingest, detection and query embedding to run on different devices.
+
 ### 2. Connect to the UAV and let indexing start automatically
 
 Open the dashboard (`http://<VIZ_HOST_IP>:<VIZ_PORT>`), enter the UAV host's
@@ -59,6 +76,18 @@ continuously. A backend loop, every `VSS_LIVE_SYNC_INTERVAL_SECONDS` (default
 **Disconnect** pauses all of that host's indexing. Indexed footage is kept
 for `VSS_LIVE_RETENTION_HOURS`.
 
+Stopping and restarting a UAV's streams resumes the same index: earlier footage
+(and its "indexed" count) is still searchable, which is intended for a mission
+that is flown in several legs. Footage from a previous, unrelated session
+(for example a UAV that has since been redeployed under another IP) stays
+searchable until `VSS_LIVE_RETENTION_HOURS` expires it; to start from an empty
+index instead, run `make clean-vss-index` in `uav-ground-station` before the
+next `make up-vss`. Clear the index when you switch between pymavlink and SDK
+mode or fly a different scenario: VSS applies the UAV/camera filter only after
+it has fetched the 1000 frames most similar to the query across the whole
+index, so a large body of older footage can push the newest footage out of
+those 1000 and make a search for it return nothing.
+
 > [!NOTE]
 > Starting/enabling a camera *after* connecting (e.g., via
 > [Configure the Cameras](../how-to-customize/camera-management/configure-cameras.md) and `make start-rtsp`) is picked up on
@@ -67,7 +96,7 @@ for `VSS_LIVE_RETENTION_HOURS`.
 
 ### 3. Run a search
 
-Press **Search Videos** (top bar, side panel, or the `/` key), type a
+Press **Search Videos** (top bar, or the `/` key), type a
 natural-language prompt, and press Enter. Results are ranked with
 thumbnails; use the arrow keys to move between them and `Esc` to close.
 
@@ -105,5 +134,7 @@ dominating results, result clips that will not play, a new camera that never
 becomes searchable).
 
 See also the ground station's own
-[README — VSS search](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/blob/main/uav-ground-station/README.md#vss-search)
-for the full route reference and container list.
+[Get Started — VSS search](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/blob/main/uav-ground-station/docs/user-guide/get-started.md#vss-search)
+for the container list, and its
+[Configuration — VSS search routes](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/blob/main/uav-ground-station/docs/user-guide/configuration.md#vss-search)
+for the full route reference.

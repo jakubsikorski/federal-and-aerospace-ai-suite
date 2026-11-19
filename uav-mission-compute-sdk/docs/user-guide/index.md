@@ -11,3 +11,17 @@ SPDX-License-Identifier: Apache-2.0
 - [ethernet-px4.md](ethernet-px4.md) — Connect a remote PX4 + Gazebo over Ethernet
 - [ports.md](ports.md) — Exposed ports reference
 - [benchmarking.md](benchmarking.md) — Benchmarking design and interpretation
+
+<!--hide_directive
+:::{toctree}
+:hidden:
+
+Get Started <get-started.md>
+How It Works <how-it-works.md>
+Camera Modes <camera-modes.md>
+Ethernet PX4 <ethernet-px4.md>
+Ports <ports.md>
+Benchmarking <benchmarking.md>
+
+:::
+hide_directive-->

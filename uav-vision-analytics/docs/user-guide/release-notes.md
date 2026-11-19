@@ -1,5 +1,45 @@
 # Release Notes: UAV Blueprint
 
+## Version 2026.3.0
+
+**Release Date**: TBD
+
+**New**:
+
+- **Camera files** (`configs/cameras-*.yaml`) define the cameras of the application: the video file or live
+  camera, the detection model and device (CPU, GPU, or NPU), the overlay, and optional captioning. `make
+  check-cameras` validates the file and shows the pipeline each camera uses, and `make start-rtsp` starts the
+  cameras and re-reads the file every time the vehicle is armed.
+- **Scene captions** from a vision-language model (InternVL2-1B, fetched with `make vlm-model`) can run next to
+  detection on any camera and are published over MQTT on `uav/caption/<camera>`.
+- **NPU inference** for YOLO11s detection, alongside the existing CPU and GPU pipelines.
+- **UAV Ground Station** ([`uav-ground-station`](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/tree/main/uav-ground-station/README.md)),
+  a viewer for a UAV host on a separate machine. It relays the H.264 streams to the browser over WebRTC, shows
+  captions and host utilization, supports several UAVs in one session, builds Flight Summary reports, and can
+  add Live Natural Language Search with the Video Search and Summarization (VSS) stack. See the
+  [Ground Station release notes](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/blob/main/uav-ground-station/docs/user-guide/release-notes.md).
+- **Simpler setup**: `make init` detects the host IP from the default route and the GPU, NPU, and camera group
+  IDs, and `make start-rtsp` picks up the device configured on a first run.
+- **1080p, 30 fps sample videos** for the front, bottom, and back cameras.
+- **Updated components**: DL Streamer Pipeline Server `2026.3.0-ubuntu24-rc1`, Metrics Manager
+  `2026.3.0-rc1`, and PX4 SITL pinned to `v1.18.0-beta1-660-g61907962c9`.
+- **Documentation and agent skills** cover camera and model customization, captioning, QGroundControl, multi-UAV
+  operations, VSS live search, and troubleshooting; the agent skills include captioning, VSS, and model
+  customization.
+
+**Known issues and limitations**:
+
+- The application is intended for development and evaluation, not production deployment.
+- Camera streams are available only while the UAV is armed; clients may see RTSP 404 when disarmed.
+- Starting the cameras immediately after stopping them can leave a camera without video on the ground station
+  until the pipeline server container is restarted (`docker restart uav-va-dlstreamer-pipeline-server`). Wait
+  about a minute before starting the cameras again to avoid it.
+- A failed pipeline start poisons its model instance until the pipeline server restarts; see
+  [Troubleshooting](./how-to-guides/troubleshooting.md).
+- Pymavlink and UAV Mission Compute SDK modes cannot run at the same time, because both use ports `80`, `443`,
+  and `8555`.
+- The first `make model` and `make vlm-model` runs download models and can take several minutes.
+
 ## Version 2026.2.0
 
 **Release Date**: September 10, 2026
@@ -26,5 +66,3 @@
 - Camera streams are available only while the UAV is armed; clients may see RTSP 404 when disarmed.
 - Simulated and USB camera bridges cannot run simultaneously.
 - First-run image builds can take approximately 10-15 minutes.
-
-## [Edge-Node Infrastructure software](https://github.com/open-edge-platform/edge-node-infrastructure-blueprint/releases)

@@ -155,7 +155,6 @@ shown instead.
 
 system-requirements
 first-time-setup
-how-to-guides
 
 :::
 hide_directive-->

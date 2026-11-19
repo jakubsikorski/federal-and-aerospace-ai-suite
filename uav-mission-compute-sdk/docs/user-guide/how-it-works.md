@@ -284,8 +284,8 @@ mosquitto_sub -h localhost -p 1884 -t "uav/uav-1/telemetry/#" -v
 | `/uav-1/rear/processed` | Annotated rear (with bboxes) | 416x416 | ~10 | H264 (openh264) |
 
 **Access**: `rtsp://localhost:8554/uav-1/{camera}`
-**View**: `ffplay rtsp://localhost:8554/uav-1/nadir`
-**Capture**: `ffmpeg -i rtsp://localhost:8554/uav-1/nadir -frames:v 1 frame.jpg`
+**View**: `ffplay -rtsp_transport tcp rtsp://localhost:8554/uav-1/nadir`
+**Capture**: `ffmpeg -rtsp_transport tcp -i rtsp://localhost:8554/uav-1/nadir -frames:v 1 frame.jpg`
 
 ## Design Rationale
 
@@ -411,10 +411,10 @@ docker logs mediamtx | grep "uav-1"
 ffprobe rtsp://localhost:8554/uav-1/nadir
 
 # View live stream
-ffplay rtsp://localhost:8554/uav-1/nadir
+ffplay -rtsp_transport tcp rtsp://localhost:8554/uav-1/nadir
 
 # Capture single frame
-ffmpeg -i rtsp://localhost:8554/uav-1/nadir -frames:v 1 frame.jpg
+ffmpeg -rtsp_transport tcp -i rtsp://localhost:8554/uav-1/nadir -frames:v 1 frame.jpg
 ```
 
 ### Check GStreamer Pipelines

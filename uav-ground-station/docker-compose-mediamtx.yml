@@ -29,10 +29,13 @@ services:
       - ./configs/mediamtx.yml:/mediamtx.yml:ro
     environment:
       - MTX_WEBRTCADDITIONALHOSTS=${VIZ_PUBLIC_HOST:-}
+      # mediamtx advertises these ports to browsers, so they must equal the published ones.
+      - MTX_WEBRTCLOCALUDPADDRESS=:${MEDIAMTX_WEBRTC_ICE_UDP_PORT:-8189}
+      - MTX_WEBRTCLOCALTCPADDRESS=:${MEDIAMTX_WEBRTC_ICE_TCP_PORT:-8189}
     ports:
       - "${VIZ_HOST_IP:-127.0.0.1}:${MEDIAMTX_WEBRTC_PORT:-8889}:8889"
-      - "${VIZ_HOST_IP:-127.0.0.1}:${MEDIAMTX_WEBRTC_ICE_UDP_PORT:-8189}:8189/udp"
-      - "${VIZ_HOST_IP:-127.0.0.1}:${MEDIAMTX_WEBRTC_ICE_TCP_PORT:-8189}:8189/tcp"
+      - "${VIZ_HOST_IP:-127.0.0.1}:${MEDIAMTX_WEBRTC_ICE_UDP_PORT:-8189}:${MEDIAMTX_WEBRTC_ICE_UDP_PORT:-8189}/udp"
+      - "${VIZ_HOST_IP:-127.0.0.1}:${MEDIAMTX_WEBRTC_ICE_TCP_PORT:-8189}:${MEDIAMTX_WEBRTC_ICE_TCP_PORT:-8189}/tcp"
     restart: on-failure:5
 
   viz-backend:

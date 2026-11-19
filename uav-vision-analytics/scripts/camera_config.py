@@ -34,6 +34,8 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 SCHEMA_VERSION = 1
+# Frames between H.264 keyframes of the RTSP output: VSS and the ground station relay wait for one when they open a stream.
+H264_GOP_SIZE = 15
 RESOURCES_DIR = os.getenv("PIPELINE_RESOURCES_DIR", "/home/pipeline-server/resources")
 DEFAULT_FILE = os.getenv("CAMERAS_CONFIG", "/home/pipeline-server/configs/cameras-pymavlink.yaml")
 PIPELINES_FILE = os.getenv("PIPELINES_CONFIG", "/home/pipeline-server/config.json")
@@ -272,7 +274,8 @@ def build_plan(config: CamerasConfig, *, resources_dir: str = RESOURCES_DIR, che
                                "captioner_max_new_tokens": cap.max_new_tokens, "mqtt_topic": topic,
                                # cameras with the same device, model and token limit share one loaded VLM (the limit is a per-instance setting)
                                "captioner_instance_id": re.sub(r"[^a-z0-9_]", "_", f"instvlm_{cap.device}_{cap.model}_t{cap.max_new_tokens}".lower())})
-        frame = {"type": "rtsp", "path": stream_path(camera), "encoding": "h264", "overlay-properties": {"thickness": thickness}}
+        frame = {"type": "rtsp", "path": stream_path(camera), "encoding": "h264", "encode-gop-size": H264_GOP_SIZE,
+                 "overlay-properties": {"thickness": thickness}}
         if not camera.overlay:
             frame["overlay"] = False
         if pipelines is not None and pipeline_name(camera) not in pipelines:

@@ -9,6 +9,8 @@ import io
 import json
 import os
 from pathlib import Path
+import runpy
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -43,9 +45,169 @@ def check_localhost_only():
     assert all(server.get('clientOnly') for server in mediamtx['webrtcICEServers2'])
 
 
+def check_speech_device_isolated(root):
+    commands = root / 'commands.bash'
+    commands.write_text(
+        '#!/usr/bin/env bash\n'
+        '# SPDX-FileCopyrightText: (C) 2026 Intel Corporation\n'
+        '# SPDX-License-Identifier: Apache-2.0\n'
+        'set -euo pipefail\n'
+        'docker() {\n'
+        '  printf "%s\\n" "$*" >> "$COMMAND_LOG"\n'
+        '  if [[ "$*" == *" ps --status running --services" ]]; then\n'
+        '    printf "%s\\n" "$RUNNING_SERVICES"\n'
+        '  fi\n'
+        '}\n'
+        'curl() { printf \'{"device":"%s"}\\n\' "$TTS_DEVICE"; }\n')
+    services = ['coturn', 'mediamtx', 'mqtt', 'metrics', 'dlsps', 'alert-agent',
+                'chatqna', 'audio-analyzer', 'tts', 'backend', 'proxy']
+    for camera_count in (0, 1, 2):
+        deployment = root / f'deployment-{camera_count}'
+        (deployment / 'config/tls').mkdir(parents=True)
+        for name in ('server.crt', 'server.key'):
+            (deployment / 'config/tls' / name).write_text('fixture TLS material\n')
+        command = ['make', '--no-print-directory', '-C', str(assets.REPO),
+                   f'ASSET_ROOT={deployment}', 'RENDER_GID=12345', 'ACCEL_GID=23456']
+        subprocess.run(command + ['setup', '-o', 'tls', 'TTS_DEVICE=CPU',
+                                  f'CAMERAS={camera_count or 2}',
+                                  f'DEMO_FEEDS={"yes" if camera_count else ""}'],
+                       check=True, capture_output=True, text=True)
+        devices = deployment / 'config/devices.yaml'
+        devices.write_text(devices.read_text() + '  custom:\n    cpus: 2\n')
+        (deployment / 'data/backend/history.fixture').write_bytes(b'camera history')
+        selection = deployment / 'config/speech/tts.env'
+        unchanged = {path: path.read_bytes() for path in deployment.rglob('*')
+                     if path.is_file() and path != selection}
+        log = root / f'commands-{camera_count}.log'
+        env = dict(os.environ, BASH_ENV=str(commands), COMMAND_LOG=str(log),
+                   RUNNING_SERVICES='\n'.join(services))
+        for device in ('GPU', 'CPU'):
+            result = subprocess.run(command + ['speech-device', '-o', 'preflight',
+                                               f'TTS_DEVICE={device}', 'CAMERAS=2',
+                                               'RENDER_GID=34567', 'ACCEL_GID=45678'],
+                                    env=env, capture_output=True, text=True)
+            assert result.returncode == 0, result.stdout + result.stderr
+            assert selection.read_text() == f'TEXT_TO_SPEECH__MODELS__TTS__DEVICE={device}\n'
+            assert all(path.read_bytes() == content for path, content in unchanged.items()), \
+                'speech-device changed deployment configuration, TLS or history'
+            assert {path for path in deployment.rglob('*') if path.is_file()} == set(unchanged) | {selection}
+        calls = log.read_text().splitlines()
+        assert len(calls) == 4, calls
+        assert all(call.endswith(' ps --status running --services') for call in calls[::2]), calls
+        assert all(call.endswith(' up -d --no-deps tts') for call in calls[1::2]), calls
+        if camera_count == 0:
+            for missing in [None, *services]:
+                log.unlink()
+                env['RUNNING_SERVICES'] = '\n'.join(s for s in services if s != missing) if missing else ''
+                before = {path: (path.read_bytes(), path.stat().st_mtime_ns)
+                          for path in deployment.rglob('*') if path.is_file()}
+                result = subprocess.run(command + ['speech-device', '-o', 'preflight',
+                                                   'TTS_DEVICE=GPU'],
+                                        env=env, capture_output=True, text=True)
+                assert result.returncode != 0, 'speech-device accepted a stopped or incomplete application'
+                assert 'run make up or make demo-up' in result.stderr, result.stderr
+                assert before == {path: (path.read_bytes(), path.stat().st_mtime_ns)
+                                  for path in deployment.rglob('*') if path.is_file()}, \
+                    'speech-device changed settings before rejecting the stopped application'
+                calls = log.read_text().splitlines()
+                assert len(calls) == 1 and calls[0].endswith(' ps --status running --services'), calls
+
+
+def check_live_speech_device(root):
+    with patch('ssl.create_default_context'), patch('urllib.request.build_opener'):
+        checker = runpy.run_path(str(assets.REPO / 'scripts/check_live.py'))
+    namespace = checker['main'].__globals__
+    deployment = root / 'live-check'
+    (deployment / 'config/speech').mkdir(parents=True)
+    selection = deployment / 'config/speech/tts.env'
+    # Stale deployment YAML must not override the live speech selection.
+    (deployment / 'config/devices.yaml').write_text(
+        'TEXT_TO_SPEECH__MODELS__TTS__DEVICE: CPU\n')
+    expected_model = checker['configured'](
+        assets.REPO / 'config/chatqna/config.yaml', r'^\s*LLM_MODEL_ID:\s*"([^"]+)"')
+    for device in ('GPU', 'CPU'):
+        calls = []
+
+        def call(url, *args, **kwargs):
+            calls.append(url)
+            if url.endswith('/api/streams'):
+                return {'data': []}
+            if url.endswith('/v3/paths/list'):
+                return {'items': []}
+            if url.endswith('/pipelines/status'):
+                return []
+            if url.endswith('/api/metrics'):
+                return {'data': {'status': 'ok', 'metrics': [{}]}}
+            if url.endswith('/model'):
+                return {'llm_model': expected_model}
+            if url.endswith('/chat'):
+                return {'status': 'Success', 'metadata': 'Answer: 4'}
+            if url.endswith('/v1/model-info'):
+                return {'device': device, 'model': 'microsoft/speecht5_tts'}
+            if url.endswith('/v1/audio/speech'):
+                return b'RIFF' + b'\0' * 1024
+            if url.endswith('/v1/audio/transcriptions'):
+                return {'text': 'Camera two is ready.'}
+            if url.endswith('/api/v1/health'):
+                return {'status': 'healthy'}
+            if url.endswith('/health'):
+                return {'status': 'ok'}
+            if url == 'https://127.0.0.1:8443/':
+                return b'<button id="pause-updates">'
+            raise AssertionError(f'unexpected live-check request: {url}')
+
+        selection.write_text(f'TEXT_TO_SPEECH__MODELS__TTS__DEVICE={device}\n')
+        with patch.dict(namespace, ASSET_ROOT=deployment, call=call, failed=False), \
+                contextlib.redirect_stdout(io.StringIO()):
+            assert checker['main']() == 0
+        assert any(url.endswith('/v1/audio/speech') for url in calls)
+        assert any(url.endswith('/v1/audio/transcriptions') for url in calls)
+    for contents in (None, '', 'TEXT_TO_SPEECH__MODELS__TTS__DEVICE=NPU\n'):
+        if contents is None:
+            selection.unlink()
+        else:
+            selection.write_text(contents)
+        calls.clear()
+        output = io.StringIO()
+        with patch.dict(namespace, ASSET_ROOT=deployment, call=call, failed=False), \
+                contextlib.redirect_stdout(output):
+            assert checker['main']() == 1
+        assert 'missing or invalid config/speech/tts.env' in output.getvalue()
+        assert not any(url.endswith('/v1/audio/speech') for url in calls)
+
+
+def check_asset_recovery_quoting(root):
+    commands = root / 'recovery-commands.bash'
+    commands.write_text(
+        '#!/usr/bin/env bash\n'
+        '# SPDX-FileCopyrightText: (C) 2026 Intel Corporation\n'
+        '# SPDX-License-Identifier: Apache-2.0\n'
+        'set -euo pipefail\n'
+        'rm() { return 1; }\n'
+        'docker() { return 0; }\n')
+    recipe = (
+        '.PHONY: test-recovery-command\n'
+        'test-recovery-command:\n'
+        '\t@ASSET_ROOT="$$RECOVERY_ROOT"\n'
+        '\t$(call remove_assets,data config/tls)\n')
+    for name in ('handheld data', 'handheld\'"$;*[]\\data'):
+        deployment = str(root / name)
+        env = dict(os.environ, BASH_ENV=str(commands), RECOVERY_ROOT=deployment)
+        result = subprocess.run(
+            ['make', '--no-print-directory', '-C', str(assets.REPO),
+             '-f', 'Makefile', '-f', '-', 'test-recovery-command'],
+            input=recipe, env=env, capture_output=True, text=True, check=True)
+        recovery = result.stderr.split('Run: ', 1)[1].strip()
+        assert shlex.split(recovery) == [
+            'sudo', 'rm', '-rf', '--', deployment + '/data', deployment + '/config/tls',
+        ], recovery
+
+
 def main():
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
+        check_live_speech_device(root)
+        check_asset_recovery_quoting(root)
         calls = []
         def api(path, body=None):
             calls.append(path)
@@ -193,6 +355,7 @@ def main():
         assert groups == [list(dict.fromkeys(['12345', '23456', str(os.getgid())])),
                           list(dict.fromkeys(['12345', str(os.getgid())]))]
         assert not (group_root / 'config/mediamtx.yml').exists(), 'MediaMTX needs no per-device LAN copy'
+        check_speech_device_isolated(root)
     check_localhost_only()
     # The committed example packet is exactly what the generator produces.
     assert assets.MISSION_EXAMPLE.read_bytes() == assets._pdf_bytes(assets.MISSION_DEMO_LINES), \

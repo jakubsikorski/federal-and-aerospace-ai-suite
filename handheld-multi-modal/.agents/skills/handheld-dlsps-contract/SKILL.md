@@ -7,7 +7,7 @@ description: Use when changing the handheld DL Streamer Pipeline Server integrat
 
 # DL Streamer Pipeline Server Integration
 
-Image `intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24`, Compose service
+Published container image `intel/dlstreamer-pipeline-server` (tag pinned in `compose/handheld-multi-modal.yaml`), Compose service
 `dlsps`, REST API on `127.0.0.1:8080`. For stock APIs see the upstream
 [`dlsps-user`](https://github.com/open-edge-platform/skills/tree/main/.agents/skills/dlsps-user) and
 [`dlstreamer-coding-agent`](https://github.com/open-edge-platform/skills/tree/main/.agents/skills/dlstreamer-coding-agent)

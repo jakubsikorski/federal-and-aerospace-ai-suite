@@ -8,11 +8,16 @@
 
   const NS = "http://www.w3.org/2000/svg";
   const modal = document.getElementById("arch-modal");
+  const dialog = modal.querySelector(".arch-dialog");
   const openBtn = document.getElementById("toggle-arch");
   const closeBtn = document.getElementById("arch-modal-close");
   const svg = document.getElementById("arch-svg");
+  const viewport = document.getElementById("arch-svg-viewport");
   const card = document.getElementById("arch-card");
+  const cardDetails = document.getElementById("arch-card-details");
+  const devicesDetails = document.getElementById("arch-devices-details");
   const devicesEl = document.getElementById("arch-devices");
+  const infoToggleBtn = document.getElementById("arch-info-toggle");
   const scenarioBar = modal.querySelector(".arch-scenarios");
   if (!modal || !svg) return;
 
@@ -164,6 +169,33 @@
   let vss = { enabled: false, devices: {} };
   let selected = null;
 
+  // Auto-fit: no manual zoom controls -- the diagram is sized automatically
+  // from the actual space available for it (which varies a lot: narrow
+  // laptop at 125% OS scaling vs. a 4K external display), recomputed whenever
+  // that space changes (dialog open, window/orientation resize). On a small screen,
+  // Details and "Where each model runs" are a dropdown overlay (see
+  // #arch-info-toggle below) that floats *over* the diagram instead of
+  // sharing space with it, so the diagram's box is always the full stage,
+  // whether or not that dropdown happens to be open.
+  const MAX_USEFUL_ZOOM = 1.75; // past this, boxes/gaps look oversized rather than more readable
+  let diagramW = 1200, diagramH = 660;
+
+  // <1100px matches the CSS breakpoint that switches Details/"Where each
+  // model runs" from always-visible panels to the dropdown overlay
+  // (styles.css) -- kept in one place so JS and CSS never disagree about
+  // where "compact" starts.
+  const compactQuery = window.matchMedia("(max-width: 1100px)");
+
+  function autoFit() {
+    if (!viewport) return;
+    const w = viewport.clientWidth;
+    const h = viewport.clientHeight;
+    if (!w || !h) return;
+    const zoom = Math.min(MAX_USEFUL_ZOOM, w / diagramW, h / diagramH);
+    svg.style.width = `${diagramW * zoom}px`;
+    svg.style.height = `${diagramH * zoom}px`;
+  }
+
   const el = (tag, attrs, parent, text) => {
     const node = document.createElementNS(NS, tag);
     for (const [k, v] of Object.entries(attrs || {})) node.setAttribute(k, v);
@@ -211,7 +243,10 @@
       el("text", { x: midX, y: textY, "text-anchor": "middle" }, wrap, "same physical machine");
       maxY = Math.max(maxY, textY + 8);
     }
-    svg.setAttribute("viewBox", `0 0 ${maxX + 16} ${maxY + 16}`);
+    diagramW = maxX + 16;
+    diagramH = maxY + 16;
+    svg.setAttribute("viewBox", `0 0 ${diagramW} ${diagramH}`);
+    autoFit();
 
     const edgesG = document.getElementById("arch-edges");
     for (const [id, cls, from, to, d, label, lx, ly, anchor, both] of EDGES) {
@@ -315,9 +350,12 @@
     card.replaceChildren(...body);
   }
 
+  function expandCard() { if (compactQuery.matches) setInfoOpen(true); }
+
   function selectNode(id) {
     const n = NODES[id];
     selected = { type: "node", id };
+    expandCard();
     clearHighlight();
     const related = EDGES.filter((e) => e[2] === id || e[3] === id);
     highlight([id, ...related.flatMap((e) => [e[2], e[3]])], related.map((e) => e[0]));
@@ -342,6 +380,7 @@
   function selectScenario(key) {
     const sc = SCENARIOS[key];
     selected = { type: "scenario", id: key };
+    expandCard();
     clearHighlight();
     const nodes = new Set();
     sc.edges.forEach((eid) => { const e = EDGES.find((x) => x[0] === eid); nodes.add(e[2]); nodes.add(e[3]); });
@@ -358,6 +397,7 @@
 
   function selectProvider(p) {
     selected = { type: "provider", id: p };
+    expandCard();
     clearHighlight();
     const ids = Object.keys(NODES).filter((id) => NODES[id].p === p && (!NODES[id].vss || vss.enabled));
     highlight(ids, []);
@@ -453,16 +493,40 @@
     } catch (_e) { vss = { enabled: false, devices: {} }; }
   }
 
+  // Both <details> stay permanently "open" (their content always rendered in
+  // the DOM) on every screen size -- on wide screens that's what makes them
+  // plain always-visible panels (native disclosure UI is hidden via CSS); on
+  // compact screens, actual visibility is instead driven by this "info-open"
+  // class on the dialog, toggled only by #arch-info-toggle, independent of
+  // each <details>'s own open/closed state. This also means toggling the
+  // dropdown never changes the grid's layout (the overlay is position: fixed)
+  // so it never needs to trigger a diagram re-fit.
+  function setInfoOpen(isOpen) {
+    if (!dialog || !infoToggleBtn) return;
+    dialog.classList.toggle("info-open", isOpen);
+    infoToggleBtn.setAttribute("aria-expanded", String(isOpen));
+  }
+  if (infoToggleBtn) {
+    infoToggleBtn.addEventListener("click", () => setInfoOpen(!dialog.classList.contains("info-open")));
+  }
+
   let lastFocus = null;
   async function open() {
     lastFocus = document.activeElement;
     modal.classList.remove("hidden");
     document.body.classList.add("modal-open");
     closeBtn.focus();
+    setInfoOpen(false); // fresh open always starts with the dropdown closed (compact screens only -- harmless no-op on wide)
     await refreshVss();
     draw();
     reapply();
     renderDevices();
+    // draw()'s own autoFit() runs synchronously right after the lines above,
+    // which can measure the viewport before the browser has actually laid
+    // out the modal becoming visible -- a microtask `await` isn't guaranteed
+    // to wait for a layout/paint pass. Re-measuring one frame later catches
+    // up once layout has definitely settled.
+    requestAnimationFrame(() => requestAnimationFrame(autoFit));
   }
   function close() {
     modal.classList.add("hidden");
@@ -472,10 +536,34 @@
 
   openBtn.addEventListener("click", open);
   closeBtn.addEventListener("click", close);
-  modal.addEventListener("mousedown", (e) => { if (e.target === modal) close(); });
+  modal.addEventListener("mousedown", (e) => {
+    if (e.target === modal) close();
+    // Clicking anywhere outside the dropdown (but still inside the dialog,
+    // e.g. on the diagram itself) closes it rather than leaving it open and
+    // covering the diagram -- standard dropdown behaviour.
+    else if (dialog.classList.contains("info-open") && !e.target.closest("#arch-card-details, #arch-devices-details, #arch-info-toggle")) {
+      setInfoOpen(false);
+    }
+  });
   document.addEventListener("keydown", (e) => {
     if (modal.classList.contains("hidden")) return;
-    if (e.key === "Escape") { e.preventDefault(); close(); }
+    if (e.key !== "Escape") return;
+    e.preventDefault();
+    // Escape closes the dropdown first (if open) rather than jumping straight
+    // to closing the whole dialog underneath it.
+    if (dialog.classList.contains("info-open")) setInfoOpen(false);
+    else close();
+  });
+  // Re-fit whenever the space available to the diagram changes: window/
+  // orientation resize. Crossing the compact breakpoint also needs a re-fit
+  // (the grid's column/row template itself changes) and, going back to wide,
+  // the dropdown-only "info-open" state is irrelevant there so it's cleared
+  // for tidiness.
+  window.addEventListener("resize", () => { if (!modal.classList.contains("hidden")) autoFit(); });
+  compactQuery.addEventListener("change", (e) => {
+    if (modal.classList.contains("hidden")) return;
+    if (!e.matches) setInfoOpen(false);
+    requestAnimationFrame(() => requestAnimationFrame(autoFit));
   });
 
   draw();

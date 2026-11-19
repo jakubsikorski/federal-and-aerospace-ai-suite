@@ -39,7 +39,7 @@ Container names use the prefix `uav-va-` (vision analytics), for example `uav-va
 | Service | Image | Role |
 | ------- | ----- | ---- |
 | `broker` | `eclipse-mosquitto:2.0.22` | MQTT broker for telemetry and pipeline events |
-| `px4` | `px4io/px4-sitl:latest` | PX4 SITL flight controller simulation |
+| `px4` | `px4io/px4-sitl:v1.18.0-beta1-660-g61907962c9` | PX4 SITL flight controller simulation |
 | `mavlink-router` | Built from `uav-mission-compute-sdk/infra/px4-sim/mavlink-router` | Routes MAVLink telemetry between PX4 and the pipeline server; publishes UDP `14551` for a remote QGroundControl |
 | `dlstreamer-pipeline-server` | `intel/dlstreamer-pipeline-server:2026.3.0-ubuntu24-rc1` (+ `pymavlink`) | Core inference engine — YOLO11s detection and telemetry overlay |
 | `metrics-manager` | `intel/metrics-manager:2026.3.0-rc1` | Host platform (CPU/GPU) metrics |
@@ -59,12 +59,13 @@ Defined in [`docker-compose-uavsdk.yml`](docker-compose-uavsdk.yml). Requires th
 
 ## Prerequisites
 
+See [System Requirements](docs/user-guide/get-started/system-requirements.md) for the
+authoritative, versioned list of OS, Docker, Python, and hardware requirements — not
+duplicated here to avoid the two drifting out of sync. In addition to those:
+
 | Requirement | Notes |
 | ----------- | ----- |
-| Docker Engine release 24 or later | [Install guide](https://docs.docker.com/engine/install/) |
-| Docker Compose v2 | Included with Docker Desktop; on Linux OS, install the `docker-compose-plugin` package. Use `docker compose` (space), not `docker-compose` (hyphen). |
 | Intel® GPU with OpenVINO support | Required for `GPU_DEVICE` / `GPU_RENDER_DEVICE` in `.env`. |
-| Python 3 with `venv` | Required by `make model` to create a Python virtual environment for exporting YOLO11s. |
 | Intel® NPU (optional) | For NPU-accelerated pipelines; falls back to `/dev/null` (disabled) if not detected. |
 | USB or RealSense camera (optional) | For live-camera pipelines; auto-detected by `make init`. |
 

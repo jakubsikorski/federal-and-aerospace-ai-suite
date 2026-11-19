@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 
 The Handheld Multi-Modal application is an operator console for Intel® edge devices that fuses
 live camera analytics, evidence search, mission documents, alerts, and speech. It runs entirely
-on the device and is built from unmodified Open Edge Platform `release-2026.2.0` microservices,
+on the device and is built from published container images from Open Edge Platform,
 plus an application Backend and browser UI. Models are downloaded on the first start; after that,
 all inference runs locally, the application works offline, and data does not leave the device.
 
@@ -47,19 +47,22 @@ third-party-components.spdx  Software bill of materials of third-party component
 
 | Service | Image | Role |
 |---------|-------|------|
-| DL Streamer Pipeline Server | `intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24` | Detection, tracking, annotated WebRTC, MQTT, crops |
-| Chat Q&A Core | `intel/chatqna:core_gpu_2026.2.0` | Mission documents and answers |
-| Audio Analyzer | `intel/audio-analyzer:2026.2.0` | Speech-to-text (Whisper-medium, GPU) |
-| Text To Speech | `intel/text-to-speech:2026.2.0` | Spoken alerts and answers (SpeechT5) |
-| Alert Agent | `intel/alert-agent-service:2026.2.0` | Rule-mode alert dispatch, no LLM |
-| Metrics Manager | `intel/metrics-manager:2026.2.0` | Hardware telemetry |
-| Model Download | `intel/model-download:2026.2.0` | Prepares the YOLO26s IR (first start) |
+| DL Streamer Pipeline Server | `intel/dlstreamer-pipeline-server` | Detection, tracking, annotated WebRTC, MQTT, crops |
+| Chat Q&A Core | `intel/chatqna` (OpenVINO runtime) | Mission documents and answers |
+| Audio Analyzer | `intel/audio-analyzer` | Speech-to-text (Whisper-medium, GPU) |
+| Text To Speech | `intel/text-to-speech` | Spoken alerts and answers (SpeechT5) |
+| Alert Agent | `intel/alert-agent-service` | Rule-mode alert dispatch, no LLM |
+| Metrics Manager | `intel/metrics-manager` | Hardware telemetry |
+| Model Download | `intel/model-download` | Prepares the YOLO26s IR (first start) |
 | MediaMTX | `bluenviron/mediamtx:1.21.3` | RTSP input, WHIP/WHEP relay |
 | Coturn | `coturn/coturn:4.18.0-alpine` | Loopback-only TURN for tunneled browsers |
 | Mosquitto | `eclipse-mosquitto:2.0.22` | MQTT between DLSPS and Backend |
 | NGINX | `nginx:1.30.6-alpine` | TLS reverse proxy on `127.0.0.1:8443` |
 | FFmpeg | `bluenviron/mediamtx:1.21.3-ffmpeg` | Demo cameras only |
 | Backend + UI | `handheld/backend:dev` (built from `backend/`) | Application logic; calls the microservice APIs only |
+
+Open Edge Platform services use unmodified published container images. Exact image tags are pinned in
+[`compose/handheld-multi-modal.yaml`](compose/handheld-multi-modal.yaml).
 
 [![Architecture diagram](docs/user-guide/_assets/architecture.svg)](docs/user-guide/_assets/architecture.svg)
 

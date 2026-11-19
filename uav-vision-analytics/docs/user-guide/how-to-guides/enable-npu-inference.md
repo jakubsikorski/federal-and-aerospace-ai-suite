@@ -84,7 +84,7 @@ Set `detection.device: npu` for a camera in `configs/cameras-pymavlink.yaml`
 ```bash
 make check-cameras
 make start-rtsp
-ffplay rtsp://<HOST_IP>:8555/uav-front-camera
+ffplay -rtsp_transport tcp rtsp://<HOST_IP>:8555/uav-front-camera
 ```
 
 ## Verify

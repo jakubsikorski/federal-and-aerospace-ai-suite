@@ -11,7 +11,57 @@ A minimal, single-container remote viewer for the
 `docker-compose-pymavlink.yml`/`docker-compose-uavsdk.yml`. It never talks to
 that host until you enter its IP in the dashboard and press **Connect**.
 
+> [!IMPORTANT]
+> This is a *viewer*, not the UAV stack itself. Deploy
+> [`uav-vision-analytics`](../uav-vision-analytics#readme) first (standalone/
+> pymavlink mode), or [`uav-mission-compute-sdk`](../uav-mission-compute-sdk#readme)
+> **plus** `uav-vision-analytics` in SDK mode -- the viewer talks to
+> `uav-vision-analytics`'s `/pipelines/status` API and RTSP streams either way,
+> the Mission Compute SDK alone has no camera pipelines for it to see. Get at
+> least one camera pipeline running, then come back here. See
+> [Get Started](../uav-vision-analytics/docs/user-guide/uav-ground-station/get-started.md)
+> for the full walkthrough of both sides.
+
+
+Documentation for UAV Ground Station is maintained under the UAV Blueprint, for publishing
+reasons. You can find the source in the
+[user guide](../uav-vision-analytics/docs/user-guide/uav-ground-station/index.md)
+and the html version on
+[Open Edge Platform Docs](https://docs.openedgeplatform.intel.com/dev/edge-ai-suites/ai-suite-federal-and-aerospace/uav-vision-analytics/index.html).
+
+## Quick Start
+
+Prerequisites: Docker with the Compose plugin and `make` on this machine.
+
+```bash
+git clone https://github.com/open-edge-platform/federal-and-aerospace-ai-suite.git --branch main
+cd federal-and-aerospace-ai-suite/uav-ground-station
+make up      # creates .env from template (host IP and devices auto-detected), builds, and starts the container
+```
+
+Then open `http://<VIZ_HOST_IP>:8080` (`http://localhost:8080` when
+`VIZ_HOST_IP` is `127.0.0.1`), enter the UAV host's IP, and press **Connect**.
+
+```bash
+make down    # stop and remove the stack started with make up
+make logs    # tail the container's logs
+```
+
+Want **Live Natural Language Search** too? Run `make up-vss DEVICE=CPU|GPU|NPU|all`
+instead of `make up` -- see [Get Started -- VSS search](docs/user-guide/get-started.md#vss-search)
+for the extra setup it needs and `make down-vss`/`make clean-vss-index` for
+tearing it down.
+
+See **[Get Started](docs/user-guide/get-started.md)** for: downloading the source two
+ways, the UAV-side prerequisite in detail, the VSS search overlay walkthrough,
+multiple UAVs in one session, and the Flight Summary report. See
+**[Configuration](docs/user-guide/configuration.md)** for every `.env` variable and the
+full backend route reference, and **[Release Notes](docs/user-guide/release-notes.md)** for
+what each version adds and its known issues.
+
 ## What it shows
+
+![UAV Ground Station dashboard with live video, scene captions, and utilization](docs/user-guide/_assets/dashboard-live.gif)
 
 - The live video stream, via **H.264 Relay**: the local uav-gs-backend
   configures a mediamtx sidecar (`docker-compose-mediamtx.yml`, always
@@ -35,16 +85,16 @@ that host until you enter its IP in the dashboard and press **Connect**.
   pipeline state and name (from the DL Streamer
   Pipeline Server's REST API and the start request of each pipeline).
 - CPU/GPU/NPU utilization of the UAV host (proxied from its `metrics-manager`) and of this ground-station machine (the local `uav-gs-metrics-manager` container).
-- **Live Natural Language Search**: the **Search Videos** button (top bar or side
-  panel, or press `/`) opens a popup where you type a natural-language prompt
+- **Live Natural Language Search**: the **Search Videos** button (top bar, or press `/`) opens a popup where you type a natural-language prompt
   (e.g. "a red car on the road") and get a ranked result list with thumbnails
   next to a clip player (arrow keys move between results, `Esc` closes), from a
   separately deployed
   [Video Search and Summarization (VSS)](https://github.com/open-edge-platform/edge-ai-libraries/tree/main/sample-applications/video-search-and-summarization)
-  search stack -- see [VSS search](#vss-search) below.
+  search stack -- see [Get Started -- VSS search](docs/user-guide/get-started.md#vss-search).
 - An interactive **Architecture** popup: the services on the UAV host, the ground station and the optional VSS stack, color-coded by origin (Open Edge Platform, open source, application). Pick a flow such as live video, captions, live indexing or search to highlight its path, click a service for its role, image and APIs, and see which models run on the NPU, GPU and CPU.
-- A **Flight Summary** report (top bar's **Flight Summary** button): pick one or more cameras that are currently captioning and a time window, and get an extractive summary -- an overview paragraph, recurring subjects, and a timeline of de-duplicated scene highlights grouped camera-by-camera (not interleaved by arrival time, so each camera's own story reads start-to-finish) -- built entirely from the MQTT caption stream already flowing for captioning-enabled pipelines. No VSS deployment or LLM call required; see [Flight Summary](#flight-summary) below.
+- A **Flight Summary** report (top bar's **Flight Summary** button): pick one or more cameras that are currently captioning and a time window, and get an extractive summary -- an overview paragraph, recurring subjects, and a timeline of de-duplicated scene highlights grouped camera-by-camera (not interleaved by arrival time, so each camera's own story reads start-to-finish) -- built entirely from the MQTT caption stream already flowing for captioning-enabled pipelines. No VSS deployment or LLM call required; see [Get Started -- Flight Summary](docs/user-guide/get-started.md#flight-summary).
 
+![Architecture popup following the live video, scene caption, and utilization flows](docs/user-guide/_assets/architecture-flows.gif)
 ## Project Structure
 
 ```text
@@ -54,6 +104,9 @@ uav-ground-station/
 ├── configs/mediamtx.yml  # mediamtx settings (WebRTC only, 60 s on-demand timeouts)
 ├── docker-compose-vss.yml  # optional VSS search containers (make up-vss)
 ├── .env.example         # Copy to .env; all vars have loopback-safe defaults
+├── docs/user-guide/get-started.md   # Full deployment walkthrough (both sides, VSS, multi-UAV, Flight Summary)
+├── docs/user-guide/configuration.md # Every .env variable and the backend route reference
+├── docs/user-guide/release-notes.md # What each version adds, with known issues
 └── backend/             # FastAPI app: static UI + proxy/bridge APIs
     ├── main.py
     ├── vss_search.py    # /api/search* proxy to the separate VSS stack
@@ -68,298 +121,6 @@ uav-ground-station/
 ```
 
 Container names use the prefix `uav-gs-` (ground station): `uav-gs-backend`, `uav-gs-mediamtx` and `uav-gs-metrics-manager`. The compose service names (`viz-backend`, `mediamtx`, `gs-metrics-manager`) are unchanged.
-
-## Quick Start
-
-Prerequisites: Docker with the Compose plugin and `make` on this machine, Recommended to use
-a machine other than the UAV host running `uav-vision-analytics` or the UAV SDK stack with its pipelines
-started.
-
-There are two options available to get the application source:
-
-#### Option A — Download the ZIP (recommended)
-
-Download the compressed file and get into the directory:
-
-```bash
-curl -OjL https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/releases/download/fedaero-latest/uav-mission-apps.zip
-```
-
-Decompress the downloaded file:
-
-```bash
-unzip uav-mission-apps.zip
-cd uav-ground-station
-```
-
-#### Option B — Clone the whole repository
-
-Clone the repo and get into the directory:
-
-```bash
-git clone https://github.com/open-edge-platform/federal-and-aerospace-ai-suite.git --branch main
-cd federal-and-aerospace-ai-suite/uav-ground-station
-```
-
-Then, for either option:
-
-```bash
-make up      # creates .env from template (host IP and devices auto-detected), builds, and starts the container
-```
-
-`make up` runs `make init`, which sets `VIZ_HOST_IP` and `VIZ_PUBLIC_HOST` to this
-machine's LAN IP and detects the GPU/NPU devices; edit `.env` only to override them
-(for example `127.0.0.1` for loopback-only access).
-
-> [!NOTE]
-> `make up` starts only the viewer + mediamtx relay (video, captions, metrics,
-> Flight Summary) -- the **Search Videos** button and `/api/search*` stay
-> hidden/`404` until the separate VSS overlay is started with `make up-vss`
-> *instead of* `make up` (it is not a flag to `make up`). See
-> [VSS search](#vss-search) below for the extra `.env` variables it needs
-> and exactly what `make up-vss` adds.\
-> `make up-vss` always includes everything `make up` does (viewer + mediamtx
-> + the 8 VSS containers), so you only ever run one or the other, not both.\
-> Started with plain `make up` and want Search later? Just run `make up-vss`
-> -- it brings up the same viewer/mediamtx containers (unchanged, so this is
-> fast) plus the missing VSS ones, in place.\
-> Dashboard, video, captions, Flight Summary and per-host metrics work the
-> same either way -- only Search Videos depends on which one you ran. Tear
-> down with the matching command: `make down` after `make up`, `make down-vss`
-> after `make up-vss` (see the [!IMPORTANT] note below `make down`).
-
-Then open `http://<VIZ_HOST_IP>:8080` (`http://localhost:8080` when `VIZ_HOST_IP` is `127.0.0.1`), enter the
-UAV host's IP (defaults to `VIZ_COMPANION_HOST`, `127.0.0.1`), and press **Connect**. Device cards
-(`cpu`/`gpu`/`npu`) are detected automatically from whichever pipelines are
-currently running on the remote host.
-
-```bash
-make down    # stop and remove the stack started with make up
-make logs    # tail the container's logs
-```
-
-> [!IMPORTANT]
-> If you started with `make up-vss`, tear down with `make down-vss` (or
-> `make clean-vss-index` / `make delete-vss-volumes` -- see
-> [VSS search](#vss-search)), not plain `make down`: `make down` only
-> targets `docker-compose.yml` + `docker-compose-mediamtx.yml` and leaves
-> the 8 `uav-gs-vss-*` containers from `docker-compose-vss.yml` running.
-
-
-## Configuration
-
-All configuration is via `.env` (see `.env.example`):
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `VIZ_HOST_IP` | `127.0.0.1` (`make init` sets the host's LAN IP) | Bind address for this machine's published port |
-| `VIZ_PORT` | `8080` | Dashboard port |
-| `VIZ_COMPANION_HOST` | `127.0.0.1` | UAV Companion Compute IP field |
-| `VIZ_CAMERA_ORDER` | `front,bottom,back` | Camera card order, by a word in the stream name; unlisted cameras follow alphabetically |
-| `VIZ_REMOTE_HTTPS_PORT` | `443` | UAV host's nginx HTTPS port |
-| `VIZ_REMOTE_TLS_VERIFY` | `false` | Set `true` to verify the UAV host's TLS certificate (it is self-signed by default, so off keeps it working out of the box; a warning is logged) |
-| `VIZ_REMOTE_TLS_CA_BUNDLE` | empty (system CAs) | Used when verification is on: PEM file (under `configs/certs/`, as `/certs/<file>.pem`) with the UAV hosts' certificates |
-| `VIZ_REMOTE_MQTT_PORT` | `1883` | UAV host's nginx MQTT passthrough port |
-| `VIZ_REMOTE_RTSP_PORT` | `8555` | UAV host's raw RTSP port, pulled by the mediamtx relay |
-| `VIZ_PUBLIC_HOST` | `127.0.0.1` (`make init` sets the host's LAN IP) | Address browsers use to reach this machine; advertised as the WebRTC ICE candidate. Set it when `VIZ_HOST_IP` is `0.0.0.0` |
-| `MEDIAMTX_WEBRTC_PORT` / `MEDIAMTX_WEBRTC_ICE_UDP_PORT` / `MEDIAMTX_WEBRTC_ICE_TCP_PORT` | `8889` / `8189` / `8189` | Published WebRTC (WHEP) port and ICE UDP/TCP ports of the relay |
-| `GPU_DEVICE` / `GPU_RENDER_DEVICE` / `NPU_DEVICE` | `/dev/null` (`make init` auto-detects) | Devices passed to `gs-metrics-manager` for this machine's utilization panel |
-| `VSS_MINIO_USER` / `VSS_MINIO_PASSWORD` / `VSS_POSTGRES_USER` / `VSS_POSTGRES_PASSWORD` | _(`make init` auto-generates: a fixed username + password)_ | Credentials for the VSS overlay's MinIO and Postgres -- internal to this stack only, edit `.env` yourself before `make up-vss` for different values |
-| `VSS_REGISTRY` / `VSS_TAG` | `intel/` / `2026.3.0-rc1` | Registry and tag of the VSS images used by `make up-vss` |
-| `VSS_ENABLED` / `VSS_MANAGER_URL` / `VSS_DATASTORE_URL` | `false` / `http://host.docker.internal:12345/manager` / `.../datastore` | Only for a VSS deployed separately; `make up-vss` sets them itself |
-| `VSS_MANAGER_PORT` | `3001` | Host port (bound to `VIZ_HOST_IP`) for the VSS pipeline-manager API |
-| `VIDEO_GROUP_ID` / `RENDER_GROUP_ID` | `44` / `992` | Host's `video`/`render` group ids (`getent group video render`; `make init` does not set them), needed for GPU/NPU VSS devices |
-| `VSS_EMBEDDING_MODEL` | `CLIP/clip-vit-b-32` (`make init` pre-fills this only after confirming the download prompt, `ACCEPT_VSS_MODELS=y` to skip it) | Embedding model VSS uses for frames and queries; edit `.env` before `make up-vss` for a different model |
-| `DATAPREP_DETECTION_MODEL` | `OpenVINO/yolox_s-int8-ov` (`make init` pre-fills this only after confirming the download prompt, `ACCEPT_VSS_MODELS=y` to skip it) | Object detection model VSS dataprep uses for crop extraction. Must be a Hugging Face OpenVINO Model API repo in the `OpenVINO/` namespace |
-| `VSS_ENABLE_OBJECT_DETECTION` | `true` | Run object-detection crops alongside embedding during ingestion |
-| `VSS_INGEST_EMBEDDING_DEVICE` / `VSS_DETECTION_DEVICE` / `VSS_QUERY_EMBEDDING_DEVICE` | `CPU` | Devices for VSS indexing, object detection and query embedding |
-| `VSS_FRAME_INTERVAL` | `15` | Live ingest embeds one frame every N frames |
-| `VSS_LIVE_RETENTION_HOURS` | `24` | How long indexed live footage/embeddings are kept before being purged |
-| `VSS_LIVE_SYNC_INTERVAL_SECONDS` | `15` | How often running UAV pipelines are synced to VSS live streams |
-| `VSS_DATASTORE_BUCKET` | `video-summary` | VSS MinIO bucket for uploaded videos |
-| `VSS_SEARCH_TIMEOUT_SECONDS` | `60` | Timeout for one search request to VSS |
-| `VSS_SEARCH_MIN_PEAK_SCORE` | `0.25` | Hides hits whose best frame is less similar to the query than this; tuned for CLIP ViT-B/32, retune for other embedding models (`0` disables) |
-| `VSS_SEARCH_RELATIVE_CUTOFF` | `0.90` | Keeps hits whose peak frame similarity is at least this fraction of the best hit's (`0` disables) |
-| `VSS_PREVIEW_ENABLED` | `true` | Offers a cached low-bitrate SD preview of each result alongside the full-resolution HD clip; `false` always streams originals |
-| `VSS_PLAYBACK_DEFAULT` | `sd` | Quality the player starts in (`sd` or `hd`); users switch with the SD/HD toggle and their choice is remembered per browser |
-| `VSS_PREVIEW_HEIGHT` | `360` | Preview height in pixels (never upscaled) |
-| `VSS_PREVIEW_MAX_KBPS` | `800` | Preview video bitrate cap |
-| `VSS_PREVIEW_CACHE_MB` | `1024` | Disk budget for cached previews in `uav-gs-backend` |
-| `VSS_PREVIEW_PREWARM` | `3` | Top results transcoded as soon as a search returns |
-| `CAPTION_BUFFER_SIZE` | `1000` | Max scene captions kept per (host, camera) for the Flight Summary report |
-| `CAPTION_LOG_IDLE_TTL_SECONDS` | `120` | Drop a (host, camera) caption subscriber after this many seconds of not being observed captioning |
-| `VSS_MAX_RESULTS` | `50` | `video-search`'s `AGGREGATION_MAX_RESULTS` -- how many top non-overlapping time windows VSS keeps, across *all* indexed streams |
-
-The remote-port defaults assume the standard nginx-published ports from
-`uav-vision-analytics/docker-compose-pymavlink.yml`; only change them if that
-stack's nginx is configured differently.
-
-## VSS search
-
-The **Live Natural Language Search** panel and **Search Videos** popup appear
-only when the VSS overlay is used. It is a separate compose file,
-`docker-compose-vss.yml`, that adds just the 8 containers VSS search needs
-(pipeline-manager, video-search, multimodal-dataprep,
-multimodal-embedding-serving, vector-retriever, vdms-vector-db, postgres,
-minio; container names `uav-gs-vss-*`). With the default `make up` the search UI is hidden
-and the search routes return 404.
-
-1. `make init` (run once, on first setup) already takes care of auto-generating
-   the `VSS_MINIO_*` / `VSS_POSTGRES_*` credentials (a fixed username and a
-   random password -- these are internal to this stack's own MinIO/Postgres
-   containers only, never exposed outside the docker network). For
-   `VSS_EMBEDDING_MODEL` / `DATAPREP_DETECTION_MODEL` it shows the two
-   Hugging Face models that would be downloaded (and their license pages) and
-   asks for confirmation -- nothing is downloaded or pre-filled into `.env`
-   without saying yes.
-
-   Only edit `.env` by yourself if you want different credentials or
-   declined the model prompt -- see `.env.example` for the full set of VSS
-   variables (optional devices included):
-
-   ```bash
-   VSS_MINIO_USER=vss-admin
-   VSS_MINIO_PASSWORD=<random characters>
-   VSS_POSTGRES_USER=vss
-   VSS_POSTGRES_PASSWORD=<random characters>
-   VSS_EMBEDDING_MODEL=CLIP/clip-vit-b-32
-   DATAPREP_DETECTION_MODEL=OpenVINO/yolox_s-int8-ov
-   ```
-
-   > [!IMPORTANT]
-   > `DATAPREP_DETECTION_MODEL` must be a Hugging Face **OpenVINO Model API**
-   > repo under the `OpenVINO/` namespace (`OpenVINO/yolox_s-int8-ov` above).
-   > If `.env` was created by hand instead of via `make init` and any of the
-   > six `VSS_MINIO_*`/`VSS_POSTGRES_*`/`VSS_EMBEDDING_MODEL`/
-   > `DATAPREP_DETECTION_MODEL` vars are left blank, `make up-vss` fails fast
-   > with one message listing everything missing (MinIO also needs a user of
-   > at least 3 and a password of at least 8 characters, or its container
-   > keeps restarting).
-2. `make up-vss` (base + mediamtx + VSS overlay; use this instead of plain
-   `make up` whenever Live Natural Language Search is wanted -- `make up`
-   alone never starts the 8 VSS containers or exposes the Search UI). The
-   first start downloads the CLIP embedding model (and the YOLOX detection
-   model, for object crops) into Docker volumes.
-3. Open the dashboard and **Connect** to the UAV. Every RUNNING pipeline
-   (`uav-<camera>` on `VIZ_REMOTE_RTSP_PORT`) is registered with VSS
-   as a live stream and indexed continuously. A backend loop
-   (`VSS_LIVE_SYNC_INTERVAL_SECONDS`) adds pipelines that start later and
-   pauses ones that stop; **Disconnect** pauses all of them. Indexed footage
-   is kept for `VSS_LIVE_RETENTION_HOURS`.
-
-`make down-vss` stops everything but keeps the index; `make clean-vss-index`
-also deletes the indexed footage, embeddings and stream registrations but
-keeps the downloaded models; `make delete-vss-volumes` (asks for confirmation;
-`FORCE=1` skips it) deletes all VSS volumes, including the models
-(re-downloaded on the next start). The pipeline-manager API is published on
-`VIZ_HOST_IP:VSS_MANAGER_PORT` (default 3001) for uploading videos
-(`POST /videos`, then `POST /videos/search-embeddings/<videoId>`).
-
-Live RTSP ingestion needs the `intel/*:2026.3.0-rc1` (or newer) VSS images
-(`VSS_REGISTRY` / `VSS_TAG`). To use a VSS
-deployed separately with its own `setup.sh --search` instead, set
-`VSS_ENABLED=true` and `VSS_MANAGER_URL` / `VSS_DATASTORE_URL` in `.env`.
-
-`uav-gs-backend` proxies everything so the browser only talks to this dashboard:
-
-| Route | Upstream VSS call | Purpose |
-|---|---|---|
-| `GET /api/search/status` | `GET /manager/health`, `GET /manager/app/features` | Reachability + search feature flag (popup status pill) |
-| `POST /api/search` `{"query": "..."}` | `POST /manager/search/query`, `GET /manager/videos`, `GET /manager/streams` | Ranked hits, joined with filenames / live stream names |
-| `GET /api/search-video?path=<bucket>/<object>` | `GET /datastore/<bucket>/<object>` | Range-aware clip streaming (seekable `<video>`) |
-| `GET /api/search-frame?video_id=...&timestamp=...` | `GET /manager/frames` | Best-matching frame (thumbnail / fallback) |
-| `GET /api/search/sources` | _(local registry)_ | UAV hosts and cameras currently live-indexed, for the search popup's UAV / Camera filters |
-| `GET/POST/DELETE /api/search/live-sync` | `GET/POST/PATCH/DELETE /manager/streams` | Show / start (`{"host": ...}`) / stop live indexing of the UAV feeds |
-
-Quick check:
-
-```bash
-curl -s http://${VIZ_HOST_IP:-127.0.0.1}:${VIZ_PORT:-8080}/api/search/status
-curl -s -X POST http://${VIZ_HOST_IP:-127.0.0.1}:${VIZ_PORT:-8080}/api/search \
-  -H 'Content-Type: application/json' -d '{"query": "a car on the road"}'
-```
-
-### Multiple UAVs at once
-
-The dashboard supports connecting to more than one UAV companion board in the
-same browser session: a tab bar appears above the connect field once a second
-host is connected, and switching tabs swaps which host's camera cards and
-metrics are shown. Disconnecting (closing a tab's **×**) stops that host's VSS
-live-sync indexing; switching tabs does not -- a host keeps being indexed in
-the background for as long as its tab stays open, even while another tab is
-active.
-
-Because camera names are operator-chosen (`configs/cameras-*.yaml`), two UAVs
-could configure the same camera name (e.g. both have a `uav-front-camera`);
-each host's streams are registered with VSS under a host-qualified name
-(`uav-<host>--<camera>`) so they never collide.
-
-Each search result's `camera`/`host` fields are resolved in order from: the
-embedding's own `sensor_id` metadata; failing that, the stream's
-registration-time `tags` (`["uav", "<host>", "<camera>"]`, also visible in
-each result's own "Tags" detail); and failing that, looking the result's
-`video_id` up in VSS's current stream list as a last resort. A result VSS
-still has indexed from a UAV that has since disconnected may still show
-"Unknown camera" if none of these resolve.
-
-The dashboard's search popup puts two filter controls — UAV and Camera dropdown.
-The full, unfiltered result set is fetched once when the search runs, and every
-subsequent filter toggle — whether switching UAVs, changing cameras, or resetting
-selections — simply reshapes that same in-memory dataset without firing any 
-additional network request.
-
-Clips whose codec the browser can't decode (for example some stored
-live-stream segments) fall back to VSS's
-server-decoded best-matching frame plus a download link. Live segments older
-than VSS's `LIVE_RETENTION_HOURS` may no longer be available.
-
-## Flight Summary
-
-The **Flight Summary** button (top bar) opens a report built from the MQTT
-scene-caption stream (`uav/caption/<camera>`) -- the same captions shown live
-under each camera's video. It works independently of VSS: no extra containers,
-no LLM call, always available once a camera's pipeline is running with
-captioning on.
-
-1. `uav-gs-backend` keeps a small ring buffer of recent captions per
-   `(host, camera)` (`caption_log.py`), kept warm only while the dashboard's
-   normal pipeline-info polling has observed that camera captioning; an idle
-   `(host, camera)` pair is dropped after `CAPTION_LOG_IDLE_TTL_SECONDS`.
-2. Open **Flight Summary**, confirm the host (defaults to the connected UAV),
-   pick one or more cameras from the list (populated from whichever cameras
-   are currently captioning) and a time window, then **Generate**.
-3. `vss_summary.py` runs an extractive map-reduce over that camera's buffered
-   captions: consecutive near-identical captions are folded into one "scene"
-   (with an occurrence count), a keyword tally feeds the overview paragraph,
-   and a representative subset of scenes (favoring long-held/repeated ones,
-   filled out with an even chronological spread of the rest) is kept per
-   camera up to the requested highlight budget. With more than one camera
-   selected, the timeline is **grouped by camera** -- all of one camera's
-   highlights in order, then the next camera's -- rather than interleaved by
-   arrival time, which is hard to follow once several cameras are captioning
-   concurrently.
-4. **Download PDF** renders the same report via `pdf_writer.py` (a small,
-   dependency-free PDF writer -- no extra system packages).
-
-If a search was just run, the report also appends the query and its matched
-clips as an "appendix", tying a natural-language search back to the raw
-caption evidence around the same time window.
-
-| Route | Purpose |
-|---|---|
-| `POST /api/summary` `{"host", "cameras": [...], "window_minutes", "max_highlights"}` | JSON report, rendered inline in the modal |
-| `GET /api/summary.pdf?host=...&cameras=a,b&window_minutes=15&max_highlights=20` | Same report as a downloadable PDF |
-
-## Other backend routes
-
-| Route | Purpose |
-|---|---|
-| `GET /api/runtime-config` | Default host, remote HTTPS port and the relay's WebRTC host/port for the browser |
-| `GET /api/pipeline-info`, `GET /api/detect-pipelines` | Cameras and pipelines running on the UAV host |
-| `GET /api/captions-stream`, `/api/captions-stream-multi` | Scene captions as SSE |
-| `GET /api/metrics-stream`, `/api/metrics-stream-multi`, `/api/local-metrics-stream` | UAV host and ground-station utilization as SSE |
-| `POST /api/relay-path`, `GET /api/relay-status` | Configure and check the mediamtx path `relay-<host>-<camera>` |
-| `GET/POST/DELETE /api/sessions` | Connected UAV hosts, kept server-side so a page reload restores the tabs; a backend restart (new `boot_id`) starts with none connected |
 
 ## Notes
 

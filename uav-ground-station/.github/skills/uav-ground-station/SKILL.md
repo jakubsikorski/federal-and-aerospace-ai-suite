@@ -67,8 +67,9 @@ either skill's steps inside the other.
 
 | Task | Read this file in the target repo first |
 | --- | --- |
-| What the dashboard shows, architecture, Quick Start, Flight Summary, VSS search | `uav-ground-station/README.md` |
-| Every `.env` variable and its default/required status | `uav-ground-station/.env.example` |
+| What the dashboard shows, architecture, Quick Start | `uav-ground-station/README.md` |
+| Full deployment walkthrough: both sides, VSS overlay, multi-UAV, Flight Summary | `uav-ground-station/docs/user-guide/get-started.md` |
+| Every `.env` variable and the backend route reference | `uav-ground-station/docs/user-guide/configuration.md` and `uav-ground-station/.env.example` |
 | VSS search tuning once deployed (separate skill) | `uav-vision-analytics/docs/user-guide/how-to-customize/search-tuning/vss-search-tuning.md` |
 
 Read the live copy of these files in the target repo — port numbers,
@@ -91,13 +92,16 @@ change between releases; do not hardcode a remembered value.
    - If VSS requested: embedding model [`CLIP/clip-vit-b-32`, offered by
      `make init`'s download-consent prompt — only ask if they want a
      different model], detection model [`OpenVINO/yolox_s-int8-ov`, same
-     prompt — only ask if they want a different model], and device for
-     ingest/detection/query embedding (`CPU`/`GPU`/`NPU`, independently)
-     [`CPU` for all three]. `VSS_MINIO_*`/`VSS_POSTGRES_*` credentials need no
-     question at all — `make init` auto-generates them; only mention this if
-     the user wants to set their own instead.
-3. Read `README.md`/`.env.example` for the exact current variable names and
-   defaults before writing `.env`.
+     prompt — only ask if they want a different model], and the inference
+     device [`CPU`]. For one uniform device across ingest/detection/query
+     embedding, `make up-vss DEVICE=CPU|GPU|NPU|all` sets all three
+     `VSS_*_DEVICE` variables in `.env` in one step (`all` auto-picks GPU >
+     NPU > CPU from what `make init` already detected) — only ask about the
+     three devices independently if the user explicitly wants a mixed
+     setup (e.g. ingest on GPU, query on CPU).
+3. Read `README.md`/`docs/user-guide/get-started.md`/`docs/user-guide/configuration.md`/
+   `.env.example` for the exact current variable names and defaults before
+   writing `.env`.
 4. Run `make init` (auto-generates VSS credentials and auto-detects host
    IP/GPU/NPU; for the VSS models it prints the two Hugging Face model names
    plus their license pages and asks `Pre-fill .env with these default models
@@ -106,7 +110,9 @@ change between releases; do not hardcode a remembered value.
    non-interactively if they've already said so). Edit `.env` only for
    choices that differ from the defaults above (or if they declined the
    prompt and need `VSS_EMBEDDING_MODEL`/`DATAPREP_DETECTION_MODEL` set by
-   hand), then `make up` (or `make up-vss`).
+   hand), then `make up` (or `make up-vss DEVICE=CPU|GPU|NPU|all` if a
+   non-default uniform device was requested — this both starts VSS and sets
+   all three device variables in one step, no manual `.env` edit needed).
 5. Verify per the guardrails/completion criteria below.
 
 ## Parameter Validation (enforce BEFORE editing `.env` or starting the stack)
@@ -139,12 +145,16 @@ change between releases; do not hardcode a remembered value.
   the relay starts a UAV stream on first viewer, and mediamtx's 10 s default drops
   the first connection while the remote pipeline is busy under concurrent
   detection + VLM load.
-- Single-machine test next to the UAV Mission Compute SDK: the SDK already
-  binds `8080` (REST) and `8889`/`8189` (mediamtx WebRTC). Before `make up`,
-  set `VIZ_PORT` (e.g. `8081`) and `MEDIAMTX_WEBRTC_PORT`/
-  `MEDIAMTX_WEBRTC_ICE_UDP_PORT`/`MEDIAMTX_WEBRTC_ICE_TCP_PORT` in `.env`;
-  otherwise compose fails with "port is already allocated". The dashboard URL
-  then uses that `VIZ_PORT`, not `8080`.
+- Single-machine test next to the UAV Mission Compute SDK: the SDK publishes `8080`
+  (REST), `8554` (RTSP), `8888` (HLS) and `8889` (WebRTC). `make up`/`make up-vss`
+  run `scripts/resolve-ports.sh`, which moves `VIZ_PORT`, `MEDIAMTX_WEBRTC_PORT`, the
+  WebRTC ICE ports and `VSS_MANAGER_PORT` in `.env` to the next free port (typically
+  `8081`/`8890`), never onto one of those four SDK ports while SDK containers exist,
+  and leaves this stack's own ports alone. The dashboard URL it prints uses the
+  resulting `VIZ_PORT`, not `8080`. If the ground station was started before the SDK
+  existed on the machine, the SDK's `make` fails on the ports it holds (or its
+  MediaMTX loses its ports and the cameras have no RTSP source): start the SDK first,
+  or change the ground station's ports in `.env` and run `make up` again.
 - Never fabricate/accept committed `VSS_MINIO_PASSWORD`/`VSS_POSTGRES_PASSWORD`
   values into any tracked file — these live only in the gitignored `.env`.
   `make init` already auto-generates a strong random value for both

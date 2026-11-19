@@ -46,7 +46,7 @@ graph LR
 **Profile**: `sim-camera`
 **Command**: `make up-sim-camera`
 
-### Architecture
+### Simulated-Camera Architecture
 
 ```mermaid
 flowchart LR
@@ -70,7 +70,7 @@ flowchart LR
     style MTX fill:#ffe0b2,stroke:#e65100
 ```
 
-### Configuration
+### Simulated-Camera Configuration
 
 **Default environment** (from `.env.example`):
 
@@ -83,7 +83,7 @@ PX4_MODEL_DIR=multi_cam
 VISION_CAMERA_IDS=nadir,forward,rear
 ```
 
-### RTSP Streams
+### Simulated-Camera RTSP Streams
 
 | Path | Resolution | FPS | Description |
 |------|-----------|-----|-------------|
@@ -91,7 +91,7 @@ VISION_CAMERA_IDS=nadir,forward,rear
 | `/uav-1/forward` | 416×416 | 20 | Forward 45° |
 | `/uav-1/rear` | 416×416 | 20 | Rear 45° |
 
-### Startup
+### Simulated-Camera Startup
 
 ```bash
 cd ~/federal-and-aerospace-ai-suite/uav-mission-compute-sdk
@@ -110,7 +110,7 @@ make up-sim-camera                      # Start PX4 + Gazebo + camera-bridge
   - 3 cameras mounted on vehicle frame
   - Gazebo publishes via gz-transport topics: `/uav/camera/nadir`, `/uav/camera/forward`, `/uav/camera/rear`
 
-### Typical Performance
+### Simulated-Camera Typical Performance
 
 | Component | CPU | GPU | Memory | Notes |
 |-----------|-----|-----|--------|-------|
@@ -143,7 +143,7 @@ automatically by these targets). Switch back at any time with
 **Profile**: `usb-camera`
 **Command**: `make up-usb-camera`
 
-### Architecture
+### USB Architecture
 
 ```mermaid
 flowchart LR
@@ -167,7 +167,7 @@ flowchart LR
     style MTX fill:#ffe0b2,stroke:#e65100
 ```
 
-### Configuration
+### USB Configuration
 
 **Required in `.env`**:
 
@@ -186,7 +186,7 @@ USB_CAPTURE_FORMAT=mjpeg          # mjpeg (compressed) or raw (uncompressed)
 VISION_CAMERA_IDS=nadir           # Must match USB_CAMERA_ID
 ```
 
-### RTSP Streams
+### USB RTSP Streams
 
 | Path | Resolution | FPS | Description |
 |------|-----------|-----|-------------|
@@ -234,7 +234,7 @@ ffmpeg -f rawvideo -pix_fmt bgr24 -s {width}x{height} -r {fps}
   -f rtsp rtsp://mediamtx:8554/uav-1/{camera_id}
 ```
 
-### Startup
+### USB Startup
 
 ```bash
 cd ~/federal-and-aerospace-ai-suite/uav-mission-compute-sdk
@@ -249,7 +249,7 @@ nano .env
 make up-usb-camera
 ```
 
-### Typical Performance
+### USB Typical Performance
 
 | Component | CPU | GPU | Memory | Notes |
 |-----------|-----|-----|--------|-------|
@@ -275,7 +275,7 @@ UVC/V4L2 webcam. This unlocks sensing **beyond the visible spectrum**:
 - **Depth stream** — computed from the IR stereo pair; each pixel is a
   distance in meters rather than a color/light value.
 
-### Architecture
+### RealSense Architecture
 
 ```mermaid
 flowchart LR
@@ -319,7 +319,7 @@ rs-enumerate-devices --short
 python3 -c "import pyrealsense2; print(pyrealsense2.__version__)"
 ```
 
-### Configuration
+### RealSense Configuration
 
 Run `make init` after plugging in the camera — it auto-detects the RealSense's
 V4L2 device nodes (`RS_VIDEO0..7` / `RS_MEDIA0..3`) via `v4l2-ctl --list-devices`
@@ -344,7 +344,7 @@ RS_CAMERA_ID_IR=ir
 RS_CAMERA_ID_DEPTH=depth
 ```
 
-### RTSP Streams
+### RealSense RTSP Streams
 
 | Path | Resolution | FPS | Description |
 |------|-----------|-----|-------------|
@@ -369,7 +369,7 @@ mosquitto_sub -h localhost -p 1884 -t "uav/uav-1/camera/depth/depth_stats"
 (streaming, via the uvcvideo kernel driver) — sourced from `RS_VIDEO*`/`RS_MEDIA*`
 in `.env` (auto-detected by `make init`), unused slots default to `/dev/null`.
 
-### Startup
+### RealSense Startup
 
 ```bash
 cd ~/federal-and-aerospace-ai-suite/uav-mission-compute-sdk
@@ -475,7 +475,7 @@ The `vision-processor-multicam` container automatically:
    - Pauses inference when disarmed (saves GPU)
    - Resumes inference when armed
 
-### Troubleshooting
+### Vision Processing Troubleshooting
 
 **No camera frames on dashboard**:
 1. Verify RTSP paths exist at MediaMTX
@@ -558,14 +558,14 @@ realsense-camera (implies):
 sudo apt install ffmpeg mosquitto-clients xdg-utils -y
 
 # View raw camera feed (needs a local display)
-ffplay rtsp://localhost:8554/uav-1/nadir
+ffplay -rtsp_transport tcp rtsp://localhost:8554/uav-1/nadir
 
 # Capture one frame
-ffmpeg -i rtsp://localhost:8554/uav-1/nadir -frames:v 1 frame.jpg
+ffmpeg -rtsp_transport tcp -i rtsp://localhost:8554/uav-1/nadir -frames:v 1 frame.jpg
 
 # Stream all 3 cameras (sim mode) to files
 for cam in nadir forward rear; do
-  ffmpeg -i rtsp://localhost:8554/uav-1/$cam \
+  ffmpeg -rtsp_transport tcp -i rtsp://localhost:8554/uav-1/$cam \
     -c:v copy out_$cam.h264 &
 done
 ```
@@ -577,7 +577,7 @@ done
 ssh -L 8554:localhost:8554 user@px4-host
 
 # Then locally:
-ffplay rtsp://localhost:8554/uav-1/nadir
+ffplay -rtsp_transport tcp rtsp://localhost:8554/uav-1/nadir
 ```
 
 Headless alternative — skip port-forwarding and record directly on the remote
@@ -643,7 +643,7 @@ scp user@px4-host:nadir.mkv .
 
 ## 9. Makefile Targets
 
-```makefile
+```bash
 make init                # Initialize .env with auto-detected GPU
 make build               # Build all images (cache)
 make build-nc            # Build all images (no-cache)
@@ -725,7 +725,7 @@ Start here: Which camera source?
    ```
 
 2. **Update camera IDs for both camera-bridge and vision processor** (`.env`):
-   ```env
+   ```bash
    VISION_CAMERA_IDS=nadir,forward,rear,left
    ```
 
@@ -743,7 +743,7 @@ v4l2-ctl -d /dev/video32 --list-framesizes=MJPG
 ```
 
 Then update `.env`:
-```env
+```bash
 USB_CAPTURE_FORMAT=mjpeg
 USB_CAPTURE_WIDTH=640
 USB_CAPTURE_HEIGHT=480
@@ -756,7 +756,7 @@ USB_SENSOR_FPS=60
 
 **Status**: Not tested with current hardware. For developers extending to industrial imaging sensors.
 
-### Overview
+### GenICam Overview
 
 Beyond consumer UVC cameras (like the C922), you can extend the system to support **GenICam-compatible industrial cameras** using **GStreamer gencamsrc plugin**:
 
@@ -768,7 +768,7 @@ Beyond consumer UVC cameras (like the C922), you can extend the system to suppor
 | **GStreamer Source** | `v4l2src` | `gencamsrc` (Aravis library) |
 | **Current Implementation** | ✅ Tested | 📋 Template provided |
 
-### Architecture
+### GenICam Architecture
 
 ```mermaid
 flowchart LR
@@ -915,7 +915,7 @@ CAMERA_ID=industrial          # RTSP path identifier
 VISION_CAMERA_IDS=industrial  # Match in vision processor
 ```
 
-### Troubleshooting
+### GenICam Troubleshooting
 
 **Camera not detected**:
 ```bash

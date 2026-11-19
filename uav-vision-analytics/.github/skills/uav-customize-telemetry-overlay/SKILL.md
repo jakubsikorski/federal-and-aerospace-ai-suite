@@ -104,7 +104,7 @@ excerpt.
    restart).
 2. The affected pipeline(s) restarted and are `RUNNING`
    (`make cameras-status` or the REST status endpoint).
-3. `ffplay rtsp://<HOST_IP>:8555/uav-<id>` shows the new/changed line in the
+3. `ffplay -rtsp_transport tcp rtsp://<HOST_IP>:8555/uav-<id>` shows the new/changed line in the
    overlay, or confirms a removed line is gone.
 4. The field's value updates as telemetry changes (vehicle moves / SDK
    publishes new values) rather than staying frozen at a default.

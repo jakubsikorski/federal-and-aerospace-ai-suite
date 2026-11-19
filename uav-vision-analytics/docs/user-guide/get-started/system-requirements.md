@@ -11,7 +11,7 @@ The developer system is used to build installation artifacts and prepare the boo
 
 | Component | Minimum                                                          |
 | --------- | ---------------------------------------------------------------- |
-| OS        | Ubuntu 24.04/22.04 or WSL environment                            |
+| OS        | Ubuntu 24.04/26.04 or WSL environment                            |
 | CPU       | Any modern x86-64 processor with virtualisation support          |
 | Memory    | 16 GiB RAM                                                       |
 | Storage   | 100 GiB free disk space (for image build workspace)              |
@@ -55,7 +55,7 @@ The target system is the Intel edge node on which the provisioned OS and workloa
 
 ### Operating Systems
 
-- Ubuntu 24.04 LTS
+- Ubuntu 24.04 LTS / Ubuntu 26.04 LTS
 
 ### Minimum Requirements
 
@@ -78,7 +78,7 @@ The target system is the Intel edge node on which the provisioned OS and workloa
 
 **Required Software**:
 
-- Docker 27.3.1 or higher
+- Docker 27.3.1 or higher, with Docker Compose v2 (`docker compose`, not `docker-compose`)
 - Python 3.10+
 - Git
 - `ffmpeg` (for RTSP stream playback and recording)

@@ -54,10 +54,36 @@ VSS_SEARCH_TIMEOUT_SECONDS = float(os.environ.get("VSS_SEARCH_TIMEOUT_SECONDS", 
 # it ranks hits but can't tell a real match from the best of a bad set.
 # score_breakdown.max_frame_score (raw query-to-frame similarity) is the
 # absolute signal used instead: drop hits below VSS_SEARCH_MIN_PEAK_SCORE, then
-# keep only those within VSS_SEARCH_RELATIVE_CUTOFF of the best peak. Tuned for
-# CLIP ViT-B/32; set both to 0 to show everything VSS returns.
-VSS_SEARCH_MIN_PEAK_SCORE = float(os.environ.get("VSS_SEARCH_MIN_PEAK_SCORE", "0.25"))
+# keep only those within VSS_SEARCH_RELATIVE_CUTOFF of the best peak of their UAV.
+# Tuned for CLIP ViT-B/32 (measured on aerial footage: an object that is absent
+# peaks at 0.21-0.22, one that is present at 0.25 or more); set both to 0 to
+# show everything VSS returns.
+VSS_SEARCH_MIN_PEAK_SCORE = float(os.environ.get("VSS_SEARCH_MIN_PEAK_SCORE", "0.23"))
 VSS_SEARCH_RELATIVE_CUTOFF = float(os.environ.get("VSS_SEARCH_RELATIVE_CUTOFF", "0.90"))
+# Most results the dashboard lists for one search. VSS caps each of its own queries at the same
+# value, and the ground station keeps that many per UAV camera, so that picking a camera in the
+# dashboard still has this many results to show.
+VSS_MAX_RESULTS = max(1, int(os.environ.get("VSS_MAX_RESULTS", "50")))
+
+# VSS also indexes crops of the objects its detector finds, each carrying the detector's label.
+# For a query that names a detectable object: "crops" drops crops with a label of another kind
+# (CLIP alone scores a car crop almost as high for "truck" as a real truck); "strict" also drops
+# whole-frame hits, so every result shows the object, but returns nothing when the detector misses
+# it (as on small, low-resolution frames); "off" ranks by CLIP only.
+VSS_SEARCH_OBJECT_MATCH = os.environ.get("VSS_SEARCH_OBJECT_MATCH", "crops").strip().lower()
+_CAR, _TRUCK, _PERSON = {"car"}, {"truck"}, {"person"}
+_QUERY_LABELS = {
+    **dict.fromkeys(("person", "people", "pedestrian", "pedestrians", "man", "woman", "human"), _PERSON),
+    **dict.fromkeys(("car", "cars", "sedan", "hatchback"), _CAR),
+    **dict.fromkeys(("truck", "trucks", "lorry"), _TRUCK),
+    **dict.fromkeys(("pickup", "suv", "van"), {"car", "truck"}),
+    **dict.fromkeys(("vehicle", "vehicles"), {"car", "truck", "bus", "motorcycle"}),
+    **dict.fromkeys(("bus", "buses"), {"bus"}),
+    **dict.fromkeys(("motorcycle", "motorbike"), {"motorcycle"}),
+    **dict.fromkeys(("bicycle", "bike"), {"bicycle"}),
+    **dict.fromkeys(("boat", "ship"), {"boat"}),
+    **dict.fromkeys(("airplane", "aircraft", "plane"), {"airplane"}),
+}
 
 # --- Playback previews / thumbnails ------------------------------------------
 # Stored clips are full-resolution (live segments ~1080p/4Mbps), which stalls
@@ -223,9 +249,11 @@ def _attribute_result(metadata: dict, stream: Optional[dict]) -> tuple:
         if camera is not None:
             return camera, host
 
-    # Only trusted in the exact 3-element ["uav", host, camera] shape this app writes.
+    # Only trusted in the ["uav", host, camera, ...] shape this app writes
+    # (vss_live_sync.py also appends a 4th host-qualified-name tag, used only
+    # for per-(host, camera) scoped queries below -- ignored here).
     tags = _as_tag_list(metadata.get("tags"))
-    if len(tags) == 3 and tags[0] == "uav":
+    if len(tags) >= 3 and tags[0] == "uav":
         return tags[2], tags[1]
 
     stream_name = (stream or {}).get("stream_name")
@@ -260,6 +288,79 @@ def _flatten_results(payload: Any) -> list:
     return hits
 
 
+def _tag_scopes(req: "SearchRequest") -> list:
+    """VSS tag filters, one query each (None = unfiltered). VSS returns only its top
+    matches across all streams, so a UAV or camera whose frames match best can fill
+    the whole list. An unscoped search therefore also asks for each UAV's and each
+    camera's own best matches (stream tags are ["uav", host, camera]); the dashboard
+    filters this complete set client-side. A tag list is an OR in VSS, hence one
+    tag per query."""
+    if req.tags and req.tags.strip():
+        return [req.tags.strip()]
+    # A host/camera tag filter only matches *live* streams tagged that way --
+    # uploaded videos carry no such tag and VSS would drop them entirely
+    # before _belongs_to_host()/_belongs_to_camera() below get a chance to
+    # keep them (both explicitly treat uploads as always in-scope). Pair the
+    # scoped query with an unfiltered one so a host/camera-scoped direct API
+    # call doesn't lose upload results the unfiltered call would have returned.
+    if req.host:
+        return [None, req.host]
+    if req.camera:
+        return [None, req.camera]
+    known = uav_naming.hosts_and_cameras()
+    if len(known) > 1:
+        # Bare camera names collide across UAVs that reuse the same camera
+        # label (e.g. every drone here has a "nadir"/"forward"/"rear"), so an
+        # OR-tag query on just the name returns whichever UAV's footage
+        # scores best for it and starves the others even when their own
+        # footage matches too. Query each (host, camera) pair's own unique
+        # host-qualified stream tag (vss_live_sync.py's 4th tag) instead of
+        # the shared bare name.
+        pair_scopes = sorted(
+            uav_naming.stream_name(host, camera) for host, cams in known.items() for camera in cams
+        )
+        return [None, *sorted(known), *pair_scopes]
+    # One UAV: camera names can't collide with another UAV's, and its
+    # per-host query above already covers everything it recorded.
+    cameras = sorted({c for cams in known.values() for c in cams})
+    return [None, *cameras]
+
+
+async def _query_scope(client: httpx.AsyncClient, body: dict, scope: Optional[str]) -> list:
+    scoped = {**body, "tags": scope} if scope else body
+    resp = await client.post("/search/query", json=scoped)
+    if resp.status_code >= 400:
+        detail = _upstream_message(resp)
+        logger.warning("VSS search failed (%s): %s", resp.status_code, detail)
+        raise HTTPException(status_code=400 if resp.status_code == 400 else 502, detail=f"VSS search failed: {detail}")
+    return _flatten_results(resp.json())
+
+
+def _merge_hits(parts: list) -> list:
+    """Concatenate the hit lists of several queries, dropping repeated segments."""
+    seen, merged = set(), []
+    for hits in parts:
+        for hit in hits:
+            meta = hit.get("metadata") if isinstance(hit, dict) else None
+            if not isinstance(meta, dict):
+                continue
+            key = (meta.get("video_id"), meta.get("segment_start"), meta.get("segment_end"), meta.get("seek_timestamp"))
+            if key not in seen:
+                seen.add(key)
+                merged.append(hit)
+    return merged
+
+
+def _rescale_scores(results: list) -> None:
+    """VSS ranks each query on its own scale (its top hit is always 1.0), which
+    cannot be compared across the per-UAV queries; rank by peak similarity instead."""
+    best = max((r["peak_score"] for r in results if r.get("peak_score")), default=None)
+    if best:
+        for r in results:
+            if r.get("peak_score") is not None:
+                r["score"] = round(r["peak_score"] / best, 3)
+
+
 class TimeFilter(BaseModel):
     value: int = Field(..., ge=1, le=10000)
     unit: str = Field(..., pattern="^(" + "|".join(TIME_UNITS) + ")$")
@@ -270,7 +371,7 @@ class SearchRequest(BaseModel):
     tags: Optional[str] = Field(None, max_length=500)
     timeFilter: Optional[TimeFilter] = None
     # Optional host/camera scope for direct API callers; the dashboard's own
-    # UAV/Camera filters fetch the unfiltered set and filter client-side instead.
+    # UAV/Camera filters narrow the full result set client-side instead.
     host: Optional[str] = Field(None, min_length=1, max_length=253, pattern=HOST_PATTERN)
     camera: Optional[str] = Field(None, min_length=1, max_length=128)
 
@@ -314,8 +415,8 @@ async def search_sources():
     Backed by uav_naming's in-memory registry -- the same source of truth
     vss_live_sync.py writes to and this module's own host/camera result
     attribution reads from -- so the dropdowns only ever offer choices that
-    can actually match something, and immediately reflect the registry
-    (e.g. a UAV that was just disconnected drops out, no polling delay)."""
+    can actually match something. UAVs whose cameras are stopped stay listed
+    while their indexed footage is kept, and a disconnected UAV drops out at once."""
     _require_enabled()
     hosts = uav_naming.hosts_and_cameras()
     return {"hosts": [{"host": host, "cameras": cameras} for host, cameras in sorted(hosts.items())]}
@@ -328,20 +429,25 @@ async def search(req: SearchRequest):
     if not query:
         raise HTTPException(status_code=400, detail="Search query cannot be empty.")
     body: dict = {"query": query}
-    if req.tags and req.tags.strip():
-        body["tags"] = req.tags.strip()
     if req.timeFilter:
         body["timeFilter"] = req.timeFilter.model_dump()
+    scopes = _tag_scopes(req)
 
     try:
         async with _client() as client:
-            resp = await client.post("/search/query", json=body)
-            if resp.status_code >= 400:
-                detail = _upstream_message(resp)
-                logger.warning("VSS search failed (%s): %s", resp.status_code, detail)
-                code = 400 if resp.status_code == 400 else 502
-                raise HTTPException(status_code=code, detail=f"VSS search failed: {detail}")
-            hits = _flatten_results(resp.json())
+            # One after another: VSS answers queries slower in parallel than in turn.
+            outcomes: list = []
+            for scope in scopes:
+                try:
+                    outcomes.append(await _query_scope(client, body, scope))
+                except (HTTPException, httpx.HTTPError) as exc:
+                    outcomes.append(exc)
+            failures = [o for o in outcomes if isinstance(o, BaseException)]
+            if len(failures) == len(outcomes):
+                raise failures[0]
+            for failure in failures:
+                logger.warning("VSS search for one UAV scope failed: %s", failure)
+            hits = _merge_hits([o for o in outcomes if not isinstance(o, BaseException)])
 
             videos: dict = {}
             try:
@@ -398,6 +504,8 @@ async def search(req: SearchRequest):
             "captured_at": _live_captured_at(frame.get("media_path"), frame.get("timestamp")) if frame else None,
             "score": _as_float(metadata.get("relevance_score")),
             "peak_score": _peak_score(metadata),
+            "detected_label": _detected_label(best),
+            "detection_confidence": _as_float(best.get("detection_confidence")),
             "segment_start": _as_float(metadata.get("segment_start")),
             "segment_end": _as_float(metadata.get("segment_end")),
             "seek_timestamp": _as_float(metadata.get("seek_timestamp")),
@@ -411,12 +519,17 @@ async def search(req: SearchRequest):
     if req.camera:
         results = [r for r in results if _belongs_to_camera(r, req.camera)]
 
-    results, raw_count = _filter_and_score(results)
-    results = _diversify_by_camera(results)
+    raw_count = len(results)
+    results = _filter_by_label(results, _query_labels(query))
+    if len(scopes) > 1:
+        _rescale_scores(results)
+    results, _ = _filter_and_score(results)
+    results = _cap_per_camera(_diversify_by_camera(results), VSS_MAX_RESULTS)
     _prewarm_previews(results)
     return {
         "query": query,
         "results": results,
+        "max_results": VSS_MAX_RESULTS,
         "total_matches": raw_count,
         "filtered_out": raw_count - len(results),
     }
@@ -660,6 +773,26 @@ def _peak_score(metadata: dict) -> Optional[float]:
     return _as_float(breakdown.get("max_frame_score"))
 
 
+def _detected_label(best_frame: dict) -> Optional[str]:
+    label = best_frame.get("detected_label")
+    return str(label).strip().lower().replace(" ", "_") if label else None
+
+
+def _query_labels(query: str) -> set:
+    labels: set = set()
+    for word in re.findall(r"[a-z]+", query.lower()):
+        labels |= _QUERY_LABELS.get(word, set())
+    return labels
+
+
+def _filter_by_label(results: list, labels: set) -> list:
+    if not labels or VSS_SEARCH_OBJECT_MATCH not in ("crops", "strict"):
+        return results
+    if VSS_SEARCH_OBJECT_MATCH == "strict":
+        return [r for r in results if r.get("detected_label") in labels]
+    return [r for r in results if not r.get("detected_label") or r["detected_label"] in labels]
+
+
 def _filter_and_score(results: list) -> tuple:
     """Apply the peak-score filters described above. Returns (kept, raw_count).
 
@@ -671,8 +804,20 @@ def _filter_and_score(results: list) -> tuple:
     if not peaks:
         return results, raw_count
 
-    threshold = max(VSS_SEARCH_MIN_PEAK_SCORE, max(peaks) * VSS_SEARCH_RELATIVE_CUTOFF)
-    kept = [r for r in results if r.get("peak_score") is None or r["peak_score"] >= threshold]
+    # The relative cutoff is applied per UAV camera, so a camera whose best match is
+    # a bit weaker than another's is still shown instead of being dropped entirely.
+    def group(r: dict):
+        return (r.get("host"), r.get("camera")) if r.get("source") == "live" else None
+
+    best: dict = {}
+    for r in results:
+        if r.get("peak_score") is not None:
+            best[group(r)] = max(best.get(group(r), 0.0), r["peak_score"])
+    kept = [
+        r for r in results
+        if r.get("peak_score") is None
+        or r["peak_score"] >= max(VSS_SEARCH_MIN_PEAK_SCORE, best[group(r)] * VSS_SEARCH_RELATIVE_CUTOFF)
+    ]
     kept.sort(key=lambda r: (r.get("score") is not None, r.get("score") or 0.0), reverse=True)
     return kept, raw_count
 
@@ -695,6 +840,18 @@ def _diversify_by_camera(results: list) -> list:
             if bucket:
                 interleaved.append(bucket.pop(0))
     return interleaved
+
+
+def _cap_per_camera(results: list, limit: int) -> list:
+    """Keep at most `limit` results per (host, camera); uploads count as one group."""
+    counts: dict = {}
+    kept = []
+    for r in results:
+        key = (r.get("host"), r.get("camera")) if r.get("source") == "live" and r.get("camera") else ("upload",)
+        counts[key] = counts.get(key, 0) + 1
+        if counts[key] <= limit:
+            kept.append(r)
+    return kept
 
 
 def _upstream_message(resp: httpx.Response) -> str:

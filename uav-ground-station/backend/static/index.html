@@ -8,7 +8,7 @@ SPDX-License-Identifier: Apache-2.0
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>UAV Ground Station</title>
-  <link rel="stylesheet" href="css/styles.css?v=44" />
+  <link rel="stylesheet" href="css/styles.css?v=58" />
 </head>
 <body>
   <header class="topbar">
@@ -107,7 +107,7 @@ SPDX-License-Identifier: Apache-2.0
         <h2>Live Natural Language Search</h2>
         <p class="muted chart-subtitle">
           Find moments in the UAV's live feeds with a natural-language
-          prompt.
+          prompt: use <strong>Search Videos</strong> in the top bar or press <code>/</code>.
         </p>
         <div class="live-index">
           <div class="live-index-head">
@@ -116,9 +116,6 @@ SPDX-License-Identifier: Apache-2.0
           </div>
           <ul id="live-index-list" class="live-index-list"></ul>
         </div>
-        <button id="open-search-btn" class="btn btn-primary btn-icon btn-block" type="button">
-          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Search Videos</span>
-        </button>
       </section>
     </aside>
   </main>
@@ -220,18 +217,28 @@ SPDX-License-Identifier: Apache-2.0
           <div class="arch-scenarios" role="group" aria-label="Follow a data flow">
             <span class="muted">Follow a flow:</span>
           </div>
+          <!-- Small/compact screens only (hidden on wide screens via CSS, where
+               Details and "Where each model runs" are always-visible panels
+               instead): opens both as a single overlay sheet that floats over
+               the diagram, so the diagram's own box never has to shrink to make
+               room for them. See arch.js for the show/hide logic. -->
+          <button type="button" id="arch-info-toggle" class="arch-info-toggle" aria-haspopup="true" aria-expanded="false">
+            Info <span class="arch-info-caret" aria-hidden="true">▾</span>
+          </button>
         </div>
         <div class="arch-stage">
           <div class="arch-diagram">
-            <svg id="arch-svg" viewBox="0 0 1200 660" role="img" aria-labelledby="arch-svg-title">
-              <title id="arch-svg-title">Services and data flows. Select a service or a flow for details.</title>
-              <defs>
-                <marker id="arch-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                  <path d="M0 0L10 5L0 10z" fill="context-stroke"/>
-                </marker>
-              </defs>
-              <g id="arch-lanes"></g><g id="arch-edges"></g><g id="arch-nodes"></g>
-            </svg>
+            <div id="arch-svg-viewport" class="arch-svg-viewport">
+              <svg id="arch-svg" viewBox="0 0 1200 660" role="img" aria-labelledby="arch-svg-title">
+                <title id="arch-svg-title">Services and data flows. Select a service or a flow for details.</title>
+                <defs>
+                  <marker id="arch-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                    <path d="M0 0L10 5L0 10z" fill="context-stroke"/>
+                  </marker>
+                </defs>
+                <g id="arch-lanes"></g><g id="arch-edges"></g><g id="arch-nodes"></g>
+              </svg>
+            </div>
             <div class="arch-legend" aria-label="Legend">
               <span><i class="lg-video"></i>RTSP video</span>
               <span><i class="lg-webrtc"></i>WebRTC (WHEP)</span>
@@ -240,19 +247,29 @@ SPDX-License-Identifier: Apache-2.0
               <span><i class="lg-files"></i>Video segments / clips</span>
             </div>
           </div>
-          <aside id="arch-card" class="arch-card" aria-live="polite"></aside>
+          <!-- Wide screens: two independent always-visible grid items (sidebar +
+               full-width footer), exactly as before. Compact screens: both become
+               one fixed-position overlay sheet toggled by #arch-info-toggle above,
+               entirely removed from the diagram's layout flow either way (open or
+               closed) -- see styles.css's compact media query. -->
+          <details id="arch-card-details" class="arch-card-details" open>
+            <summary class="arch-card-summary">Details <span class="muted">— select a service or a flow</span></summary>
+            <aside id="arch-card" class="arch-card" aria-live="polite"></aside>
+          </details>
+          <details id="arch-devices-details" class="arch-devices-details" open>
+            <summary class="arch-h3">Where each model runs</summary>
+            <div id="arch-devices" class="arch-devices"></div>
+          </details>
         </div>
-        <h3 class="arch-h3">Where each model runs</h3>
-        <div id="arch-devices" class="arch-devices"></div>
       </div>
     </div>
   </div>
 
   <script src="js/vendor/chart.js"></script>
-  <script src="js/utils/charts.js?v=44"></script>
-  <script src="js/app.js?v=44"></script>
-  <script src="js/search.js?v=44"></script>
-  <script src="js/summary.js?v=44"></script>
-  <script src="js/arch.js?v=44"></script>
+  <script src="js/utils/charts.js?v=58"></script>
+  <script src="js/app.js?v=58"></script>
+  <script src="js/search.js?v=58"></script>
+  <script src="js/summary.js?v=58"></script>
+  <script src="js/arch.js?v=58"></script>
 </body>
 </html>

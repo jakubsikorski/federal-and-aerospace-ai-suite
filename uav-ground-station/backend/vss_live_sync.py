@@ -22,7 +22,13 @@ Per host, per reconciliation pass:
   * pipeline running, stream URL differs (host changed) or stream gave up
     (``error``/``stopped``) -> deregister and register again (a VSS stream's
     URL can't be changed in place)
-  * pipeline stopped, or host disconnected -> pause the VSS stream
+  * pipeline stopped, or host disconnected -> pause the VSS stream (also one VSS
+    is stuck retrying); a host that stays unreachable is paused after
+    UNREACHABLE_PAUSE_SECONDS
+
+VSS runs at most VSS_LIVE_STREAM_MAX_CONCURRENT live streams. Feeds are started
+host by host, the tab being viewed first, and any beyond the limit wait as
+"queued" until a slot frees up, instead of failing every pass.
 
 A hand-registered ``uav-<host_tag>--<camera>`` stream is adopted instead of
 duplicated. The older, pre-multi-UAV convention (bare ``uav-<camera>``, no
@@ -58,6 +64,23 @@ SYNC_INTERVAL_SECONDS = max(5.0, float(os.environ.get("VSS_LIVE_SYNC_INTERVAL_SE
 # Minimum gap before re-registering a stream that VSS reported as failed, so an
 # unreachable RTSP source isn't re-created on every pass.
 RECREATE_BACKOFF_SECONDS = 60.0
+# VSS dataprep refuses more live streams than MM_DATAPREP_LIVE_STREAM_MAX_CONCURRENT
+# (HTTP 503); keep this equal to it so extra feeds wait as "queued" instead of failing.
+LIVE_STREAM_MAX = max(1, int(os.environ.get("VSS_LIVE_STREAM_MAX_CONCURRENT", "8")))
+# An unreachable host keeps indexing through a network blip, then its streams are
+# paused so they stop occupying live-stream slots.
+UNREACHABLE_PAUSE_SECONDS = 60.0
+DETECT_TIMEOUT_SECONDS = 8.0
+# How long a POST waits for the pass it triggered before answering with the current state.
+KICK_WAIT_SECONDS = 3.0
+# While a feed is still "starting" (or a host has not been synced yet) passes run this
+# often, so "running" shows up as soon as VSS reports it instead of up to a full interval later.
+FAST_SYNC_SECONDS = 3.0
+ACTIVE_STATES = ("running", "starting", "reconnecting")
+IDLE_STATES = ("paused", "error", "stopped")
+# VSS re-opens a live stream every few segments and reports "starting" for the
+# moment that takes; within this long of a "running" report it is shown as running.
+RESTART_GRACE_SECONDS = 120.0
 # IPv4 address or DNS hostname; the value ends up inside an RTSP URL.
 HOST_PATTERN = r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$"
 
@@ -70,7 +93,13 @@ _rtsp_port: int = 8555
 
 _lock = asyncio.Lock()
 _task: Optional[asyncio.Task] = None
+_kick = asyncio.Event()
+_pass_count = 0
+# Tab the operator is looking at: its feeds get free live-stream slots first.
+_priority_host: Optional[str] = None
+_capacity = {"limit": LIVE_STREAM_MAX, "active": 0}
 _recreated_at: dict = {}
+_last_running: dict = {}
 # host -> {"last_sync": ..., "last_error": ..., "streams": [...]}. A host stays
 # in this dict (and keeps being reconciled) until explicitly removed via
 # DELETE, even if the browser tab for it is closed -- indexing should keep
@@ -87,6 +116,11 @@ def configure(detector: Detector, rtsp_port: int) -> None:
 
 class LiveSyncRequest(BaseModel):
     host: str = Field(..., min_length=1, max_length=253, pattern=HOST_PATTERN)
+    # Set by a tab restored in the background (browser bfcache/multi-tab
+    # restore): it still needs its host tracked so its feeds get indexed, but
+    # must not steal scheduler priority away from whichever tab the user is
+    # actually looking at.
+    background: bool = False
 
 
 def _host_status(host: str) -> dict:
@@ -100,20 +134,11 @@ def _host_status(host: str) -> dict:
 
 
 def _status() -> dict:
-    hosts = {host: _host_status(host) for host in _hosts}
-    first = next(iter(hosts.values()), None)
     return {
         "enabled": vss_search.VSS_ENABLED,
         "interval_seconds": SYNC_INTERVAL_SECONDS,
-        "hosts": hosts,
-        # Back-compat top-level mirror of a single host, for any caller not
-        # yet updated to the "hosts" map (e.g. older cached frontend JS
-        # during a rolling deploy) -- reflects whichever host was tracked
-        # first/most recently, same shape as the pre-multi-UAV response.
-        "host": first["host"] if first else None,
-        "last_sync": first["last_sync"] if first else None,
-        "last_error": first["last_error"] if first else None,
-        "streams": first["streams"] if first else [],
+        "capacity": dict(_capacity),
+        "hosts": {host: _host_status(host) for host in _hosts},
     }
 
 
@@ -123,13 +148,24 @@ def _summary(stream: dict, host: Optional[str]) -> dict:
     # Same reasoning as vss_search.py's _camera_and_host(): a legacy
     # stream_name IS the bare camera name verbatim, not something to strip a
     # "uav-" prefix off of.
-    camera = info[1] if info else (str(name or "") if uav_naming.LEGACY_NAME.fullmatch(str(name or "")) else None)
+    camera = (info[1] if info else uav_naming.camera_of(str(name or ""))
+              or (str(name or "") if uav_naming.LEGACY_NAME.fullmatch(str(name or "")) else None))
     stats = stream.get("stats") if isinstance(stream.get("stats"), dict) else {}
+    state = stream.get("state")
+    now = time.monotonic()
+    if state == "running":
+        _last_running[name] = now
+    elif state == "starting":
+        if name not in _last_running and stats.get("embeddings_created"):
+            # Already produced embeddings before this process started tracking it: a restart, not a first start.
+            _last_running[name] = now
+        if now - _last_running.get(name, -RESTART_GRACE_SECONDS) < RESTART_GRACE_SECONDS:
+            state = "running"
     return {
         "camera": camera,
         "stream_name": name,
         "stream_id": stream.get("stream_id"),
-        "state": stream.get("state"),
+        "state": state,
         "last_error": stream.get("last_error"),
         "embeddings_created": stats.get("embeddings_created"),
     }
@@ -150,146 +186,271 @@ def _is_managed_for_host(stream_name_: str, host: str) -> bool:
     owns -- either host-qualified for this exact host, or a legacy
     (pre-multi-UAV) name, which is adopted by whichever single host happens
     to be tracked for it when no other host has already claimed it."""
+    if uav_naming.owns(stream_name_, host):
+        return True
     info = uav_naming.info_for(stream_name_)
     if info is not None:
         return info[0] == host
     return bool(uav_naming.LEGACY_NAME.fullmatch(stream_name_))
 
 
-async def _reconcile_host(client: httpx.AsyncClient, host: str) -> None:
-    """One reconciliation pass for a single host; see the module docstring."""
-    state = _hosts.setdefault(host, {"last_sync": None, "last_error": None, "streams": []})
-
+async def _detect(host: str) -> dict:
     if _detector is None:
         raise RuntimeError("live sync is not configured")
-    detected = await _detector(host)
-    if not detected.get("reachable"):
-        # Same policy as the dashboard: a transient network blip must not
-        # pause indexing, so leave VSS untouched until the host answers.
-        state["last_error"] = f"UAV host {host} is not reachable"
-        return
-    active_cameras = sorted({c["camera"] for c in detected.get("cameras", []) if isinstance(c, dict) and c.get("camera")})
+    try:
+        return await asyncio.wait_for(_detector(host), DETECT_TIMEOUT_SECONDS)
+    except (asyncio.TimeoutError, httpx.HTTPError, ValueError):
+        return {"reachable": False, "cameras": []}
 
-    # Update the registry before touching the VSS API below: vss_search.py's
-    # /api/search/sources and per-result attribution both read straight from
-    # it, so a mid-pass failure below must not leave it unpopulated.
-    wanted = {uav_naming.stream_name(host, camera): camera for camera in active_cameras}
-    uav_naming.replace_host_registry(host, wanted)
 
-    listing = await _call(client, "GET", "/streams")
-    managed: dict = {}
-    for stream in (listing or {}).get("streams", []):
-        name = stream.get("stream_name") if isinstance(stream, dict) else None
+def _plan_host(host: str, detected: dict, streams: list, now: float) -> dict:
+    """Decide what one host's feeds need; nothing is sent to VSS here."""
+    state = _hosts[host]
+    owned: dict = {}
+    for stream in streams:
+        name = stream.get("stream_name")
         if name and uav_naming.is_managed_name(name) and _is_managed_for_host(name, host):
-            managed.setdefault(name, stream)
+            owned.setdefault(name, stream)
             # Legacy (no embedded host) streams are unclaimed-for-anyone until
             # the first host to see them claims it here, so a different host's
             # later pass doesn't also treat the same orphaned stream as its own.
             if uav_naming.LEGACY_NAME.fullmatch(name) and uav_naming.info_for(name) is None:
                 uav_naming.register(name, host, name)
+    plan = {"host": host, "owned": owned, "wanted": {}, "delete": [], "pause": [], "start": [], "error": None}
 
-    errors = []
-    ready = set()  # names in `wanted` whose canonical VSS stream exists and is running this pass
+    if not detected.get("reachable"):
+        # A network blip must not pause indexing, but a host that stays away
+        # would hold live-stream slots (VSS caps them) for nothing.
+        since = state.get("unreachable_since")
+        if since is None:
+            since = state["unreachable_since"] = now
+        plan["error"] = f"UAV host {host} is not reachable"
+        if now - since >= UNREACHABLE_PAUSE_SECONDS:
+            plan["pause"] = [s for s in owned.values() if s.get("state") in ACTIVE_STATES]
+        return plan
+    state["unreachable_since"] = None
+
+    cameras = sorted({c["camera"] for c in detected.get("cameras", []) if isinstance(c, dict) and c.get("camera")})
+    # Update the registry first: vss_search.py's per-result attribution reads it.
+    wanted = {uav_naming.stream_name(host, camera): camera for camera in cameras}
+    uav_naming.replace_host_registry(host, wanted)
+    plan["wanted"] = wanted
+
     for name, camera in wanted.items():
         url = f"rtsp://{host}:{_rtsp_port}/{camera}"
-        stream = managed.get(name)
-        try:
-            if stream:
-                failed = stream.get("state") in ("error", "stopped")
-                moved = str(stream.get("stream_url", "")).rstrip("/") != url
-                if moved or failed:
-                    if failed and time.monotonic() - _recreated_at.get(name, 0.0) < RECREATE_BACKOFF_SECONDS:
-                        continue
-                    await _call(client, "DELETE", f"/streams/{stream['stream_id']}")
-                    logger.info("VSS live stream %s deregistered (%s)", name, "host changed" if moved else stream.get("state"))
-                    stream = None
-                elif stream.get("state") == "paused":
-                    await _call(client, "PATCH", f"/streams/{stream['stream_id']}", json={"state": "running"})
-                    logger.info("VSS live stream %s resumed", name)
-                    ready.add(name)
+        stream = owned.get(name)
+        if stream:
+            failed = stream.get("state") in ("error", "stopped")
+            moved = str(stream.get("stream_url", "")).rstrip("/") != url
+            if moved or failed:
+                if failed and not moved and now - _recreated_at.get(name, -RECREATE_BACKOFF_SECONDS) < RECREATE_BACKOFF_SECONDS:
                     continue
-            if not stream:
-                await _call(client, "POST", "/streams", json={
-                    "stream_url": url,
-                    "stream_name": name,
-                    "sensor_id": name,
-                    "description": f"UAV {host} camera {camera} feed (registered by uav-ground-station)",
-                    "tags": ["uav", host, camera],
-                })
-                _recreated_at[name] = time.monotonic()
-                logger.info("VSS live stream %s registered for %s", name, url)
-            ready.add(name)
-        except (RuntimeError, httpx.HTTPError) as exc:
-            errors.append(str(exc))
+                plan["delete"].append(stream)
+                plan["start"].append(("register", name, camera, None))
+            elif stream.get("state") == "paused":
+                plan["start"].append(("resume", name, camera, stream))
+        else:
+            plan["start"].append(("register", name, camera, None))
+    # Feeds of cameras that stopped: pause them, including ones VSS is stuck
+    # retrying ("reconnecting"), which would otherwise hold a slot forever.
+    plan["pause"] = [s for n, s in owned.items() if n not in wanted and s.get("state") in ACTIVE_STATES]
+    return plan
 
-    for name, stream in managed.items():
-        if name in wanted or stream.get("state") in ("paused", "error", "stopped"):
-            continue
-        try:
-            await _call(client, "PATCH", f"/streams/{stream['stream_id']}", json={"state": "paused"})
-            logger.info("VSS live stream %s paused (pipeline not running)", name)
-        except (RuntimeError, httpx.HTTPError) as exc:
-            errors.append(str(exc))
 
-    # Clean up any other VSS stream pointing at the same RTSP URL as a camera
-    # we just confirmed is registered under its canonical host-qualified name.
-    wanted_urls = {
-        f"rtsp://{host}:{_rtsp_port}/{camera}".rstrip("/"): name
-        for name, camera in wanted.items()
-        if name in ready
-    }
-    for stream in (listing or {}).get("streams", []):
-        if not isinstance(stream, dict):
-            continue
-        canonical_name = wanted_urls.get(str(stream.get("stream_url", "")).rstrip("/"))
-        dup_name = stream.get("stream_name")
-        if canonical_name is None or dup_name == canonical_name:
-            continue
-        try:
-            await _call(client, "DELETE", f"/streams/{stream['stream_id']}")
-            logger.info(
-                "VSS duplicate live stream %s deregistered (duplicate source URL of %s)", dup_name, canonical_name,
-            )
-            uav_naming.unregister(str(dup_name or ""))
-        except (RuntimeError, httpx.HTTPError) as exc:
-            errors.append(str(exc))
+async def _start_stream(client: httpx.AsyncClient, host: str, kind: str, name: str, camera: str, stream: Optional[dict]) -> None:
+    if kind == "resume":
+        await _call(client, "PATCH", f"/streams/{stream['stream_id']}", json={"state": "running"})
+        stream["state"] = "running"
+        logger.info("VSS live stream %s resumed", name)
+        return
+    url = f"rtsp://{host}:{_rtsp_port}/{camera}"
+    await _call(client, "POST", "/streams", json={
+        "stream_url": url,
+        "stream_name": name,
+        "sensor_id": name,
+        "description": f"UAV {host} camera {camera} feed (registered by uav-ground-station)",
+        # 4th tag (the host-qualified stream name, same value as sensor_id
+        # above) lets vss_search.py query one exact (host, camera) pair --
+        # the bare `camera` tag alone is shared across UAVs that reuse the
+        # same camera name (e.g. every drone has a "nadir"/"forward"/"rear"),
+        # so an OR-tag query on it alone can't distinguish whose footage is
+        # whose. _attribute_result() only reads tags[1]/tags[2], so this is
+        # additive and doesn't change host/camera attribution.
+        "tags": ["uav", host, camera, name],
+    })
+    _recreated_at[name] = time.monotonic()
+    logger.info("VSS live stream %s registered for %s", name, url)
+
+
+async def _reconcile(client: httpx.AsyncClient, hosts: list, detections: list) -> None:
+    """One reconciliation pass over every tracked host; see the module docstring.
+    Streams are paused first, then feeds are started host by host (the tab being
+    viewed first) while VSS has free live-stream slots; the rest wait as "queued"."""
+    listing = await _call(client, "GET", "/streams")
+    streams = [s for s in (listing or {}).get("streams", []) if isinstance(s, dict)]
+    now = time.monotonic()
+    plans = [_plan_host(h, d, streams, now) for h, d in zip(hosts, detections) if h in _hosts]
+    free = LIVE_STREAM_MAX - sum(1 for s in streams if s.get("state") in ACTIVE_STATES)
+    errors: dict = {p["host"]: [] for p in plans}
+    queued: dict = {p["host"]: {} for p in plans}
+
+    for plan in plans:
+        host = plan["host"]
+        for stream in plan["delete"]:
+            try:
+                await _call(client, "DELETE", f"/streams/{stream['stream_id']}")
+                logger.info("VSS live stream %s deregistered (%s)", stream.get("stream_name"), stream.get("state"))
+                free += stream.get("state") in ACTIVE_STATES
+            except (RuntimeError, httpx.HTTPError) as exc:
+                errors[host].append(str(exc))
+        for stream in plan["pause"]:
+            try:
+                await _call(client, "PATCH", f"/streams/{stream['stream_id']}", json={"state": "paused"})
+                logger.info("VSS live stream %s paused (pipeline not running)", stream.get("stream_name"))
+                stream["state"] = "paused"
+                free += 1
+            except (RuntimeError, httpx.HTTPError) as exc:
+                errors[host].append(str(exc))
+
+    # Feeds left running by a host nobody tracks any more (for example after a
+    # restart of this backend) would hold slots with nothing managing them.
+    for stream in streams:
+        name = str(stream.get("stream_name") or "")
+        tags = stream.get("tags") if isinstance(stream.get("tags"), list) else []
+        if (stream.get("state") in ACTIVE_STATES and len(tags) >= 3 and tags[0] == "uav"
+                and tags[1] not in _hosts and uav_naming.owns(name, str(tags[1]))):
+            try:
+                await _call(client, "PATCH", f"/streams/{stream['stream_id']}", json={"state": "paused"})
+                logger.info("VSS live stream %s paused (host %s is no longer tracked)", name, tags[1])
+                free += 1
+            except (RuntimeError, httpx.HTTPError) as exc:
+                logger.warning("VSS live sync: could not pause orphaned stream %s: %s", name, exc)
+
+    # Another VSS stream pointing at the same RTSP URL as a camera's canonical
+    # host-qualified name is a duplicate -- e.g. a legacy/manually-created
+    # stream from before this naming scheme. Clean these up *before*
+    # allocating slots below: if left until after, a duplicate holding the
+    # last free slot would keep the canonical name permanently "queued" (it
+    # never starts, so it's exempt from after-the-fact cleanup, and the
+    # duplicate is never recognised as "owned" so it's never paused either --
+    # a deadlock). Deleting it here frees its slot in the same pass, so the
+    # canonical registration can take over immediately below with at most one
+    # reconcile pass's gap, not forever.
+    for plan in plans:
+        host = plan["host"]
+        wanted_urls = {
+            f"rtsp://{host}:{_rtsp_port}/{camera}".rstrip("/"): name
+            for name, camera in plan["wanted"].items()
+        }
+        for stream in list(streams):
+            canonical = wanted_urls.get(str(stream.get("stream_url", "")).rstrip("/"))
+            dup_name = stream.get("stream_name")
+            if canonical is None or dup_name == canonical:
+                continue
+            try:
+                await _call(client, "DELETE", f"/streams/{stream['stream_id']}")
+                logger.info("VSS duplicate live stream %s deregistered (duplicate source URL of %s)", dup_name, canonical)
+                uav_naming.unregister(str(dup_name or ""))
+                if stream.get("state") in ACTIVE_STATES:
+                    free += 1
+                streams.remove(stream)
+            except (RuntimeError, httpx.HTTPError) as exc:
+                errors[host].append(str(exc))
+
+    for plan in plans:
+        host = plan["host"]
+        for kind, name, camera, stream in plan["start"]:
+            if free <= 0:
+                queued[host][name] = camera
+                continue
+            try:
+                await _start_stream(client, host, kind, name, camera, stream)
+                free -= 1
+            except (RuntimeError, httpx.HTTPError) as exc:
+                if "Maximum of" in str(exc):  # VSS's limit is lower than LIVE_STREAM_MAX
+                    free = 0
+                    queued[host][name] = camera
+                else:
+                    errors[host].append(str(exc))
 
     listing = await _call(client, "GET", "/streams")
-    state["streams"] = sorted(
-        (_summary(s, host) for s in (listing or {}).get("streams", [])
-         if isinstance(s, dict) and uav_naming.is_managed_name(str(s.get("stream_name") or ""))
-         and _is_managed_for_host(str(s.get("stream_name") or ""), host)),
-        key=lambda s: s["stream_name"],
-    )
-    state["last_sync"] = datetime.now(timezone.utc).isoformat()
-    state["last_error"] = "; ".join(errors)[:500] or None
+    fresh = [s for s in (listing or {}).get("streams", []) if isinstance(s, dict)]
+    _capacity["active"] = sum(1 for s in fresh if s.get("state") in ACTIVE_STATES)
+    stamp = datetime.now(timezone.utc).isoformat()
+    for plan in plans:
+        host = plan["host"]
+        summaries, kept_cameras = {}, []
+        for s in fresh:
+            name = str(s.get("stream_name") or "")
+            if uav_naming.is_managed_name(name) and _is_managed_for_host(name, host):
+                entry = _summary(s, host)
+                if entry["camera"]:
+                    kept_cameras.append(entry["camera"])
+                # Feeds of cameras this UAV no longer runs (an earlier deployment) stay searchable but are not listed.
+                if name in plan["wanted"] or s.get("state") in ACTIVE_STATES:
+                    summaries[name] = entry
+        for name, camera in queued[host].items():
+            entry = summaries.setdefault(name, {
+                "camera": camera, "stream_name": name, "stream_id": None, "last_error": None, "embeddings_created": None,
+            })
+            entry["state"] = "queued"
+            kept_cameras.append(camera)
+        uav_naming.note_known(host, kept_cameras)
+        state = _hosts[host]
+        state["streams"] = sorted(summaries.values(), key=lambda e: e["stream_name"])
+        state["last_sync"] = stamp
+        state["last_error"] = "; ".join([e for e in [plan["error"]] if e] + errors[host])[:500] or None
 
 
-async def _run_once(host: Optional[str] = None) -> None:
-    """Reconcile one host, or every currently-tracked host if `host` is None
-    (used by the background loop)."""
-    hosts = [host] if host else list(_hosts.keys())
-    async with _lock, vss_search._client(timeout=20.0) as client:
+async def _run_once() -> None:
+    """Reconcile every tracked host. Host lookups run concurrently (each with a
+    timeout) so an unreachable host can't delay the others or the VSS calls."""
+    global _pass_count
+    hosts = sorted(_hosts, key=lambda h: h != _priority_host)
+    if not hosts:
+        return
+    try:
+        detections = await asyncio.gather(*(_detect(h) for h in hosts))
+        async with _lock, vss_search._client(timeout=20.0) as client:
+            await _reconcile(client, hosts, detections)
+    except (RuntimeError, httpx.HTTPError, ValueError) as exc:
         for h in hosts:
-            try:
-                await _reconcile_host(client, h)
-            except (RuntimeError, httpx.HTTPError, ValueError) as exc:
-                _hosts.setdefault(h, {"last_sync": None, "last_error": None, "streams": []})
+            if h in _hosts:
                 _hosts[h]["last_error"] = str(exc)[:500]
-                logger.warning("VSS live sync failed for %s: %s", h, exc)
+        logger.warning("VSS live sync failed: %s", exc)
+    finally:
+        _pass_count += 1
+
+
+def _settling() -> bool:
+    return any(
+        state["last_sync"] is None or any(s.get("state") == "starting" for s in state["streams"])
+        for state in _hosts.values()
+    )
 
 
 async def _loop() -> None:
     while True:
-        await asyncio.sleep(SYNC_INTERVAL_SECONDS)
-        if _hosts:
+        try:
+            await asyncio.wait_for(_kick.wait(), FAST_SYNC_SECONDS if _settling() else SYNC_INTERVAL_SECONDS)
+        except asyncio.TimeoutError:
+            pass
+        _kick.clear()
+        try:
             await _run_once()
+        except Exception:  # noqa: BLE001 -- the loop must survive any single bad pass
+            logger.exception("VSS live sync pass crashed")
+        await asyncio.sleep(1.0)  # bounds how often rapid tab switches can trigger passes
 
 
 def _ensure_loop() -> None:
     global _task
     if _task is None or _task.done():
         _task = asyncio.create_task(_loop())
+
+
+def _new_host_state() -> dict:
+    return {"last_sync": None, "last_error": None, "streams": [], "unreachable_since": None}
 
 
 def _require_enabled() -> None:
@@ -305,15 +466,26 @@ async def live_sync_status():
 
 @router.post("/api/search/live-sync")
 async def live_sync_start(req: LiveSyncRequest):
+    """Track `req.host` and make its tab the one that gets free live-stream slots
+    first. Never blocks on VSS: it triggers a pass and answers within
+    KICK_WAIT_SECONDS with whatever state is current."""
+    global _priority_host
     _require_enabled()
-    _hosts.setdefault(req.host, {"last_sync": None, "last_error": None, "streams": []})
+    _hosts.setdefault(req.host, _new_host_state())
+    if not req.background:
+        _priority_host = req.host
     _ensure_loop()
-    await _run_once(req.host)
+    before = _pass_count
+    _kick.set()
+    deadline = time.monotonic() + KICK_WAIT_SECONDS
+    while _pass_count == before and time.monotonic() < deadline:
+        await asyncio.sleep(0.1)
     return _status()
 
 
 @router.delete("/api/search/live-sync")
 async def live_sync_stop(req: Optional[LiveSyncRequest] = None):
+    global _priority_host
     _require_enabled()
     if req and req.host:
         host = req.host
@@ -326,12 +498,16 @@ async def live_sync_stop(req: Optional[LiveSyncRequest] = None):
                     for stream in (listing or {}).get("streams", []):
                         name = stream.get("stream_name") if isinstance(stream, dict) else None
                         if name and uav_naming.is_managed_name(name) and _is_managed_for_host(name, host) \
-                                and stream.get("state") not in ("paused", "error", "stopped"):
+                                and stream.get("state") not in IDLE_STATES:
                             await _call(client, "PATCH", f"/streams/{stream['stream_id']}", json={"state": "paused"})
                 except (RuntimeError, httpx.HTTPError) as exc:
                     logger.warning("VSS live sync: failed to pause streams for %s on disconnect: %s", host, exc)
             _hosts.pop(host, None)
             uav_naming.replace_host_registry(host, {})
+            uav_naming.forget_host(host)
+            if _priority_host == host:
+                _priority_host = None
+            _kick.set()  # let queued feeds of other hosts take the freed slots
     else:
         # Back-compat: no host specified -- stop tracking every host (the
         # pre-multi-UAV behaviour).

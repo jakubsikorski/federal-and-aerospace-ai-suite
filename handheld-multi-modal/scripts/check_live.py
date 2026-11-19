@@ -130,8 +130,10 @@ def main():
     speech = {}
 
     def tts():
-        expected = configured(ASSET_ROOT / "config/devices.yaml",
-                              r"TEXT_TO_SPEECH__MODELS__TTS__DEVICE:\s*(\w+)", "CPU")
+        expected = configured(ASSET_ROOT / "config/speech/tts.env",
+                              r"^TEXT_TO_SPEECH__MODELS__TTS__DEVICE=(CPU|GPU)$")
+        if expected is None:
+            raise ValueError("missing or invalid config/speech/tts.env; run make up or make demo-up")
         info = call("http://127.0.0.1:8012/v1/model-info")
         if info.get("device") != expected:
             raise RuntimeError(f"runs on {info.get('device')}, configured {expected}")

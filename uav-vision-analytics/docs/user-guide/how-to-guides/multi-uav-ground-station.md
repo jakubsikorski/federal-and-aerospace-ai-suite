@@ -95,5 +95,5 @@ restart). For the UAV/Camera search filter, see
 [Searching Live Video with VSS — Scope results to one UAV or camera](./vss-live-search.md#4-scope-results-to-one-uav-or-camera-multi-uav-setups).
 
 See also the Ground Station's own
-[README — Multiple UAVs at once](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/blob/main/uav-ground-station/README.md#multiple-uavs-at-once)
+[Get Started — Multiple UAVs at once](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/blob/main/uav-ground-station/docs/user-guide/get-started.md#multiple-uavs-at-once)
 for the implementation details.

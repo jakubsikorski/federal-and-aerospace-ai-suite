@@ -75,12 +75,9 @@ def normalize(payload: dict, host: str, *, now: float | None = None) -> dict:
                 return float(found), item
         return None, None
 
-    def first(names: tuple[str, ...], *, tags: dict | None = None):
-        for name in names:
-            found, item = value(name, tags=tags)
-            if item is not None:
-                return found, item
-        return None, None
+    def sample_stale(item: dict) -> bool:
+        item_ms = _epoch_ms(item.get("timestamp"))
+        return not item_ms or now_ms - item_ms > STALE_AFTER_SECONDS * 1000
 
     def add(metric_id: str, label: str, found, item, unit: str, *,
             scale: float = 1.0, metric_state: str | None = None,
@@ -89,7 +86,7 @@ def normalize(payload: dict, host: str, *, now: float | None = None) -> dict:
                 or isinstance(found, bool)):
             return
         item_ms = _epoch_ms(item.get("timestamp"))
-        item_stale = not item_ms or now_ms - item_ms > STALE_AFTER_SECONDS * 1000
+        item_stale = sample_stale(item)
         metrics.append({
             "id": metric_id,
             "label": label,
@@ -118,9 +115,9 @@ def normalize(payload: dict, host: str, *, now: float | None = None) -> dict:
             add("cpu_load_percent", "CPU load", 100.0 - idle, idle_item, "%",
                 note="100 - idle", derived=True)
 
-    found, item = value("cpu_frequency_avg_frequency")
-    add("cpu_frequency_mhz", "CPU frequency", found, item, "MHz", scale=0.001,
-        note="source converted from kHz")
+    found, item = value("cpu_frequency_avg_frequency_hz")
+    add("cpu_frequency_mhz", "CPU frequency", found, item, "MHz", scale=0.000001,
+        note="source converted from Hz")
     found, item = value("mem_used_percent")
     add("memory_used_percent", "Memory used", found, item, "%")
     found, item = value("mem_used")
@@ -144,35 +141,37 @@ def normalize(payload: dict, host: str, *, now: float | None = None) -> dict:
         found = (item.get("fields") or {}).get("value")
         add(f"gpu_engine_{engine}_percent", f"GPU {engine} engine", found, item, "%")
 
-    found, item = first(("gpu_frequency_value", "gpu_frequency"),
-                       tags={"type": "cur_freq"})
-    add("gpu_frequency_mhz", "GPU frequency", found, item, "MHz")
-    found, item = first(("gpu_power_value", "gpu_power"),
-                       tags={"type": "gpu_cur_power"})
+    found, item = value("gpu_frequency_cur_freq_hz", tags={"type": "cur_freq"})
+    add("gpu_frequency_mhz", "GPU frequency", found, item, "MHz", scale=0.000001,
+        note="source converted from Hz")
+    found, item = value("gpu_power_power_w", tags={"type": "gpu_cur_power"})
     add("gpu_power_w", "GPU power domain", found, item, "W")
-    found, item = first(("gpu_power_value", "gpu_power"),
-                       tags={"type": "pkg_cur_power"})
+    found, item = value("powerstat_package_current_power_consumption_watts",
+                       tags={"package_id": "0"})
+    rapl_found, rapl_item = value("rapl_power_power_w", tags={"domain": "package-0"})
+    if item is None or (sample_stale(item) and rapl_item is not None
+                        and not sample_stale(rapl_item)):
+        found, item = rapl_found, rapl_item
     add("package_power_w", "Package power", found, item, "W",
         note="package domain; not wall or GPU-only power")
 
     npu_specs = (
         ("npu_utilization", "npu_utilization_percent", "NPU utilization", "%", None),
-        ("npu_power", "npu_power_w", "NPU power", "W", None),
-        ("npu_temperature", "npu_temperature_c", "SoC temperature", "°C",
+        ("npu_power_w", "npu_power_w", "NPU power", "W", None),
+        ("npu_temperature_c", "npu_temperature_c", "SoC temperature", "°C",
          "PMT SoC field; not necessarily an isolated NPU sensor"),
-        ("npu_frequency", "npu_frequency_raw", "NPU frequency (raw)", "source units",
-         "hardware scaling is not independently validated"),
-        ("npu_bandwidth", "npu_bandwidth_raw", "NPU bandwidth (raw)", "source units",
-         "source rate semantics are unresolved"),
+        ("npu_frequency_hz", "npu_frequency_raw", "NPU frequency", "Hz", None),
+        ("npu_bandwidth_bytes_per_second", "npu_bandwidth_raw", "NPU bandwidth", "bytes/s", None),
         ("npu_tile_config", "npu_tile_config", "NPU tile configuration", "config", None),
     )
     for source, metric_id, label, unit, note in npu_specs:
         found, item = value(source)
         add(metric_id, label, found, item, unit, note=note)
-    found, item = value("npu_memory_mb")
-    add("npu_memory_mib", "NPU memory", found, item, "MiB",
-        metric_state="unavailable" if found == -1 else None,
-        note="source -1 means unsupported on this host" if found == -1 else None)
+    found, item = value("npu_memory_bytes")
+    unavailable = found is not None and found < 0
+    add("npu_memory_mib", "NPU memory", found, item, "MiB", scale=1 / (1024 * 1024),
+        metric_state="unavailable" if unavailable else None,
+        note="negative memory reading is unavailable" if unavailable else "source converted from bytes")
 
     # Telegraf inputs.docker series; Docker CPU percent uses 100 = one core.
     container_fields = (

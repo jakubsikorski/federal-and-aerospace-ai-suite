@@ -85,7 +85,7 @@ For a pipeline started by hand, pass the file name in `parameters.video`.
 ## Verify
 
 ```bash
-ffplay rtsp://<HOST_IP>:8555/uav-front-camera
+ffplay -rtsp_transport tcp rtsp://<HOST_IP>:8555/uav-front-camera
 ```
 
 ## Troubleshooting

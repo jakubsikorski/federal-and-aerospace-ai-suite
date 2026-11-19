@@ -7,8 +7,8 @@ description: Use when changing how the handheld Backend dispatches alerts throug
 
 # Alert Agent
 
-Image `intel/alert-agent-service:2026.2.0`, source `edge-ai-libraries`
-`microservices/alert-agent-service/` (release-2026.2.0). Compose service
+Published container image `intel/alert-agent-service` (tag pinned in `compose/handheld-multi-modal.yaml`),
+source `edge-ai-libraries/microservices/alert-agent-service/`. Compose service
 `alert-agent`; host `127.0.0.1:8010` maps to container port `8000`.
 Configuration is mounted read-only from `config/alert-agent/resources`
 (`config.yaml`, `tools.json`, `mcp_servers.json`).

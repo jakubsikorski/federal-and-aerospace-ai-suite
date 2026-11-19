@@ -11,7 +11,7 @@
 |---------|-------|-------|------|
 | `dlstreamer-pipeline-server` | `${DLSTREAMER_PIPELINE_SERVER_IMAGE}`-pymavlink (built inline with `pip install pymavlink`) | *(none — reached only via `nginx`)* | AI inference + RTSP output |
 | `broker` | `eclipse-mosquitto:2.0.22` | *(none — reached only via `nginx`)* | MQTT broker for detection metadata and captions |
-| `px4` | `px4io/px4-sitl:latest` | — | PX4 SITL flight controller simulator (requires `10040_sihsim_quadx.post` volume mount) |
+| `px4` | `px4io/px4-sitl:v1.18.0-beta1-660-g61907962c9` | — | PX4 SITL flight controller simulator (requires `10040_sihsim_quadx.post` volume mount) |
 | `mavlink-router` | custom build | `${MAVLINK_UDP_PORT:-14551}/udp` | Routes MAVLink :14550 → :14541 broadcast; also republishes UDP to the host for a remote QGroundControl |
 | `metrics-manager` | `intel/metrics-manager:2026.3.0-*` | — | CPU/GPU/NPU/power metrics collection |
 | `nginx` | `nginx:1.27-alpine` | `80`, `443`, `8555`, `1883` | Reverse proxy / TLS termination (self-signed cert) for REST+UI (`80`→`443` redirect) and RTSP; raw MQTT passthrough on `1883` |
@@ -39,7 +39,7 @@ mavlink start -u 14541 -t $(getent hosts mavlink-router | awk '{print $1}')
 Docker Compose fragment:
 ```yaml
   px4:
-    image: px4io/px4-sitl:latest
+    image: px4io/px4-sitl:v1.18.0-beta1-660-g61907962c9
     hostname: px4-sitl
     container_name: uav-va-px4
     volumes:
@@ -313,7 +313,7 @@ PX4 SITL ──MAVLink──▶ mavlink-router (:14550 server → :14541 broadca
                 DL Streamer Pipeline Server ◀─UDP :14541─┘
                              │
                         ┌────┤
-                        │    └──▶ RTSP :8555 → QGC / ffplay rtsp://...
+                        │    └──▶ RTSP :8555 → QGC / ffplay -rtsp_transport tcp rtsp://...
                         │
                     MQTT :1883 ──▶ Mosquitto broker
 ```

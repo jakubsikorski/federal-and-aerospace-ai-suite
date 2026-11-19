@@ -1223,7 +1223,7 @@
       ensureHostActive(h.host);
       renderEmptyState(h.host, "Detecting running pipelines…");
       pollAndReconcile(h.host);
-      document.dispatchEvent(new CustomEvent("uav:connected", { detail: { host: h.host } }));
+      document.dispatchEvent(new CustomEvent("uav:connected", { detail: { host: h.host, background: true } }));
       fetch(`/api/sessions?active=false`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

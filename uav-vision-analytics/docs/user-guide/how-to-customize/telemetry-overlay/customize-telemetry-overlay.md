@@ -130,7 +130,7 @@ same-key change like this.
 ## Verify
 
 ```bash
-ffplay rtsp://<HOST_IP>:8555/uav-front-camera
+ffplay -rtsp_transport tcp rtsp://<HOST_IP>:8555/uav-front-camera
 ```
 
 Confirm whether the new/changed/removed line appears in the upper-left

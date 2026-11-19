@@ -118,7 +118,7 @@ ffmpeg -rtsp_transport tcp -i rtsp://localhost:8554/uav-1/nadir -t 10 -c:v copy 
 To preview the live stream instead of recording (if not on a headless system):
 
 ```bash
-ffplay rtsp://localhost:8554/uav-1/nadir
+ffplay -rtsp_transport tcp rtsp://localhost:8554/uav-1/nadir
 ```
 
 Available cameras: `nadir`, `forward`, `rear`.

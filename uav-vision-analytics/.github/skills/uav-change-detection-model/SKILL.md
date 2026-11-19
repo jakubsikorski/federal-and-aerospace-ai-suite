@@ -104,7 +104,7 @@ between app releases; do not hardcode a remembered command.
 2. `make check-cameras` reports no "detection model not found" for any
    affected camera and shows the expected `detection.model` in its table.
 3. `make cameras-status` (once armed) shows the camera's pipeline running.
-4. `ffplay rtsp://<HOST_IP>:8555/uav-<id>` shows boxes/labels reflecting the
+4. `ffplay -rtsp_transport tcp rtsp://<HOST_IP>:8555/uav-<id>` shows boxes/labels reflecting the
    new model's classes (or the detection log, see `view-detection-logs.md`).
 5. No `400` from the REST API when a pipeline is (re)started with the new
    `detection_model` parameter.

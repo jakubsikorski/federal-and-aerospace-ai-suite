@@ -621,11 +621,14 @@ code { color: var(--accent); }
 .live-index-head .muted { font-weight: 400; }
 .live-index-list { list-style: none; margin: 0; padding: 0; }
 .live-index-list:not(:empty) { margin-top: 6px; }
-.live-index-item { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 8px; padding: 3px 0; }
+.live-index-item { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 8px; padding: 3px 0; }
 .live-state { padding: 1px 8px; border-radius: 999px; font-size: 11px; text-transform: capitalize; background: rgba(138, 151, 166, 0.18); color: var(--muted); }
 .live-state-running { background: rgba(46, 160, 67, 0.18); color: var(--ok); }
-.live-state-starting, .live-state-pending, .live-state-reconnecting { background: rgba(210, 161, 6, 0.18); color: var(--warn); }
+.live-state-starting, .live-state-pending, .live-state-reconnecting, .live-state-queued { background: rgba(210, 161, 6, 0.18); color: var(--warn); }
 .live-state-error, .live-state-stopped { background: rgba(217, 48, 38, 0.18); color: var(--bad); }
+/* Info icon next to a "queued" badge: explains VSS's live-stream slot limit
+   is expected capacity management, not an error -- hover/focus for the detail. */
+.live-state-info { cursor: help; color: var(--warn); font-size: 13px; line-height: 1; }
 
 /* Side column fits the viewport: the two utilization charts share whatever
    height the search panel leaves, instead of fixed 140px charts that push
@@ -644,7 +647,6 @@ code { color: var(--accent); }
 .side-panels .chart-wrap canvas { position: absolute; inset: 0; }
 .side-panels .search-panel { flex: none; }
 .search-panel .live-index { margin: 8px 0 0; }
-.search-panel .btn-block { margin-top: 10px; }
 @media (max-height: 820px) {
   .side-panels .chart-subtitle { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .side-panels .chart-wrap { min-height: 56px; }
@@ -787,9 +789,19 @@ code { color: var(--accent); }
 .arch-scenario[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
 .arch-provider:focus-visible, .arch-scenario:focus-visible, .arch-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.arch-stage { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px; align-items: stretch; }
-.arch-diagram { background: #0d1218; border: 1px solid var(--panel-border); border-radius: 10px; padding: 10px; min-width: 0; min-height: 0; }
-#arch-svg { display: block; width: 100%; height: 100%; margin: 0 auto; font-family: inherit; }
+.arch-stage {
+  flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 300px; grid-template-rows: minmax(0, 1fr) auto;
+  gap: 14px; align-items: stretch; overflow: hidden;
+}
+.arch-diagram {
+  grid-column: 1; grid-row: 1;
+  background: #0d1218; border: 1px solid var(--panel-border); border-radius: 10px; padding: 10px; min-width: 0; min-height: 0;
+  display: flex; flex-direction: column; gap: 8px; overflow: hidden; /* defensive clip: never bleed into siblings */
+}
+.arch-svg-viewport {
+  flex: 1; min-height: 0; overflow: hidden; display: flex; align-items: center; justify-content: center;
+}
+#arch-svg { display: block; font-family: inherit; flex-shrink: 0; }
 #arch-svg .lane rect { fill: rgba(255, 255, 255, 0.015); stroke: var(--panel-border); stroke-dasharray: 4 4; }
 /* UAV HOST is a remote machine; GROUND STATION and VSS SEARCH share the same
    local machine (VSS is an optional overlay on it), so they share a tint. */
@@ -840,9 +852,17 @@ code { color: var(--accent); }
 .lg-video { color: var(--c-video); } .lg-webrtc { color: var(--c-webrtc); }
 .lg-mqtt { color: var(--c-mqtt); } .lg-rest { color: var(--c-rest); } .lg-files { color: var(--c-files); }
 
+/* Large screens: an always-visible sidebar -- <summary> is hidden and <details>
+   forced open, so visually this is a plain panel with no collapse affordance.
+   Small screens (media query below): a real collapsible <details>/<summary>,
+   closed by default, so it doesn't permanently take half the room away from
+   the diagram; arch.js opens it automatically the moment there's something to
+   show (a node/flow/provider was selected). */
+.arch-card-details { grid-column: 2; grid-row: 1; min-width: 0; min-height: 0; overflow: hidden; }
+.arch-card-details > summary { display: none; }
 .arch-card {
   background: #0d1218; border: 1px solid var(--panel-border); border-radius: 10px; padding: 14px 16px;
-  font-size: 13px; line-height: 1.5; position: sticky; top: 0; max-height: 100%; overflow-y: auto;
+  font-size: 13px; line-height: 1.5; max-height: min(70vh, 560px); overflow-y: auto;
   scrollbar-width: thin; scrollbar-color: rgba(138, 151, 166, 0.25) transparent;
 }
 .arch-card p { margin: 8px 0; color: #c6d0db; }
@@ -863,8 +883,13 @@ code { color: var(--accent); }
 .arch-warn { color: var(--warn) !important; }
 .arch-link { background: none; border: none; padding: 0; color: #8cc6ff; cursor: pointer; font: inherit; text-decoration: underline; text-underline-offset: 2px; }
 
-.arch-h3 { margin: 4px 0 0; font-size: 15px; }
-.arch-devices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+/* Same always-visible-sidebar/footer pattern as .arch-card-details above --
+   on wide screens this is the full-width row below the diagram+details row. */
+.arch-devices-details { grid-column: 1 / -1; grid-row: 2; min-width: 0; flex-shrink: 0; }
+.arch-devices-details > summary { pointer-events: none; }
+summary.arch-h3 { margin: 4px 0 0; font-size: 15px; list-style: none; cursor: default; }
+summary.arch-h3::-webkit-details-marker { display: none; }
+.arch-devices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 8px; }
 .arch-device { border: 1px solid var(--panel-border); border-top: 3px solid var(--c-cpu); border-radius: 10px; padding: 10px 14px; background: #0d1218; }
 .arch-device.gpu { border-top-color: var(--c-gpu); } .arch-device.npu { border-top-color: var(--c-npu); }
 .arch-device h4 { margin: 0 0 6px; font-size: 13px; letter-spacing: 0.08em; }
@@ -872,11 +897,62 @@ code { color: var(--accent); }
 .arch-device li { margin: 3px 0; }
 .arch-note { grid-column: 1 / -1; margin: 0; font-size: 12px; }
 
+/* The "Info" dropdown toggle only exists for small/compact screens -- on wide
+   screens Details and "Where each model runs" are always-visible panels and
+   this button plays no role, so it stays hidden there. */
+.arch-info-toggle {
+  display: none; align-items: center; gap: 5px; border: 1px solid var(--panel-border); background: rgba(255, 255, 255, 0.04);
+  color: var(--text); border-radius: 999px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.arch-info-toggle:hover { border-color: var(--accent); }
+.arch-info-caret { display: inline-block; transition: transform 0.15s; font-size: 10px; }
+.arch-dialog.info-open .arch-info-caret { transform: rotate(180deg); }
+
 @media (max-width: 1100px) {
-  .arch-stage { grid-template-columns: 1fr; align-items: start; }
-  .arch-diagram { min-height: 320px; }
-  .arch-card { position: static; max-height: none; overflow: visible; }
-  .arch-devices { grid-template-columns: 1fr; }
+  .arch-stage { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr); }
+  .arch-info-toggle { display: inline-flex; }
+  .arch-card-details, .arch-devices-details {
+    position: fixed; left: 14px; right: 14px; z-index: 30;
+    border: 1px solid var(--panel-border); border-radius: 10px; background: #11161c;
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
+    max-height: 40vh; overflow-y: auto;
+    /* Hidden by default, regardless of the <details> element's own open/closed
+       state -- visibility is driven entirely by .arch-dialog.info-open below,
+       via #arch-info-toggle, not by each <details>'s native disclosure. */
+    visibility: hidden; opacity: 0; pointer-events: none; transform: translateY(6px);
+    transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
+  }
+  .arch-card-details { bottom: calc(14px + 40vh + 10px); }
+  .arch-devices-details { bottom: 14px; }
+  .arch-dialog.info-open .arch-card-details, .arch-dialog.info-open .arch-devices-details {
+    visibility: visible; opacity: 1; pointer-events: auto; transform: none;
+  }
+  .arch-card-details > summary {
+    display: flex; align-items: center; gap: 6px; padding: 10px 14px; font-size: 13px; font-weight: 600;
+    border-bottom: 1px solid var(--panel-border);
+  }
+  .arch-card { border: none; border-radius: 0; max-height: none; }
+  .arch-devices-details > summary {
+    display: flex; align-items: center; gap: 6px; padding: 10px 14px 0;
+  }
+  .arch-devices { grid-template-columns: 1fr; padding: 0 14px 12px; }
+}
+@media (max-width: 900px) {
+  .arch-dialog { width: 100%; height: 100%; border-radius: 0; }
+  .arch-card-details, .arch-devices-details { left: 10px; right: 10px; }
+}
+
+@media (max-height: 700px) {
+  .arch-dialog .modal-header { padding: 8px 18px; }
+  .arch-dialog .modal-title .muted { display: none; }
+  .arch-body { padding: 8px 18px 10px; gap: 8px; }
+  .arch-toolbar { gap: 4px 18px; }
+  .arch-provider { padding: 4px 10px 4px 6px; }
+  .arch-provider b { min-width: 22px; height: 22px; font-size: 12px; }
+  .arch-legend { font-size: 11px; gap: 4px 14px; }
+}
+@media (max-height: 520px) {
+  .arch-dialog .arch-providers { display: none; }
 }
 
 .device-card-header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; margin-left: auto; }

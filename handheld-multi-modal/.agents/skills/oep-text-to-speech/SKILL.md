@@ -7,8 +7,8 @@ description: Use when configuring the stock Open Edge Platform Text To Speech se
 
 # Text To Speech
 
-Image `intel/text-to-speech:2026.2.0`, source `edge-ai-libraries`
-(release-2026.2.0). Compose service `tts`; host `127.0.0.1:8012` maps to
+Published container image `intel/text-to-speech` (tag pinned in `compose/handheld-multi-modal.yaml`),
+source `edge-ai-libraries`. Compose service `tts`; host `127.0.0.1:8012` maps to
 container port `8011`.
 
 ## Configuration
@@ -22,8 +22,9 @@ container port `8011`.
   `device`, model and variant are separate fields.
 - The device is CPU by default (Compose `cpus: 4`) so speech does not queue
   behind LLM generation on the GPU. `make speech-device TTS_DEVICE=GPU`
-  switches to GPU through the generated `config/devices.yaml`;
-  `TTS_DEVICE=CPU` switches back.
+  switches to GPU through the generated `config/speech/tts.env`;
+  `TTS_DEVICE=CPU` switches back. Only the TTS container is recreated; the Backend
+  reads the selected device live, and cameras and video pipelines are unchanged.
 - The service downloads and exports its model on first start; warmup errors
   are not fatal. Persistent volumes cover `models`, `storage` and `.cache`
   under `/app/text-to-speech`.
