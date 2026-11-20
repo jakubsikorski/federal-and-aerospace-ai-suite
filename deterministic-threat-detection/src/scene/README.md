@@ -4,7 +4,7 @@ SceneScape `hota-scene` fed by two RTSP "cameras" published over the TSN VLAN
 (`rtsp://192.168.127.12:8554/Cam_x1_0`, `rtsp://192.168.127.13:8554/Cam_x2_0`).
 Part of the repository: it uses `../camera-node` (streams) and `../data` (models) and the shared dashboard in `../dashboard`.
 Run it on its own with `make up` in this folder, or start everything with `make up` in the repository root
-(see [Get started](../../docs/user-guide/get-started.md); do the [first-time setup](../../docs/user-guide/first-time-setup.md) first).
+(see [Get started](../../docs/user-guide/deterministic-threat-detection/get-started.md); do the [first-time setup](../../docs/user-guide/deterministic-threat-detection/first-time-setup.md) first).
 
 ## Services
 ntpserver, broker, pgserver, web, scene-loader (one-shot appdata import), scene (controller),

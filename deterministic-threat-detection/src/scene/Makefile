@@ -7,6 +7,8 @@
 #   make clean                  stop the stack and delete volumes (and stop the streams)
 #   make streams-up|streams-down|streams-status   RTSP cameras on the remote machines only
 #   STREAMS=0 skips the remote streams in up/down/clean
+#   SOURCE=basler also sets switch ports BASLER_PORTS (default 5,6) to priority 0 if they differ;
+#   BASLER_PRIORITY_FIX=0 skips it
 #   make status | logs [SVC=name]
 #   make test                   end-to-end test through the SceneScape UI and data flow
 #   make distclean              clean + remove generated secrets and certs
@@ -33,20 +35,37 @@ ifeq ($(SOURCE),basler)
 export COMPOSE_FILE := docker-compose.yml:docker-compose.basler.yml
 endif
 
+# Camera ports whose switch priority must differ from the UC1 MQTT priority (1), else the Basler
+# video shares its queue and UC1 latency climbs. Set from machine-2 (the switch control host).
+BASLER_PORTS ?= 5,6
+BASLER_PRIORITY_FIX ?= 1
+-include ../../lab.env
+
 SECRETS_DIR := secrets
 SSL_DIR := nginx/ssl
 
-.PHONY: up down clean distclean status logs env secrets nginx-cert pull test streams-up streams-down streams-status
+.PHONY: up down clean distclean status logs env secrets nginx-cert pull test streams-up streams-down streams-status basler-priority
 
 # Streams first: consumers get 404 until the publishers exist.
 up: env nginx-cert
+	@[ "$(SOURCE)" != basler ] || [ "$(BASLER_PRIORITY_FIX)" != 1 ] || $(MAKE) basler-priority
 	@[ "$(STREAMS)" != 1 ] || $(MAKE) streams-up
-	@if [ "$(SOURCE)" = basler ]; then v=$$(sed -n 's/^SCENESCAPE_VERSION=//p' .env); \
-	  docker image inspect "tsn-dlstreamer-pipeline-server-basler:$$v" >/dev/null 2>&1 || { \
-	  echo "Image tsn-dlstreamer-pipeline-server-basler:$$v not found. Build it first (it contains the Basler pylon SDK, under Basler's own license): docs/user-guide/how-to-guides/basler/integrate-basler-camera-with-scenescape.md"; exit 1; }; fi
+	@if [ "$(SOURCE)" = basler ]; then v=$$(sed -n 's/^SCENESCAPE_VERSION=//p' .env); img="tsn-dlstreamer-pipeline-server-basler:$$v"; \
+	  docker image inspect "$$img" >/dev/null 2>&1 || { \
+	  [ -f basler/BaslerDockerfile ] || { \
+	  echo "Image $$img not found. Copy BaslerDockerfile to src/scene/basler/ (it contains the Basler pylon SDK, under Basler's own license): docs/user-guide/deterministic-threat-detection/how-to-guides/basler/integrate-basler-camera-with-scenescape.md"; exit 1; }; \
+	  echo "Building $$img (first run only)"; \
+	  docker build -f basler/BaslerDockerfile --build-arg BASE_IMAGE="$$(sed -n 's/^DLSTREAMER_PIPELINE_SERVER_IMAGE=//p' .env)" -t "$$img" basler || exit 1; }; fi
 	docker compose up -d
 	@echo "Browse to https://localhost/ (admin / contents of $(SECRETS_DIR)/supass)."
 	@[ "$(STREAMS)" = 1 ] || echo "STREAMS=0: the RTSP streams on CAMERA1_HOST/CAMERA2_HOST (see .env) must already be running."
+
+# Writes to the switch (ports other than 2 only). Needs SSH_USER, M2_LAB_IP and SWITCH_IP in lab.env.
+basler-priority:
+	@[ -n "$(SSH_USER)" ] && [ -n "$(M2_LAB_IP)" ] && [ -n "$(SWITCH_IP)" ] || { echo "WARNING: SSH_USER, M2_LAB_IP or SWITCH_IP missing in lab.env; set switch ports $(BASLER_PORTS) to priority 0 by hand (Basler guide)."; exit 0; }
+	@ssh -o BatchMode=yes $(SSH_USER)@$(M2_LAB_IP) 'mkdir -p ~/moxa' && scp -q -o BatchMode=yes ../switch/get_port_mode.py ../switch/port_priority.py $(SSH_USER)@$(M2_LAB_IP):moxa/ \
+	  && ssh -o BatchMode=yes $(SSH_USER)@$(M2_LAB_IP) 'python3 -I ~/moxa/port_priority.py ensure --host $(SWITCH_IP) --ports $(BASLER_PORTS) --value 0' \
+	  || echo "WARNING: could not set the Basler port priority; set switch ports $(BASLER_PORTS) to priority 0 by hand (Basler guide)."
 
 streams-up:
 	../camera-node/streams/start-synced-streams.sh up

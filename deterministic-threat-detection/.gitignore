@@ -17,3 +17,6 @@ src/scene/dlstreamer-pipeline-server/config.generated.json
 # downloaded by src/data/download_models.sh
 src/data/models/omz/
 src/data/models/.terms-accepted
+
+# Basler pylon SDK image sources, copied by the user (Basler license, see the Basler integration guide)
+src/scene/basler/

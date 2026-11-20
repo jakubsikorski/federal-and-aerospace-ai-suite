@@ -64,7 +64,7 @@ SWITCH_SSH_TARGET = os.environ.get("SWITCH_SSH_TARGET") or _target(M2_LAB_IP)
 SWITCH_IP = os.environ.get("SWITCH_IP", "")
 SWITCH_REMOTE_DIR = os.environ.get("SWITCH_REMOTE_DIR", "~/moxa")
 # Reads are always allowed; enabling/disabling the shaper needs SWITCH_ALLOW_WRITE=1.
-SWITCH_ALLOW_WRITE = os.environ.get("SWITCH_ALLOW_WRITE", "0") == "1"
+SWITCH_ALLOW_WRITE = os.environ.get("SWITCH_ALLOW_WRITE", "1") == "1"
 # Gate control list used for "Qbv on": INTERVAL_US:QUEUES per slot (same as port 1 today).
 SWITCH_SCHEDULE = os.environ.get("SWITCH_SCHEDULE", "90000:6,1,0 10000:5,1,0")
 

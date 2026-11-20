@@ -18,8 +18,8 @@ with it on they are not affected.
 
 ## Quick start
 
-You need four Linux machines and a Moxa TSN switch ([System requirements](./docs/user-guide/system-requirements.md)).
-Set up the machines, VLANs, PTP and the switch once: [First-time setup](./docs/user-guide/first-time-setup.md).
+You need four Linux machines and a Moxa TSN switch ([System requirements](./docs/user-guide/deterministic-threat-detection/system-requirements.md)).
+Set up the machines, VLANs, PTP and the switch once: [First-time setup](./docs/user-guide/deterministic-threat-detection/first-time-setup.md).
 Then, on machine-1:
 
 ```bash
@@ -46,7 +46,7 @@ cd deterministic-threat-detection
 > path to your extracted `deterministic-threat-detection` folder wherever it
 > appears in the guides.
 
-Then open `https://<machine-1 lab address>/dashboard/`. [Get started](./docs/user-guide/get-started.md)
+Then open `https://<machine-1 lab address>/dashboard/`. [Get started](./docs/user-guide/deterministic-threat-detection/get-started.md)
 explains the dashboard and what to try.
 
 ## Layout
@@ -64,11 +64,11 @@ explains the dashboard and what to try.
 
 ## Documentation
 
-- [First-time setup](./docs/user-guide/first-time-setup.md) (once per machine)
-- [Get started](./docs/user-guide/get-started.md)
-- [System requirements](./docs/user-guide/system-requirements.md)
-- [How-to guides](./docs/user-guide/how-to-guides.md): Moxa switch, PTP, Basler cameras
-- [Release notes](./docs/user-guide/release-notes.md)
+- [First-time setup](./docs/user-guide/deterministic-threat-detection/first-time-setup.md) (once per machine)
+- [Get started](./docs/user-guide/deterministic-threat-detection/get-started.md)
+- [System requirements](./docs/user-guide/deterministic-threat-detection/system-requirements.md)
+- [How-to guides](./docs/user-guide/deterministic-threat-detection/how-to-guides.md): Moxa switch, PTP, Basler cameras
+- [Release notes](./docs/user-guide/deterministic-threat-detection/release-notes.md)
 
 ## Tests
 

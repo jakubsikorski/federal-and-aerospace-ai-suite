@@ -52,6 +52,27 @@ The dotted lab network is never shaped.
 - **TSN switch:** VLAN 1 (`192.168.127.x`) camera data, VLAN 5 (`192.168.5.x`) background load,
   VLAN 3 (`192.168.3.x`) Basler cameras.
 
+## Default Values and Assumptions
+
+`lab.env` holds the lab addresses (see [First-time setup](./first-time-setup.md)), but some defaults
+in the scripts and configuration files match the reference setup. To reproduce the demo without
+editing them, use the same values:
+
+| Item                          | Value                                                                  | Where it is set                                                  |
+| ----------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Switch ports                  | machine-1 on 1, machine-2 on 2, machine-3 on 3, machine-4 on 4        | `SWITCH_PORT` (default 1, machine-1); port 2 is never changed    |
+| Camera data VLAN 1 addresses  | machine-1 `192.168.127.11`, machine-2 `.12`, machine-3 `.13`, switch `.253` | `lab.env`; also `mediamtx.yml` and `CAMERA1_HOST`/`CAMERA2_HOST` in `src/scene/.env` |
+| Load VLAN 5 addresses         | machine-1 `192.168.5.11`, machine-4 `192.168.5.14`                    | `lab.env`                                                        |
+| Basler VLAN 3                 | cameras `192.168.3.17` and `.18` on switch ports 5 and 6, `tsn0.3` on machine-1 | `src/scene/.env`, `BASLER_PORTS`                          |
+| NIC interface                 | `tsn0` on every machine, with `tsn0.1`, `tsn0.3`, and `tsn0.5` VLAN interfaces | `src/setup/setup_tsn_nic.sh`, `TSN_IFACE` in `src/scene/Makefile` |
+| SSH user and key              | The same user on machines 2, 3, and 4, with key-based login           | `SSH_USER` in `lab.env`; `EDGE_HOSTS` in `src/camera-node/pipeline/deploy.sh` and `SWITCH_HOST` in `src/dashboard/Makefile` default to the reference lab's user and addresses |
+| Camera 1 and camera 2         | machine-2 publishes `Cam_x1_0`, machine-3 publishes `Cam_x2_0`        | `EDGE_HOSTS`, `STREAM_HOSTS`                                     |
+| Qbv                           | Schedule Gate on for the machine-1 port, schedule `90000:6,1,0 10000:5,1,0` | `SWITCH_SCHEDULE` in the dashboard                         |
+| Basler cameras                | serials `23117381` and `23117382`, 15 frames per second               | `src/scene/.env`                                                 |
+
+If your lab differs, set `EDGE_HOSTS` and `SWITCH_HOST` on the command line, and change the two
+camera addresses in `src/scene/mediamtx/mediamtx.yml` and `src/scene/.env`.
+
 ## Hardware
 
 | Component                          | Details                                                                                                                                              |

@@ -13,7 +13,7 @@
 #
 # Environment overrides:
 #   EDGE_HOSTS="tsndemo@10.106.147.105:Cam_x1_0 tsndemo@10.106.147.201:Cam_x2_0"
-#   MQTT_HOST=192.168.127.11  MQTT_PORT=1884  STREAMS=1  REMOTE_DIR=camera-pipeline
+#   MQTT_HOST=<M1_TSN_IP from lab.env, else 192.168.127.11>  MQTT_PORT=1884  STREAMS=1  REMOTE_DIR=camera-pipeline
 #   IMAGE=intel/dlstreamer-pipeline-server:2026.3.0-ubuntu24-rc1
 set -euo pipefail
 
@@ -21,7 +21,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 . "$HERE/../../lib/label.sh"
 ROOT=$(cd "$HERE/../../.." && pwd)
 EDGE_HOSTS=${EDGE_HOSTS:-"tsndemo@10.106.147.105:Cam_x1_0 tsndemo@10.106.147.201:Cam_x2_0"}
-MQTT_HOST=${MQTT_HOST:-192.168.127.11}
+MQTT_HOST=${MQTT_HOST:-${M1_TSN_IP:-192.168.127.11}}
 MQTT_PORT=${MQTT_PORT:-1884}
 STREAMS=${STREAMS:-1}
 REMOTE_DIR=${REMOTE_DIR:-camera-pipeline}
