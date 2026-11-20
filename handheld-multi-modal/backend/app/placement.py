@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import copy
-import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import shlex
@@ -15,6 +14,8 @@ from urllib.parse import urlsplit
 
 import httpx
 import yaml
+
+from .adapters import tts_device
 
 
 class Placement:
@@ -40,8 +41,7 @@ class Placement:
                 for name in ("EMBEDDING", "RERANKER")]
         if service in ("tts", "audio_analyzer"):
             model = body["models"]["tts" if service == "tts" else "asr"]
-            # make TTS_DEVICE overrides the file through the stock environment variable.
-            device = (os.environ.get("TTS_DEVICE") if service == "tts" else None) or model["device"]
+            device = tts_device(model["device"]) if service == "tts" else model["device"]
             return model["name"], device, []
         from .pipelines import PIPELINE
         definition = next(p for p in body["config"]["pipelines"] if p["name"] == PIPELINE.split("/")[-1])

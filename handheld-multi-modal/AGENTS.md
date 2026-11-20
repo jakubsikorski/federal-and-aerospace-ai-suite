@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 # Handheld Multi-Modal Application — Agent Context File
 
 The Handheld Multi-Modal application is an operator console for Intel® edge devices. It is
-built from unmodified Open Edge Platform `release-2026.2.0` microservices, an application
+built from published container images from Open Edge Platform, an application
 Backend (FastAPI), and a browser UI, orchestrated with Docker Compose and a Make lifecycle.
 Read [README.md](README.md) before changing the deployment.
 

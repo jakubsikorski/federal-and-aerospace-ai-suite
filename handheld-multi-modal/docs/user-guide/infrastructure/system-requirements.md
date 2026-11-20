@@ -82,9 +82,9 @@ The target system is the Intel edge node on which the provisioned OS and workloa
 - Python 3.10+
 - Git
 - `ffmpeg` (for RTSP stream playback and recording)
-- `python3.12-venv` (for creating a Python virtual environment)
+- `python3-venv` (for creating a Python virtual environment)
 
-> `python3.12-venv` is required by `make model` to create a Python virtual environment.
+> `python3-venv` provides virtual environment support for the default Python 3 version on Ubuntu 24.04 and 26.04.
 > `ffmpeg` provides `ffplay` for viewing the RTSP output stream and `ffmpeg` for recording.
 
 ### Validation

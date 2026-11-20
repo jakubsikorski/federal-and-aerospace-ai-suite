@@ -18,7 +18,7 @@ export RENDER_GID ?= $(shell stat -c '%g' /dev/dri/renderD128 2>/dev/null)
 export ACCEL_GID ?= $(shell stat -c '%g' /dev/accel/accel0 2>/dev/null)
 export ASSET_GID := $(shell id -g)
 export CAMERAS
-# SpeechT5 device. `setup` records it in config/devices.yaml, so it stays until the next up.
+# SpeechT5 device. `setup` records it in config/speech/tts.env until the next up.
 # `setup` also records the deployment cameras: cam1..camCAMERAS for demo-up,
 # none for up (cameras are then added in the console).
 TTS_DEVICE ?= CPU
@@ -60,7 +60,7 @@ help:
 	@echo '  make stop             Stop every service; nothing is deleted'
 	@echo '  make up / demo-up     Also restarts a running application (make stop first for a full restart)'
 	@echo '  make pipelines-restart  Restart Backend and DLSPS; language models stay loaded'
-	@echo '  make speech-device TTS_DEVICE=GPU  Move speech (SpeechT5) to GPU; CPU moves it back'
+	@echo '  make speech-device TTS_DEVICE=GPU  Move speech to GPU in a running application; CPU moves it back'
 	@echo '  make down             Remove containers; keep models, history and TLS'
 	@echo '  demo-stop, demo-down and demo-status are the same as stop, down and status.'
 	@echo
@@ -202,10 +202,24 @@ json_ready() {
 
 endef
 
-# Deletes assets that containers may own (crops belong to DLSPS UID 1999).
-define as_root
-$(ASSET_COMPOSE) run --rm --no-deps --user 0:0 --entrypoint /bin/sh \
-  -v "$$ASSET_ROOT:/assets" model-downloader -ec
+# Deletes asset paths relative to ASSET_ROOT. Files owned by containers (crops
+# belong to DLSPS UID 1999) need root, so they are removed in a container from
+# an image already on this machine. Cleaning never downloads an image; without
+# one it warns with the sudo command and carries on.
+define remove_assets
+if ! rm -rf -- $(addprefix "$$ASSET_ROOT"/,$(1)) 2>/dev/null; then
+  removed=
+  for image in $$($(ASSET_COMPOSE) --profile assets config --images | sort -u); do
+    docker image inspect "$$image" >/dev/null 2>&1 || continue
+    docker run --rm --network none --user 0:0 --entrypoint /bin/sh -v "$$ASSET_ROOT:/assets" \
+      "$$image" -c 'rm -rf -- "$$@"' sh $(addprefix /assets/,$(1)) 2>/dev/null && { removed=1; break; }
+  done
+  if [[ ! $$removed ]]; then
+    printf 'Warning: files owned by containers remain and no local image can remove them. Run: sudo rm -rf --' >&2
+    printf ' %q' $(addprefix "$$ASSET_ROOT"/,$(1)) >&2
+    printf '\n' >&2
+  fi
+fi
 endef
 
 define confirm
@@ -320,10 +334,20 @@ tls:
 	fi
 
 # Per-device configuration: detected device groups.
+define set_speech_device
+speech_file="$$ASSET_ROOT/config/speech/tts.env"
+speech_tmp=$$(mktemp "$$speech_file.XXXXXX")
+trap 'rm -f -- "$$speech_tmp"' EXIT
+printf 'TEXT_TO_SPEECH__MODELS__TTS__DEVICE=%s\n' "$(TTS_DEVICE)" > "$$speech_tmp"
+chmod 644 "$$speech_tmp"
+mv -f -- "$$speech_tmp" "$$speech_file"
+endef
+
 setup: tls
 	@mkdir -p "$$ASSET_ROOT/data/backend"
-	install -d -m 2775 "$$ASSET_ROOT/data/dlsps/crops" "$$ASSET_ROOT/data/chatqna/model_cache"
-	BACKEND_CAMERAS=$(if $(DEMO_FEEDS),$(CAMERAS),0) python3 -c 'import json,os; print("services:"); [print("  " + service + ":\n    group_add: !override " + json.dumps(list(dict.fromkeys(os.environ[k] for k in keys)))) for service,keys in {"dlsps":("RENDER_GID","ACCEL_GID","ASSET_GID"), "chatqna":("RENDER_GID","ASSET_GID")}.items()]; d=os.environ["TTS_DEVICE"]; print("  tts:\n    environment:\n      TEXT_TO_SPEECH__MODELS__TTS__DEVICE: " + d + "\n  backend:\n    environment:\n      TTS_DEVICE: " + d + "\n      BACKEND_DEMO_CAMERAS: \"" + os.environ["BACKEND_CAMERAS"] + "\"")' > "$$ASSET_ROOT/config/devices.yaml"
+	install -d -m 2775 "$$ASSET_ROOT/data/dlsps/crops" "$$ASSET_ROOT/data/chatqna/model_cache" "$$ASSET_ROOT/config/speech"
+	BACKEND_CAMERAS=$(if $(DEMO_FEEDS),$(CAMERAS),0) python3 -c 'import json,os; print("services:"); [print("  " + service + ":\n    group_add: !override " + json.dumps(list(dict.fromkeys(os.environ[k] for k in keys)))) for service,keys in {"dlsps":("RENDER_GID","ACCEL_GID","ASSET_GID"), "chatqna":("RENDER_GID","ASSET_GID")}.items()]; print("  backend:\n    environment:\n      BACKEND_DEMO_CAMERAS: \"" + os.environ["BACKEND_CAMERAS"] + "\"")' > "$$ASSET_ROOT/config/devices.yaml"
+	$(set_speech_device)
 
 # ---------------------------------------------------------------- start
 
@@ -450,15 +474,18 @@ stop demo-stop:
 	$(COMPOSE) --profile assets stop
 
 .PHONY: speech-device
-# Move SpeechT5 between GPU and CPU without restarting cameras or the LLM.
-speech-device: preflight setup
+# Move SpeechT5 between GPU and CPU without touching any other service or setup.
+speech-device: preflight
 	@$(readiness)
-	$(build_backend)
-	$(COMPOSE) up -d --no-deps tts backend
+	[[ -f "$$ASSET_ROOT/config/speech/tts.env" ]] || { echo 'Run make up or make demo-up before changing the speech device' >&2; exit 1; }
+	running=$$($(COMPOSE) ps --status running --services)
+	for service in $(APP_SERVICES) backend proxy; do
+	  grep -qxF "$$service" <<< "$$running" || { printf 'Application is not running (%s is stopped or missing); run make up or make demo-up before changing the speech device\n' "$$service" >&2; exit 1; }
+	done
+	$(set_speech_device)
+	$(COMPOSE) up -d --no-deps tts
 	WAIT_SECONDS=$(AI_WAIT_SECONDS) WAIT_CONTAINER=handheld-multi-modal-tts WAIT_HINT="$(MODEL_NOTE)" wait_for "SpeechT5 $(TTS_DEVICE) service" json_ready http://127.0.0.1:8012/v1/model-info device $(TTS_DEVICE)
 	WAIT_SECONDS=$(AI_WAIT_SECONDS) wait_for "SpeechT5 first synthesis" $(speech_warm)
-	$(COMPOSE) restart proxy
-	WAIT_CONTAINER=handheld-multi-modal-backend wait_for "Backend through TLS proxy" curl -skfsS --max-time 5 https://127.0.0.1:8443/api/streams
 	printf 'Speech now runs on the %s\n' "$(TTS_DEVICE)"
 
 # DLSPS must restart with Backend: a failed publisher can retain crop locks.
@@ -481,24 +508,24 @@ down demo-down:
 
 # config/mediamtx.yml is a per-device copy generated by older versions.
 clean: down
-	rm -f "$$ASSET_ROOT/config/devices.yaml" "$$ASSET_ROOT/config/mediamtx.yml"
+	rm -f "$$ASSET_ROOT/config/devices.yaml" "$$ASSET_ROOT/config/mediamtx.yml" "$$ASSET_ROOT/config/speech/tts.env"
 
 clean-demo:
 	$(COMPOSE) rm -sf cam1 cam2
-	$(as_root) 'rm -rf /assets/data/dlsps/demo-video'
+	$(call remove_assets,data/dlsps/demo-video)
 	$(ASSET_COMPOSE) down --remove-orphans
 
 clean-history:
 	@$(call confirm,camera history$(comma) evidence images$(comma) rules$(comma) alerts and mission documents)
 	make --no-print-directory down
-	$(as_root) 'rm -rf /assets/data/backend /assets/data/dlsps/crops'
+	$(call remove_assets,data/backend data/dlsps/crops)
 	$(ASSET_COMPOSE) down --remove-orphans
 	echo 'History deleted. Start again with make up or make demo-up.'
 
 clean-all:
 	@$(call confirm,all history and every downloaded model$(comma) video$(comma) cache and TLS key)
 	$(COMPOSE) --profile assets down --volumes --remove-orphans
-	$(as_root) 'rm -rf /assets/data /assets/config/tls /assets/config/devices.yaml /assets/config/mediamtx.yml'
+	$(call remove_assets,data config/tls config/devices.yaml config/mediamtx.yml config/speech)
 	$(ASSET_COMPOSE) down --volumes --remove-orphans
 	echo 'Removed. Container images remain; make up or make demo-up downloads everything again.'
 
@@ -542,7 +569,7 @@ bundle: preflight
 	  # Release ZIP install: no Git metadata, so skip per-device and runtime files.
 	  tar --transform 's,^\.,handheld-multi-modal,' -cf "$$BUNDLE/source.tar" \
 	    --exclude=./data --exclude=./datasets --exclude=./config/tls \
-	    --exclude=./config/devices.yaml --exclude=./config/mediamtx.yml \
+	    --exclude=./config/devices.yaml --exclude=./config/mediamtx.yml --exclude=./config/speech \
 	    --exclude=./docs/application/evidence --exclude=./.env --exclude=./.demo-assets.lock .
 	fi
 	if [[ "$(IMAGES)" != no ]]; then

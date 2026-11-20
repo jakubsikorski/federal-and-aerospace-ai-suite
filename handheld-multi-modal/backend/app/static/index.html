@@ -3559,7 +3559,7 @@ const resourceGroups = [
   {id: "memory", label: "Memory", ids: ["memory_used_percent"]},
   {id: "gpu", label: "GPU engines", prefix: "gpu_engine_"},
   {id: "npu", label: "NPU", ids: ["npu_utilization_percent"]},
-  {id: "power", label: "Package", ids: ["package_power_w"]},
+  {id: "power", label: "Power", ids: ["package_power_w", "gpu_power_w", "npu_power_w"]},
   {id: "containers", label: "Services", containers: true},
 ];
 const chartColors = ["#99c5f5", "#efc580", "#bdb1ed", "#91c9a5", "#f2a5a5"];
@@ -3728,17 +3728,20 @@ function renderTelemetry() {
     const stale = metrics.filter(metric => metricState(metric) === "stale");
     const candidates = live.length ? live : stale;
     const primary = group.id === "gpu" && candidates.length
-      ? candidates.reduce((highest, metric) => metric.value > highest.value ? metric : highest) : metrics[0];
+      ? candidates.reduce((highest, metric) => metric.value > highest.value ? metric : highest)
+      : group.id === "power" ? candidates[0] || metrics[0] : metrics[0];
     const status = metricState(primary);
     button.dataset.state = status;
     button.setAttribute("aria-pressed", String(state.resource === group.id));
     button.querySelector("span").textContent = group.label;
     const engine = primary.id.match(/^gpu_engine_(.+)_percent$/)?.[1]?.toUpperCase();
+    const powerDomain = {package_power_w: "Package", gpu_power_w: "GPU", npu_power_w: "NPU"}[primary.id];
     button.querySelector("strong").textContent = group.id === "gpu"
       ? status === "unavailable" ? "Unavailable" : formatted(primary) + " " + engine : formatted(primary);
     button.querySelector("small").textContent = group.id === "gpu"
       ? metrics.length + " engines · " + (status === "live" ? (live.length < metrics.length ? "Partial · View" : "View") : titleCase(status))
       : group.id === "memory" && status === "live" && memoryFreeText() ? Math.round(memoryReading("memory_available_bytes") / 1024 ** 3) + " GiB free"
+      : group.id === "power" ? powerDomain + " · " + (status === "live" ? "View" : titleCase(status))
       : status === "live" ? "Live" : titleCase(status);
     button.title = group.id === "memory" && memoryFreeText() ? memoryFreeText() + " GiB (Linux available memory)"
       : group.id === "gpu" ? (status === "live" ? "Highest current engine usage" : "No current engine readings")
@@ -3823,7 +3826,7 @@ function renderChart() {
     if (latest) node("circle", {cx: x(latest.at), cy: y(latest.value), r: 3, fill: color});
   });
   const collecting = histories.every((values) => values.length < 2);
-  const caveat = group.id === "power" ? "Package power, not wall power." : "";
+  const caveat = group.id === "power" ? "Domains may overlap: do not sum. Not wall power." : "";
   $("chart-note").textContent = !metrics.length ? "Telemetry unavailable."
     : [collecting ? "Collecting history…" : "5-minute history · gaps mean missing samples", caveat].filter(Boolean).join(" · ");
 }

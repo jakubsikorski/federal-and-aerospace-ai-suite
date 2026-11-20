@@ -24,8 +24,8 @@ scenarios, optimized for Intel® edge hardware. It combines live camera analytic
 evidence search, mission documents, rule-based alerts, and voice interaction in a
 single browser UI that runs entirely on the device.
 
-The Handheld Multi-Modal application is built from unmodified Open Edge Platform
-`release-2026.2.0` microservices, open source media and messaging components, and an
+The Handheld Multi-Modal application is built from published container images from Open Edge Platform,
+open source media and messaging components, and an
 application Backend with a browser UI. Video analytics run on the NPU, the language and
 speech-to-text models run on the GPU, and text-to-speech runs on the CPU. Models and
 dependencies are downloaded from the Internet on the first start. After that, all
@@ -77,19 +77,22 @@ an interactive architecture page at `/architecture.html`.
 
 | Service | Image | Role |
 |---------|-------|------|
-| DL Streamer Pipeline Server | `intel/dlstreamer-pipeline-server:2026.2.0-ubuntu24` | Detection, tracking, annotated WebRTC, MQTT events, evidence crops |
-| Chat Q&A Core | `intel/chatqna:core_gpu_2026.2.0` | Mission documents and assistant answers |
-| Audio Analyzer | `intel/audio-analyzer:2026.2.0` | Speech-to-text (Whisper-medium, GPU) |
-| Text To Speech | `intel/text-to-speech:2026.2.0` | Spoken alerts and answers (SpeechT5) |
-| Alert Agent | `intel/alert-agent-service:2026.2.0` | Rule-mode alert dispatch, no LLM in the alert path |
-| Metrics Manager | `intel/metrics-manager:2026.2.0` | Hardware telemetry |
-| Model Download | `intel/model-download:2026.2.0` | Prepares the YOLO26s OpenVINO™ IR on the first start |
+| DL Streamer Pipeline Server | `intel/dlstreamer-pipeline-server` | Detection, tracking, annotated WebRTC, MQTT events, evidence crops |
+| Chat Q&A Core | `intel/chatqna` (OpenVINO runtime) | Mission documents and assistant answers |
+| Audio Analyzer | `intel/audio-analyzer` | Speech-to-text (Whisper-medium, GPU) |
+| Text To Speech | `intel/text-to-speech` | Spoken alerts and answers (SpeechT5) |
+| Alert Agent | `intel/alert-agent-service` | Rule-mode alert dispatch, no LLM in the alert path |
+| Metrics Manager | `intel/metrics-manager` | Hardware telemetry |
+| Model Download | `intel/model-download` | Prepares the YOLO26s OpenVINO™ IR on the first start |
 | MediaMTX | `bluenviron/mediamtx:1.21.3` | RTSP input, WHIP/WHEP relay |
 | Coturn | `coturn/coturn:4.18.0-alpine` | Loopback-only TURN relay for tunnelled browsers |
 | Mosquitto | `eclipse-mosquitto:2.0.22` | MQTT between the pipeline server and the Backend |
 | NGINX | `nginx:1.30.6-alpine` | TLS reverse proxy on `127.0.0.1:8443` |
 | FFmpeg | `bluenviron/mediamtx:1.21.3-ffmpeg` | Demo camera publishers only |
 | Backend and UI | `handheld/backend:dev` (built locally) | Application logic; calls stock microservice APIs only |
+
+Open Edge Platform services use unmodified published container images. Exact image tags are pinned in
+[`compose/handheld-multi-modal.yaml`](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/blob/main/handheld-multi-modal/compose/handheld-multi-modal.yaml).
 
 Model sources and licenses are listed in
 [third-party-components.spdx](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/blob/release-2026.3.0/handheld-multi-modal/third-party-components.spdx).

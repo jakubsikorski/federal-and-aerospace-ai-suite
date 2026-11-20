@@ -23,7 +23,7 @@ import xml.etree.ElementTree as ET  # nosec B405
 REPO = Path(__file__).resolve().parents[1]
 REQUEST = json.loads((REPO / "config/model-download/yolo26s.json").read_text())
 MODEL = REQUEST["models"][0]["name"]
-IMAGE = "intel/model-download:2026.2.0@sha256:8894c3d624e949e79d54557b834a11a90bc3673a98de820a0297f3328b91cc95"
+IMAGE = "intel/model-download:2026.3.0-rc1@sha256:76d252106b15150fa1aced5fd3af1b0126f474b5546e37dd6a2d98838e45d177"
 SOURCE = "c2cdea0ef9b137986b14e6bbeebcb80dbde4c0e9"
 EXPORT_SCRIPT = "4d22f42ffe1df79800dc2ef1749f7e37f3d47bf1"
 VIDEO_URL = f"https://raw.githubusercontent.com/open-edge-platform/edge-ai-libraries/{SOURCE}/microservices/dlstreamer-pipeline-server/resources/videos/classroom.avi"

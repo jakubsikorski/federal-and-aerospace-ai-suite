@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # DL Streamer Pipeline Server Crop Callbacks
 
-These scripts are `gvapython` callbacks for the stock DL Streamer Pipeline Server image. They
+These scripts are `gvapython` callbacks for the published DL Streamer Pipeline Server container image. They
 add no GStreamer plugin, model or service.
 
 - `crop_candidates.py` — the producer. It runs in every shipped pipeline, saves contextual

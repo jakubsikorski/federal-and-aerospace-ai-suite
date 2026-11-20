@@ -7,8 +7,8 @@ description: Use when configuring the stock Open Edge Platform Audio Analyzer (W
 
 # Audio Analyzer
 
-Image `intel/audio-analyzer:2026.2.0`, source `edge-ai-libraries`
-(release-2026.2.0). Compose service `audio-analyzer`; host
+Published container image `intel/audio-analyzer` (tag pinned in `compose/handheld-multi-modal.yaml`),
+source `edge-ai-libraries`. Compose service `audio-analyzer`; host
 `127.0.0.1:8011` maps to container port `8010`.
 
 ## Configuration

@@ -7,8 +7,8 @@ description: Use when reading or extending handheld resource telemetry from the 
 
 # Metrics Manager
 
-Image `intel/metrics-manager:2026.2.0`, source `edge-ai-libraries`
-`microservices/metrics-manager/` (release-2026.2.0). Compose service
+Published container image `intel/metrics-manager` (tag pinned in `compose/handheld-multi-modal.yaml`),
+source `edge-ai-libraries/microservices/metrics-manager/`. Compose service
 `metrics`; host ports `127.0.0.1:9090` (API), `9273` (Prometheus export) and
 `8186` (custom metrics input).
 
@@ -36,25 +36,27 @@ Image `intel/metrics-manager:2026.2.0`, source `edge-ai-libraries`
 ## Metrics
 
 - CPU: `cpu_usage_user`, `cpu_usage_system`, `cpu_usage_idle` (%, aggregate).
-  `cpu_frequency_avg_frequency` is kHz.
+  `cpu_frequency_avg_frequency_hz` is Hz (displayed as MHz).
 - Memory: `mem_used_percent`, `mem_available_percent` (%), `mem_total`,
   `mem_used` (bytes). CPU package temperature: `temp_temp` (°C).
 - GPU: `gpu_engine_usage_usage` (%) labelled by engine;
-  `gpu_frequency{type="cur_freq"}` (MHz);
-  `gpu_power{type="gpu_cur_power"}` and `{type="pkg_cur_power"}` (W).
-  Some collector versions add a `_value` suffix; `backend/app/telemetry.py`
-  accepts both.
+  `gpu_frequency_cur_freq_hz{type="cur_freq"}` (Hz, displayed as MHz);
+  `gpu_power_power_w{type="gpu_cur_power"}` (W).
   There is no GPU memory utilization series and no `gpu_usage_percent`.
-- NPU: `npu_utilization` (%), `npu_power` (W), `npu_temperature` (°C),
-  `npu_memory_mb` (actually MiB; `-1` means unavailable). Utilization can
-  read 0 when the driver does not expose NPU busy time.
+- NPU: `npu_utilization` (%), `npu_power_w` (W), `npu_temperature_c` (°C),
+  `npu_frequency_hz` (Hz), `npu_bandwidth_bytes_per_second` (bytes/s), and
+  `npu_memory_bytes` (displayed as MiB; negative readings are unavailable).
+  Utilization can read 0 when the driver does not expose NPU busy time.
+- Package power: `powerstat_package_current_power_consumption_watts{package_id="0"}`
+  (W), with `rapl_power_power_w{domain="package-0"}` when `ENABLE_RAPL=true`
+  as an alternative.
+  These measure the same package domain; the Backend selects one, never their sum.
 - Containers: `docker_container_cpu_usage_percent{cpu="cpu-total"}` (100 =
   one core), `docker_container_mem_usage`, `docker_container_mem_limit`
   (bytes), `docker_container_mem_usage_percent`, and `docker_n_cpus`, which
   the Backend divides by to show a share of the whole machine.
-- There is no CPU-only, battery or total-system power series. `pkg_cur_power`
-  is package power, not CPU power. Do not add overlapping GPU, package and NPU
-  power domains.
+- Package power is not CPU-only or total-system power. Do not add overlapping
+  GPU, package and NPU power domains.
 - Keep missing, stale, unsupported, sentinel and real-zero values distinct;
   never synthesize a value.
 
