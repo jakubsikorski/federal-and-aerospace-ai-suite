@@ -59,76 +59,45 @@ Design rules, from [AGENTS.md](../../../AGENTS.md):
 | Compute busy | > 70 % under sustained load | "Is the hardware doing work, or idling while I wait?" | Host CPU utilization averaged over a sustained-load window. | A (existing Resources tab) |
 | Memory headroom | < 80 % at peak | "Am I close to running out of memory?" | Peak host RAM vs. capacity over the rolling window. | A |
 
-### How the KPIs map to industry standards
+### Industry standards behind the KPIs
 
-The seven operator KPIs above are end-to-end roll-ups written in the
-operator's words. They are **not** named industry standards; each is built from
-standard components so it can be explained, reproduced, and drilled into. The
-standard layer sits underneath, per service:
+The seven operator KPIs are plain-words roll-ups, not named standards. Each is
+built from standard signals so it can be explained and drilled into:
 
-| Layer | Standard | Signals | Role here |
-| --- | --- | --- | --- |
-| Request flow | RED (Rate, Errors, Duration) and the Google SRE golden signals (latency, traffic, errors, saturation) | Request rate, error rate, latency p50/p95 | Per-service health tile |
-| Resources | USE (Utilization, Saturation, Errors) | Compute busy, memory headroom, queue wait, in-flight requests | Resources tab, plus saturation per service |
-| Domain | Serving conventions (OpenTelemetry GenAI, vLLM, MLPerf, speech RTF/RTFx) | TTFT, TPOT, decode tokens/s, RTF, time to first audio, FPS, dropped frames | Detail rows and the stage breakdowns |
-
-| Operator KPI | Built from standard parts |
+| Operator KPI | Standard parts |
 | --- | --- |
-| Time to spoken answer | ASR final-transcript latency + LLM TTFT (queue + retrieval + prefill) + TTS time to first audio, plus the silence wait |
-| Time to alert | Pipeline latency (decode → detection) + alert-rule and dispatch time |
+| Time to spoken answer | ASR latency + LLM time to first token (TTFT) + TTS time to first audio, plus the silence wait |
+| Time to alert | Pipeline latency (decode → detection) + rule and dispatch time |
 | Smooth cameras | Processed FPS vs. source FPS + dropped-frame ratio |
-| Answer speed | LLM decode speed = 1 / TPOT |
-| Compute busy, Memory headroom | USE utilization and saturation |
-| Time to ready | Readiness: every required service passes its health check and the first live frame is shown |
+| Answer speed | Decode tokens/s (1 / time per output token) |
+| Compute busy, Memory headroom | USE method: utilization and saturation |
+| Time to ready | Every required service passes its health check, then first live frame |
 
-Standard signals the plan did not previously carry, now part of the design.
-Per-service values come from each service's own `/metrics` through Metrics
-Manager (Section 3); the Backend does not compute them:
+Per service, show the same few signals (RED: rate, errors, duration; plus
+saturation from the Google SRE golden signals): requests, error rate, latency
+p50/p95, and queue wait or in-flight count. Latency of failed requests is kept
+apart from successful ones. Domain signals sit on top: TTFT and decode
+tokens/s for the LLM, real-time factor (RTF) for ASR and TTS, FPS and drops for
+video.
 
-- **Error rate and availability** per service: failed ÷ total requests, with
-  outcomes `ok`, `error`, `timeout`. Shown on the service tile.
-- **Saturation:** queue wait and in-flight requests per service. Services
-  serialize generation behind locks, so without queue wait, queueing shows up
-  as a slow model.
-- **Success and failure latency kept apart.** Fast errors must not improve the
-  latency shown.
-- **Readiness defined.** "Ready" means each required service's health check
-  passes, not that its container started.
+### Per-service tiles
 
-OpenTelemetry names to follow in Phase B: `http.server.request.duration`
-(stable histogram, seconds; its count and `error.type`/status give rate and
-errors), `gen_ai.server.time_to_first_token` and
-`gen_ai.server.time_per_output_token` (development status). In-flight
-(`http.server.active_requests`) is still opt-in, so request it as an
-extension. TPOT is `(end-to-end − TTFT) ÷ (output tokens − 1)` and is undefined
-for single-token answers.
+One tile per service, one plain-words number. Reference values are starting
+guidance from datacenter-class sources, **not evaluated** by this plan (no
+pass/fail on these tiles); a later CI or test gate can adopt them. Calibrate on
+the device first.
 
-### Per-service KPI set
+| Service | Tile says | Standard name | Reference value |
+| --- | --- | --- | --- |
+| Chat Q&A | "First words in 0.8 s" | TTFT p95 | < 2 s |
+| Audio Analyzer | "Speech heard 2× faster than real time" | RTFx (RTF = 1 / RTFx) | > 1, aim ≥ 2 |
+| Text To Speech | "Voice ready in 0.4 s" | Time to first audio; RTF | RTF < 1.0 |
+| DL Streamer | "Camera 1: 29.8 of 30 fps" | Processed vs. source FPS; dropped % | ≥ 90 % of source; < 10 % dropped |
+| Alert Agent | "Alert delivered in 190 ms" | Detection → dispatch p95 | < 400 ms |
 
-The reference values are starting guidance, not standards, and **are not
-evaluated**: the Panel shows measured values only, with no pass/fail status for
-these per-service KPIs. They are recorded so a later CI or automated-test
-gate can adopt them. Published figures come from datacenter or server
-hardware, so calibrate them on the target device first. Detail items live in
-the drill-down, not on the tile.
-
-| Service | Tile headline (plain words) | Standard name | Reference value (not evaluated) | Detail (drill-down) |
-| --- | --- | --- | --- | --- |
-| Chat Q&A (LLM) | "First words in 0.8 s" | TTFT p95 | < 2 s (≤ 1 s well tuned) | Decode tokens/s (≥ 15), TPOT, queue wait, retrieval and rerank time, input/output tokens, error rate |
-| Audio Analyzer (ASR) | "Speech heard 2× faster than real time" | RTFx (audio s ÷ processing s); RTF = 1 / RTFx | RTFx > 1, aim ≥ 2 | Time to final transcript p95, queue wait, error rate. WER only in offline benchmark runs, never a live tile |
-| Text To Speech | "Voice ready in 0.4 s" | Time to first audio p95; RTF | RTF < 1.0 | Generation time, queue wait, error rate |
-| DL Streamer Pipeline Server | "Camera 1: 29.8 of 30 fps" | Processed FPS vs. source FPS; dropped-frame ratio | ≥ 90 % of source FPS; < 10 % dropped | Pipeline latency p95, pipeline state and errors |
-| Alert Agent | "Alert delivered in 190 ms" | Detection → dispatch latency p95; delivery error rate | < 400 ms (shared with time to alert) | Queue depth, delivery errors |
-| Every service | "● Ready" / "! Down" | Availability; time to ready | Health check passing; < 5 min | Compute busy (> 70 % under load), memory headroom (< 80 % at peak) |
-
-Notes on definitions:
-
-- ASR quality (WER) depends on the model and test audio, not the running
-  system, so it is measured offline and recorded in saved results.
-- Chunk size and look-ahead trade ASR latency against accuracy. Treat the
-  chosen operating point as a setting, not a KPI to maximize.
-- DL Streamer, Alert Agent, and all handheld thresholds above are conventional
-  practice, not verified standards. No target hardware is available yet.
+Errors, queue wait, and p99 go in each tile's detail line. p99 appears only
+with at least 100 samples. WER (ASR accuracy) is an offline benchmark value, not
+a live tile.
 
 ### Measurement rules
 
@@ -185,8 +154,8 @@ Platform service is modified.
 | A6. Collector, `GET /api/performance`, `performance` SSE event, marks endpoint | Implemented | `backend/app/performance.py`, `backend/app/main.py` |
 | Panel: video badge, answer footer, alert tooltip, Resources \| Performance tab | Implemented | `backend/app/static/index.html` |
 | A4. Deployment time to ready | Deferred | — |
-| `/metrics` Prometheus export, measurement runs, `make perf`, saved scorecards | Deferred | — |
-| Expanded Performance view, model-strip chips, header "Ready in" | Deferred | — |
+| Backend `/metrics` export, measurement runs, `make perf`, saved scorecards | Not planned here | — |
+| Expanded Performance view, model-strip chips, header "Ready in" | Later | — |
 | Browser `alert_shown` marks, WebRTC rendered FPS and frozen frames | Deferred | — |
 | Backend-side ASR/TTS stage timings and real-time factor | Deferred (browser stages cover the UX need; exact values come from B2/B3) | — |
 
@@ -358,28 +327,37 @@ against the previous tag (`v2026.2.0-rc3`); changes are listed under
 **New in this release**. None of the requested values below is exposed yet.
 Confirm against the released image source before implementation.
 
+### Minimum request (ask for this first)
+
+Keep the upstream ask small. Each service needs only these, exposed on
+`GET /metrics` (Prometheus text, internal port) for Metrics Manager to scrape:
+
+| Service | Minimum set |
+| --- | --- |
+| Chat Q&A | Queue wait, time to first token, output tokens and decode time (gives tokens/s), request duration, requests by `outcome`, in-flight |
+| Audio Analyzer | Request duration, audio duration (gives RTFx), requests by `outcome`, in-flight |
+| Text To Speech | Request duration, time to first audio, audio duration (gives RTF), requests by `outcome`, in-flight |
+
+Everything else listed under B1–B3 (retrieval and rerank time, TPOT, headers,
+per-request JSON, model-info fields, load and warmup durations, INT4 option) is
+an optional extra: useful, but not required for the Panel tiles. Derived
+values (TPOT, tokens/s, RTF) are computed from the minimum set when not
+supplied.
+
 ### Common contract for all services
 
-So the Handheld Backend (and any other consumer) can integrate every service
-the same way:
+Same shape for every service, so consumers integrate once:
 
-1. **Backward compatible.** Existing request/response shapes stay unchanged;
-   new data is additive or opt-in.
-2. **Per-request data** in the response: a JSON field for JSON responses,
-   `Server-Timing` plus explicit headers for binary responses, or a final
-   metadata event for streams.
-3. **Aggregates** on `GET /metrics` (Prometheus text format, internal port),
-   using histograms for durations in seconds, counters for totals, and gauges
-   for in-flight requests.
-4. **Bounded labels only:** `model`, `device`, `precision`, `outcome`. Never
+1. **Backward compatible.** Existing responses stay unchanged; new data is
+   additive or opt-in.
+2. **Durations in seconds as histograms**, totals as counters, in-flight as a
+   gauge, on `GET /metrics`.
+3. **Bounded labels only:** `model`, `device`, `precision`, `outcome`. Never
    request IDs, text, filenames, or session IDs.
-5. **`<service>_info` gauge** (value 1) and `/model` or `/v1/model-info`
-   fields carrying model ID, revision, runtime, device, **requested** precision,
-   and **verified** precision (read from the loaded model), reported
-   separately.
-6. **Queue wait** measured from before lock/semaphore acquisition to after it.
-7. **Model load and warmup durations** recorded at startup and reported
-   separately.
+4. **Queue wait** measured from before lock acquisition to after it, so
+   queueing is not mistaken for slow inference.
+5. **Requested vs. verified precision** reported separately where a service
+   reports its model.
 
 ### B1. Chat Q&A Core — exact LLM token metrics (highest priority)
 
@@ -696,6 +674,9 @@ histogram handling or re-aggregation belongs, not the Backend.
    beside it. No pass/fail judgement is shown for per-service tiles.
    Histograms, p99, queue, and token-level values stay in the detail view.
    Validate the wording with operators.
+8. **Nothing to configure, nothing to learn.** The default view is the tiles
+   only. Operators never pick metrics, windows, or percentiles. A tile that has
+   no data says so in words, and every number has its unit.
 
 ### Placement map
 
@@ -773,34 +754,12 @@ Items 3–6 are implemented; items 1–2 are deferred.
    tooltips define each value; the Spoken answer tooltip lists typical stage
    times. Sparklines are deferred. Compute busy % stays on the Resources tab.
 
-### Expanded Performance view (deferred)
+### Later (not planned here)
 
-The existing **Expand** button opens a full-height view with four tabs:
-
-- **Overview:** all KPIs in one table — last, p95, samples, target, status,
-  source (Handheld / service), and a one-line "what this means". The header
-  shows "Ready in" and the measurement window.
-- **Video:** one row per camera — health, source/ingress/processed FPS, drop
-  rate, time to alert p50/p95, stage bar (pipeline, delivery, rule, dispatch),
-  and viewing delay.
-- **Voice and assistant:** stacked stage bars for the last 20 turns; slowest
-  stage highlighted; failures and blocked playback counted.
-- **Hardware and services:** existing resource trends plus per-service CPU and
-  RAM beside each service's latency, so a slow stage can be matched to a busy
-  service or device.
-
-### Measurement runs in the Panel (deferred)
-
-The expanded view has a **Run measurement** control with fixed profiles:
-"Voice: 10 scripted questions", "Video: N cameras for M minutes", and
-"Mixed load". Runs use recorded audio and looped reference video, so they are
-repeatable without a person in the loop. A banner shows progress and a Stop
-button; live tiles keep working.
-
-The result is a saved scorecard with the environment record, every KPI against
-its target, and Pass / Miss / Approximate / Not measured / Unsupported per row.
-Results can be compared side by side (for example NPU vs. GPU detector) and
-downloaded as JSON. A saved pass is never shown as a live green status.
+Expanded multi-tab Performance view, model-strip chips, header "Ready in",
+sparklines, and scripted measurement runs with saved scorecards are possible
+follow-ups. They are not part of this plan, and none of them introduces
+pass/fail gating.
 
 ## 5. Delivery steps
 
@@ -814,12 +773,11 @@ downloaded as JSON. A saved pass is never shown as a live green status.
 | A5. LLM approx | Words/s and first-words time | Done |
 | A6. Panel UI | Badge, answer footer, alert tooltip, Performance tab | Done; model chips, header, expanded view deferred |
 | A7. Deployment time to ready | Make start marker and ready mark | Deferred |
-| A8. Measurement runs | Profiles, saved scorecards, comparison, `make perf` | Deferred |
 | **Phase B** | | |
 | B0. Hand-off | Section 3 filed as requests to each service team | Ready to file |
-| B1. Chat Q&A | Exact tokens, TTFT/TPOT, RAG timings, `/metrics`, INT4 option | Upstream release |
-| B2–B3. ASR, TTS | Stage timings, headers, `/metrics`, verified precision | Upstream release |
-| B4–B5. DLSPS, Alert Agent | Optional improvements | Upstream release |
+| B1. Chat Q&A | Minimum set above (exact tokens, TTFT, queue wait, `/metrics`) | Upstream release |
+| B2–B3. ASR, TTS | Minimum set above (durations, audio length, `/metrics`) | Upstream release |
+| B4–B5. DLSPS, Alert Agent | Optional; not needed for the tiles | Upstream release |
 | B6. Adopt | Pin new images; enable the service scrape in Metrics Manager; the Backend reads the new series when present and keeps the Phase A values otherwise | Each upstream release |
 
 Phase B never blocks Phase A; the Panel shows "~" approximate values or
@@ -845,8 +803,8 @@ Implemented, in the existing targets (`make test-all`):
   acknowledgement, renders the footer and stages, and posts one valid mark;
   typed questions show first words.
 
-Still to add with the deferred items: `/metrics`, time to ready, measurement
-runs, and stale-state handling for the Performance tab.
+Still to add: reading the new service series, time to ready, and stale-state
+handling for the Performance tab.
 
 ## References
 
