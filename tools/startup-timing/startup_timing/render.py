@@ -6,7 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import config as configuration
-from .report import SKIPPED, facts, leaders, timeline
+from .report import SKIPPED, facts, timeline
+from .services import analyse, parallel, strip
 
 BAR = 20
 
@@ -80,34 +81,59 @@ def duration(step):
 
 
 def section(cfg, step):
-    text = configuration.group_title(cfg, step["group"])
-    if step.get("service"):
-        text += f" / {configuration.service_title(cfg, step['service'])}"
-    return text
+    return configuration.service_title(cfg, step["service"]) if step.get("service") \
+        else configuration.group_title(cfg, step["group"])
 
 
-def headline(report, info):
+def parts_text(row, count=3):
+    return "; ".join(f"{cell(title(p))} {seconds(p['seconds'])}" for p in row["parts"][:count])
+
+
+def why(rows, total):
+    """Plain sentences answering 'what took so long?'."""
+    named = [r for r in rows if r["service"] and r["busy"]]
+    if not named or not total:
+        return []
+    top = named[0]
+    sentence = (f"**{cell(top['name'])}** was busy longest: {seconds(top['busy'])}"
+                f"{share(top['busy'], total, ' ({} of the run)')}")
+    if top["parts"]:
+        sentence += f", mostly on {parts_text(top, 2)}"
+    lines = [sentence + "."]
+    if len(named) > 1 and parallel(rows, total):
+        second = named[1]
+        lines.append(f"**{cell(second['name'])}** ran at the same time for {seconds(second['busy'])}"
+                     + (f" ({parts_text(second, 1)})" if second["parts"] else "")
+                     + ". Services ran in parallel, so their times add up to more than the run.")
+    return lines
+
+
+def headline(report, info, rows):
     total, steps = report["overall_seconds"], report["steps"]
     ok = report["status"] == "ok"
     result = (f"Succeeded in **{seconds(total)}**" if ok else
               f"**FAILED** (exit {report.get('returncode')}) after **{seconds(total)}**")
-    lines = [f"**Result:** {result}  "]
-    slow = info["slowest"]
-    if slow:
-        lines.append(f"**Slowest step:** {cell(title(slow))}, {seconds(slow['seconds'])}"
-                     + share(slow["seconds"], total, " ({} of the total)") + "  ")
-    if info["temperature"] == "cold":
-        lines.append("**Run type:** cold, no step was served from cache  ")
-    elif info["temperature"] != "unknown":
-        lines.append(f"**Run type:** {info['temperature']}, {info['skipped']} of "
-                     f"{info['total_steps']} steps cached or already running  ")
-    counts = info["counts"]
-    parts = [f"{counts[k]} {k}" for k in ("ok", "failed", "cached", "reused", "unavailable") if counts.get(k)]
-    if steps:
-        lines.append(f"**Steps:** {', '.join(parts)}  ")
+    lines = [f"**Result:** {result}"
+             + ("" if info["temperature"] == "unknown" else
+                f" ({'cold run, nothing cached' if info['temperature'] == 'cold' else info['temperature'] + ': ' + str(info['skipped']) + ' of ' + str(info['total_steps']) + ' steps cached or already running'})"),
+             ""]
+    lines += [*why(rows, total), ""] if why(rows, total) else []
     started = datetime.fromisoformat(report["started_at"].replace("Z", "+00:00"))
-    lines.append(f"**Started:** {started.astimezone(timezone.utc):%d %b %Y, %H:%M:%S} UTC")
+    lines.append(f"Started {started.astimezone(timezone.utc):%d %b %Y, %H:%M:%S} UTC")
     return lines
+
+
+def services_table(rows, total):
+    out = ["| Service | Busy | Of run | When (run start → end) | Main work |", "|---|---:|---:|---|---|"]
+    for row in (r for r in rows if r["busy"] is not None or r["failed"]):
+        busy = "-" if row["busy"] is None else seconds(row["busy"])
+        mark = " ⚠ failed" if row["failed"] else ""
+        out.append(f"| {cell(row['name'])}{mark} | {busy} | {percent(row['busy'], total) or '-'} "
+                   f"| `{strip(row, total)}` | {parts_text(row) or ('cached' if row['cached'] else '-')} |")
+    idle = [r["name"] for r in rows if r["busy"] is None and not r["failed"]]
+    if idle:
+        out += ["", "Nothing to time (cached, already running or not started): " + ", ".join(cell(n) for n in idle) + "."]
+    return out
 
 
 def nothing_measured(report):
@@ -122,20 +148,20 @@ def nothing_measured(report):
 
 def timeline_table(report, cfg):
     total = report["overall_seconds"]
-    show_bar = total and total > 0
-    rows = ["| Start | Step | Section | Time | Status | Share of run |", "|---:|---|---|---:|---|---|"]
+    rows = ["| Start | Step | Service | Time | Status | Position in run |", "|---:|---|---|---:|---|---|"]
     for depth, step in timeline(report["steps"]):
-        name = ("  " * depth + ("↳ " if depth else "") + cell(title(step))
+        if step["status"] in SKIPPED:
+            continue  # listed in one line below the table
+        name = ("&nbsp;&nbsp;" * depth + ("↳ " if depth else "") + cell(title(step))
                 + (" †" if step["background"] else ""))
         graphic = ""
-        if show_bar and step["seconds"] is not None and step["status"] not in SKIPPED:
-            graphic = f"`{bar(step['offset'], step['seconds'], total)}` {percent(step['seconds'], total)}"
+        if total and step["seconds"] is not None:
+            graphic = f"`{bar(step['offset'], step['seconds'], total)}`"
         rows.append(f"| {offset(step['offset'])} | {name} | {cell(section(cfg, step))} | {duration(step)} "
                     f"| {status_text(step)} | {graphic} |")
     idle = report.get("idle_seconds")
     if idle is not None and not nothing_measured(report):
-        rows.append(f"| | *Unmeasured / idle* | | {seconds(idle)} | | {percent(idle, total)} |")
-    rows.append(f"| | **Total** | | **{seconds(total)}** | | |")
+        rows.append(f"| | *Time with no step running* | | {seconds(idle)} | | |")
     return rows
 
 
@@ -179,21 +205,26 @@ def gantt(report, cfg):
 
 def markdown(report, cfg=None, explain_more=False, with_gantt=False):
     cfg, info, total = cfg or {}, facts(report), report["overall_seconds"]
-    lines = [f"# Startup timing report: {cell(report['name'])}", "", *headline(report, info), "",
-             "## Timeline", "", *timeline_table(report, cfg), ""]
-    notes = ["Indented rows are part of the step above them."]
-    if report.get("overlap_seconds", 0) >= 0.1:
-        notes.append("Some steps ran in parallel, so their times add up to more than the run.")
-    if any(s["background"] for s in report["steps"]):
-        notes.append("† read from a service log; it runs in the background and is not counted as idle.")
-    notes.append("Unavailable means no duration could be measured; it does not mean zero.")
-    lines += [" ".join(notes), ""]
+    rows = analyse(report, cfg)
+    lines = [f"# Startup timing report: {cell(report['name'])}", "", *headline(report, info, rows), ""]
     if nothing_measured(report):
         lines += [nothing_measured(report), ""]
-    top = leaders(report)
-    lines += ["## Slowest 5" if len(top) >= 5 else f"## Slowest {len(top)}", ""] if top else []
-    lines += [f"{i}. {cell(title(s))}: {seconds(s['seconds'])}" + share(s["seconds"], total, " ({})")
-              for i, s in enumerate(top, 1)]
+    elif rows:
+        lines += ["## Time by service", "", *services_table(rows, total), "",
+                  "*Busy* is the time the service had a step running; the strip shows when."
+                  + (" Services run in parallel, so *Of run* adds up to more than 100%." if parallel(rows, total) else ""),
+                  ""]
+    skipped = [s for s in report["steps"] if s["status"] in SKIPPED]
+    lines += ["<details>", f"<summary>All {len(report['steps']) - len(skipped)} timed steps</summary>", "",
+              *timeline_table(report, cfg), ""]
+    notes = ["Indented rows are part of the step above them."]
+    if any(s["background"] for s in report["steps"]):
+        notes.append("† read from a service log; it runs in the background.")
+    notes.append("Unavailable means no duration could be measured; it does not mean zero.")
+    lines += [" ".join(notes), ""]
+    if skipped:
+        lines += [f"Cached or already running ({len(skipped)}): " + ", ".join(cell(title(s)) for s in skipped), ""]
+    lines += ["</details>"]
     if report["warnings"]:
         lines += ["", "## Notes", "", *(f"- {cell(w)}" for w in report["warnings"])]
     if explain_more:
@@ -214,22 +245,23 @@ def previous_run(directory):
     return older[-1] if older else None
 
 
-def console(report, path):
-    """About ten lines for the end of a run."""
+def console(report, path, cfg=None):
+    """About ten lines for the end of a run: which service spent the time, and on what."""
     info, total = facts(report), report["overall_seconds"]
+    rows = [r for r in analyse(report, cfg or {}) if r["busy"]]
     ok = report["status"] == "ok"
     lines = ["", f"Startup timing: {'succeeded' if ok else 'FAILED (exit %s)' % report.get('returncode')}"
              f" in {seconds(total)}"
              + (f" ({info['temperature']}: {info['skipped']}/{info['total_steps']} steps cached)"
                 if info["temperature"] not in ("unknown", "cold") else " (cold)" if info["total_steps"] else "")]
-    for step in leaders(report, 3):
-        lines.append(f"  {seconds(step['seconds']):>10}  {percent(step['seconds'], total):>4}  {title(step)}")
-    if report.get("overlap_seconds", 0) >= 0.1:
-        lines.append("  (steps ran in parallel, so shares can add up to more than 100%)")
+    width = max([len(r["name"]) for r in rows[:5]] + [1])
+    for row in rows[:5]:
+        main = f"  {cell(title(row['parts'][0]))} {seconds(row['parts'][0]['seconds'])}" if row["parts"] else ""
+        lines.append(f"  {row['name']:<{width}}  {seconds(row['busy']):>9}  {percent(row['busy'], total):>4}{main}")
+    if parallel(rows, total):
+        lines.append("  (services ran in parallel, so shares can add up to more than 100%)")
     if nothing_measured(report):
         lines.append(f"  {nothing_measured(report)}")
-    elif report.get("idle_seconds") is not None:
-        lines.append(f"  {seconds(report['idle_seconds']):>10}  {percent(report['idle_seconds'], total):>4}  unmeasured / idle")
     unavailable = info["counts"].get("unavailable", 0)
     if unavailable:
         lines.append(f"  {unavailable} step(s) unavailable (no end recorded)")

@@ -78,15 +78,18 @@ carry a dagger and nest under the tightest recorded step with the same `--servic
 
 ## Explaining a report to a human
 
-Report order: headline, Timeline, Slowest 5 (`--explain` adds per-section totals and descriptions).
+Report order: headline (with two plain sentences naming the busiest service and what it did),
+Time by service, then a collapsed list of all timed steps (`--explain` adds per-section totals).
 
-1. State the headline: result (succeeded or FAILED with exit code), total time, slowest step and its share.
-2. Walk the Timeline top to bottom. Start is the offset from the run start; indented rows are part
-   of the row above; the bar shows where in the run the step sat. Point at the biggest rows.
-3. Explain the last row *Unmeasured / idle*: run time covered by no step (untimed work, waits,
-   polling). A large value means untimed work: suggest wrapping more steps.
-4. Use Slowest 5 for what to optimise first. Rows marked with a dagger are background service work
-   derived from logs.
+1. State the headline: result (succeeded or FAILED with exit code), total time, the busiest service
+   and its main work. Quote the sentence the report already gives.
+2. Walk the Time by service table top to bottom. *Busy* is time with a step running; the strip shows
+   when in the run; *Main work* names the biggest pieces. Shares can exceed 100% because services
+   run in parallel, so say which ran at the same time.
+3. Steps without `--service` land in *Shared setup and orchestration*. If that row is large, tag the
+   steps with the service that owns them. The collapsed list shows time with no step running: a
+   large value means untimed work, so suggest wrapping more steps.
+4. Rows marked with a dagger in the step list are background service work derived from logs.
 5. To compare: `timing.sh compare startup-timings/<named older run> startup-timings/latest` (the
    run's console output prints the exact command; do not infer age from a glob). A cold run against
    a warm one shows "now cached" / "was cached" and a note. When every step was cached, or none

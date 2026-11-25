@@ -36,15 +36,20 @@ shell function through it disables `set -e` inside that function. For a function
 
 ## What the report shows
 
-- **Headline:** result, total time, slowest step, cold or warm run (how many steps were cached or
-  already running), step counts.
-- **Timeline:** one table sorted by start time with start offset, duration, status, a bar showing
-  where in the run each step sat, nested steps indented, and a closing *Unmeasured / idle* row
-  (run time covered by no step) so the rows add up to the total. If steps ran in parallel a note
-  says their times add up to more than the run.
-- **Slowest 5:** the slowest leaf steps.
+- **Headline:** result, total time, cold or warm run, and two plain sentences: which service was
+  busy longest and on what, and which ran at the same time.
+- **Time by service:** one row per service, busiest first: how long it had a step running, its
+  share of the run, a strip showing *when* in the run it was busy, and its largest pieces of
+  work. Steps without `--service` appear as *Shared setup and orchestration*. Services whose
+  steps were all cached are listed in one line. Shares can add up to more than 100% because
+  services run in parallel.
+- **All timed steps** (collapsed): every step by start time, nested steps indented, with the
+  run time that no step covered. Cached steps are listed in one line.
 - A step that never ended is shown as **unavailable**, never as zero. A failed run still writes a
   partial report. Commands, environment variables and output are never stored.
+
+Tag steps with the service that owns them (`timed --service chatqna ...`) to get the service view.
+The console summary at the end of a run shows the top five services.
 
 `--explain` adds per-section totals (sum of step times, and wall time with overlaps merged) and
 service descriptions. `--gantt` adds a Mermaid gantt chart. The full data (ids, parents, offsets,

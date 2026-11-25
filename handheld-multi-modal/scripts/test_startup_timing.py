@@ -69,12 +69,12 @@ sleep 0.1
         self.assertEqual(by_label["Build image"]["service"], "backend")
         self.assertEqual(by_label["Detector model cache"]["status"], "cached")
         self.assertIn("**Result:** Succeeded in", text)
-        self.assertIn("**Slowest step:**", text)
+        self.assertIn("was busy longest", text)
         self.assertIn("partly warm", text)
-        self.assertIn("| Build image | Build / Backend |", text)  # undeclared names are title-cased
+        self.assertIn("| Build image | Backend |", text)  # undeclared names are title-cased
         self.assertIn("↳ Compile", text)
-        self.assertIn("*Unmeasured / idle*", text)
-        self.assertIn("## Slowest", text)
+        self.assertIn("*Time with no step running*", text)
+        self.assertIn("## Time by service", text)
         self.assertNotIn("## Details", text)  # exact-partition maths stay out of the default view
         self.assertLessEqual(len(result.stdout.strip().splitlines()), 12)
         self.assertIn("Report:", result.stdout)
@@ -160,7 +160,7 @@ class TestFixes(unittest.TestCase):
         data = build([step("models", "Model cache", 0, None, "cached")], total=0.1)
         text = render.markdown(data, explain_more=True)
         self.assertIn("All steps were cached", text)
-        self.assertNotIn("Unmeasured / idle", text)
+        self.assertNotIn("Time with no step running", text)
         self.assertIn("| Models | 1 | cached | cached | 1 | 0 |", text)
 
     def test_compare_cold_against_warm(self):
@@ -183,15 +183,14 @@ class TestReport(unittest.TestCase):
         self.assertAlmostEqual(data["overlap_seconds"], 0.0)
         text = render.markdown(data)
         self.assertIn("| +3.0 s | Two | B | 4.0 s | ok |", text)
-        self.assertIn("| | *Unmeasured / idle* | | 4.0 s | | 40% |", text)
-        self.assertIn("| | **Total** | | **10.0 s** | | |", text)
+        self.assertIn("| | *Time with no step running* | | 4.0 s | | |", text)
         self.assertNotIn("parallel", text)
 
     def test_parallel_steps_are_flagged_not_hidden(self):
-        data = build([step("a", "One", 0, 6.0), step("a", "Two", 2.0, 6.0)])
+        data = build([step("a", "One", 0, 6.0, service="a"), step("a", "Two", 2.0, 6.0, service="b")])
         self.assertAlmostEqual(data["overlap_seconds"], 4.0)
         self.assertAlmostEqual(data["idle_seconds"], 2.0)
-        self.assertIn("ran in parallel", render.markdown(data))
+        self.assertIn("run in parallel", render.markdown(data))
 
     def test_nesting_ordering_cold_warm_and_unavailable(self):
         steps = [step("g", "Later", 5.0, 1.0), step("g", "Parent", 0.0, 4.0, id="p"),
@@ -202,12 +201,12 @@ class TestReport(unittest.TestCase):
         text = render.markdown(data)
         rows = [line for line in text.splitlines() if line.startswith("| +")]
         self.assertEqual([r.split("|")[2].strip() for r in rows],
-                         ["Cache hit", "Parent", "↳ Child", "Later", "Lost"])
-        self.assertIn("**Run type:** partly warm, 1 of 5 steps cached", text)
+                         ["Parent", "&nbsp;&nbsp;↳ Child", "Later", "Lost"])
+        self.assertIn("partly warm: 1 of 5 steps cached", text)
         self.assertIn("| Lost | G | unavailable | unavailable |", text)
         self.assertNotIn("Lost: 0", text)
         cold = render.markdown(build([step("g", "A", 0, 1.0)]))
-        self.assertIn("**Run type:** cold", cold)
+        self.assertIn("cold run, nothing cached", cold)
 
     def test_explain_and_gantt_are_opt_in(self):
         data = build([step("model_download", "Fetch", 0, 2.0)])
@@ -220,9 +219,9 @@ class TestReport(unittest.TestCase):
 
     def test_toml_titles_are_optional_polish(self):
         data = build([step("model_download", "Fetch", 0, 2.0, service="chatqna")])
-        self.assertIn("| Model Download / Chatqna |", render.markdown(data))
+        self.assertIn("| Chatqna |", render.markdown(data))
         titled = render.markdown(data, HANDHELD)
-        self.assertIn("| Model downloads / Chat Q&A |", titled)
+        self.assertIn("| Chat Q&A |", titled)
 
     def test_old_format_reports_still_render_and_bad_files_fail_clearly(self):
         old = {"target": "demo-up", "started_at": "2026-11-24T10:00:00Z", "ended_at": "2026-11-24T10:01:00Z",

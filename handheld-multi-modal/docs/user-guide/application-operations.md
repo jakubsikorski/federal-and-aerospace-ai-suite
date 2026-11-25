@@ -91,9 +91,9 @@ Run `make up` or `make demo-up`. When it finishes (also after a failed start), a
 summary is printed with the report path. Open
 `ASSET_ROOT/startup-timings/latest/report.md`.
 
-The report has three parts: a headline (result, total time, slowest step, cold or warm start),
-one timeline table of every step with nested steps indented and an unmeasured/idle row so the
-rows add up to the total, and a Slowest 5 list. Exact measurements are in `report.json`.
+The report answers "what took so long?": a headline sentence naming the service that was busy
+longest and what it spent the time on, a **Time by service** table (busy time, when in the run,
+main work), and a collapsed list of every timed step. Exact measurements are in `report.json`.
 Reports contain no environment values, commands or raw container logs, and live outside
 `data/`; `make clean-all` removes them.
 

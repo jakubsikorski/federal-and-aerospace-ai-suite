@@ -77,7 +77,7 @@ def run(command, name=None, config_path=None, output=None, explain=False, gantt=
                        steps + extra, warnings, clock)
         path = write(directory, report, cfg, explain, gantt)
         link_latest(root, directory)
-        print(render.console(report, path), flush=True)
+        print(render.console(report, path, cfg), flush=True)
     return code
 
 

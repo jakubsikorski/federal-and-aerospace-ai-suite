@@ -106,12 +106,13 @@ define readiness
 $(timing)
 # Optional per call: WAIT_CONTAINER=<name> shows its latest log line, fails at
 # once if it stops, and prints its logs on failure; WAIT_HINT=<text> says what
-# to check when it does not become ready.
+# to check when it does not become ready; WAIT_SERVICE=<id> files the readiness
+# timer under that service in the startup timing report.
 wait_for() {
   local description=$$1
   shift
   local timer
-  timer=$$(timing_begin readiness "$$description")
+  timer=$$(timing_begin $${WAIT_SERVICE:+--service "$$WAIT_SERVICE"} readiness "$$description")
   local container=$${WAIT_CONTAINER:-} hint=$${WAIT_HINT:-}
   local start=$$SECONDS deadline=$$((SECONDS + WAIT_SECONDS)) next=$$((SECONDS + 30)) error="" status
   while ((SECONDS < deadline)); do
@@ -244,7 +245,7 @@ endef
 
 preflight:
 	@$(timing)
-	token=$$(timing_begin setup 'Host prerequisites')
+	token=$$(timing_begin --service shared setup 'Host prerequisites')
 	fail() { echo "preflight: $$*" >&2; exit 1; }
 	command -v docker >/dev/null || fail "docker is required"
 	command -v curl >/dev/null || fail "curl is required"
@@ -268,7 +269,7 @@ preflight:
 # UID 1999 and can be mode 2700 while a producer is active.
 asset-permissions:
 	@$(timing)
-	timed setup 'Asset permissions' $(ASSET_COMPOSE) run --rm --no-deps --user 0:0 --entrypoint /bin/sh \
+	timed --service shared setup 'Asset permissions' $(ASSET_COMPOSE) run --rm --no-deps --user 0:0 --entrypoint /bin/sh \
 	  -e HOST_UID="$$(id -u)" -e HOST_GID="$$(id -g)" \
 	  -v "$$ASSET_ROOT:/assets" model-downloader -ec \
 	  'mkdir -p /assets/data/backend \
@@ -289,8 +290,8 @@ model-downloader-up:
 	@make --no-print-directory asset-permissions
 	@$(readiness)
 	install -d -m 2775 "$$ASSET_ROOT/data/model-download"
-	timed startup 'Start Model Download container' $(ASSET_COMPOSE) up -d --no-deps model-downloader
-	WAIT_SECONDS=$(MODEL_WAIT_SECONDS) WAIT_CONTAINER=handheld-multi-modal-model-downloader-1 WAIT_HINT="$(SETUP_NOTE)" wait_for "Model Download (ultralytics, port 8200)" curl -fsS --max-time 5 http://127.0.0.1:8200/api/v1/health
+	timed --service model-downloader startup 'Start Model Download container' $(ASSET_COMPOSE) up -d --no-deps model-downloader
+	WAIT_SECONDS=$(MODEL_WAIT_SECONDS) WAIT_CONTAINER=handheld-multi-modal-model-downloader-1 WAIT_HINT="$(SETUP_NOTE)" WAIT_SERVICE=model-downloader wait_for "Model Download (ultralytics, port 8200)" curl -fsS --max-time 5 http://127.0.0.1:8200/api/v1/health
 
 # These prerequisites are deliberately sequential, including under make -j.
 .NOTPARALLEL:
@@ -300,7 +301,7 @@ model-downloader-up:
 # question. Runs before anything is pulled.
 licenses:
 	@$(timing)
-	CONFIRM="$(CONFIRM)" timed setup 'Third-party license confirmation' \
+	CONFIRM="$(CONFIRM)" timed --service shared setup 'Third-party license confirmation' \
 	  python3 scripts/license_notice.py $(if $(DEMO_FEEDS),--demo)
 
 container-images:
@@ -314,7 +315,7 @@ detector-model:
 	@$(timing)
 	if python3 scripts/demo_assets.py check-model; then
 	  echo 'YOLO26s INT8 cache verified'
-	  timing_cached model_preparation 'YOLO26s verified cache'
+	  timing_cached --service model-downloader model_preparation 'YOLO26s verified cache'
 	else
 	  code=$$?
 	  [[ $$code == 2 ]] || exit "$$code"
@@ -350,10 +351,10 @@ demo-videos:
 	  codec=(-c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -bf 0 -sc_threshold 0 \
 	         -fpsmax "$$fps" -force_key_frames 'expr:gte(t,n_forced*1)')
 	  if [[ -f "$$video/$$stem.ts" ]]; then
-	    timing_cached video_transformation "$$source"
+	    timing_cached --service demo-cameras video_transformation "$$source"
 	    continue
 	  fi
-	  timed video_transformation "$$source" docker run --rm --user "$$(id -u):$$(id -g)" -v "$$video:/video" --entrypoint ffmpeg bluenviron/mediamtx:1.21.3-ffmpeg \
+	  timed --service demo-cameras video_transformation "$$source" docker run --rm --user "$$(id -u):$$(id -g)" -v "$$video:/video" --entrypoint ffmpeg bluenviron/mediamtx:1.21.3-ffmpeg \
 	    -hide_banner -loglevel warning -y -fflags +genpts -i "/video/$$source" \
 	    -map 0:v:0 "$${codec[@]}" -f mpegts "/video/$$stem.part.ts"
 	  mv "$$video/$$stem.part.ts" "$$video/$$stem.ts"
@@ -362,7 +363,7 @@ demo-videos:
 # Localhost-only profile: the certificate names only loopback identities.
 tls:
 	@$(timing)
-	token=$$(timing_begin setup 'TLS certificate')
+	token=$$(timing_begin --service shared setup 'TLS certificate')
 	if [[ ! -f "$(TLS_DIR)/server.crt" || ! -f "$(TLS_DIR)/server.key" ]]; then
 	  mkdir -p "$(TLS_DIR)"
 	  openssl req -x509 -newkey rsa:2048 -nodes -days 825 \
@@ -385,7 +386,7 @@ endef
 
 setup: tls
 	@$(timing)
-	token=$$(timing_begin setup 'Generate device configuration')
+	token=$$(timing_begin --service shared setup 'Generate device configuration')
 	mkdir -p "$$ASSET_ROOT/data/backend"
 	install -d -m 2775 "$$ASSET_ROOT/data/dlsps/crops" "$$ASSET_ROOT/data/chatqna/model_cache" "$$ASSET_ROOT/config/speech"
 	BACKEND_CAMERAS=$(if $(DEMO_FEEDS),$(CAMERAS),0) python3 -c 'import json,os; print("services:"); [print("  " + service + ":\n    group_add: !override " + json.dumps(list(dict.fromkeys(os.environ[k] for k in keys)))) for service,keys in {"dlsps":("RENDER_GID","ACCEL_GID","ASSET_GID"), "chatqna":("RENDER_GID","ASSET_GID")}.items()]; print("  backend:\n    environment:\n      BACKEND_DEMO_CAMERAS: \"" + os.environ["BACKEND_CAMERAS"] + "\"")' > "$$ASSET_ROOT/config/devices.yaml"
@@ -395,13 +396,13 @@ setup: tls
 # ---------------------------------------------------------------- start
 
 define start_demo_cameras
-timed startup 'Start demo camera containers' $(COMPOSE) up -d --force-recreate $(CAMERA_IDS)
-wait_for "demo camera publishers" paths_ready "$(subst $(space),$(comma),$(CAMERA_IDS))"
+timed --service demo-cameras startup 'Start demo camera containers' $(COMPOSE) up -d --force-recreate $(CAMERA_IDS)
+WAIT_SERVICE=demo-cameras wait_for "demo camera publishers" paths_ready "$(subst $(space),$(comma),$(CAMERA_IDS))"
 endef
 
 define wait_demo_video
-wait_for "Backend MQTT feed state" feeds_ready "$(subst $(space),$(comma),$(CAMERA_IDS))"
-wait_for "annotated WebRTC publishers" paths_ready "$(subst $(space),$(comma),$(ANNOTATED_IDS))"
+WAIT_SERVICE=backend wait_for "Backend MQTT feed state" feeds_ready "$(subst $(space),$(comma),$(CAMERA_IDS))"
+WAIT_SERVICE=dlsps wait_for "annotated WebRTC publishers" paths_ready "$(subst $(space),$(comma),$(ANNOTATED_IDS))"
 endef
 
 # A freshly created GPU container compiles kernels on its first request (~80 s
@@ -418,7 +419,7 @@ backend_built = $$(docker image inspect -f '{{index .Config.Labels "handheld.sou
 
 define build_backend
 backend_stale=
-token=$$(timing_begin setup 'Verify Backend source/image hash')
+token=$$(timing_begin --service backend setup 'Verify Backend source/image hash')
 export BACKEND_SOURCE_HASH=$(backend_hash)
 built=$(backend_built)
 timing_end "$$token"
@@ -426,9 +427,9 @@ build_backend_image() {
   local base
   base=$$(awk '/^FROM / {image=$$2} END {print image}' backend/Dockerfile)
   if ! docker image inspect "$$base" >/dev/null 2>&1; then
-    timed container_download "$$base (Backend base)" docker pull "$$base" || return "$$?"
+    timed --service backend container_download "$$base (Backend base)" docker pull "$$base" || return "$$?"
   fi
-  timed backend_build 'Build Backend image' $(COMPOSE) build backend
+  timed --service backend backend_build 'Build Backend image' $(COMPOSE) build backend
 }
 if [[ $$built == "$$BACKEND_SOURCE_HASH" ]]; then
   echo 'Backend image matches the current sources'
@@ -438,7 +439,7 @@ elif ! build_backend_image; then
   $(backend_stale_warning)
 fi
 if [[ $$built == "$$BACKEND_SOURCE_HASH" ]]; then
-  timing_cached backend_build 'Backend image matches sources'
+  timing_cached --service backend backend_build 'Backend image matches sources'
 fi
 endef
 
@@ -457,41 +458,41 @@ APP_SERVICES := coturn mediamtx mqtt metrics dlsps alert-agent $(MODEL_SERVICES)
 # Shared by up and demo-up; DEMO_FEEDS adds the looping camera publishers.
 define start_application
 $(readiness)
-timed setup 'Validate Compose configuration' $(COMPOSE) config --quiet
+timed --service shared setup 'Validate Compose configuration' $(COMPOSE) config --quiet
 trap 'code=$$?; trap - ERR; printf "startup failed; stopping the application\n" >&2; $(COMPOSE) --profile assets stop || true; exit "$$code"' ERR
-timed startup 'Drain application pipelines and Chat Q&A' $(COMPOSE) stop backend dlsps chatqna cam1 cam2
+timed --service shared startup 'Drain application pipelines and Chat Q&A' $(COMPOSE) stop backend dlsps chatqna cam1 cam2
 # Stock conversion skips any existing directory, even an interrupted export.
 # Preserve partial output before retrying with the unmodified stock backend.
 # Stock Chat Q&A calls snapshot_download on every start; without internet each
 # model waits ~2 min before falling back to the cache. Once every model is
 # cached and exported, start it with the standard HF_HUB_OFFLINE switch.
-chat_cache=$$(timed startup 'Verify and repair Chat Q&A cache' $(COMPOSE) run --rm --no-deps --entrypoint python3 \
+chat_cache=$$(timed --service chatqna startup 'Verify and repair Chat Q&A cache' $(COMPOSE) run --rm --no-deps --entrypoint python3 \
   -v "$(CURDIR)/scripts/chat_cache.py:/chat_cache.py:ro" chatqna /chat_cache.py | tail -n 1)
 export CHATQNA_HF_HUB_OFFLINE=$$([[ $$chat_cache == cached ]] && echo 1 || echo 0)
 printf 'Chat Q&A models: %s\n' "$$([[ $$chat_cache == cached ]] && echo 'cached; no internet needed' || echo 'downloading on this start; internet required')"
 # The language and speech models load in the background while the detector and
 # demo videos are prepared; the next up -d leaves these running containers as they are.
-timed startup 'Start model services early' $(COMPOSE) up -d $(MODEL_SERVICES)
+timed --service shared startup 'Start model services early (Chat Q&A, Whisper, SpeechT5)' $(COMPOSE) up -d $(MODEL_SERVICES)
 make --no-print-directory detector-model
 $(if $(DEMO_FEEDS),make --no-print-directory demo-videos)
-timed startup 'Start stock application containers' $(COMPOSE) up -d $(APP_SERVICES)
-WAIT_CONTAINER=handheld-multi-modal-mediamtx-1 wait_for "MediaMTX" curl -fsS --max-time 3 http://127.0.0.1:9997/v3/paths/list
-WAIT_CONTAINER=handheld-multi-modal-dlsps-1 wait_for "DLSPS" curl -fsS --max-time 3 http://127.0.0.1:8080/pipelines
-WAIT_CONTAINER=handheld-multi-modal-metrics wait_for "Metrics Manager" curl -fsS --max-time 3 http://127.0.0.1:9090/health
+timed --service shared startup 'Start stock application containers' $(COMPOSE) up -d $(APP_SERVICES)
+WAIT_CONTAINER=handheld-multi-modal-mediamtx-1 WAIT_SERVICE=mediamtx wait_for "MediaMTX" curl -fsS --max-time 3 http://127.0.0.1:9997/v3/paths/list
+WAIT_CONTAINER=handheld-multi-modal-dlsps-1 WAIT_SERVICE=dlsps wait_for "DLSPS" curl -fsS --max-time 3 http://127.0.0.1:8080/pipelines
+WAIT_CONTAINER=handheld-multi-modal-metrics WAIT_SERVICE=metrics wait_for "Metrics Manager" curl -fsS --max-time 3 http://127.0.0.1:9090/health
 $(if $(DEMO_FEEDS),$(start_demo_cameras))
 $(build_backend)
-timed startup 'Start Backend container' $(COMPOSE) up -d --no-deps backend
+timed --service backend startup 'Start Backend container' $(COMPOSE) up -d --no-deps backend
 # nginx resolves upstream IPs at start; recreate so a recreated MediaMTX is reached.
-timed startup 'Start TLS proxy container' $(COMPOSE) up -d --no-deps --force-recreate proxy
-WAIT_CONTAINER=handheld-multi-modal-backend wait_for "Backend through TLS proxy" curl -skfsS --max-time 5 https://127.0.0.1:8443/api/streams
+timed --service proxy startup 'Start TLS proxy container' $(COMPOSE) up -d --no-deps --force-recreate proxy
+WAIT_CONTAINER=handheld-multi-modal-backend WAIT_SERVICE=backend wait_for "Backend through TLS proxy" curl -skfsS --max-time 5 https://127.0.0.1:8443/api/streams
 $(if $(DEMO_FEEDS),$(wait_demo_video))
-wait_for "Backend telemetry" telemetry_ready
-WAIT_SECONDS=$(AI_WAIT_SECONDS) WAIT_CONTAINER=handheld-multi-modal-chatqna-core-gpu WAIT_HINT="$(MODEL_NOTE)" wait_for "Chat Q&A neural-chat model" json_ready http://127.0.0.1:8888/model llm_model Intel/neural-chat-7b-v3-3
-WAIT_SECONDS=$(AI_WAIT_SECONDS) WAIT_CONTAINER=handheld-multi-modal-audio-analyzer WAIT_HINT="$(MODEL_NOTE)" wait_for "Whisper GPU service" json_ready http://127.0.0.1:8011/health status ok
-WAIT_SECONDS=$(AI_WAIT_SECONDS) WAIT_CONTAINER=handheld-multi-modal-tts WAIT_HINT="$(MODEL_NOTE)" wait_for "SpeechT5 $(TTS_DEVICE) service" json_ready http://127.0.0.1:8012/v1/model-info device $(TTS_DEVICE)
-WAIT_SECONDS=$(AI_WAIT_SECONDS) wait_for "SpeechT5 first synthesis" $(speech_warm)
-WAIT_CONTAINER=handheld-multi-modal-alert-agent wait_for "Alert Agent" curl -fsS --max-time 5 http://127.0.0.1:8010/api/v1/health
-token=$$(timing_begin readiness 'Validate operator console HTML')
+WAIT_SERVICE=backend wait_for "Backend telemetry" telemetry_ready
+WAIT_SECONDS=$(AI_WAIT_SECONDS) WAIT_CONTAINER=handheld-multi-modal-chatqna-core-gpu WAIT_HINT="$(MODEL_NOTE)" WAIT_SERVICE=chatqna wait_for "Chat Q&A neural-chat model" json_ready http://127.0.0.1:8888/model llm_model Intel/neural-chat-7b-v3-3
+WAIT_SECONDS=$(AI_WAIT_SECONDS) WAIT_CONTAINER=handheld-multi-modal-audio-analyzer WAIT_HINT="$(MODEL_NOTE)" WAIT_SERVICE=audio-analyzer wait_for "Whisper GPU service" json_ready http://127.0.0.1:8011/health status ok
+WAIT_SECONDS=$(AI_WAIT_SECONDS) WAIT_CONTAINER=handheld-multi-modal-tts WAIT_HINT="$(MODEL_NOTE)" WAIT_SERVICE=tts wait_for "SpeechT5 $(TTS_DEVICE) service" json_ready http://127.0.0.1:8012/v1/model-info device $(TTS_DEVICE)
+WAIT_SECONDS=$(AI_WAIT_SECONDS) WAIT_SERVICE=tts wait_for "SpeechT5 first synthesis" $(speech_warm)
+WAIT_CONTAINER=handheld-multi-modal-alert-agent WAIT_SERVICE=alert-agent wait_for "Alert Agent" curl -fsS --max-time 5 http://127.0.0.1:8010/api/v1/health
+token=$$(timing_begin --service backend readiness 'Validate operator console HTML')
 dashboard=$$(curl -skfsS --max-time 5 https://127.0.0.1:8443/)
 [[ $$dashboard == *'id="pause-updates"'* ]]
 timing_end "$$token"
@@ -553,8 +554,8 @@ speech-device: preflight
 	done
 	$(set_speech_device)
 	$(COMPOSE) up -d --no-deps tts
-	WAIT_SECONDS=$(AI_WAIT_SECONDS) WAIT_CONTAINER=handheld-multi-modal-tts WAIT_HINT="$(MODEL_NOTE)" wait_for "SpeechT5 $(TTS_DEVICE) service" json_ready http://127.0.0.1:8012/v1/model-info device $(TTS_DEVICE)
-	WAIT_SECONDS=$(AI_WAIT_SECONDS) wait_for "SpeechT5 first synthesis" $(speech_warm)
+	WAIT_SECONDS=$(AI_WAIT_SECONDS) WAIT_CONTAINER=handheld-multi-modal-tts WAIT_HINT="$(MODEL_NOTE)" WAIT_SERVICE=tts wait_for "SpeechT5 $(TTS_DEVICE) service" json_ready http://127.0.0.1:8012/v1/model-info device $(TTS_DEVICE)
+	WAIT_SECONDS=$(AI_WAIT_SECONDS) WAIT_SERVICE=tts wait_for "SpeechT5 first synthesis" $(speech_warm)
 	printf 'Speech now runs on the %s\n' "$(TTS_DEVICE)"
 
 # DLSPS must restart with Backend: a failed publisher can retain crop locks.
@@ -563,9 +564,9 @@ pipelines-restart demo-pipelines-restart:
 	$(build_backend)
 	$(COMPOSE) stop backend dlsps
 	$(COMPOSE) up -d --no-deps dlsps
-	WAIT_CONTAINER=handheld-multi-modal-dlsps-1 wait_for "DLSPS" curl -fsS --max-time 5 http://127.0.0.1:8080/pipelines
+	WAIT_CONTAINER=handheld-multi-modal-dlsps-1 WAIT_SERVICE=dlsps wait_for "DLSPS" curl -fsS --max-time 5 http://127.0.0.1:8080/pipelines
 	$(COMPOSE) up -d --no-deps backend
-	WAIT_CONTAINER=handheld-multi-modal-backend wait_for "Backend through TLS proxy" curl -skfsS --max-time 5 https://127.0.0.1:8443/api/streams
+	WAIT_CONTAINER=handheld-multi-modal-backend WAIT_SERVICE=backend wait_for "Backend through TLS proxy" curl -skfsS --max-time 5 https://127.0.0.1:8443/api/streams
 	if [[ -n $$($(COMPOSE) ps -q --status running cam1) ]]; then
 	  $(wait_demo_video)
 	fi
