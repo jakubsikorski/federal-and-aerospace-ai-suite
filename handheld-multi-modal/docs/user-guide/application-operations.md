@@ -80,6 +80,82 @@ access again.
 are generated per device under `ASSET_ROOT`. The Backend reads the speech device selection
 without restarting. Tracked configuration is not modified.
 
+## Startup Timing Reports
+
+Every `make up` and `make demo-up` generates a separate run directory under
+`ASSET_ROOT/startup-timings/`. At completion, Make prints
+**Startup timing report available** with the path to `report.md`, plus the path to
+the machine-readable `report.json`. Failed starts also produce partial reports with the
+original startup exit status. No report contains environment values, commands or raw
+container logs.
+
+The timing engine is shared at the repository's `tools/startup-timing/`; Handheld service names,
+log markers and parent/child step rules are in `startup-timing.toml`. The Handheld Makefile keeps
+only the timing calls at command boundaries and delegates report logic.
+
+The Markdown opens with the overall result and a **Where did the time go?** table whose rows
+add up to the overall startup duration. It partitions the startup script's time, counting
+parallel image pulls once and counting detector preparation instead of its nested commands.
+Other simultaneous startup commands have a separate, counted-once row. Time between completed
+timers is labelled **Other / uninstrumented time**, including timer overhead and unfinished
+steps; it is not attributed to an unmeasured model phase.
+
+**Work totals across services** sums the individual image downloads, model package installs,
+model downloads, conversions, Backend build and video preparation steps. These are not extra
+time to add to startup: concurrent work is counted in each individual measurement.
+
+**Details by service** separates inclusive preparation totals and their internal phases from
+deployment commands and readiness checkpoints. Unattributed initialization time completes
+the preparation subtotal; overlapping internal phases are subtracted once. Image pulls and
+deployment checks are separate timers, not additional preparation phases. Gaps appear next
+to the affected service. Exact seconds, timestamps and measurement sources remain in JSON.
+
+The measurements cover:
+
+- Container pulls, per unique missing image, including the Backend base image if needed.
+  Cached images are not pulled; pulls remain concurrent.
+- Model Download UV setup and the YOLO export script's pip installation phase, separately
+  from YOLO weights acquisition and the FP32, FP16 and INT8 exports.
+- Chat Q&A snapshot acquisition per model and observed conversion intervals.
+- Whisper and SpeechT5 model preparation, Backend build, demo video download/checksum
+  verification and re-encoding, configuration, container startup and readiness waits.
+
+AI model preparation runs in the background while Make builds the Backend or waits for services.
+The elapsed-time breakdown includes this time under the startup command or readiness wait,
+not again as model-download and conversion rows. A readiness check wait is only the time Make
+spends at that check, not the full startup time of a service that began in parallel.
+
+The all-service model download total sums only separately observed model acquisition
+phases, excluding pip/UV installation and end-to-end startup totals. Combined phases stay
+separate, and download/transformation totals are marked partial when they cannot include
+those phases. Displayed work totals sum the individual step values rounded to tenths of a
+second. The elapsed-time partition is rounded together to preserve its overall sum; precise
+measurements remain unchanged in JSON.
+
+Regenerate an existing Markdown report without starting or changing the application:
+
+```bash
+python3 scripts/startup_timing.py render startup-timings/<run>/report.json
+```
+
+This leaves the original JSON measurements unchanged.
+
+Command measurements and elapsed-time partitioning use a monotonic clock; older recordings
+without monotonic boundaries use their recorded UTC timestamps. Stock-service timings are measured between
+verified Docker log markers and include the work between those markers: UV includes
+lockfile resolution, the pip script phase includes installation overhead, YOLO acquisition
+includes PyTorch loading, and INT8 export includes calibration data acquisition.
+Whisper and SpeechT5 download within their export routines, and the final Chat Q&A
+conversion has no separate completion marker before compilation/loading. These intervals
+are labelled **combined**, rather than claiming an exact download/transform split.
+Dependencies already baked into images cannot be measured as runtime pip installs.
+
+Cached/skipped phases and already-running services are identified explicitly. Missing
+markers or unfinished steps are **unavailable**, never fabricated as zero seconds.
+Overall elapsed time includes license acceptance and timer overhead, but excludes report
+collection/writing. Reports sit outside `data/` so timing can start even when interrupted
+containers left `data/` root-owned. `make clean-all` removes reports along with generated assets.
+
 ## Readiness Check
 
 `make check` is read-only and downloads nothing. Each failing item names the command that fixes

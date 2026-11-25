@@ -61,12 +61,13 @@ help: ## Show this help
 HANDHELD_EXCLUDES := 'handheld-multi-modal/data/*' 'handheld-multi-modal/datasets/*' \
 	'handheld-multi-modal/config/tls/*' 'handheld-multi-modal/config/devices.yaml' \
 	'handheld-multi-modal/config/mediamtx.yml' 'handheld-multi-modal/docs/application/*' \
-	'handheld-multi-modal/.env' 'handheld-multi-modal/.demo-assets.lock'
+	'handheld-multi-modal/.env' 'handheld-multi-modal/.demo-assets.lock' \
+	'handheld-multi-modal/startup-timings/*' 'tools/startup-timing/__pycache__/*'
 
-$(HANDHELD_ZIP): $(shell find $(HANDHELD_SRC) -type f 2>/dev/null)
+$(HANDHELD_ZIP): $(shell find $(HANDHELD_SRC) tools/startup-timing -type f 2>/dev/null)
 	@mkdir -p "$(DIST_DIR)"
 	@rm -f "$@"
-	zip -rq "$@" "$(HANDHELD_SRC)" -x $(HANDHELD_EXCLUDES)
+	zip -rq "$@" "$(HANDHELD_SRC)" tools/startup-timing -x $(HANDHELD_EXCLUDES)
 	@echo "Archive ready: $@"
 
 $(DTD_ZIP): $(shell find $(DTD_SRC) -type f 2>/dev/null)
@@ -88,7 +89,7 @@ $(UAV_ZIP): $(shell find $(UAVSDK_SRC) $(UAVVA_SRC) $(UAVGS_SRC) -type f 2>/dev/
 SOLUTION_STAGE := $(BUILD_DIR)/federal-and-aerospace-ai-suite
 
 $(SOLUTION_ZIP): \
-		$(shell find $(HANDHELD_SRC) $(DTD_SRC) $(UAVSDK_SRC) $(UAVVA_SRC) $(UAVGS_SRC) docs -type f 2>/dev/null) \
+		$(shell find $(HANDHELD_SRC) $(DTD_SRC) $(UAVSDK_SRC) $(UAVVA_SRC) $(UAVGS_SRC) docs tools/startup-timing -type f 2>/dev/null) \
 		README.md
 	@echo ">> Staging federal-and-aerospace-ai-suite (full solution)"
 	@rm -rf "$(SOLUTION_STAGE)"
@@ -101,8 +102,10 @@ $(SOLUTION_ZIP): \
 		--exclude='handheld-multi-modal/config/devices.yaml' \
 		--exclude='handheld-multi-modal/config/mediamtx.yml' \
 		--exclude='handheld-multi-modal/docs/application' \
+		--exclude='handheld-multi-modal/startup-timings' \
 		--exclude='handheld-multi-modal/.env' \
 		--exclude='handheld-multi-modal/.demo-assets.lock' \
+		--exclude='tools/startup-timing/__pycache__' \
 		./ "$(SOLUTION_STAGE)/federal-and-aerospace-ai-suite/"
 	@mkdir -p "$(DIST_DIR)"
 	@rm -f "$@"

@@ -1,0 +1,532 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+[groups]
+container_download = "Container image downloads"
+model_packages = "Model tools"
+model_download = "Model downloads"
+model_transformation = "Model conversion"
+model_combined = "Combined model preparation"
+model_preparation = "Detector preparation"
+backend_build = "Backend build"
+video_download = "Demo video downloads"
+video_transformation = "Demo video preparation"
+setup = "Host checks and configuration"
+startup = "Container startup and application setup"
+readiness = "Service readiness waits and demo checks"
+service_startup = "Service initialization"
+
+[services.model-downloader]
+title = "Model Download / YOLO26s"
+description = "Prepares the detector used by camera analytics."
+container = "handheld-multi-modal-model-downloader-1"
+
+[services.chatqna]
+title = "Chat Q&A"
+description = "Answers questions using the language and document models."
+container = "handheld-multi-modal-chatqna-core-gpu"
+
+[services.audio-analyzer]
+title = "Audio Analyzer / Whisper"
+description = "Transcribes spoken questions."
+container = "handheld-multi-modal-audio-analyzer"
+
+[services.tts]
+title = "Text To Speech / SpeechT5"
+description = "Produces spoken answers and alerts."
+container = "handheld-multi-modal-tts"
+
+[services.backend]
+title = "Backend"
+description = "Runs application logic and serves the operator console."
+
+[services.dlsps]
+title = "DL Streamer Pipeline Server"
+description = "Detects and tracks objects in camera feeds."
+
+[services.mediamtx]
+title = "MediaMTX"
+description = "Relays camera video to the application."
+
+[services.metrics]
+title = "Metrics Manager"
+description = "Collects hardware and service resource metrics."
+
+[services.alert-agent]
+title = "Alert Agent"
+description = "Dispatches alerts from operator rules."
+
+[services.mqtt]
+title = "MQTT / Mosquitto"
+description = "Carries camera observations to the Backend."
+
+[services.coturn]
+title = "Coturn"
+description = "Relays WebRTC media when needed."
+
+[services.proxy]
+title = "NGINX / TLS proxy"
+description = "Provides local HTTPS access to the console."
+
+[services.demo-cameras]
+title = "Demo cameras / FFmpeg"
+description = "Prepares and publishes the demo video feeds."
+
+[services.shared]
+title = "Shared startup / host configuration"
+description = "Steps shared by multiple services."
+
+[image_services]
+"intel/model-download" = "model-downloader"
+"intel/chatqna" = "chatqna"
+"intel/audio-analyzer" = "audio-analyzer"
+"intel/text-to-speech" = "tts"
+"intel/dlstreamer-pipeline-server" = "dlsps"
+"intel/metrics-manager" = "metrics"
+"intel/alert-agent-service" = "alert-agent"
+"eclipse-mosquitto" = "mqtt"
+"coturn/coturn" = "coturn"
+"nginx" = "proxy"
+"python" = "backend"
+"bluenviron/mediamtx" = "mediamtx"
+"bluenviron/mediamtx:1.21.3-ffmpeg" = "demo-cameras"
+
+[attribution]
+shared_service = "shared"
+
+[[attribution.groups]]
+group = "model_packages"
+service = "model-downloader"
+
+[[attribution.groups]]
+group = "model_preparation"
+service = "model-downloader"
+
+[[attribution.groups]]
+group = "video_download"
+service = "demo-cameras"
+
+[[attribution.groups]]
+group = "video_transformation"
+service = "demo-cameras"
+
+[[attribution.groups]]
+group = "backend_build"
+service = "backend"
+
+[[attribution.labels]]
+pattern = "^YOLO26s|^Model Download|^Start Model Download|^model-downloader:"
+service = "model-downloader"
+
+[[attribution.labels]]
+pattern = "^Chat Q&A|^chatqna:|^Verify and repair Chat Q&A"
+service = "chatqna"
+
+[[attribution.labels]]
+pattern = "^Whisper|^audio-analyzer:"
+service = "audio-analyzer"
+
+[[attribution.labels]]
+pattern = "^SpeechT5|^tts:"
+service = "tts"
+
+[[attribution.labels]]
+pattern = "^Backend|^Start Backend|^Verify Backend|^Validate operator console"
+service = "backend"
+
+[[attribution.labels]]
+pattern = "^DLSPS|^annotated WebRTC"
+service = "dlsps"
+
+[[attribution.labels]]
+pattern = "^MediaMTX$"
+service = "mediamtx"
+
+[[attribution.labels]]
+pattern = "^Metrics Manager$"
+service = "metrics"
+
+[[attribution.labels]]
+pattern = "^Alert Agent$"
+service = "alert-agent"
+
+[[attribution.labels]]
+pattern = "^Start TLS proxy container$"
+service = "proxy"
+
+[[attribution.labels]]
+pattern = "^Start demo camera containers$|^demo camera publishers$"
+service = "demo-cameras"
+
+[report]
+directory = "startup-timings"
+root_env = "ASSET_ROOT"
+root_default = "."
+target_names = ["up", "demo-up"]
+target_label = "Command"
+target_format = "make {target}"
+overview_intro = "**These rows add up to the overall startup time.** Each moment is counted once. Work performed while the startup command waits is included in that stage."
+elapsed_note = "Other / uninstrumented time includes gaps between timers and timer overhead; it is not attributed to a specific task."
+work_intro = "Each total below is the **sum of its individual step durations**. These work measurements are not additional startup time: parallel steps and work inside a parent total are counted more than once."
+details_intro = "A child row is included in its parent total. The report shows any overlapping child time as a subtraction so each parent subtotal adds up."
+partial_note = "**Partial totals:** some work could not be separated or measured; see the affected service details."
+failure_note = "**Attention:** a step failed; its duration is included where available and marked in the service details."
+measurement_notes = [
+  "Timings include checks and instrumentation, but not report generation.",
+  "Service phases use configured log markers and include work between those markers.",
+]
+
+[pull]
+exclude_images = ["handheld/backend:dev"]
+
+[[report.service_totals]]
+group = "model_download"
+title = "Separately timed model downloads (sum)"
+partial_if_unavailable = true
+
+[[report.stages]]
+group = "setup"
+title = "Host checks and configuration"
+
+[[report.stages]]
+group = "container_download"
+title = "Container image downloads (parallel pulls counted once)"
+
+[[report.stages]]
+group = "model_preparation"
+title = "Detector preparation (includes its nested steps)"
+
+[[report.stages]]
+group = "video_download"
+title = "Demo video downloads"
+
+[[report.stages]]
+group = "video_transformation"
+title = "Demo video preparation"
+
+[[report.stages]]
+group = "backend_build"
+title = "Backend build"
+
+[[report.stages]]
+group = "startup"
+title = "Container startup and application setup"
+
+[[report.stages]]
+group = "readiness"
+title = "Service readiness waits and demo checks"
+
+[[report.stages]]
+group = "parallel"
+title = "Other simultaneous startup steps (counted once)"
+
+[[report.stages]]
+group = "unmeasured"
+title = "Other / uninstrumented time"
+
+[[report.summaries]]
+group = "container_download"
+title = "Container images"
+meaning = "Download and extraction of Docker images."
+
+[[report.summaries]]
+group = "model_download"
+title = "Model downloads"
+meaning = "Separately timed model file acquisition, not package installation or conversion."
+partial_if_group_labels = { model_combined = "download" }
+partial_if_unavailable = true
+partial_if_warning = true
+
+[[report.summaries]]
+group = "model_packages"
+title = "Model tools"
+meaning = "Python packages installed by pip and UV for model preparation."
+
+[[report.summaries]]
+group = "model_transformation"
+title = "Model conversion"
+meaning = "Separately timed conversion to OpenVINO format."
+partial_if_groups = ["model_combined"]
+partial_if_unavailable = true
+partial_if_warning = true
+
+[[report.summaries]]
+group = "model_combined"
+title = "Combined model preparation"
+meaning = "Download and/or conversion mixed with loading; these cannot be separated."
+
+[[report.summaries]]
+group = "backend_build"
+title = "Backend build"
+meaning = "Build the application Backend image."
+
+[[report.summaries]]
+group = "video_download"
+title = "Demo video downloads"
+meaning = "Download and verify the demo clips."
+
+[[report.summaries]]
+group = "video_transformation"
+title = "Demo video preparation"
+meaning = "Re-encode the clips for the demo cameras."
+
+[[report.step_titles]]
+group = "model_preparation"
+pattern = "^YOLO26s downloader startup and model preparation$"
+title = "Detector preparation"
+
+[[report.step_titles]]
+group = "service_startup"
+pattern = "^model-downloader: start to application ready$"
+title = "Model Download service ready"
+
+[[report.step_titles]]
+group = "service_startup"
+pattern = "^chatqna: start to application ready$"
+title = "Chat Q&A ready"
+
+[[report.step_titles]]
+group = "service_startup"
+pattern = "^audio-analyzer: start to application ready$"
+title = "Audio Analyzer ready"
+
+[[report.step_titles]]
+group = "service_startup"
+pattern = "^tts: start to application ready$"
+title = "Text To Speech ready"
+
+[[report.step_titles]]
+group = "model_packages"
+pattern = "^Model Download: UV setup and dependencies$"
+title = "Install downloader packages (UV)"
+
+[[report.step_titles]]
+group = "model_packages"
+pattern = "^YOLO26s: pip installation script phase$"
+title = "Install detector export packages (pip)"
+
+[[report.step_titles]]
+group = "model_download"
+pattern = "^YOLO26s: weights acquisition and PyTorch loading$"
+title = "Download and load YOLO26s weights"
+
+[[report.step_titles]]
+group = "model_transformation"
+pattern = "^YOLO26s: (?P<precision>.+) export$"
+title = "Convert detector to OpenVINO: {precision}"
+
+[[report.step_titles]]
+group = "model_download"
+pattern = "^Chat Q&A: (?P<model>.+) snapshot acquisition$"
+title = "Download model: {model}"
+
+[[report.step_titles]]
+group = "model_transformation"
+pattern = "^Chat Q&A: (?P<model>.+) export$"
+title = "Convert model: {model}"
+
+[[report.step_titles]]
+group = "model_combined"
+pattern = "^Chat Q&A: (?P<model>.+)$"
+title = "Combined preparation: {model}"
+
+[[report.step_titles]]
+group = "model_combined"
+pattern = "^(?P<model>.+)$"
+title = "Combined preparation: {model}"
+
+[[report.step_titles]]
+group = "video_download"
+pattern = "^(?P<video>.+)$"
+title = "Download video: {video}"
+
+[[report.step_titles]]
+group = "video_transformation"
+pattern = "^(?P<video>.+)$"
+title = "Prepare video: {video}"
+
+[[report.step_titles]]
+group = "readiness"
+pattern = "^SpeechT5 first synthesis$"
+title = "First speech synthesis (may include warm-up)"
+
+[[report.step_titles]]
+group = "readiness"
+pattern = "^Validate operator console HTML$"
+title = "Check operator console response"
+
+[[report.step_titles]]
+group = "readiness"
+pattern = "^(?P<label>.+)$"
+title = "Readiness check wait: {label}"
+
+[[report.warning_text]]
+pattern = "^no recognized model phase markers; internal split unavailable\\.$"
+title = "The service did not log recognizable model phases; download and conversion times are unavailable."
+
+[[report.warning_text]]
+pattern = "^no container to inspect; internal phases unavailable\\.$"
+title = "No container was available to measure its internal phases."
+
+[[report.parent_rules]]
+parent_group = "model_preparation"
+parent_service = "model-downloader"
+child_services = ["model-downloader", "shared"]
+child_groups = ["model_packages", "model_download", "model_transformation", "model_combined", "service_startup", "startup", "readiness", "setup"]
+preparation_title = "Model preparation"
+
+[[report.parent_rules]]
+parent_group = "service_startup"
+parent_service = "chatqna"
+child_services = ["chatqna"]
+child_groups = ["model_download", "model_transformation", "model_combined"]
+preparation_title = "Model preparation"
+
+[[report.parent_rules]]
+parent_group = "service_startup"
+parent_service = "audio-analyzer"
+child_services = ["audio-analyzer"]
+child_groups = ["model_download", "model_transformation", "model_combined"]
+preparation_title = "Model preparation"
+
+[[report.parent_rules]]
+parent_group = "service_startup"
+parent_service = "tts"
+child_services = ["tts"]
+child_groups = ["model_download", "model_transformation", "model_combined"]
+preparation_title = "Model preparation"
+
+[[report.service_notes]]
+service = "model-downloader"
+group = "model_transformation"
+text = "FP32, FP16 and INT8 are model precisions; INT8 preparation also acquires calibration data."
+
+[[report.service_notes]]
+service = "chatqna"
+group = "model_download"
+text = "Model downloads can include cache checks. The final combined step includes model loading."
+
+[[report.service_notes]]
+service = "tts"
+group = "model_combined"
+text = "Model download and conversion occur together; their separate times are unavailable."
+
+[[log_rules]]
+service = "model-downloader"
+pattern = "Syncing base dependencies with UV"
+action = "start"
+key = "uv"
+group = "model_packages"
+label = "Model Download: UV setup and dependencies"
+
+[[log_rules]]
+service = "model-downloader"
+pattern = "All plugin venvs created"
+action = "close"
+key = "uv"
+
+[[log_rules]]
+service = "model-downloader"
+pattern = "Activating virtual environment in "
+action = "start"
+key = "pip"
+group = "model_packages"
+label = "YOLO26s: pip installation script phase"
+
+[[log_rules]]
+service = "model-downloader"
+pattern = "Downloading and converting:"
+action = "start"
+close = "pip"
+key = "weights"
+group = "model_download"
+label = "YOLO26s: weights acquisition and PyTorch loading"
+
+[[log_rules]]
+service = "model-downloader"
+pattern = "PyTorch: starting from 'yolo26s.pt'"
+action = "start"
+close = "weights"
+key = "export"
+group = "model_transformation"
+labels = ["YOLO26s: FP32 export", "YOLO26s: FP16 export", "YOLO26s: INT8 with calibration acquisition export"]
+
+[[log_rules]]
+service = "model-downloader"
+pattern = "^Export complete"
+action = "close"
+key = "export"
+
+[[log_rules]]
+service = "chatqna"
+pattern = "Downloading model (?P<model>[A-Za-z0-9_./-]{1,180}) from HuggingFace Hub"
+action = "start"
+key = "download"
+group = "model_download"
+label = "Chat Q&A: {model} snapshot acquisition"
+
+[[log_rules]]
+service = "chatqna"
+pattern = "Model downloaded successfully to "
+action = "close"
+key = "download"
+
+[[log_rules]]
+service = "chatqna"
+pattern = "Converting (?P<model>[A-Za-z0-9_./-]{1,180}) model to OpenVINO"
+action = "start"
+close = "export"
+key = "export"
+group = "model_transformation"
+label = "Chat Q&A: {model} export"
+
+[[log_rules]]
+service = "chatqna"
+pattern = "Optimized (?P<model>[A-Za-z0-9_./-]{1,180}) exists .*Skipping conversion"
+action = "skip"
+close = "export"
+group = "model_transformation"
+label = "Chat Q&A: {model} export"
+
+[[log_rules]]
+service = "audio-analyzer"
+pattern = "utils.ensure_model:.*Exporting whisper-medium"
+action = "start"
+key = "export"
+group = "model_combined"
+label = "Whisper-medium: snapshot download and OpenVINO export"
+
+[[log_rules]]
+service = "audio-analyzer"
+pattern = "utils.ensure_model:.*Export successful"
+action = "close"
+key = "export"
+
+[[log_rules]]
+service = "audio-analyzer"
+pattern = "utils.ensure_model:.*Using cached export at "
+action = "skip"
+group = "model_combined"
+label = "Whisper-medium: prepared model"
+
+[[log_rules]]
+service = "tts"
+pattern = "Exporting SpeechT5 model microsoft/speecht5_tts"
+action = "start"
+key = "export"
+group = "model_combined"
+label = "SpeechT5: model/vocoder download and OpenVINO export"
+
+[[log_rules]]
+service = "tts"
+pattern = "Using cached OpenVINO TTS model at "
+action = "close_or_skip"
+key = "export"
+group = "model_combined"
+label = "SpeechT5: prepared model"
+
+[ready_patterns]
+all = "Application startup complete\\."
+close_key = "export"
+close_group = "model_combined"
+append = " and model initialization/loading"

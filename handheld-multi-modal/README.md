@@ -38,6 +38,8 @@ compose/                     Docker Compose files: application services and demo
 backend/                     Application Backend (FastAPI) and browser UI; built locally as handheld/backend:dev.
 config/                      Per-service configuration: DLSPS pipelines and detector profile, Chat Q&A, proxy, TURN, MQTT, metrics, speech.
 scripts/                     Demo asset preparation and live readiness checks.
+startup-timing.toml          Service names, report labels and stock-log timing rules.
+scripts/startup_timing.py    Thin entry point for the shared `tools/startup-timing` runner.
 examples/                    Synthetic demo mission packet and an Intel® RealSense™ RTSP publisher script.
 .agents/skills/              AI agent skills for the application and its Open Edge Platform microservices.
 third-party-components.spdx  Software bill of materials of third-party components.
@@ -96,6 +98,17 @@ make up            # or start without cameras; add them in the console
 make demo-mission  # optional: load the example mission from examples/
 make               # list all commands (status, stop, check, tests, ...)
 ```
+
+Each `make up` or `make demo-up` writes a timing report to
+`startup-timings/<run>/report.md` and `report.json` under `ASSET_ROOT`, and prints a
+notification with both paths when it is available, including after a failed start.
+Reports open with an elapsed-time breakdown whose rows add up to overall startup time, followed
+by summed work totals and detailed timings for each service. Overlapping deployment checks
+are separate from inclusive model preparation totals. Inseparable phases are explicitly labelled;
+see [Startup Timing Reports](docs/user-guide/application-operations.md#startup-timing-reports).
+The generic timing engine is in [`tools/startup-timing`](../tools/startup-timing/README.md);
+Handheld-specific labels, log rules and parent relationships are in
+[`startup-timing.toml`](startup-timing.toml).
 
 Before anything is downloaded, `make up` and `make demo-up` list the third-party software and
 models they download, with their licenses, and ask you to accept them. Add `CONFIRM=yes` to

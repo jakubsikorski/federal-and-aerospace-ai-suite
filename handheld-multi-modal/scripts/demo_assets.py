@@ -16,6 +16,7 @@ import tempfile
 import time
 import urllib.request
 import uuid
+from startup_timing import begin, cached, end
 # Parses only OpenVINO IR written locally by the pinned Model Download job;
 # Python's expat does not expand external entities.
 import xml.etree.ElementTree as ET  # nosec B405
@@ -82,6 +83,7 @@ def api(path, body=None):
 def download_model(root, timeout):
     target = root / MODEL_DIR
     if verify_model(target):
+        cached("model_preparation", f"{MODEL} verified cache")
         print(f"Verified cached {MODEL} INT8: {target}")
         return
     subdir = f"{MODEL}-" + uuid.uuid4().hex
@@ -150,13 +152,16 @@ def download_video(root):
             if sha(target) != digest:
                 raise ValueError(f"Demo video checksum mismatch: {target}; refusing to overwrite")
             print(f"Verified cached demo video: {target}")
+            cached("video_download", name)
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
         failures = []
         with tempfile.TemporaryDirectory(prefix=".video-", dir=target.parent) as temporary:
             staged = Path(temporary) / target.name
             for url in urls:
+                timer = begin("video_download", name)
                 problem = fetch_verified(url, staged, digest)
+                end(timer, 0 if problem is None else 1)
                 if problem is None:
                     staged.rename(target)
                     break
