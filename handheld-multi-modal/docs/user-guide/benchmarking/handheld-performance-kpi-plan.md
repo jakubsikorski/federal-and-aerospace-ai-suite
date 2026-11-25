@@ -44,14 +44,83 @@ Design rules, from [AGENTS.md](../../../AGENTS.md):
 | Time to alert | < 400 ms | "How quickly am I told something appeared?" | Decoded frame enters the pipeline → alert event created by the Backend. | A |
 | Time to spoken answer | < 3 s | "After I stop talking, how long until I hear the answer?" | End of the operator's speech → first audible sound of the spoken answer. | A |
 | Smooth cameras | ≥ 3 at 1080p | "Can I watch all my cameras without stutter or delay?" | Per camera: processed FPS vs. source FPS, frame drops, and time to alert over a rolling window. | A |
-| Answer speed (LLM TPS) — stretch | > 15 tokens/s (7B, 4-bit) | "Does the answer stream faster than I can read it?" | First generated token → last generated token, exact token count. | B (A shows an approximate words/s) |
+| Answer speed (LLM decode tokens/s, = 1 / TPOT) — stretch | > 15 tokens/s (7B, 4-bit) | "Does the answer stream faster than I can read it?" | Per request: (output tokens − 1) ÷ (first generated token → last generated token). A per-request decode speed, not aggregate throughput. | B (A shows an approximate words/s) |
 | Compute busy | > 70 % under sustained load | "Is the hardware doing work, or idling while I wait?" | Host CPU utilization averaged over a sustained-load window. | A (existing Resources tab) |
 | Memory headroom | < 80 % at peak | "Am I close to running out of memory?" | Peak host RAM vs. capacity over the rolling window. | A |
+
+### How the KPIs map to industry standards
+
+The seven operator KPIs above are end-to-end roll-ups written in the
+operator's words. They are **not** named industry standards; each is built from
+standard components so it can be explained, reproduced, and drilled into. The
+standard layer sits underneath, per service:
+
+| Layer | Standard | Signals | Role here |
+| --- | --- | --- | --- |
+| Request flow | RED (Rate, Errors, Duration) and the Google SRE golden signals (latency, traffic, errors, saturation) | Request rate, error rate, latency p50/p95 | Per-service health tile |
+| Resources | USE (Utilization, Saturation, Errors) | Compute busy, memory headroom, queue wait, in-flight requests | Resources tab, plus saturation per service |
+| Domain | Serving conventions (OpenTelemetry GenAI, vLLM, MLPerf, speech RTF/RTFx) | TTFT, TPOT, decode tokens/s, RTF, time to first audio, FPS, dropped frames | Detail rows and the stage breakdowns |
+
+| Operator KPI | Built from standard parts |
+| --- | --- |
+| Time to spoken answer | ASR final-transcript latency + LLM TTFT (queue + retrieval + prefill) + TTS time to first audio, plus the silence wait |
+| Time to alert | Pipeline latency (decode → detection) + alert-rule and dispatch time |
+| Smooth cameras | Processed FPS vs. source FPS + dropped-frame ratio |
+| Answer speed | LLM decode speed = 1 / TPOT |
+| Compute busy, Memory headroom | USE utilization and saturation |
+| Time to ready | Readiness: every required service passes its health check and the first live frame is shown |
+
+Standard signals the plan did not previously carry, now part of the design:
+
+- **Error rate and availability** per service: failed ÷ total requests per
+  window, with outcomes `ok`, `error`, `timeout`. Shown on the service tile.
+- **Saturation:** queue wait and in-flight requests per service. Services
+  serialize generation behind locks, so without queue wait, queueing shows up
+  as a slow model.
+- **Success and failure latency kept apart.** Fast errors must not improve the
+  latency shown.
+- **Readiness defined.** "Ready" means each required service's health check
+  passes, not that its container started.
+
+OpenTelemetry names to follow in Phase B: `http.server.request.duration`
+(stable histogram, seconds; its count and `error.type`/status give rate and
+errors), `gen_ai.server.time_to_first_token` and
+`gen_ai.server.time_per_output_token` (development status). In-flight
+(`http.server.active_requests`) is still opt-in, so request it as an
+extension. TPOT is `(end-to-end − TTFT) ÷ (output tokens − 1)` and is undefined
+for single-token answers.
+
+### Per-service KPI set
+
+Targets are starting guidance, not standards. Published figures come from
+datacenter or server hardware, so calibrate them on the target device. A KPI
+marked "Detail" lives in the drill-down, not on the tile.
+
+| Service | Tile headline (plain words) | Standard name | Default target | Detail (drill-down) |
+| --- | --- | --- | --- | --- |
+| Chat Q&A (LLM) | "First words in 0.8 s" | TTFT p95 | < 2 s (≤ 1 s well tuned) | Decode tokens/s (≥ 15), TPOT, queue wait, retrieval and rerank time, input/output tokens, error rate |
+| Audio Analyzer (ASR) | "Speech heard 2× faster than real time" | RTFx (audio s ÷ processing s); RTF = 1 / RTFx | RTFx > 1, aim ≥ 2 | Time to final transcript p95, queue wait, error rate. WER only in offline benchmark runs, never a live tile |
+| Text To Speech | "Voice ready in 0.4 s" | Time to first audio p95; RTF | RTF < 1.0 | Generation time, queue wait, error rate |
+| DL Streamer Pipeline Server | "Camera 1: 29.8 of 30 fps" | Processed FPS vs. source FPS; dropped-frame ratio | ≥ 90 % of source FPS; < 10 % dropped | Pipeline latency p95, pipeline state and errors |
+| Alert Agent | "Alert delivered in 190 ms" | Detection → dispatch latency p95; delivery error rate | < 400 ms (shared with time to alert) | Queue depth, delivery errors |
+| Every service | "● Ready" / "! Down" | Availability; time to ready | Health check passing; < 5 min | Compute busy (> 70 % under load), memory headroom (< 80 % at peak) |
+
+Notes on definitions:
+
+- ASR quality (WER) depends on the model and test audio, not the running
+  system, so it is measured offline and recorded in saved results.
+- Chunk size and look-ahead trade ASR latency against accuracy. Treat the
+  chosen operating point as a setting, not a KPI to maximize.
+- DL Streamer, Alert Agent, and all handheld thresholds above are conventional
+  practice, not verified standards. No target hardware is available yet.
 
 ### Measurement rules
 
 - Latency is reported as the last value and the p50/p95 of a rolling window,
-  with the sample count. Percentiles are never averaged or added.
+  with the sample count. Percentiles are never averaged or added. p99 is shown
+  only in the drill-down and only with enough samples (at least 100); at
+  handheld request volumes it is too noisy for a headline. Averages are fine
+  for throughput values such as FPS and tokens/s, never for latency.
 - A value with too few samples shows "Not enough data", not a pass.
 - Intervals inside one process use that process's monotonic clock. Intervals
   that cross containers use the host wall clock (all containers share one
@@ -583,6 +652,11 @@ relevant change in this release.
    the slowest stage.
 6. **Be honest about precision of data.** Approximate values carry "~" and a
    tooltip naming the upstream update that makes them exact.
+7. **One tile per service, one headline number.** Each service shows a status
+   (✓ / ! / …) and a single plain-words number, such as "First words in
+   0.8 s" or "2× faster than real time". The standard name (TTFT, RTF) appears
+   in small text beside it. Histograms, p99, queue, and token-level values stay
+   in the detail view. Validate the wording with operators.
 
 ### Placement map
 
@@ -766,4 +840,9 @@ Standards:
 - [OpenVINO GenAI performance metrics](https://docs.openvino.ai/2025/openvino-workflow-generative/inference-with-genai.html)
 - [W3C Server-Timing](https://www.w3.org/TR/server-timing/)
 - [Prometheus histograms](https://prometheus.io/docs/practices/histograms/)
+- [Google SRE book: Monitoring Distributed Systems (four golden signals)](https://sre.google/sre-book/monitoring-distributed-systems/)
+- [OpenTelemetry HTTP metrics](https://opentelemetry.io/docs/specs/semconv/http/http-metrics/)
+- [OpenTelemetry GenAI metrics](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-metrics.md)
+- [vLLM metrics design (TTFT, TPOT, queue time)](https://docs.vllm.ai/en/stable/design/metrics/)
+- [LLM inference latency overview (chat target guidance)](https://clickhouse.com/resources/engineering/llm-inference-latency)
 - [MLPerf inference scenarios](https://mlcommons.org/benchmarks/inference-datacenter/)
