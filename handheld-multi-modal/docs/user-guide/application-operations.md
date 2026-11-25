@@ -15,7 +15,7 @@ the command list.
 ```bash
 # Deploy with your own cameras
 make prereq             # check host tools and devices; accept licenses; download YOLO26s INT8
-make up                 # start everything (runs prereq), no cameras: add them in the console
+make up                 # start everything (includes prereq), no cameras: add them in the console
 # Deploy with the demo camera feeds
 make demo-prereq        # prereq + download and prepare the demo videos
 make demo-up            # start everything plus looping demo cameras
@@ -70,6 +70,11 @@ videos: the intel-iot-devkit `person-bicycle-car-detection.mp4` sample (CC BY 4.
 video 34622113 (Pexels License). Chat Q&A, Audio Analyzer, and Text To Speech download and
 convert their own models through their unmodified stock services.
 
+`make up` and `make demo-up` pull all images first, then start Chat Q&A, Audio Analyzer and
+Text To Speech before preparing YOLO26s and the demo videos, so their model downloads overlap.
+On a first start this shortens startup but raises peak RAM, CPU and network use. Run
+`make prereq` or `make demo-prereq` first to prepare the detector and videos on their own.
+
 Later starts need no Internet access: caches are verified and loaded, and Chat Q&A starts in
 offline mode once all its models are cached and exported. If `backend/` changed but the Backend
 image rebuild cannot reach the registry, Make starts the previously built image and prints a
@@ -93,7 +98,8 @@ The timing engine is shared at the repository's `tools/startup-timing/`; Handhel
 log markers and parent/child step rules are in `startup-timing.toml`. The Handheld Makefile keeps
 only the timing calls at command boundaries and delegates report logic.
 
-The Markdown opens with the overall result and a **Where did the time go?** table whose rows
+The Markdown opens with the overall result, the slowest service and its largest parts, and
+whether caches were reused. A **Where did the time go?** table follows; its rows
 add up to the overall startup duration. It partitions the startup script's time, counting
 parallel image pulls once and counting detector preparation instead of its nested commands.
 Other simultaneous startup commands have a separate, counted-once row. Time between completed
@@ -106,8 +112,12 @@ time to add to startup: concurrent work is counted in each individual measuremen
 
 **Details by service** separates inclusive preparation totals and their internal phases from
 deployment commands and readiness checkpoints. Unattributed initialization time completes
-the preparation subtotal; overlapping internal phases are subtracted once. Image pulls and
-deployment checks are separate timers, not additional preparation phases. Gaps appear next
+the preparation subtotal; overlapping internal phases of a second or more are subtracted once.
+A wait that mostly repeats another phase, such as the Model Download readiness wait around
+its package install, is listed under **Other steps** instead. Image pulls and
+deployment checks are separate timers, not additional preparation phases. **Starts** gives each
+step's start time after the command began; successful sub-second steps share one row. Image
+pulls show the unpacked image size. Gaps appear next
 to the affected service. Exact seconds, timestamps and measurement sources remain in JSON.
 
 The measurements cover:

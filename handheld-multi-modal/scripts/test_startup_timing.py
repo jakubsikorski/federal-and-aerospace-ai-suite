@@ -39,6 +39,7 @@ class TestStartupTiming(unittest.TestCase):
             step("container_download", "bluenviron/mediamtx:1.21.3-ffmpeg", 5, 10),
             step("readiness", "MediaMTX", 10, 11),
             step("startup", "Start stock application containers", 10, 12),
+            step("readiness", "Model Download (ultralytics, port 8200)", 19, 26),
         ]
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
@@ -60,15 +61,19 @@ class TestStartupTiming(unittest.TestCase):
         chat = text.split("### Chat Q&A\n", 1)[1].split("### ", 1)[0]
         self.assertIn("Answers questions using the language and document models.", chat)
         self.assertIn("**Separately timed model downloads (sum):** 20.0 s.", chat)
-        self.assertIn("| Download model: model/a | 10.0 s |", chat)
-        self.assertIn("| Download model: model/b | 10.0 s |", chat)
+        self.assertIn("| Download model: model/a | +0:20 | 10.0 s |", chat)
+        self.assertIn("| Download model: model/b | +0:30 | 10.0 s |", chat)
         self.assertNotIn("YOLO26s", chat)
         self.assertNotIn("<details>", text)
         self.assertIn("**Partial totals:**", text)
         self.assertIn("A child row is included in its parent total.", text)
         detector = text.split("### Model Download / YOLO26s\n", 1)[1].split("### ", 1)[0]
-        self.assertIn("| Other initialization / unmeasured phases | 38.0 s |", detector)
-        self.assertIn("| **Preparation total** | **50.0 s** |", detector)
+        self.assertIn("| Other initialization / unmeasured phases | | 38.0 s |", detector)
+        self.assertIn("| **Preparation total** | | **50.0 s** |", detector)
+        # The wait around the package install moves out of the table, so nothing is subtracted.
+        self.assertNotIn("Concurrent phases", detector)
+        self.assertIn("| Readiness check wait: Model Download (ultralytics, port 8200) | +0:19 | 7.0 s |",
+                      detector.split("**Other steps**", 1)[1])
         self.assertNotIn("### Shared startup / host configuration", text)
         self.assertEqual(text.count("Start stock application containers"), 1)
         self.assertNotIn("| Step | Group |", text)
@@ -76,7 +81,7 @@ class TestStartupTiming(unittest.TestCase):
         self.assertEqual([item["service"] for item in report["steps"]],
                          ["chatqna", "audio-analyzer", "chatqna", "chatqna", "model-downloader",
                           "model-downloader", "model-downloader", "tts", "backend", "backend",
-                          "demo-cameras", "mediamtx", "shared"])
+                          "demo-cameras", "mediamtx", "shared", "model-downloader"])
 
     def test_report_surfaces_failures_caches_and_service_specific_gaps(self):
         start, finish = "2026-11-24T10:00:00Z", "2026-11-24T10:00:10Z"
@@ -94,9 +99,9 @@ class TestStartupTiming(unittest.TestCase):
             text = (directory / "report.md").read_text()
         self.assertIn("**Result:** Failed after **10.0 s** (exit 2)", text)
         self.assertIn("1 failed.", text)
-        self.assertIn("| Backend image matches sources | Cached |", text)
+        self.assertIn("| Backend image matches sources | +0:00 | Cached |", text)
         self.assertIn("| Backend build | Cached / reused |", text)
-        self.assertIn("| Download model: a/b | Not measured |", text)
+        self.assertIn("| Download model: a/b | +0:00 | Not measured |", text)
         self.assertIn("| Model downloads | Not measured **(partial)** |", text)
         self.assertIn("**Attention:** a step failed", text)
         audio = text.split("### Audio Analyzer / Whisper\n", 1)[1].split("### ", 1)[0]
@@ -198,6 +203,36 @@ class TestStartupTiming(unittest.TestCase):
         ]
         self.assertEqual(timing.summary_time(steps), "0.2 s")
         self.assertEqual([timing.step_time(step) for step in steps], ["0.1 s", "0.1 s"])
+        # A sequential stage keeps the sum of its displayed steps; another row absorbs the difference.
+        self.assertEqual(timing.rounded_partition({"video_download": 5.6, "unmeasured": 4.4}, 10.0,
+                                                  {"video_download": 57}),
+                         {"video_download": 57, "unmeasured": 43})
+        self.assertEqual(timing.rounded_partition({"video_download": 1.0}, 1.0, {"video_download": 11}),
+                         {"video_download": 10})
+
+    def test_headline_names_slowest_service_cache_state_and_folds_quick_steps(self):
+        def step(group, label, start, finish, status="ok"):
+            return timing.interval(group, label, f"2026-11-24T10:00:{start:02d}.0Z",
+                                   f"2026-11-24T10:00:{finish:02d}.5Z", "test", status)
+
+        steps = [
+            step("service_startup", "chatqna: start to application ready", 10, 39),
+            step("model_download", "Chat Q&A: model/a snapshot acquisition", 11, 30),
+            step("service_startup", "tts: start to application ready", 10, 20),
+            step("container_download", "intel/chatqna:core_test", 0, 1, "cached"),
+            step("setup", "TLS certificate", 1, 1),
+            step("setup", "Generate device configuration", 2, 2),
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            timing.write_report(directory, "demo-up", "2026-11-24T10:00:00Z",
+                                "2026-11-24T10:00:40Z", 40, 0, steps, [])
+            text = (directory / "report.md").read_text()
+        self.assertIn("**Slowest service:** Chat Q&A, 29.5 s (+0:10 to +0:39); "
+                      "largest parts: Download model: model/a 19.5 s", text)
+        self.assertIn("**Cache:** 1 of 2 download and preparation steps reused.", text)
+        self.assertIn("| 2 quick steps: TLS certificate, Generate device configuration | +0:01 | 1.0 s |", text)
+        self.assertIn("| Download container image: `intel/chatqna:core_test` | +0:00 | Cached |", text)
 
     def test_service_preparation_subtotal_subtracts_overlap(self):
         parent = timing.interval("service_startup", "chatqna: start to application ready",
@@ -209,8 +244,8 @@ class TestStartupTiming(unittest.TestCase):
                             "2026-11-24T10:00:05Z", "2026-11-24T10:00:10Z", "test"),
         ]
         self.assertEqual(timing.preparation_rows(parent, phases), [
-            "| Concurrent phases counted twice (subtract) | -3.0 s |",
-            "| **Preparation total** | **10.0 s** |",
+            "| Concurrent phases counted twice (subtract) | | -3.0 s |",
+            "| **Preparation total** | | **10.0 s** |",
         ])
         phases[1]["ended_at"] = "2026-11-24T10:00:11Z"
         self.assertIsNone(timing.preparation_rows(parent, phases))
@@ -315,13 +350,15 @@ class TestStartupTiming(unittest.TestCase):
                              return_value="a:1\nb:2\na:1\nhandheld/backend:dev\n"):
             def command(args, **_kwargs):
                 code = 1 if args[:3] == ["docker", "image", "inspect"] and args[-1] == "b:2" else 0
-                return subprocess.CompletedProcess(args, code)
+                return subprocess.CompletedProcess(args, code, stdout="250000000\n")
             with patch.object(timing.subprocess, "run", side_effect=command) as run:
                 self.assertEqual(timing.pull_images(["docker", "compose", "config", "--images"]), 0)
             pulls = [call.args[0] for call in run.call_args_list if call.args[0][1] == "pull"]
             self.assertEqual(pulls, [["docker", "pull", "b:2"]])
             steps = timing.read_steps(Path(temporary) / "events.jsonl", False)
             self.assertEqual({step["status"] for step in steps}, {"ok", "cached"})
+            pulled = next(step for step in steps if step["status"] == "ok")
+            self.assertEqual(timing.step_title(pulled), "Download container image: `b:2` (250 MB)")
             for step in steps:
                 self.assertEqual(step["seconds"], step["monotonic_ended_at"] - step["monotonic_started_at"])
 
@@ -414,7 +451,8 @@ esac
                 "docker() {\n" + "\n".join(docker.splitlines()[4:]) + "\n}\n"
                 "curl() {\n" + "\n".join(curl.splitlines()[4:]) + "\n}\n"
                 "make() {\n"
-                '  if [[ "$*" == *container-images* ]]; then return 0; fi\n'
+                '  printf "make %s\\n" "$*" >> "$TIMING_COMMAND_LOG"\n'
+                '  if [[ "$*" == *detector-model* || "$*" == *demo-videos* ]]; then return 0; fi\n'
                 '  command make "$@"\n'
                 "}\n")
             driver = root / "driver.py"
@@ -433,7 +471,9 @@ esac
                 env.pop("STARTUP_TIMING_DIR", None)
                 result = subprocess.run([
                     sys.executable, str(driver),
-                    "make", "--no-print-directory", "demo-up", "-o", "demo-prereq", "-o", "setup",
+                    "make", "--no-print-directory", "demo-up",
+                    *(f"-o{target}" for target in ("preflight", "licenses", "container-images",
+                                                   "asset-permissions", "setup")),
                     "RENDER_GID=123", "ACCEL_GID=456",
                 ], cwd=REPO, env=env, text=True, capture_output=True)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -449,6 +489,11 @@ esac
                                       if step["group"] == "backend_build")
             self.assertEqual(set(build_statuses), {"ok", "failed"})
             self.assertIn("previously built Backend", result.stderr)
+            # Model services start before the detector and demo videos are prepared.
+            log = (root / "commands").read_text()
+            order = [log.index(text) for text in ("up -d chatqna audio-analyzer tts", "make --no-print-directory detector-model",
+                                                  "make --no-print-directory demo-videos", "up -d coturn")]
+            self.assertEqual(order, sorted(order))
 
 
 if __name__ == "__main__":

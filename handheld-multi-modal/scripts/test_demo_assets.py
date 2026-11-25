@@ -366,8 +366,10 @@ def main():
     # Deployment without demo feeds never downloads demo videos or starts publishers.
     own = subprocess.run(['make', '-n', '--no-print-directory', '-C', str(assets.REPO), 'up'],
                          capture_output=True, text=True).stdout
-    assert 'demo_assets.py model' in own and 'demo_assets.py video' not in own and 'up -d --force-recreate cam' not in own
-    assert 'demo_assets.py video' in dry and 'up -d --force-recreate cam1 cam2' in dry
+    # The detector and demo videos are prepared by nested make calls after the model services start.
+    assert 'make --no-print-directory detector-model' in own and 'demo-videos' not in own and 'up -d --force-recreate cam' not in own
+    assert 'make --no-print-directory demo-videos' in dry and 'up -d --force-recreate cam1 cam2' in dry
+    assert dry.index('up -d chatqna audio-analyzer tts') < dry.index('make --no-print-directory detector-model')
     # Licenses are shown and accepted before anything is pulled; demo starts add the videos.
     for plan, demo in ((own, False), (dry, True)):
         notice = plan.index('scripts/license_notice.py')

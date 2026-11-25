@@ -40,14 +40,14 @@ ANNOTATED_IDS := $(patsubst cam%,annotated%,$(CAMERA_IDS))
   pipelines-restart down clean clean-demo clean-history clean-all \
   demo-stop demo-down demo-status demo-pipelines-restart \
   bundle bundle-load preflight licenses setup tls asset-permissions model-downloader-up \
-  check container-images
+  check container-images detector-model demo-videos
 
 help:
 	@echo 'Handheld operator application'
 	@echo
 	@echo 'Deploy with your own cameras'
 	@echo '  make prereq           Check the host; download the YOLO26s INT8 detector'
-	@echo '  make up               Start the application (runs prereq first)'
+	@echo '  make up               Start the application (includes prereq)'
 	@echo '                        Then publish H.264 RTSP on this device to'
 	@echo '                        rtsp://127.0.0.1:8554/cam1 ... camN'
 	@echo
@@ -95,22 +95,7 @@ help:
 SETUP_NOTE := The stock Model Download installs its UV and pip dependencies on every start (internet required).
 MODEL_NOTE := The first start downloads several GB of models; later starts use the cache.
 
-define timing
-timing_begin() {
-  if [[ -n "$${STARTUP_TIMING_DIR:-}" ]]; then python3 scripts/startup_timing.py begin "$$@"; fi
-}
-timing_end() {
-  if [[ -n "$$1" ]]; then python3 scripts/startup_timing.py end "$$@"; fi
-}
-timed() {
-  local group=$$1 label=$$2 token code=0
-  shift 2
-  token=$$(timing_begin "$$group" "$$label")
-  "$$@" || code=$$?
-  timing_end "$$token" --code "$$code"
-  return "$$code"
-}
-endef
+timing = source "$(abspath ../tools/startup-timing)/timing.sh"
 
 # Only this small polling helper is shared between startup checks.
 define readiness
@@ -319,12 +304,13 @@ container-images:
 	  $(if $(DEMO_FEEDS),$(COMPOSE),$(ASSET_COMPOSE)) --profile assets config --images $(IMAGE_SERVICES)
 
 # Chat Q&A, Whisper and SpeechT5 download their own models on first start.
-prereq: preflight licenses container-images asset-permissions
+prereq: preflight licenses container-images asset-permissions detector-model
+
+detector-model:
 	@$(timing)
 	if python3 scripts/demo_assets.py check-model; then
 	  echo 'YOLO26s INT8 cache verified'
-	  token=$$(timing_begin model_preparation 'YOLO26s verified cache')
-	  timing_end "$$token" --status cached
+	  timing_cached model_preparation 'YOLO26s verified cache'
 	else
 	  code=$$?
 	  [[ $$code == 2 ]] || exit "$$code"
@@ -338,9 +324,11 @@ prereq: preflight licenses container-images asset-permissions
 DEMO_CLIPS := person-bicycle-car-detection.mp4:30 pexels-34622113.mp4:25
 
 demo-prereq: DEMO_FEEDS := yes
-demo-prereq: prereq
+demo-prereq: IMAGE_SERVICES = model-downloader cam1
+demo-prereq: prereq demo-videos
+
+demo-videos:
 	@$(timing)
-	make --no-print-directory container-images IMAGE_SERVICES=cam1 DEMO_FEEDS=yes
 	python3 scripts/demo_assets.py video
 	video="$$ASSET_ROOT/data/dlsps/demo-video"
 	# The mp4 clips become MPEG-TS for the camera publishers. classroom.avi is not
@@ -358,8 +346,7 @@ demo-prereq: prereq
 	  codec=(-c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -bf 0 -sc_threshold 0 \
 	         -fpsmax "$$fps" -force_key_frames 'expr:gte(t,n_forced*1)')
 	  if [[ -f "$$video/$$stem.ts" ]]; then
-	    token=$$(timing_begin video_transformation "$$source")
-	    timing_end "$$token" --status cached
+	    timing_cached video_transformation "$$source"
 	    continue
 	  fi
 	  timed video_transformation "$$source" docker run --rm --user "$$(id -u):$$(id -g)" -v "$$video:/video" --entrypoint ffmpeg bluenviron/mediamtx:1.21.3-ffmpeg \
@@ -447,8 +434,7 @@ elif ! build_backend_image; then
   $(backend_stale_warning)
 fi
 if [[ $$built == "$$BACKEND_SOURCE_HASH" ]]; then
-  token=$$(timing_begin backend_build 'Backend image matches sources')
-  timing_end "$$token" --status cached
+  timing_cached backend_build 'Backend image matches sources'
 fi
 endef
 
@@ -461,13 +447,13 @@ printf '\n%s\n%s\n%s\n%s\n\n' \
 endef
 
 # Started before the Backend and proxy; make check expects all of them running.
-APP_SERVICES := coturn mediamtx mqtt metrics dlsps alert-agent chatqna audio-analyzer tts
+MODEL_SERVICES := chatqna audio-analyzer tts
+APP_SERVICES := coturn mediamtx mqtt metrics dlsps alert-agent $(MODEL_SERVICES)
 
 # Shared by up and demo-up; DEMO_FEEDS adds the looping camera publishers.
 define start_application
 $(readiness)
 timed setup 'Validate Compose configuration' $(COMPOSE) config --quiet
-make --no-print-directory container-images IMAGE_SERVICES="$(APP_SERVICES) proxy"
 trap 'code=$$?; trap - ERR; printf "startup failed; stopping the application\n" >&2; $(COMPOSE) --profile assets stop || true; exit "$$code"' ERR
 timed startup 'Drain application pipelines and Chat Q&A' $(COMPOSE) stop backend dlsps chatqna cam1 cam2
 # Stock conversion skips any existing directory, even an interrupted export.
@@ -482,6 +468,11 @@ chat_cache=$$(timed startup 'Verify and repair Chat Q&A cache' $(COMPOSE) run --
   -e PYTHONPATH=/handheld/scripts chatqna -c 'import pathlib,yaml; from demo_assets import repair_chat_cache, chat_cache_ready; cache=pathlib.Path("/tmp/model_cache"); models=yaml.safe_load(pathlib.Path("/tmp/model_config/config.yaml").read_text())["model_settings"]; ids=[models[role + "_MODEL_ID"] for role in ("LLM", "EMBEDDING", "RERANKER")]; repair_chat_cache(cache, ids); print("cached" if chat_cache_ready(cache, ids) else "download")' | tail -n 1)
 export CHATQNA_HF_HUB_OFFLINE=$$([[ $$chat_cache == cached ]] && echo 1 || echo 0)
 printf 'Chat Q&A models: %s\n' "$$([[ $$chat_cache == cached ]] && echo 'cached; no internet needed' || echo 'downloading on this start; internet required')"
+# The language and speech models load in the background while the detector and
+# demo videos are prepared; the next up -d leaves these running containers as they are.
+timed startup 'Start model services early' $(COMPOSE) up -d $(MODEL_SERVICES)
+make --no-print-directory detector-model
+$(if $(DEMO_FEEDS),make --no-print-directory demo-videos)
 timed startup 'Start stock application containers' $(COMPOSE) up -d $(APP_SERVICES)
 WAIT_CONTAINER=handheld-multi-modal-mediamtx-1 wait_for "MediaMTX" curl -fsS --max-time 3 http://127.0.0.1:9997/v3/paths/list
 WAIT_CONTAINER=handheld-multi-modal-dlsps-1 wait_for "DLSPS" curl -fsS --max-time 3 http://127.0.0.1:8080/pipelines
@@ -512,11 +503,14 @@ endef
 # Recursive startup enables journalling. Dry runs expand the original graph
 # without executing the reporter or creating runtime files.
 ifneq ($(strip $(STARTUP_TIMING_DIR)$(findstring n,$(filter-out --%,$(firstword $(MAKEFLAGS))))),)
-up: prereq setup
+# prereq's detector-model and demo-videos run inside start_application, after
+# the model services start, so both downloads overlap.
+up demo-up: IMAGE_SERVICES = model-downloader $(APP_SERVICES) proxy $(if $(DEMO_FEEDS),cam1)
+up: preflight licenses container-images asset-permissions setup
 	@$(start_application)
 
 demo-up: DEMO_FEEDS := yes
-demo-up: demo-prereq setup
+demo-up: preflight licenses container-images asset-permissions setup
 	@$(start_application)
 else
 up demo-up:
@@ -637,16 +631,18 @@ bundle: preflight
 	mkdir -p "$$BUNDLE"
 	rm -f "$$BUNDLE/images.tar"
 	printf '%s\n' $$images > "$$BUNDLE/images.txt"
-	# Run from this directory, git archive packs only this application.
+	# source.tar holds this application and the shared startup timing tool it uses.
 	if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-	  git archive --format=tar --prefix=handheld-multi-modal/ -o "$$BUNDLE/source.tar" HEAD
-	  [[ -z $$(git status --porcelain --untracked-files=no -- .) ]] || echo 'note: uncommitted changes are not in source.tar' >&2
+	  git -C .. archive --format=tar -o "$$BUNDLE/source.tar" HEAD handheld-multi-modal tools/startup-timing
+	  [[ -z $$(git -C .. status --porcelain --untracked-files=no -- handheld-multi-modal tools/startup-timing) ]] || echo 'note: uncommitted changes are not in source.tar' >&2
 	else
 	  # Release ZIP install: no Git metadata, so skip per-device and runtime files.
-	  tar --transform 's,^\.,handheld-multi-modal,' -cf "$$BUNDLE/source.tar" \
-	    --exclude=./data --exclude=./startup-timings --exclude=./datasets --exclude=./config/tls \
-	    --exclude=./config/devices.yaml --exclude=./config/mediamtx.yml --exclude=./config/speech \
-	    --exclude=./docs/application/evidence --exclude=./.env --exclude=./.demo-assets.lock .
+	  app=$(notdir $(CURDIR))
+	  tar -C .. --transform "s,^$$app,handheld-multi-modal," -cf "$$BUNDLE/source.tar" \
+	    --exclude=$$app/data --exclude=$$app/startup-timings --exclude=$$app/datasets --exclude=$$app/config/tls \
+	    --exclude=$$app/config/devices.yaml --exclude=$$app/config/mediamtx.yml --exclude=$$app/config/speech \
+	    --exclude=$$app/docs/application/evidence --exclude=$$app/.env --exclude=$$app/.demo-assets.lock \
+	    --exclude=tools/startup-timing/__pycache__ "$$app" tools/startup-timing
 	fi
 	if [[ "$(IMAGES)" != no ]]; then
 	  echo "Saving $$(wc -l < "$$BUNDLE/images.txt") images (takes several minutes)"

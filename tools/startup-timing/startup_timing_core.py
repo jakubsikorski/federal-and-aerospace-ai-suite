@@ -66,10 +66,13 @@ def begin(group, label):
     return token
 
 
-def end(token, code=0, status=None):
-    journal({"event": "end", "id": token, "monotonic": time.monotonic(),
+def end(token, code=0, status=None, size=None):
+    event = {"event": "end", "id": token, "monotonic": time.monotonic(),
              "utc": utc(), "status": status or ("ok" if code == 0 else "failed"),
-             "returncode": code})
+             "returncode": code}
+    if size is not None:
+        event["bytes"] = size
+    journal(event)
 
 
 def cached(group, label):
@@ -107,7 +110,9 @@ def pull_images(command):
             return 0
         token = begin("container_download", image)
         code = subprocess.run(["docker", "pull", image]).returncode
-        end(token, code)
+        size = subprocess.run(["docker", "image", "inspect", "-f", "{{.Size}}", image],
+                              capture_output=True, text=True).stdout.strip() if code == 0 else ""
+        end(token, code, size=int(size) if size.isdigit() else None)
         return code
 
     # Preserve concurrent downloads. Per-image elapsed times overlap; the
@@ -277,6 +282,7 @@ def read_steps(path, failed):
                 "seconds": event["monotonic"] - opening["monotonic"],
                 "status": event["status"], "method": "monotonic-clock",
                 "returncode": event["returncode"],
+                **({"bytes": event["bytes"]} if "bytes" in event else {}),
             })
     for opening in active.values():
         steps.append({"group": opening["group"], "label": opening["label"],
@@ -358,21 +364,41 @@ def elapsed_breakdown(report):
     return totals
 
 
-def rounded_partition(totals, overall):
-    """Round an additive partition to tenths without breaking its displayed sum."""
+def rounded_partition(totals, overall, preferred=None):
+    """Round an additive partition to tenths without breaking its displayed sum.
+
+    ``preferred`` fixes a group's displayed units (for example the sum of its
+    displayed steps) when the other groups can still absorb the remainder.
+    """
     if not math.isclose(sum(totals.values()), overall, abs_tol=1e-6):
         raise ValueError("Elapsed-time breakdown does not match overall startup time")
+    target = round(overall * 10)
     units = {group: math.floor(value * 10) for group, value in totals.items()}
-    remaining = round(overall * 10) - sum(units.values())
-    order = sorted(totals, key=lambda group: totals[group] * 10 - units[group], reverse=True)
-    for group in order[:remaining]:
-        units[group] += 1
+    fixed = {group: value for group, value in (preferred or {}).items() if group in totals}
+    free = [group for group in totals if group not in fixed]
+    remaining = target - sum(units[group] for group in free) - sum(fixed.values())
+    # Other rows may round down as well as up, but never below zero.
+    if not free or abs(remaining) > len([group for group in free if remaining > 0 or units[group] > 0]):
+        fixed, free, remaining = {}, list(totals), target - sum(units.values())
+    units.update(fixed)
+    order = sorted((group for group in free if remaining > 0 or units[group] > 0),
+                   key=lambda group: totals[group] * 10 - units[group], reverse=remaining > 0)
+    for group in order[:abs(remaining)]:
+        units[group] += 1 if remaining > 0 else -1
     return units
 
 
 def elapsed_rows(report):
     totals = elapsed_breakdown(report)
-    displayed = rounded_partition(totals, report["overall_seconds"])
+    # A sequential stage shows the same total as its rows elsewhere in the report.
+    preferred = {}
+    for group, value in totals.items():
+        members = [step for step in report["steps"] if step["group"] == group]
+        units = summed_units(members)
+        if units is not None and abs(sum(step["seconds"] for step in members
+                                         if step["seconds"] is not None) - value) < 0.05:
+            preferred[group] = units
+    displayed = rounded_partition(totals, report["overall_seconds"], preferred)
     order = [*ELAPSED_STAGES, *(key for key in totals if key not in ELAPSED_STAGES)]
     return [(ELAPSED_STAGES[key] if key in ELAPSED_STAGES else GROUPS[key], seconds(displayed[key] / 10))
             for key in order if key in displayed]
@@ -447,7 +473,8 @@ def markdown(value):
 def step_title(step):
     group, label = step["group"], step["label"]
     if group == "container_download":
-        return f"Download container image: `{label}`"
+        size = step.get("bytes")
+        return f"Download container image: `{label}`" + (f" ({data_size(size)})" if size else "")
     if step["group"] == "service_startup" and step["status"] == "reused":
         return "Service status"
     for rule in config()["report"].get("step_titles", []):
@@ -458,6 +485,66 @@ def step_title(step):
             fields = {"label": label, **match.groupdict()}
             return rule["title"].format(**fields)
     return label
+
+
+def data_size(value):
+    return f"{value / 1e9:.1f} GB" if value >= 1e9 else f"{value / 1e6:.0f} MB"
+
+
+def offset(when, origin):
+    """Time relative to the report start, for example +5:26."""
+    minutes, remainder = divmod(max(0, int(timestamp(when) - origin)), 60)
+    return f"+{minutes}:{remainder:02d}"
+
+
+def headline(steps, origin):
+    """Header lines: the slowest service step and how much work was cached."""
+    lines = []
+    measured = [step for step in steps
+                if step["seconds"] is not None and step["status"] not in {"cached", "reused"}]
+    parent_groups = {rule["parent_group"] for rule in config()["report"].get("parent_rules", [])}
+    slowest = max((step for step in measured if step["group"] in parent_groups),
+                  key=lambda step: step["seconds"], default=None)
+    if slowest:
+        title = SERVICES.get(slowest["service"], (slowest["service"],))[0]
+        text = (f"**Slowest service:** {markdown(title)}, {seconds(slowest['seconds'])} "
+                f"({offset(slowest['started_at'], origin)} to {offset(slowest['ended_at'], origin)})")
+        parts = sorted((step for step in measured if step.get("parent_id") == slowest["id"]),
+                       key=lambda step: step["seconds"], reverse=True)[:2]
+        if parts:
+            text += "; largest parts: " + "; ".join(
+                f"{markdown(step_title(step))} {seconds(step['seconds'])}" for step in parts)
+        lines.append(text + "  ")
+    work_groups = {item["group"] for item in config()["report"].get("summaries", [])}
+    work = [step for step in steps if step["group"] in work_groups and step["status"] != "unavailable"]
+    reused = sum(step["status"] in {"cached", "reused"} for step in work)
+    if work and not reused:
+        lines.append(f"**Cache:** nothing reused; all {len(work)} download and preparation steps ran.  ")
+    elif work and reused == len(work):
+        lines.append("**Cache:** everything reused; no downloads or preparation were needed.  ")
+    elif work:
+        lines.append(f"**Cache:** {reused} of {len(work)} download and preparation steps reused.  ")
+    return lines
+
+
+def step_rows(steps, origin):
+    """Table rows; two or more short successful steps share one row."""
+    limit = config()["report"].get("quick_step_seconds", 1.0)
+    quick = [step for step in steps if step["status"] == "ok"
+             and step["seconds"] is not None and step["seconds"] < limit]
+    if len(quick) < 2:
+        quick = []
+    folded = {id(step) for step in quick}
+    rows = []
+    for step in steps:
+        if id(step) not in folded:
+            rows.append(f"| {markdown(step_title(step))} | {offset(step['started_at'], origin)} "
+                        f"| {step_time(step)} |")
+        elif step is quick[0]:
+            names = ", ".join(step_title(item) for item in quick)
+            rows.append(f"| {len(quick)} quick steps: {markdown(names)} | {offset(step['started_at'], origin)} "
+                        f"| {seconds(summed_units(quick) / 10)} |")
+    return rows
 
 
 def step_time(step):
@@ -497,14 +584,16 @@ def preparation_rows(parent, phases):
     overlap = sum(step["seconds"] for step in measured) - union_seconds(measured)
     overlap_units = round(max(0.0, overlap) * 10)
     other_units = round(parent["seconds"] * 10) - (summed_units(phases) or 0) + overlap_units
+    if overlap_units < 10:  # sub-second overlap is netted into Other rather than shown
+        other_units, overlap_units = other_units - overlap_units, 0
     rows = []
     if overlap_units:
-        rows.append(f"| Concurrent phases counted twice (subtract) | -{seconds(overlap_units / 10)} |")
+        rows.append(f"| Concurrent phases counted twice (subtract) | | -{seconds(overlap_units / 10)} |")
     if other_units > 0:
-        rows.append(f"| Other initialization / unmeasured phases | {seconds(other_units / 10)} |")
+        rows.append(f"| Other initialization / unmeasured phases | | {seconds(other_units / 10)} |")
     elif other_units < 0:
-        rows.append(f"| Rounding adjustment | -{seconds(-other_units / 10)} |")
-    rows.append(f"| **Preparation total** | **{step_time(parent)}** |")
+        rows.append(f"| Rounding adjustment | | -{seconds(-other_units / 10)} |")
+    rows.append(f"| **Preparation total** | | **{step_time(parent)}** |")
     return rows
 
 
@@ -525,6 +614,7 @@ def summary_counts(members):
 def render_markdown(report):
     groups, steps = report["groups"], report["steps"]
     steps = assign_parents(steps)
+    origin = timestamp(report["started_at"])
     started = datetime.fromisoformat(report["started_at"].replace("Z", "+00:00"))
     started = started.astimezone(timezone.utc).strftime("%d %b %Y, %H:%M:%S UTC")
     result = ("Ready" if report["status"] == "ok" else "Failed")
@@ -535,6 +625,7 @@ def render_markdown(report):
         + (f" (exit {report['returncode']})" if report["returncode"] else "") + "  ",
         f"**{report_config.get('target_label', 'Target')}:** "
         f"`{markdown(report_config.get('target_format', '{target}').format(target=report['target']))}`  ",
+        *headline(steps, origin),
         f"**Started:** {started}", "",
         "## Where did the time go?", "",
         report_config.get("overview_intro",
@@ -607,11 +698,22 @@ def render_markdown(report):
                 rule = next((item for item in report_config.get("parent_rules", [])
                              if item["parent_group"] == parent["group"]
                              and item["parent_service"] == service), {})
-                children = [step for step in steps if step.get("parent_id") == parent["id"]]
+                children = sorted((step for step in steps if step.get("parent_id") == parent["id"]),
+                                  key=lambda item: timestamp(item["started_at"]))
+                # A child that mostly repeats another kind of child's time (a wait around an
+                # install) would be counted twice in the table; it is listed under Other steps.
+                # ponytail: heuristic; mark wrappers explicitly in the config if it misfires.
+                children = [step for step in children if not any(
+                    other["group"] != step["group"] and step["ended_at"] and other["ended_at"]
+                    and other["seconds"] < step["seconds"]
+                    and min(timestamp(step["ended_at"]), timestamp(other["ended_at"]))
+                    - max(timestamp(step["started_at"]), timestamp(other["started_at"])) >= step["seconds"] / 2
+                    for other in children)]
                 lines += [f"**{markdown(rule.get('preparation_title', step_title(parent)))}:** "
-                          f"{step_time(parent)}.", ""]
-                lines += ["| Included step | Time |", "|---|---:|"]
-                lines += [f"| {markdown(step_title(step))} | {step_time(step)} |" for step in children]
+                          f"{step_time(parent)}, {offset(parent['started_at'], origin)} to "
+                          f"{offset(parent['ended_at'], origin) if parent['ended_at'] else 'unfinished'}.", ""]
+                lines += ["| Included step | Starts | Time |", "|---|---:|---:|"]
+                lines += step_rows(children, origin)
                 measured = parent["seconds"] is not None and parent["status"] not in {"cached", "reused"}
                 rows = preparation_rows(parent, children) if measured else None
                 if rows is not None:
@@ -633,10 +735,10 @@ def render_markdown(report):
             if remaining:
                 if parents:
                     lines += ["**Other steps** (may overlap the parent total):", ""]
-                lines += ["| Step | Time |", "|---|---:|"]
-                for step in sorted(remaining, key=lambda item: (item["started_at"], item["label"])):
-                    lines.append(f"| {markdown(step_title(step))} | {step_time(step)} |")
-                    rendered_ids.add(step["id"])
+                lines += ["| Step | Starts | Time |", "|---|---:|---:|"]
+                remaining = sorted(remaining, key=lambda item: (timestamp(item["started_at"]), item["label"]))
+                lines += step_rows(remaining, origin)
+                rendered_ids.update(step["id"] for step in remaining)
                 lines.append("")
         for note in report_config.get("service_notes", []):
             if note["service"] == service and any(step["group"] == note["group"] for step in members):
@@ -650,6 +752,12 @@ def render_markdown(report):
     lines += [
         "## Measurement notes", "",
         *("- " + note for note in report_config.get("measurement_notes", [])),
+        "- **Starts** is the time after the startup command began, in minutes and seconds.",
+    ]
+    if sum(step["group"] == "container_download" and step["status"] == "ok" for step in steps) > 1:
+        lines.append("- Container images download in parallel and share bandwidth, so each image's time "
+                     "includes waiting for the others; its size is the unpacked image size.")
+    lines += [
         "- Displayed values use tenths of a second; the elapsed-time partition is rounded together "
         "so its rows still add up.",
         "- Detailed durations and timestamped sources are in `report.json`.", "",
