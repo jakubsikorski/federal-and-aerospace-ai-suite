@@ -36,7 +36,7 @@ space := $(empty) $(empty)
 CAMERA_IDS := $(foreach i,$(shell seq 1 $(CAMERAS) 2>/dev/null),cam$(i))
 ANNOTATED_IDS := $(patsubst cam%,annotated%,$(CAMERA_IDS))
 
-.PHONY: help prereq demo-prereq up demo-up demo-mission status stop \
+.PHONY: help prereq demo-prereq up demo-up up-run demo-up-run demo-mission status stop \
   pipelines-restart down clean clean-demo clean-history clean-all \
   demo-stop demo-down demo-status demo-pipelines-restart \
   bundle bundle-load preflight licenses setup tls asset-permissions model-downloader-up \
@@ -54,7 +54,8 @@ help:
 	@echo 'Deploy with the demo camera feeds'
 	@echo '  make demo-prereq      prereq + download and prepare the demo videos'
 	@echo '  make demo-up          Start the application with looping demo cameras'
-	@echo '                        Writes startup-timings/<run>/report.md and report.json'
+	@echo '                        Report: ASSET_ROOT/startup-timings/latest/report.md'
+	@echo '                        Compare: ../tools/startup-timing/timing.sh compare <older run dir> startup-timings/latest'
 	@echo '  make demo-mission     Optional: load examples/demo-mission-packet.pdf'
 	@echo
 	@echo 'Operate'
@@ -95,7 +96,10 @@ help:
 SETUP_NOTE := The stock Model Download installs its UV and pip dependencies on every start (internet required).
 MODEL_NOTE := The first start downloads several GB of models; later starts use the cache.
 
-timing = source "$(abspath ../tools/startup-timing)/timing.sh"
+TIMING_CLI := $(abspath ../tools/startup-timing)/timing.sh
+timing = source "$(TIMING_CLI)"
+# Command that runs the real startup graph inside the timing wrapper.
+INNER_MAKE ?= make
 
 # Only this small polling helper is shared between startup checks.
 define readiness
@@ -300,7 +304,7 @@ licenses:
 	  python3 scripts/license_notice.py $(if $(DEMO_FEEDS),--demo)
 
 container-images:
-	@python3 scripts/startup_timing.py pull -- \
+	@$(TIMING_CLI) pull -- \
 	  $(if $(DEMO_FEEDS),$(COMPOSE),$(ASSET_COMPOSE)) --profile assets config --images $(IMAGE_SERVICES)
 
 # Chat Q&A, Whisper and SpeechT5 download their own models on first start.
@@ -314,7 +318,7 @@ detector-model:
 	else
 	  code=$$?
 	  [[ $$code == 2 ]] || exit "$$code"
-	  token=$$(timing_begin model_preparation 'YOLO26s downloader startup and model preparation')
+	  token=$$(timing_begin --service model-downloader model_preparation 'YOLO26s downloader startup and model preparation')
 	  make --no-print-directory model-downloader-up
 	  python3 scripts/demo_assets.py model --timeout $(MODEL_WAIT_SECONDS)
 	  timing_end "$$token"
@@ -462,10 +466,7 @@ timed startup 'Drain application pipelines and Chat Q&A' $(COMPOSE) stop backend
 # model waits ~2 min before falling back to the cache. Once every model is
 # cached and exported, start it with the standard HF_HUB_OFFLINE switch.
 chat_cache=$$(timed startup 'Verify and repair Chat Q&A cache' $(COMPOSE) run --rm --no-deps --entrypoint python3 \
-  -v "$(CURDIR)/scripts:/handheld/scripts:ro" \
-  -v "$(CURDIR)/config/model-download:/handheld/config/model-download:ro" \
-  -v "$(CURDIR)/config/dlsps/detector-profile.json:/handheld/config/dlsps/detector-profile.json:ro" \
-  -e PYTHONPATH=/handheld/scripts chatqna -c 'import pathlib,yaml; from demo_assets import repair_chat_cache, chat_cache_ready; cache=pathlib.Path("/tmp/model_cache"); models=yaml.safe_load(pathlib.Path("/tmp/model_config/config.yaml").read_text())["model_settings"]; ids=[models[role + "_MODEL_ID"] for role in ("LLM", "EMBEDDING", "RERANKER")]; repair_chat_cache(cache, ids); print("cached" if chat_cache_ready(cache, ids) else "download")' | tail -n 1)
+  -v "$(CURDIR)/scripts/chat_cache.py:/chat_cache.py:ro" chatqna /chat_cache.py | tail -n 1)
 export CHATQNA_HF_HUB_OFFLINE=$$([[ $$chat_cache == cached ]] && echo 1 || echo 0)
 printf 'Chat Q&A models: %s\n' "$$([[ $$chat_cache == cached ]] && echo 'cached; no internet needed' || echo 'downloading on this start; internet required')"
 # The language and speech models load in the background while the detector and
@@ -500,22 +501,20 @@ if [[ -n $$backend_stale ]]; then $(backend_stale_warning); fi
 $(if $(DEMO_FEEDS),printf 'Demo cameras live: $(CAMERA_IDS)\n',printf 'No cameras yet: add one in the console under Cameras\n')
 endef
 
-# Recursive startup enables journalling. Dry runs expand the original graph
-# without executing the reporter or creating runtime files.
-ifneq ($(strip $(STARTUP_TIMING_DIR)$(findstring n,$(filter-out --%,$(firstword $(MAKEFLAGS))))),)
+# up/demo-up run the real graph (up-run/demo-up-run) inside the timing wrapper.
+# The wrapper line uses a literal `make`, so `make -n up` only prints it.
+up demo-up:
+	@$(TIMING_CLI) run --name $@ -- $(INNER_MAKE) --no-print-directory $@-run
+
 # prereq's detector-model and demo-videos run inside start_application, after
 # the model services start, so both downloads overlap.
-up demo-up: IMAGE_SERVICES = model-downloader $(APP_SERVICES) proxy $(if $(DEMO_FEEDS),cam1)
-up: preflight licenses container-images asset-permissions setup
+up-run demo-up-run: IMAGE_SERVICES = model-downloader $(APP_SERVICES) proxy $(if $(DEMO_FEEDS),cam1)
+up-run: preflight licenses container-images asset-permissions setup
 	@$(start_application)
 
-demo-up: DEMO_FEEDS := yes
-demo-up: preflight licenses container-images asset-permissions setup
+demo-up-run: DEMO_FEEDS := yes
+demo-up-run: preflight licenses container-images asset-permissions setup
 	@$(start_application)
-else
-up demo-up:
-	@python3 scripts/startup_timing.py run --target $@ -- $(MAKE) --no-print-directory $@
-endif
 
 # Optional: upload the committed example packet. Never part of demo-up; the
 # operator can instead upload it, or a real document, in the Mission panel.
@@ -642,7 +641,7 @@ bundle: preflight
 	    --exclude=$$app/data --exclude=$$app/startup-timings --exclude=$$app/datasets --exclude=$$app/config/tls \
 	    --exclude=$$app/config/devices.yaml --exclude=$$app/config/mediamtx.yml --exclude=$$app/config/speech \
 	    --exclude=$$app/docs/application/evidence --exclude=$$app/.env --exclude=$$app/.demo-assets.lock \
-	    --exclude=tools/startup-timing/__pycache__ "$$app" tools/startup-timing
+	    --exclude=tools/startup-timing/__pycache__ --exclude=tools/startup-timing/startup_timing/__pycache__ "$$app" tools/startup-timing
 	fi
 	if [[ "$(IMAGES)" != no ]]; then
 	  echo "Saving $$(wc -l < "$$BUNDLE/images.txt") images (takes several minutes)"

@@ -62,7 +62,7 @@ HANDHELD_EXCLUDES := 'handheld-multi-modal/data/*' 'handheld-multi-modal/dataset
 	'handheld-multi-modal/config/tls/*' 'handheld-multi-modal/config/devices.yaml' \
 	'handheld-multi-modal/config/mediamtx.yml' 'handheld-multi-modal/docs/application/*' \
 	'handheld-multi-modal/.env' 'handheld-multi-modal/.demo-assets.lock' \
-	'handheld-multi-modal/startup-timings/*' 'tools/startup-timing/__pycache__/*'
+	'handheld-multi-modal/startup-timings/*' 'tools/startup-timing/__pycache__/*' 'tools/startup-timing/startup_timing/__pycache__/*'
 
 $(HANDHELD_ZIP): $(shell find $(HANDHELD_SRC) tools/startup-timing -type f 2>/dev/null)
 	@mkdir -p "$(DIST_DIR)"
@@ -106,6 +106,7 @@ $(SOLUTION_ZIP): \
 		--exclude='handheld-multi-modal/.env' \
 		--exclude='handheld-multi-modal/.demo-assets.lock' \
 		--exclude='tools/startup-timing/__pycache__' \
+		--exclude='tools/startup-timing/startup_timing/__pycache__' \
 		./ "$(SOLUTION_STAGE)/federal-and-aerospace-ai-suite/"
 	@mkdir -p "$(DIST_DIR)"
 	@rm -f "$@"

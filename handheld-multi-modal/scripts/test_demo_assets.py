@@ -17,6 +17,7 @@ import tempfile
 from unittest.mock import MagicMock, patch
 
 import demo_assets as assets
+import chat_cache
 
 
 def check_localhost_only():
@@ -321,7 +322,7 @@ def main():
         for name in ('openvino_model.xml', 'openvino_model.bin', 'openvino_tokenizer.xml',
                      'openvino_tokenizer.bin', 'config.json', 'tokenizer_config.json'):
             (complete / name).write_text('complete fixture')
-        assets.repair_chat_cache(chat, ['Intel/neural-chat-7b-v3-3',
+        chat_cache.repair_chat_cache(chat, ['Intel/neural-chat-7b-v3-3',
                                       'ibm-granite/granite-embedding-125m-english', 'absent/model'])
         assert not partial.exists()
         backup = next(partial.parent.glob('*.incomplete-*'))
@@ -329,22 +330,22 @@ def main():
         assert (complete / 'openvino_model.bin').read_text() == 'complete fixture'
         # Offline start needs every export plus the Hub snapshot that ref points to.
         embed = ['ibm-granite/granite-embedding-125m-english']
-        assert not assets.chat_cache_ready(chat, embed)
+        assert not chat_cache.chat_cache_ready(chat, embed)
         repo = chat / 'models--ibm-granite--granite-embedding-125m-english'
         (repo / 'refs').mkdir(parents=True)
         (repo / 'refs/main').write_text('abc123\n')
-        assert not assets.chat_cache_ready(chat, embed)
+        assert not chat_cache.chat_cache_ready(chat, embed)
         (repo / 'snapshots/abc123').mkdir(parents=True)
-        assert assets.chat_cache_ready(chat, embed)
-        assert not assets.chat_cache_ready(chat, embed + ['Intel/neural-chat-7b-v3-3'])
+        assert chat_cache.chat_cache_ready(chat, embed)
+        assert not chat_cache.chat_cache_ready(chat, embed + ['Intel/neural-chat-7b-v3-3'])
         # Dry runs must never run the recursive downloader or create assets.
         dry_root = root / 'dry-run'
         dry_run = subprocess.run(
-            ['make', '-n', '-C', str(assets.REPO), 'demo-up', f'ASSET_ROOT={dry_root}'],
+            ['make', '-n', '-C', str(assets.REPO), 'demo-up-run', f'ASSET_ROOT={dry_root}'],
             check=True, capture_output=True, text=True).stdout
         assert not dry_root.exists()
         assert '--profile assets stop' in dry_run
-        assert ':/handheld/config/dlsps/detector-profile.json:ro' in dry_run
+        assert '/scripts/chat_cache.py:/chat_cache.py:ro' in dry_run
         # Exercise the actual Make recipe with different device groups, without Docker.
         group_root = root / 'groups'
         (group_root / 'config').mkdir(parents=True)
@@ -360,11 +361,11 @@ def main():
     # The committed example packet is exactly what the generator produces.
     assert assets.MISSION_EXAMPLE.read_bytes() == assets._pdf_bytes(assets.MISSION_DEMO_LINES), \
         'examples/demo-mission-packet.pdf is stale; run: python3 scripts/demo_assets.py mission'
-    dry = subprocess.run(['make', '-n', '--no-print-directory', '-C', str(assets.REPO), 'demo-up'],
+    dry = subprocess.run(['make', '-n', '--no-print-directory', '-C', str(assets.REPO), 'demo-up-run'],
                          capture_output=True, text=True).stdout
     assert 'mission/documents' not in dry and 'demo-mission-packet' not in dry, 'demo-up must not load a mission'
     # Deployment without demo feeds never downloads demo videos or starts publishers.
-    own = subprocess.run(['make', '-n', '--no-print-directory', '-C', str(assets.REPO), 'up'],
+    own = subprocess.run(['make', '-n', '--no-print-directory', '-C', str(assets.REPO), 'up-run'],
                          capture_output=True, text=True).stdout
     # The detector and demo videos are prepared by nested make calls after the model services start.
     assert 'make --no-print-directory detector-model' in own and 'demo-videos' not in own and 'up -d --force-recreate cam' not in own
@@ -375,6 +376,11 @@ def main():
         notice = plan.index('scripts/license_notice.py')
         assert notice < plan.index('model-downloader -ec'), 'licenses must be accepted before any download'
         assert ('license_notice.py --demo' in plan) == demo
+    # The public targets only wrap the real graph with the timing runner; a dry run creates nothing.
+    wrapper_root = root / 'wrapper-dry-run'
+    wrapper = subprocess.run(['make', '-n', '--no-print-directory', '-C', str(assets.REPO), 'up', f'ASSET_ROOT={wrapper_root}'],
+                             check=True, capture_output=True, text=True).stdout
+    assert 'timing.sh' in wrapper and not wrapper_root.exists()
     print('PASS: stock job request, atomic installation, cached reuse, corruption/failed-job rejection, timeout cancellation, video integrity, Make dry-run safety/full-stack failure cleanup, separate device groups, interrupted Chat export recovery, committed example mission packet not auto-loaded, localhost-only bindings')
 
 

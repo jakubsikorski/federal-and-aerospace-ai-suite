@@ -1,0 +1,160 @@
+# SPDX-FileCopyrightText: (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+"""Command line: run, begin, end, render, compare, pull."""
+import argparse
+from datetime import datetime, timezone
+import json
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import time
+import uuid
+
+from . import config as configuration
+from . import journal, render
+from .report import build, load
+
+
+def execute(command):
+    """Run the command, forwarding SIGINT/SIGTERM to it and waiting for it before reporting."""
+    child = subprocess.Popen(command)
+    previous = {n: signal.signal(n, lambda s, _f: child.send_signal(s))
+                for n in (signal.SIGINT, signal.SIGTERM)}
+    try:
+        code = child.wait()
+        return 128 - code if code < 0 else code  # killed by signal N: shell convention 128+N
+    finally:
+        for number, handler in previous.items():
+            signal.signal(number, handler)
+
+
+def collect_logs(cfg, start, finish, enabled=True):
+    """Optional service-log plugin; imported only when the config asks for it."""
+    if not (enabled and configuration.uses_log_plugin(cfg)):
+        return [], []
+    from . import logmarkers
+    return logmarkers.observe_services(cfg, start, finish)
+
+
+def write(directory, report, cfg, explain=False, gantt=False, keep_json=False):
+    if not keep_json:
+        (directory / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+    (directory / "report.md").write_text(render.markdown(report, cfg, explain, gantt))
+    return directory / "report.md"
+
+
+def link_latest(root, directory):
+    link, temporary = root / "latest", root / f".latest-{uuid.uuid4().hex[:6]}"
+    try:
+        temporary.symlink_to(directory.name)
+        os.replace(temporary, link)
+    except OSError:
+        temporary.unlink(missing_ok=True)  # a symlink is a convenience, never a failure
+
+
+def run(command, name=None, config_path=None, output=None, explain=False, gantt=False, logs=True):
+    cfg = configuration.load(config_path)
+    found = configuration.find(config_path)
+    root = configuration.report_root(cfg, output)
+    directory = root / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ-") + uuid.uuid4().hex[:8])
+    directory.mkdir(parents=True, mode=0o700)
+    os.environ["STARTUP_TIMING_DIR"] = str(directory)
+    os.environ.pop("STARTUP_TIMING_PARENT", None)
+    if found:
+        os.environ["STARTUP_TIMING_CONFIG"] = found
+    (directory / "events.jsonl").touch(mode=0o600)
+    start, clock, code = journal.utc(), time.monotonic(), 1
+    try:
+        code = execute(command)
+    finally:
+        finish, elapsed = journal.utc(), time.monotonic() - clock
+        steps = journal.read_steps(directory / "events.jsonl", code != 0)
+        extra, warnings = collect_logs(cfg, start, finish, logs)
+        report = build(name or Path(command[0]).name, start, finish, elapsed, code,
+                       steps + extra, warnings, clock)
+        path = write(directory, report, cfg, explain, gantt)
+        link_latest(root, directory)
+        print(render.console(report, path), flush=True)
+    return code
+
+
+def strip_separator(command):
+    return command[1:] if command[:1] == ["--"] else command
+
+
+def parser():
+    top = argparse.ArgumentParser(prog="timing", description="Time the steps of a startup command.")
+    sub = top.add_subparsers(dest="action", required=True)
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--config", help="optional TOML (default: $STARTUP_TIMING_CONFIG or ./startup-timing.toml)")
+    view = argparse.ArgumentParser(add_help=False)
+    view.add_argument("--explain", action="store_true", help="add per-section totals and notes")
+    view.add_argument("--gantt", action="store_true", help="add a Mermaid gantt chart")
+    runner = sub.add_parser("run", parents=[common, view], help="run a command and write a report")
+    runner.add_argument("--name", help="report title (default: the command name)")
+    runner.add_argument("--output", help="report root directory (default: ./startup-timings)")
+    runner.add_argument("--no-logs", action="store_true", help="skip the optional service-log plugin")
+    runner.add_argument("command", nargs=argparse.REMAINDER)
+    opening = sub.add_parser("begin", help="start a step; prints its token")
+    opening.add_argument("--service")
+    opening.add_argument("--parent")
+    opening.add_argument("group")
+    opening.add_argument("label")
+    closing = sub.add_parser("end", help="finish a step")
+    closing.add_argument("token")
+    closing.add_argument("--code", type=int, default=0)
+    closing.add_argument("--status", choices=("ok", "failed", "cached", "reused"))
+    pulling = sub.add_parser("pull", parents=[common], help="plugin: pull the images a command lists")
+    pulling.add_argument("command", nargs=argparse.REMAINDER)
+    rendering = sub.add_parser("render", parents=[common, view], help="re-render report.md from report.json")
+    rendering.add_argument("reports", type=Path, nargs="+")
+    comparing = sub.add_parser("compare", help="per-step deltas between two reports")
+    comparing.add_argument("first", type=Path)
+    comparing.add_argument("second", type=Path)
+    return top
+
+
+def main(argv=None):
+    top = parser()
+    args = top.parse_args(argv)
+    if args.action == "begin":
+        try:
+            print(journal.begin(args.group, args.label, args.service, args.parent))
+        except OSError as error:  # timing is observational: never fail the application
+            print(f"startup timing: cannot record step: {error}", file=sys.stderr)
+        return 0
+    if args.action == "end":
+        try:
+            journal.end(args.token, args.code, args.status)
+        except OSError as error:
+            print(f"startup timing: cannot record step end: {error}", file=sys.stderr)
+        return 0
+    if args.action == "compare":
+        from .compare import compare
+        print(compare(args.first, args.second))
+        return 0
+    if args.action == "render":
+        cfg = configuration.load(args.config)
+        for path in args.reports:
+            path = path / "report.json" if path.is_dir() else path
+            output = write(path.parent, load(path), cfg, args.explain, args.gantt, keep_json=True)
+            print(f"Startup timing report available: {output}")
+        return 0
+    command = strip_separator(args.command)
+    if not command:
+        top.error("a command is required after --")
+    if args.action == "pull":
+        from .images import pull_images
+        return pull_images(configuration.load(args.config), command)
+    return run(command, args.name, args.config, args.output, args.explain, args.gantt, not args.no_logs)
+
+
+def entry():
+    try:
+        return main()
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        print(f"startup timing failed: {error}", file=sys.stderr)
+        return 1

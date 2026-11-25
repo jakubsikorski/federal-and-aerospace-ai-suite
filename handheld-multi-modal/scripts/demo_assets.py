@@ -16,12 +16,15 @@ import tempfile
 import time
 import urllib.request
 import uuid
-from startup_timing import begin, cached, end
 # Parses only OpenVINO IR written locally by the pinned Model Download job;
 # Python's expat does not expand external entities.
 import xml.etree.ElementTree as ET  # nosec B405
 
 REPO = Path(__file__).resolve().parents[1]
+# Shared timing journal: no-ops unless a timing run is active.
+sys.path.insert(0, str(REPO.parent / "tools/startup-timing"))
+from startup_timing.journal import begin, cached, end  # noqa: E402  pylint: disable=wrong-import-position
+from chat_cache import chat_cache_ready  # noqa: E402  pylint: disable=wrong-import-position
 REQUEST = json.loads((REPO / "config/model-download/yolo26s.json").read_text())
 MODEL = REQUEST["models"][0]["name"]
 IMAGE = "intel/model-download:2026.3.0-rc2@sha256:510c41fdad3bc6091350570ca2c6ac1d45cbfa382fbacf22853fdafb3cb566ca"
@@ -245,30 +248,6 @@ def write_mission(target=MISSION_EXAMPLE):
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(_pdf_bytes(MISSION_DEMO_LINES))
     print(f"Wrote synthetic demo mission packet: {target}")
-
-
-def repair_chat_cache(directory, models):
-    """Stock conversion skips existing directories, even interrupted exports."""
-    files = ("openvino_model.xml", "openvino_model.bin", "openvino_tokenizer.xml",
-             "openvino_tokenizer.bin", "config.json", "tokenizer_config.json")
-    for model in models:
-        path = directory / model
-        if path.is_dir() and not all((path / name).is_file() and (path / name).stat().st_size for name in files):
-            backup = path.with_name(path.name + ".incomplete-" + str(time.time_ns()))
-            path.rename(backup)
-            print("Preserved incomplete export:", backup)
-
-
-def chat_cache_ready(directory, models):
-    """True when every model has its OpenVINO export and a resolvable Hub snapshot."""
-    for model in models:
-        if not (directory / model / "openvino_model.xml").is_file():
-            return False
-        repo = directory / ("models--" + model.replace("/", "--"))
-        ref = repo / "refs/main"
-        if not ref.is_file() or not (repo / "snapshots" / ref.read_text().strip()).is_dir():
-            return False
-    return True
 
 
 def ir_problem(xml):

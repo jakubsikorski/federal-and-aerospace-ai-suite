@@ -2,9 +2,7 @@
 # SPDX-FileCopyrightText: (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Offline startup timing, stock log boundaries and Make integration checks."""
-from contextlib import redirect_stdout
-import io
+"""Offline tests for the shared startup timing tool and its Handheld integration."""
 import json
 import os
 from pathlib import Path
@@ -14,405 +12,368 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-import startup_timing as timing
-
 REPO = Path(__file__).resolve().parents[1]
+SHARED = REPO.parent / "tools/startup-timing"
+if not SHARED.is_dir():
+    SHARED = Path("/tools/startup-timing")  # the test container mounts the tool here
+sys.path.insert(0, str(SHARED))
+TIMING = SHARED / "timing.py"
+HELPERS = SHARED / "timing.sh"
+
+from startup_timing import compare, config, images, journal, logmarkers, render, report  # noqa: E402
+from startup_timing import cli  # noqa: E402
+
+HANDHELD = config.load(REPO / "startup-timing.toml")
 
 
-class TestStartupTiming(unittest.TestCase):
-    def test_report_groups_services_and_sums_model_downloads_without_parent_totals(self):
-        def step(group, label, start, finish, status="ok"):
-            return timing.interval(group, label, f"2026-11-24T10:00:{start:02d}Z",
-                                   f"2026-11-24T10:00:{finish:02d}Z", "fixture", status)
+def step(group, label, offset, seconds, status="ok", **extra):
+    """A recorded step as the journal reader produces it, on the run's clock."""
+    return {"group": group, "label": label, "offset": offset, "seconds": seconds,
+            "status": status, "started_at": "2026-11-24T10:00:00+00:00", **extra}
 
-        steps = [
-            step("container_download", "intel/chatqna:core_test", 0, 10),
-            step("container_download", "intel/audio-analyzer:test", 0, 20),
-            step("model_download", "Chat Q&A: model/a snapshot acquisition", 20, 30),
-            step("model_download", "Chat Q&A: model/b snapshot acquisition", 30, 40),
-            step("model_download", "YOLO26s: weights acquisition and PyTorch loading", 25, 30),
-            step("model_packages", "YOLO26s: pip installation script phase", 20, 25),
-            step("model_preparation", "YOLO26s downloader startup and model preparation", 0, 50),
-            step("model_combined", "SpeechT5: model/vocoder download and OpenVINO export", 20, 50),
-            step("backend_build", "Build Backend image", 10, 30),
-            step("container_download", "python:3.12-slim (Backend base)", 0, 5),
-            step("container_download", "bluenviron/mediamtx:1.21.3-ffmpeg", 5, 10),
-            step("readiness", "MediaMTX", 10, 11),
-            step("startup", "Start stock application containers", 10, 12),
-            step("readiness", "Model Download (ultralytics, port 8200)", 19, 26),
-        ]
+
+def build(steps, total=10.0, code=0, warnings=()):
+    return report.build("demo", "2026-11-24T10:00:00+00:00", "2026-11-24T10:00:10+00:00",
+                        total, code, steps, list(warnings))
+
+
+def run_tool(script, cwd, *args, env=None):
+    """Run a bash script under `timing.sh run`, without any configuration file."""
+    environment = {k: v for k, v in os.environ.items() if not k.startswith("STARTUP_TIMING")}
+    environment.update(env or {})
+    return subprocess.run(["bash", str(HELPERS), "run", *args, "--", "bash", "-c", script],
+                          cwd=cwd, env=environment, text=True, capture_output=True)
+
+
+class TestZeroConfig(unittest.TestCase):
+    SCRIPT = f"""source {HELPERS}
+timed setup 'Check prerequisites' sleep 0.1
+timing_cached models 'Detector model cache'
+timed --service backend build 'Build image' bash -c 'source {HELPERS}; timed build "Compile" sleep 0.2'
+t=$(timing_begin start 'Wait until ready'); sleep 0.1; timing_end "$t"
+sleep 0.1
+"""
+
+    def test_helpers_only_no_config(self):
         with tempfile.TemporaryDirectory() as temporary:
-            directory = Path(temporary)
-            report = timing.write_report(directory, "demo-up", "2026-11-24T10:00:00Z",
-                                         "2026-11-24T10:01:00Z", 60, 0, steps, [])
-            text = (directory / "report.md").read_text()
-            stored = json.loads((directory / "report.json").read_text())
-            self.assertTrue(all(step["id"] for step in stored["steps"]))
-            by_id = {step["id"]: step for step in stored["steps"]}
-            self.assertTrue(all(step["parent_id"] in by_id for step in stored["steps"] if step["parent_id"]))
-            self.assertTrue(any(step["parent_id"] and by_id[step["parent_id"]]["group"] == "model_preparation"
-                                for step in stored["steps"] if step["group"] == "model_download"))
-        self.assertIn("**Result:** Ready after **1m 00.0s**", text)
-        self.assertIn("| Model downloads | 25.0 s **(partial)** |", text)
-        self.assertIn("| Container images | 40.0 s |", text)
-        self.assertIn("These rows add up to the overall startup time", text)
-        self.assertIn("## Work totals across services", text)
-        self.assertIn("### Chat Q&A", text)
-        chat = text.split("### Chat Q&A\n", 1)[1].split("### ", 1)[0]
-        self.assertIn("Answers questions using the language and document models.", chat)
-        self.assertIn("**Separately timed model downloads (sum):** 20.0 s.", chat)
-        self.assertIn("| Download model: model/a | +0:20 | 10.0 s |", chat)
-        self.assertIn("| Download model: model/b | +0:30 | 10.0 s |", chat)
-        self.assertNotIn("YOLO26s", chat)
-        self.assertNotIn("<details>", text)
-        self.assertIn("**Partial totals:**", text)
-        self.assertIn("A child row is included in its parent total.", text)
-        detector = text.split("### Model Download / YOLO26s\n", 1)[1].split("### ", 1)[0]
-        self.assertIn("| Other initialization / unmeasured phases | | 38.0 s |", detector)
-        self.assertIn("| **Preparation total** | | **50.0 s** |", detector)
-        # The wait around the package install moves out of the table, so nothing is subtracted.
-        self.assertNotIn("Concurrent phases", detector)
-        self.assertIn("| Readiness check wait: Model Download (ultralytics, port 8200) | +0:19 | 7.0 s |",
-                      detector.split("**Other steps**", 1)[1])
-        self.assertNotIn("### Shared startup / host configuration", text)
-        self.assertEqual(text.count("Start stock application containers"), 1)
-        self.assertNotIn("| Step | Group |", text)
-        self.assertNotIn("stock-log-boundary", text)
-        self.assertEqual([item["service"] for item in report["steps"]],
-                         ["chatqna", "audio-analyzer", "chatqna", "chatqna", "model-downloader",
-                          "model-downloader", "model-downloader", "tts", "backend", "backend",
-                          "demo-cameras", "mediamtx", "shared", "model-downloader"])
-
-    def test_report_surfaces_failures_caches_and_service_specific_gaps(self):
-        start, finish = "2026-11-24T10:00:00Z", "2026-11-24T10:00:10Z"
-        steps = [
-            timing.interval("container_download", "nginx:1.30.6-alpine", start, finish, "test", "failed"),
-            timing.interval("backend_build", "Backend image matches sources", start, start, "test", "cached"),
-            {"group": "model_download", "label": "Chat Q&A: a/b snapshot acquisition",
-             "started_at": start, "ended_at": None, "seconds": None, "status": "unavailable",
-             "method": "missing-completion-marker"},
-        ]
-        with tempfile.TemporaryDirectory() as temporary:
-            directory = Path(temporary)
-            timing.write_report(directory, "demo-up", start, finish, 10, 2, steps,
-                                ["audio-analyzer: no recognized model phase markers; internal split unavailable."])
-            text = (directory / "report.md").read_text()
-        self.assertIn("**Result:** Failed after **10.0 s** (exit 2)", text)
-        self.assertIn("1 failed.", text)
-        self.assertIn("| Backend image matches sources | +0:00 | Cached |", text)
-        self.assertIn("| Backend build | Cached / reused |", text)
-        self.assertIn("| Download model: a/b | +0:00 | Not measured |", text)
-        self.assertIn("| Model downloads | Not measured **(partial)** |", text)
-        self.assertIn("**Attention:** a step failed", text)
-        audio = text.split("### Audio Analyzer / Whisper\n", 1)[1].split("### ", 1)[0]
-        self.assertIn("**Not measured:**", audio)
-        self.assertIn("download and conversion times are unavailable", audio)
-
-    def test_only_combined_conversion_does_not_make_download_total_partial(self):
-        steps = [
-            timing.interval("model_download", "Chat Q&A: model/a snapshot acquisition",
-                            "2026-11-24T10:00:00Z", "2026-11-24T10:00:10Z", "test"),
-            timing.interval("model_combined", "Chat Q&A: model/a export and model initialization/loading",
-                            "2026-11-24T10:00:10Z", "2026-11-24T10:00:20Z", "test"),
-        ]
-        with tempfile.TemporaryDirectory() as temporary:
-            directory = Path(temporary)
-            timing.write_report(directory, "demo-up", "2026-11-24T10:00:00Z",
-                                "2026-11-24T10:01:00Z", 60, 0, steps, [])
-            text = (directory / "report.md").read_text()
-        self.assertIn("| Model downloads | 10.0 s |", text)
-        self.assertIn("| Model conversion | Not measured **(partial)** |", text)
-        self.assertIn("| Combined model preparation | 10.0 s |", text)
-
-    def test_service_download_total_distinguishes_cached_and_missing_work(self):
-        start, finish = "2026-11-24T10:00:00Z", "2026-11-24T10:00:10Z"
-        measured = timing.interval("model_download", "Chat Q&A: model/a snapshot acquisition",
-                                   start, finish, "test")
-        cached = timing.interval("model_download", "Chat Q&A: model/b snapshot acquisition",
-                                 start, start, "test", "cached")
-        missing = {"group": "model_download", "label": "Chat Q&A: model/b snapshot acquisition",
-                   "started_at": start, "ended_at": None, "seconds": None, "status": "unavailable",
-                   "method": "missing-completion-marker"}
-        for other, expected in ((cached, "10.0 s"), (missing, "10.0 s (partial)")):
-            with self.subTest(status=other["status"]), tempfile.TemporaryDirectory() as temporary:
-                directory = Path(temporary)
-                timing.write_report(directory, "demo-up", start, finish, 10, 0, [measured, other], [])
-                text = (directory / "report.md").read_text()
-                self.assertIn(f"**Separately timed model downloads (sum):** {expected}.", text)
-
-    def test_elapsed_partition_counts_nested_and_parallel_work_once(self):
-        def step(group, label, start, finish, method="monotonic-clock"):
-            return timing.interval(group, label, f"2026-11-24T10:00:{start:02d}Z",
-                                   f"2026-11-24T10:00:{finish:02d}Z", method)
-
-        steps = [
-            step("model_preparation", "YOLO26s downloader startup and model preparation", 0, 10),
-            step("setup", "Asset permissions", 1, 2),
-            step("startup", "Start Model Download container", 2, 3),
-            step("readiness", "Model Download (ultralytics, port 8200)", 3, 5),
-            step("container_download", "image/a:1", 10, 20),
-            step("container_download", "image/b:1", 15, 25),
-            step("backend_build", "Build Backend image", 22, 30),
-            step("readiness", "Chat Q&A neural-chat model", 30, 35),
-            step("model_download", "Chat Q&A: model/a snapshot acquisition", 20, 34, "stock-log-boundary"),
-            step("service_startup", "chatqna: start to application ready", 20, 35, "docker-state-and-stock-log"),
-            {"group": "readiness", "label": "Whisper GPU service", "started_at": "2026-11-24T10:00:35Z",
-             "ended_at": None, "seconds": None, "status": "failed", "method": "unfinished-step"},
-        ]
-        report = {"started_at": "2026-11-24T10:00:00Z", "ended_at": "2026-11-24T10:00:40Z",
-                  "overall_seconds": 40, "steps": steps}
-        expected = {"model_preparation": 10, "container_download": 12, "parallel": 3,
-                    "backend_build": 5, "readiness": 5, "unmeasured": 5}
-        self.assertEqual(timing.elapsed_breakdown(report), expected)
-        self.assertEqual(sum(timing.rounded_partition(expected, 40).values()), 400)
-        with tempfile.TemporaryDirectory() as temporary:
-            directory = Path(temporary)
-            timing.write_report(directory, "demo-up", report["started_at"], report["ended_at"],
-                                40, 1, steps, [])
-            text = (directory / "report.md").read_text()
-            overview = text.split("## Where did the time go?", 1)[1].split("## Work totals", 1)[0]
-            rows = [line.split("|")[2].strip().strip("*").removesuffix(" s")
-                    for line in overview.splitlines() if line.startswith("| ") and not line.startswith("| Startup")]
-            units = [round(float(value) * 10) for value in rows]
-            self.assertEqual(sum(units[:-1]), units[-1])
-            self.assertEqual(units[-1], 400)
-            self.assertEqual(json.loads((directory / "report.json").read_text())["elapsed_breakdown"], expected)
-        # A concurrent Backend command is not a child of detector preparation.
-        report["steps"].append(step("startup", "Start Backend container", 2, 4))
-        expected.update(model_preparation=8, parallel=5)
-        self.assertEqual(timing.elapsed_breakdown(report), expected)
-
-    def test_elapsed_partition_uses_monotonic_boundaries_when_wall_clock_moves(self):
-        step = timing.interval("backend_build", "Build Backend image",
-                               "2026-11-24T10:01:02Z", "2026-11-24T10:01:06Z", "monotonic-clock")
-        step.update(monotonic_started_at=102, monotonic_ended_at=106)
-        report = {"started_at": "2026-11-24T10:00:00Z", "ended_at": "2026-11-24T10:01:10Z",
-                  "monotonic_started_at": 100, "overall_seconds": 10, "steps": [step]}
-        self.assertEqual(timing.elapsed_breakdown(report), {"unmeasured": 6, "backend_build": 4})
-
-    def test_rounding_preserves_startup_and_work_sums(self):
-        totals = {"setup": 0.14, "startup": 0.14, "unmeasured": 0.14}
-        displayed = timing.rounded_partition(totals, 0.42)
-        self.assertEqual(sum(displayed.values()), 4)
-        for group, units in displayed.items():
-            self.assertLess(abs(units / 10 - totals[group]), 0.1)
-        steps = [
-            timing.interval("video_download", label, "2026-11-24T10:00:00Z",
-                            "2026-11-24T10:00:00.14Z", "monotonic-clock")
-            for label in ("a.mp4", "b.mp4")
-        ]
-        self.assertEqual(timing.summary_time(steps), "0.2 s")
-        self.assertEqual([timing.step_time(step) for step in steps], ["0.1 s", "0.1 s"])
-        # A sequential stage keeps the sum of its displayed steps; another row absorbs the difference.
-        self.assertEqual(timing.rounded_partition({"video_download": 5.6, "unmeasured": 4.4}, 10.0,
-                                                  {"video_download": 57}),
-                         {"video_download": 57, "unmeasured": 43})
-        self.assertEqual(timing.rounded_partition({"video_download": 1.0}, 1.0, {"video_download": 11}),
-                         {"video_download": 10})
-
-    def test_headline_names_slowest_service_cache_state_and_folds_quick_steps(self):
-        def step(group, label, start, finish, status="ok"):
-            return timing.interval(group, label, f"2026-11-24T10:00:{start:02d}.0Z",
-                                   f"2026-11-24T10:00:{finish:02d}.5Z", "test", status)
-
-        steps = [
-            step("service_startup", "chatqna: start to application ready", 10, 39),
-            step("model_download", "Chat Q&A: model/a snapshot acquisition", 11, 30),
-            step("service_startup", "tts: start to application ready", 10, 20),
-            step("container_download", "intel/chatqna:core_test", 0, 1, "cached"),
-            step("setup", "TLS certificate", 1, 1),
-            step("setup", "Generate device configuration", 2, 2),
-        ]
-        with tempfile.TemporaryDirectory() as temporary:
-            directory = Path(temporary)
-            timing.write_report(directory, "demo-up", "2026-11-24T10:00:00Z",
-                                "2026-11-24T10:00:40Z", 40, 0, steps, [])
-            text = (directory / "report.md").read_text()
-        self.assertIn("**Slowest service:** Chat Q&A, 29.5 s (+0:10 to +0:39); "
-                      "largest parts: Download model: model/a 19.5 s", text)
-        self.assertIn("**Cache:** 1 of 2 download and preparation steps reused.", text)
-        self.assertIn("| 2 quick steps: TLS certificate, Generate device configuration | +0:01 | 1.0 s |", text)
-        self.assertIn("| Download container image: `intel/chatqna:core_test` | +0:00 | Cached |", text)
-
-    def test_service_preparation_subtotal_subtracts_overlap(self):
-        parent = timing.interval("service_startup", "chatqna: start to application ready",
-                                 "2026-11-24T10:00:00Z", "2026-11-24T10:00:10Z", "test")
-        phases = [
-            timing.interval("model_download", "Chat Q&A: model/a snapshot acquisition",
-                            "2026-11-24T10:00:00Z", "2026-11-24T10:00:08Z", "test"),
-            timing.interval("model_download", "Chat Q&A: model/b snapshot acquisition",
-                            "2026-11-24T10:00:05Z", "2026-11-24T10:00:10Z", "test"),
-        ]
-        self.assertEqual(timing.preparation_rows(parent, phases), [
-            "| Concurrent phases counted twice (subtract) | | -3.0 s |",
-            "| **Preparation total** | | **10.0 s** |",
-        ])
-        phases[1]["ended_at"] = "2026-11-24T10:00:11Z"
-        self.assertIsNone(timing.preparation_rows(parent, phases))
-
-    def test_render_existing_report_leaves_measurements_unchanged(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            directory = Path(temporary)
-            timing.write_report(directory, "demo-up", "2026-11-24T10:00:00Z",
-                                "2026-11-24T10:01:00Z", 60, 0, [], [])
-            path = directory / "report.json"
-            original = path.read_bytes()
-            path.with_suffix(".md").write_text("old report")
-            result = subprocess.run(
-                [sys.executable, str(REPO / "scripts/startup_timing.py"), "render", str(path)],
-                capture_output=True, text=True)
+            result = run_tool(self.SCRIPT, temporary, "--name", "demo")
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(path.read_bytes(), original)
-            self.assertIn("## Where did the time go?", path.with_suffix(".md").read_text())
-            self.assertIn("Startup timing report available:", result.stdout)
+            self.assertFalse(list(Path(temporary).glob("*.toml")))
+            latest = Path(temporary, "startup-timings", "latest")
+            self.assertTrue(latest.is_symlink())
+            data = json.loads((latest / "report.json").read_text())
+            text = (latest / "report.md").read_text()
+        self.assertEqual(data["schema"], 2)
+        by_label = {s["label"]: s for s in data["steps"]}
+        self.assertEqual(by_label["Compile"]["parent_id"], by_label["Build image"]["id"])
+        self.assertEqual(by_label["Build image"]["service"], "backend")
+        self.assertEqual(by_label["Detector model cache"]["status"], "cached")
+        self.assertIn("**Result:** Succeeded in", text)
+        self.assertIn("**Slowest step:**", text)
+        self.assertIn("partly warm", text)
+        self.assertIn("| Build image | Build / Backend |", text)  # undeclared names are title-cased
+        self.assertIn("↳ Compile", text)
+        self.assertIn("*Unmeasured / idle*", text)
+        self.assertIn("## Slowest", text)
+        self.assertNotIn("## Details", text)  # exact-partition maths stay out of the default view
+        self.assertLessEqual(len(result.stdout.strip().splitlines()), 12)
+        self.assertIn("Report:", result.stdout)
+
+    def test_failure_and_unfinished_step_still_produce_a_partial_report(self):
+        script = (f"source {HELPERS}; timed setup Good true; timed setup Bad false; "
+                  "timing_begin setup Dangling >/dev/null; exit 3")
+        with tempfile.TemporaryDirectory() as temporary:
+            result = run_tool(script, temporary)
+            self.assertEqual(result.returncode, 3)
+            data = json.loads(Path(temporary, "startup-timings/latest/report.json").read_text())
+            text = Path(temporary, "startup-timings/latest/report.md").read_text()
+        self.assertEqual((data["status"], data["returncode"]), ("failed", 3))
+        dangling = next(s for s in data["steps"] if s["label"] == "Dangling")
+        self.assertIsNone(dangling["seconds"])
+        self.assertIn("**FAILED** (exit 3)", text)
+        self.assertIn("| Dangling | Setup | unavailable | failed (no end recorded) |", text)
+        self.assertIn("FAILED (exit 3)", result.stdout)
+
+    def test_helpers_are_silent_outside_a_timed_run(self):
+        result = subprocess.run(["bash", "-c", f"source {HELPERS}; timed g l echo hi; timing_cached g l"],
+                                env={k: v for k, v in os.environ.items() if not k.startswith("STARTUP_TIMING")},
+                                text=True, capture_output=True)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "hi\n", ""))
+
+    def test_compare_two_runs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            for seconds in ("0.1", "0.4"):
+                run_tool(f"source {HELPERS}; timed a Work sleep {seconds}", temporary)
+            runs = sorted((p for p in Path(temporary, "startup-timings").iterdir() if p.name != "latest"),
+                          key=lambda p: json.loads((p / "report.json").read_text())["started_at"])
+            result = subprocess.run(["bash", str(HELPERS), "compare", str(runs[0]), str(runs[1] / "report.json")],
+                                    text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("| Work |", result.stdout)
+        self.assertRegex(result.stdout, r"\| Work \| 0\.\d s \| 0\.\d s \| \+0\.\d s")
+
+
+class TestFixes(unittest.TestCase):
+    def sh(self, script, **env):
+        environment = {k: v for k, v in os.environ.items() if not k.startswith("STARTUP_TIMING")}
+        environment.update(env)
+        return subprocess.run(["bash", "-c", script], env=environment, text=True, capture_output=True)
+
+    def test_helpers_survive_set_e_and_bad_timing_directory(self):
+        result = self.sh(f"set -e; source {HELPERS}; timed a b echo ran; echo survived", STARTUP_TIMING_DIR="/nonexistent")
+        self.assertEqual((result.returncode, result.stdout), (0, "ran\nsurvived\n"))
+
+    def test_relative_source_and_dashed_labels(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            result = subprocess.run(
+                ["bash", "-c", f"source ./timing.sh; cd /; t=$(timing_begin a --weird); timing_end \"$t\"; "
+                 f"timed a -1 true; wc -l < {temporary}/events.jsonl"],
+                cwd=SHARED, env={**os.environ, "STARTUP_TIMING_DIR": temporary}, text=True, capture_output=True)
+        self.assertEqual((result.returncode, result.stdout.strip(), result.stderr), (0, "4", ""))
+
+    def test_signal_exit_status_is_shell_convention(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            result = run_tool("kill -TERM $$", temporary)
+        self.assertEqual(result.returncode, 143)
+        self.assertIn("exit 143", result.stdout)
+
+    def test_unfinished_step_is_not_idle(self):
+        data = build([step("a", "Long", 2.0, None, "failed", method="unfinished-step")], total=10.0, code=130)
+        self.assertAlmostEqual(data["idle_seconds"], 2.0)
+
+    def test_parent_with_cached_child_still_leads(self):
+        parent = step("a", "Parent", 0, 5.0, id="p")
+        child = step("a", "Child", 0, None, "cached", parent_id="p")
+        data = build([parent, child, step("a", "Small", 6.0, 0.2)])
+        self.assertEqual(render.facts(data)["slowest"]["label"], "Parent")
+
+    def test_render_edges(self):
+        self.assertEqual(render.seconds(59.96), "1m 00.0s")
+        self.assertEqual(render.offset(59.96), "+1:00")
+        self.assertEqual(config.pretty("gpu_setup"), "Gpu Setup")
+        self.assertEqual(config.pretty("API_start"), "API Start")
+        text = render.markdown(build([step("a", "A", 0, 0.01)], total=0))
+        self.assertNotIn("( of the total)", text)
+        self.assertNotIn("()", text)
+
+    def test_all_cached_run_says_nothing_to_measure(self):
+        data = build([step("models", "Model cache", 0, None, "cached")], total=0.1)
+        text = render.markdown(data, explain_more=True)
+        self.assertIn("All steps were cached", text)
+        self.assertNotIn("Unmeasured / idle", text)
+        self.assertIn("| Models | 1 | cached | cached | 1 | 0 |", text)
+
+    def test_compare_cold_against_warm(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            paths = []
+            for name, status, seconds in (("a", "ok", 2.0), ("b", "cached", None)):
+                path = Path(temporary, name)
+                path.mkdir()
+                (path / "report.json").write_text(json.dumps(build([step("g", "Work", 0, seconds, status)])))
+                paths.append(path)
+            text = compare.compare(*paths)
+        self.assertIn("A is cold and B is warm", text)
+        self.assertIn("now cached", text)
+
+
+class TestReport(unittest.TestCase):
+    def test_sequential_rows_and_idle_add_up_to_total(self):
+        data = build([step("a", "One", 0, 2.0), step("b", "Two", 3.0, 4.0)])
+        self.assertAlmostEqual(data["idle_seconds"], 4.0)
+        self.assertAlmostEqual(data["overlap_seconds"], 0.0)
+        text = render.markdown(data)
+        self.assertIn("| +3.0 s | Two | B | 4.0 s | ok |", text)
+        self.assertIn("| | *Unmeasured / idle* | | 4.0 s | | 40% |", text)
+        self.assertIn("| | **Total** | | **10.0 s** | | |", text)
+        self.assertNotIn("parallel", text)
+
+    def test_parallel_steps_are_flagged_not_hidden(self):
+        data = build([step("a", "One", 0, 6.0), step("a", "Two", 2.0, 6.0)])
+        self.assertAlmostEqual(data["overlap_seconds"], 4.0)
+        self.assertAlmostEqual(data["idle_seconds"], 2.0)
+        self.assertIn("ran in parallel", render.markdown(data))
+
+    def test_nesting_ordering_cold_warm_and_unavailable(self):
+        steps = [step("g", "Later", 5.0, 1.0), step("g", "Parent", 0.0, 4.0, id="p"),
+                 step("g", "Child", 1.0, 1.0, parent_id="p"),
+                 step("g", "Cache hit", 0.0, 0.0, "cached"),
+                 step("g", "Lost", 6.5, None, "unavailable")]
+        data = build(steps)
+        text = render.markdown(data)
+        rows = [line for line in text.splitlines() if line.startswith("| +")]
+        self.assertEqual([r.split("|")[2].strip() for r in rows],
+                         ["Cache hit", "Parent", "↳ Child", "Later", "Lost"])
+        self.assertIn("**Run type:** partly warm, 1 of 5 steps cached", text)
+        self.assertIn("| Lost | G | unavailable | unavailable |", text)
+        self.assertNotIn("Lost: 0", text)
+        cold = render.markdown(build([step("g", "A", 0, 1.0)]))
+        self.assertIn("**Run type:** cold", cold)
+
+    def test_explain_and_gantt_are_opt_in(self):
+        data = build([step("model_download", "Fetch", 0, 2.0)])
+        plain = render.markdown(data)
+        full = render.markdown(data, {"groups": {"model_download": "Model downloads"}}, True, True)
+        self.assertNotIn("## Details", plain)
+        self.assertNotIn("mermaid", plain)
+        self.assertIn("| Model downloads | 1 | 2.0 s | 2.0 s | 0 | 0 |", full)
+        self.assertIn("```mermaid", full)
+
+    def test_toml_titles_are_optional_polish(self):
+        data = build([step("model_download", "Fetch", 0, 2.0, service="chatqna")])
+        self.assertIn("| Model Download / Chatqna |", render.markdown(data))
+        titled = render.markdown(data, HANDHELD)
+        self.assertIn("| Model downloads / Chat Q&A |", titled)
+
+    def test_old_format_reports_still_render_and_bad_files_fail_clearly(self):
+        old = {"target": "demo-up", "started_at": "2026-11-24T10:00:00Z", "ended_at": "2026-11-24T10:01:00Z",
+               "overall_seconds": 60, "returncode": 0, "status": "ok", "warnings": [], "groups": {},
+               "elapsed_breakdown": {},
+               "steps": [{"group": "setup", "label": "Old step", "started_at": "2026-11-24T10:00:10Z",
+                          "ended_at": "2026-11-24T10:00:20Z", "seconds": 10.0, "status": "ok",
+                          "method": "monotonic-clock", "service": "shared"}]}
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary, "report.json")
+            path.write_text(json.dumps(old))
+            before = path.read_bytes()
+            result = subprocess.run([sys.executable, str(TIMING), "render", str(path)],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(path.read_bytes(), before)
+            self.assertIn("| +10.0 s | Old step |", path.with_suffix(".md").read_text())
+            path.write_text('{"hello": 1}')
+            result = subprocess.run([sys.executable, str(TIMING), "render", str(path)],
+                                    capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("not a startup timing report", result.stderr)
+
+
+class TestLogPlugin(unittest.TestCase):
+    def test_plugin_only_loads_when_configured(self):
+        self.assertEqual(cli.collect_logs({}, "a", "b"), ([], []))
+        self.assertTrue(config.uses_log_plugin(HANDHELD))
+        self.assertFalse(config.uses_log_plugin({"groups": {"a": "A"}}))
 
     def test_group_overlap_cache_and_missing_boundaries(self):
-        steps = [
-            timing.interval("container_download", "a", "2026-11-24T10:00:00Z",
-                            "2026-11-24T10:00:10Z", "test"),
-            timing.interval("container_download", "b", "2026-11-24T10:00:05Z",
-                            "2026-11-24T10:00:15Z", "test"),
-            timing.interval("container_download", "cached", "2026-11-24T10:00:15Z",
-                            "2026-11-24T10:00:16Z", "test", "cached"),
-        ]
-        parser = timing.StockPhases("chatqna")
-        parser.feed("2026-11-24T10:00:00Z",
-                    "Downloading model Intel/neural-chat-7b-v3-3 from HuggingFace Hub...")
-        steps.extend(parser.finish())
-        totals = timing.summarize(steps)
-        self.assertEqual(totals["container_download"]["summed_seconds"], 20)
-        self.assertEqual(totals["container_download"]["active_wall_seconds"], 15)
-        self.assertEqual(totals["container_download"]["cached_or_reused_steps"], 1)
-        self.assertIsNone(totals["model_download"]["summed_seconds"])
-        self.assertEqual(totals["model_download"]["unavailable_steps"], 1)
+        parser = logmarkers.StockPhases(HANDHELD, "chatqna")
+        parser.feed("2026-11-24T10:00:00Z", "Downloading model Intel/neural-chat-7b-v3-3 from HuggingFace Hub...")
+        steps = parser.finish()
+        self.assertEqual(steps[0]["status"], "unavailable")
+        self.assertIsNone(steps[0]["seconds"])
+        data = build(steps + [step("container_download", "a", 0, 10.0), step("container_download", "b", 5.0, 10.0)])
+        group = data["groups"]["container_download"]
+        self.assertEqual((group["summed_seconds"], group["active_wall_seconds"]), (20.0, 15.0))
+        self.assertIsNone(data["groups"]["model_download"]["summed_seconds"])
+        self.assertEqual(data["groups"]["model_download"]["unavailable"], 1)
+
+    def test_service_log_steps_nest_under_the_recorded_step_of_their_service(self):
+        parent = step("prep", "Detector preparation", 0, 100.0, service="model-downloader")
+        phase = logmarkers.interval("model_download", "Weights", "2026-11-24T10:00:10+00:00",
+                                    "2026-11-24T10:00:20+00:00", "stock-log-boundary",
+                                    service="model-downloader")
+        data = build([parent, phase], total=100.0)
+        child = next(s for s in data["steps"] if s["label"] == "Weights")
+        self.assertEqual(child["parent_id"], next(s["id"] for s in data["steps"] if s["label"] == "Detector preparation"))
+        self.assertAlmostEqual(data["idle_seconds"], 0.0)
+        self.assertIn("†", render.markdown(data))
 
     def test_stock_pip_weights_and_exports_are_separate(self):
-        parser = timing.StockPhases("model-downloader")
+        parser = logmarkers.StockPhases(HANDHELD, "model-downloader")
         messages = [
-            "Syncing base dependencies with UV",
-            "SUCCESS: All plugin venvs created",
+            "Syncing base dependencies with UV", "SUCCESS: All plugin venvs created",
             "Activating virtual environment in /home/appuser/.virtualenvs/dlstreamer...",
             "Downloading and converting: /opt/models/ultralytics/public/yolo26s",
-            "\x1b[34mPyTorch:\x1b[0m starting from 'yolo26s.pt'",
-            "Export complete (2.3s)",
-            "PyTorch: starting from 'yolo26s.pt'",
-            "Export complete (2.4s)",
-            "PyTorch: starting from 'yolo26s.pt'",
-            "Export complete (8.5s)",
+            "\x1b[34mPyTorch:\x1b[0m starting from 'yolo26s.pt'", "Export complete (2.3s)",
+            "PyTorch: starting from 'yolo26s.pt'", "Export complete (2.4s)",
+            "PyTorch: starting from 'yolo26s.pt'", "Export complete (8.5s)",
         ]
         for index, message in enumerate(messages):
             parser.feed(f"2026-11-24T10:00:{index:02d}Z", message)
         steps = parser.finish()
-        self.assertEqual([step["group"] for step in steps],
+        self.assertEqual([s["group"] for s in steps],
                          ["model_packages", "model_packages", "model_download",
                           "model_transformation", "model_transformation", "model_transformation"])
         self.assertIn("INT8 with calibration acquisition", steps[-1]["label"])
-        self.assertTrue(all(step["seconds"] == 1 for step in steps))
+        self.assertTrue(all(s["seconds"] == 1 for s in steps))
 
     def test_chat_exports_and_embedded_downloads_are_not_fabricated(self):
-        parser = timing.StockPhases("chatqna")
+        parser = logmarkers.StockPhases(HANDHELD, "chatqna")
         parser.feed("2026-11-24T10:00:00Z", "Converting a/b model to OpenVINO toolkit format...")
         parser.feed("2026-11-24T10:00:02Z", "Converting c/d model to OpenVINO toolkit format...")
         parser.feed("2026-11-24T10:00:09Z", "Application startup complete.")
         steps = parser.finish()
-        self.assertEqual(steps[0]["group"], "model_transformation")
-        self.assertEqual(steps[0]["seconds"], 2)
-        self.assertEqual(steps[1]["group"], "model_combined")
-        self.assertEqual(steps[1]["seconds"], 7)
+        self.assertEqual((steps[0]["group"], steps[0]["seconds"]), ("model_transformation", 2))
+        self.assertEqual((steps[1]["group"], steps[1]["seconds"]), ("model_combined", 7))
         for service, start, finish in [
-            ("audio-analyzer", "utils.ensure_model: Exporting whisper-medium",
-             "utils.ensure_model: Export successful"),
+            ("audio-analyzer", "utils.ensure_model: Exporting whisper-medium", "utils.ensure_model: Export successful"),
             ("tts", "Exporting SpeechT5 model microsoft/speecht5_tts to OpenVINO IR",
              "Using cached OpenVINO TTS model at models/openvino"),
         ]:
-            parser = timing.StockPhases(service)
+            parser = logmarkers.StockPhases(HANDHELD, service)
             parser.feed("2026-11-24T10:00:00Z", start)
             parser.feed("2026-11-24T10:00:04Z", finish)
             steps = parser.finish()
-            self.assertEqual(len(steps), 1)
-            self.assertEqual(steps[0]["group"], "model_combined")
-            self.assertEqual(steps[0]["seconds"], 4)
+            self.assertEqual((len(steps), steps[0]["group"], steps[0]["seconds"]), (1, "model_combined", 4))
 
     def test_raw_logs_and_tokens_are_not_retained(self):
-        parser = timing.StockPhases("model-downloader")
-        entry = timing.log_entry(
+        parser = logmarkers.StockPhases(HANDHELD, "model-downloader")
+        parser.feed(*logmarkers.log_entry(
             '2026-11-24T10:00:00.123456789Z {"event":"Starting download: '
-            "{'HF_TOKEN': 'sensitive-fixture'}\"}")
-        parser.feed(*entry)
+            "{'HF_TOKEN': 'sensitive-fixture'}\"}"))
         self.assertEqual(parser.finish(), [])
-        self.assertIsNone(timing.log_entry("not a timestamp"))
-        self.assertIsNone(timing.log_entry("2026-11-24T10:00:00Z {partial"))
-
-    def test_cached_images_not_pulled_and_backend_not_pulled(self):
-        with tempfile.TemporaryDirectory() as temporary, \
-                patch.dict(os.environ, STARTUP_TIMING_DIR=temporary), \
-                patch.object(timing.subprocess, "check_output",
-                             return_value="a:1\nb:2\na:1\nhandheld/backend:dev\n"):
-            def command(args, **_kwargs):
-                code = 1 if args[:3] == ["docker", "image", "inspect"] and args[-1] == "b:2" else 0
-                return subprocess.CompletedProcess(args, code, stdout="250000000\n")
-            with patch.object(timing.subprocess, "run", side_effect=command) as run:
-                self.assertEqual(timing.pull_images(["docker", "compose", "config", "--images"]), 0)
-            pulls = [call.args[0] for call in run.call_args_list if call.args[0][1] == "pull"]
-            self.assertEqual(pulls, [["docker", "pull", "b:2"]])
-            steps = timing.read_steps(Path(temporary) / "events.jsonl", False)
-            self.assertEqual({step["status"] for step in steps}, {"ok", "cached"})
-            pulled = next(step for step in steps if step["status"] == "ok")
-            self.assertEqual(timing.step_title(pulled), "Download container image: `b:2` (250 MB)")
-            for step in steps:
-                self.assertEqual(step["seconds"], step["monotonic_ended_at"] - step["monotonic_started_at"])
-
-    def test_failed_run_keeps_report_and_notification(self):
-        with tempfile.TemporaryDirectory() as temporary, \
-                patch.dict(os.environ, ASSET_ROOT=temporary), \
-                patch.object(timing, "observe_services", return_value=([], ["logs unavailable"])):
-            protected = Path(temporary) / "data"
-            protected.mkdir(mode=0o500)
-            output = io.StringIO()
-            with redirect_stdout(output):
-                code = timing.run("demo-up", [sys.executable, "-c", "raise SystemExit(7)"])
-            self.assertEqual(code, 7)
-            reports = list((Path(temporary) / "startup-timings").glob("*/report.json"))
-            self.assertEqual(len(reports), 1)
-            report = json.loads(reports[0].read_text())
-            self.assertEqual(report["returncode"], 7)
-            self.assertEqual(report["status"], "failed")
-            self.assertIn("monotonic_started_at", report)
-            self.assertAlmostEqual(sum(report["elapsed_breakdown"].values()), report["overall_seconds"])
-            self.assertIn("Startup timing report available:", output.getvalue())
-            self.assertIn("Elapsed startup breakdown (adds up to overall):", output.getvalue())
-            self.assertTrue(reports[0].with_suffix(".md").exists())
-            self.assertEqual(list(protected.iterdir()), [])
-            self.assertEqual(reports[0].parent.stat().st_mode & 0o777, 0o700)
+        self.assertIsNone(logmarkers.log_entry("not a timestamp"))
+        self.assertIsNone(logmarkers.log_entry("2026-11-24T10:00:00Z {partial"))
 
     def test_missing_docker_still_generates_report(self):
         with tempfile.TemporaryDirectory() as temporary, \
                 patch.dict(os.environ, ASSET_ROOT=temporary), \
-                patch.object(timing, "execute", return_value=1), \
-                patch.object(timing.subprocess, "run", side_effect=FileNotFoundError("docker")):
-            with redirect_stdout(io.StringIO()):
-                self.assertEqual(timing.run("demo-up", ["make"]), 1)
-            report = json.loads(next((Path(temporary) / "startup-timings").glob(
-                "*/report.json")).read_text())
-            self.assertIn("Docker inspection unavailable", report["warnings"][0])
+                patch.object(cli, "execute", return_value=1), \
+                patch.object(logmarkers.subprocess, "run", side_effect=FileNotFoundError("docker")):
+            with patch("sys.stdout"):
+                self.assertEqual(cli.run(["make"], "demo-up", config_path=str(REPO / "startup-timing.toml")), 1)
+            data = json.loads(next((Path(temporary) / "startup-timings").glob("*/report.json")).read_text())
+        self.assertIn("Docker inspection unavailable", data["warnings"][0])
 
+
+class TestImages(unittest.TestCase):
+    def test_cached_images_not_pulled_and_backend_not_pulled(self):
+        with tempfile.TemporaryDirectory() as temporary, \
+                patch.dict(os.environ, STARTUP_TIMING_DIR=temporary), \
+                patch.object(images.subprocess, "check_output",
+                             return_value="intel/chatqna:1\nb:2\nintel/chatqna:1\nhandheld/backend:dev\n"):
+            def command(args, **_kwargs):
+                code = 1 if args[:3] == ["docker", "image", "inspect"] and args[-1] == "b:2" else 0
+                return subprocess.CompletedProcess(args, code, stdout="250000000\n")
+            with patch.object(images.subprocess, "run", side_effect=command) as run:
+                self.assertEqual(images.pull_images(HANDHELD, ["docker", "compose", "config", "--images"]), 0)
+            pulls = [call.args[0] for call in run.call_args_list if call.args[0][1] == "pull"]
+            self.assertEqual(pulls, [["docker", "pull", "b:2"]])
+            steps = journal.read_steps(Path(temporary) / "events.jsonl")
+        self.assertEqual({s["status"] for s in steps}, {"ok", "cached"})
+        pulled = next(s for s in steps if s["status"] == "ok")
+        self.assertEqual((pulled["group"], pulled["bytes"]), ("container_download", 250000000))
+        self.assertEqual(next(s for s in steps if s["status"] == "cached")["service"], "chatqna")
+        self.assertIn("b:2 (250 MB)", render.markdown(build([dict(pulled, offset=0.0)])))
+
+
+class TestHandheldMake(unittest.TestCase):
     def test_make_entrypoint_and_side_effect_free_dry_run(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             env = dict(os.environ)
             env.pop("STARTUP_TIMING_DIR", None)
             result = subprocess.run([
-                "make", "--no-print-directory", "demo-up", "MAKE=true",
+                "make", "--no-print-directory", "demo-up", "INNER_MAKE=true",
                 f"ASSET_ROOT={root / 'run'}",
             ], cwd=REPO, env=env, text=True, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("Startup timing report available:", result.stdout)
-            self.assertEqual(len(list((root / "run").glob("startup-timings/*/report.json"))), 1)
+            self.assertIn("Report:", result.stdout)
+            self.assertTrue((root / "run/startup-timings/latest/report.md").exists())
             dry = subprocess.run([
                 "make", "--no-print-directory", "-n", "demo-up", f"ASSET_ROOT={root / 'dry'}",
             ], cwd=REPO, env=env, text=True, capture_output=True)
             self.assertEqual(dry.returncode, 0, dry.stdout + dry.stderr)
             self.assertFalse((root / "dry").exists())
+
 
     def test_make_startup_and_failed_build_without_live_services(self):
         docker = """#!/usr/bin/env bash
@@ -455,36 +416,28 @@ esac
                 '  if [[ "$*" == *detector-model* || "$*" == *demo-videos* ]]; then return 0; fi\n'
                 '  command make "$@"\n'
                 "}\n")
-            driver = root / "driver.py"
-            driver.write_text(
-                "# SPDX-FileCopyrightText: (C) 2026 Intel Corporation\n"
-                "# SPDX-License-Identifier: Apache-2.0\n"
-                "import sys\nfrom unittest.mock import patch\n"
-                f"sys.path.insert(0, {str(REPO / 'scripts')!r})\n"
-                "import startup_timing\n"
-                "with patch.object(startup_timing, 'observe_services', return_value=([], [])):\n"
-                "    raise SystemExit(startup_timing.run('demo-up', sys.argv[1:]))\n")
             env = dict(os.environ, BASH_ENV=str(commands),
                        ASSET_ROOT=str(root / "assets"), TIMING_COMMAND_LOG=str(root / "commands"))
             for build_code in (0, 5):
                 env["FAKE_BUILD_CODE"] = str(build_code)
                 env.pop("STARTUP_TIMING_DIR", None)
                 result = subprocess.run([
-                    sys.executable, str(driver),
-                    "make", "--no-print-directory", "demo-up",
+                    sys.executable, str(TIMING), "run", "--name", "demo-up", "--no-logs", "--",
+                    "make", "--no-print-directory", "demo-up-run",
                     *(f"-o{target}" for target in ("preflight", "licenses", "container-images",
                                                    "asset-permissions", "setup")),
                     "RENDER_GID=123", "ACCEL_GID=456",
                 ], cwd=REPO, env=env, text=True, capture_output=True)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertIn("Startup timing report available:", result.stdout)
-            reports = list((root / "assets/startup-timings").glob("*/report.json"))
+                self.assertIn("Report:", result.stdout)
+            reports = [r for r in (root / "assets/startup-timings").glob("*/report.json") if not r.parent.is_symlink()]
             self.assertEqual(len(reports), 2)
             build_statuses = []
             for path in reports:
                 report = json.loads(path.read_text())
                 self.assertGreater(report["overall_seconds"], 0)
                 self.assertTrue(any(step["group"] == "readiness" for step in report["steps"]))
+                self.assertTrue((path.parent / "report.md").read_text().startswith("# Startup timing report"))
                 build_statuses.extend(step["status"] for step in report["steps"]
                                       if step["group"] == "backend_build")
             self.assertEqual(set(build_statuses), {"ok", "failed"})
