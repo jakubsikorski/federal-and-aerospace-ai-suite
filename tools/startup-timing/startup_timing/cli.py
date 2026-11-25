@@ -14,7 +14,7 @@ import time
 import uuid
 
 from . import config as configuration
-from . import journal, render
+from . import journal, render, services
 from .report import build, load
 
 
@@ -43,6 +43,7 @@ def write(directory, report, cfg, explain=False, gantt=False, keep_json=False):
     if not keep_json:
         (directory / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     (directory / "report.md").write_text(render.markdown(report, cfg, explain, gantt))
+    (directory / "summary.json").write_text(json.dumps(services.summary(report, cfg), indent=2) + "\n")
     return directory / "report.md"
 
 
@@ -111,6 +112,9 @@ def parser():
     pulling.add_argument("command", nargs=argparse.REMAINDER)
     rendering = sub.add_parser("render", parents=[common, view], help="re-render report.md from report.json")
     rendering.add_argument("reports", type=Path, nargs="+")
+    summing = sub.add_parser("summary", parents=[common], help="print the short, paste-ready summary of a run")
+    summing.add_argument("report", type=Path, nargs="?", default=Path("startup-timings/latest"))
+    summing.add_argument("--json", action="store_true", help="print summary.json instead of Markdown")
     comparing = sub.add_parser("compare", help="per-step deltas between two reports")
     comparing.add_argument("first", type=Path)
     comparing.add_argument("second", type=Path)
@@ -135,6 +139,11 @@ def main(argv=None):
     if args.action == "compare":
         from .compare import compare
         print(compare(args.first, args.second))
+        return 0
+    if args.action == "summary":
+        cfg = configuration.load(args.config)
+        data = load(args.report)
+        print(json.dumps(services.summary(data, cfg), indent=2) if args.json else "\n".join(render.brief(data, cfg)))
         return 0
     if args.action == "render":
         cfg = configuration.load(args.config)

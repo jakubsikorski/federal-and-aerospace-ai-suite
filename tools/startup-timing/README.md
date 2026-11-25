@@ -36,20 +36,54 @@ shell function through it disables `set -e` inside that function. For a function
 
 ## What the report shows
 
-- **Headline:** result, total time, cold or warm run, and two plain sentences: which service was
-  busy longest and on what, and which ran at the same time.
-- **Time by service:** one row per service, busiest first: how long it had a step running, its
-  share of the run, a strip showing *when* in the run it was busy, and its largest pieces of
-  work. Steps without `--service` appear as *Shared setup and orchestration*. Services whose
-  steps were all cached are listed in one line. Shares can add up to more than 100% because
-  services run in parallel.
-- **All timed steps** (collapsed): every step by start time, nested steps indented, with the
-  run time that no step covered. Cached steps are listed in one line.
-- A step that never ended is shown as **unavailable**, never as zero. A failed run still writes a
-  partial report. Commands, environment variables and output are never stored.
+`report.md` reads top to bottom, and the first two parts are short enough to paste into a cycle report
+(`timing.sh summary` prints just those):
 
-Tag steps with the service that owns them (`timed --service chatqna ...`) to get the service view.
-The console summary at the end of a run shows the top five services.
+- **Headline:** result, total time, cold or warm start, then up to two sentences: what took longest
+  and its main cost, and what ran alongside it.
+- **Time by service:** one row per service, busiest first: time, share of the run, and its biggest
+  cost. Services whose steps were all cached are named in one line. Shares can add up to more than
+  100% because services run in parallel.
+- **When each service was busy:** a text chart, one bar per service, so overlaps are visible.
+- **What each service spent its time on:** the five largest steps per service as a short list.
+- **All timed steps** (collapsed): every step by start time, nested steps indented.
+- A step that never ended is shown as **unavailable**, never as zero. A failed run still writes a
+  partial report that names the failed step. Commands, environment variables and output are never stored.
+
+Tag steps with the service that owns them (`timed --service db ...`); steps without one are
+grouped as *Shared setup*. Write labels for a reader: "Download model neural-chat-7b", not a log
+phrase. The console summary at the end of a run shows the top five services.
+
+## For other tools: `summary.json`
+
+Every run also writes a small, stable `summary.json` next to `report.md` (`timing.sh summary --json`
+prints it). Use it, not `report.json`, to feed dashboards or cycle reports. Keys are not renamed
+within `startup-timing-summary/1`:
+
+```json
+{"schema": "startup-timing-summary/1", "name": "demo-up", "status": "ok", "returncode": 0,
+ "started_at": "2026-11-25T11:36:39Z", "total_seconds": 1155.7, "run_type": "cold",
+ "idle_seconds": 3.1,
+ "bottleneck": {"id": "chatqna", "name": "Chat Q&A", "busy_seconds": 1112.4, "share": 0.9625,
+                "first_seconds": 3.8, "last_seconds": 1116.2, "cached_steps": 0, "failed_steps": 0,
+                "work": [{"label": "Download model neural-chat-7b", "seconds": 737.7}]},
+ "services": ["same shape as bottleneck, busiest first"]}
+```
+
+`run_type` is `cold`, `warm`, `partly warm` or `unknown`. `share` can exceed 1 in total because
+services overlap.
+
+## What works for other applications
+
+Works as is for any application that starts through a bash script or Make recipe on a host with
+Python 3.11+: wrap steps with `timed`, optionally tag `--service`, run under `timing.sh run`.
+No config file is needed. Non-bash launchers can call `python3 timing.py begin ...` and
+`... end TOKEN` (the same two commands the helpers use).
+
+Not covered: a service timing its own startup from inside a container (the journal is a host file
+reached through `STARTUP_TIMING_DIR`; mount it yourself if you need that), and the Handheld
+log-marker rules in `startup-timing.toml`, which only fit those stock images. Other applications
+should leave `[[log_rules]]` out.
 
 `--explain` adds per-section totals (sum of step times, and wall time with overlaps merged) and
 service descriptions. `--gantt` adds a Mermaid gantt chart. The full data (ids, parents, offsets,

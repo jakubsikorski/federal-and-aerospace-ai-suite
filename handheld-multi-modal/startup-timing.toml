@@ -108,7 +108,7 @@ pattern = "Syncing base dependencies with UV"
 action = "start"
 key = "uv"
 group = "model_packages"
-label = "Model Download: UV setup and dependencies"
+label = "Install Model Download tools (UV)"
 
 [[log_rules]]
 service = "model-downloader"
@@ -122,7 +122,7 @@ pattern = "Activating virtual environment in "
 action = "start"
 key = "pip"
 group = "model_packages"
-label = "YOLO26s: pip installation script phase"
+label = "Install detector export packages (pip)"
 
 [[log_rules]]
 service = "model-downloader"
@@ -131,7 +131,7 @@ action = "start"
 close = "pip"
 key = "weights"
 group = "model_download"
-label = "YOLO26s: weights acquisition and PyTorch loading"
+label = "Download detector weights (YOLO26s)"
 
 [[log_rules]]
 service = "model-downloader"
@@ -140,7 +140,7 @@ action = "start"
 close = "weights"
 key = "export"
 group = "model_transformation"
-labels = ["YOLO26s: FP32 export", "YOLO26s: FP16 export", "YOLO26s: INT8 with calibration acquisition export"]
+labels = ["Convert detector to OpenVINO: FP32", "Convert detector to OpenVINO: FP16", "Convert detector to OpenVINO: INT8 (incl. calibration data)"]
 
 [[log_rules]]
 service = "model-downloader"
@@ -154,7 +154,7 @@ pattern = "Downloading model (?P<model>[A-Za-z0-9_./-]{1,180}) from HuggingFace 
 action = "start"
 key = "download"
 group = "model_download"
-label = "Chat Q&A: {model} snapshot acquisition"
+label = "Download model {model}"
 
 [[log_rules]]
 service = "chatqna"
@@ -169,7 +169,7 @@ action = "start"
 close = "export"
 key = "export"
 group = "model_transformation"
-label = "Chat Q&A: {model} export"
+label = "Convert model {model} to OpenVINO"
 
 [[log_rules]]
 service = "chatqna"
@@ -177,7 +177,7 @@ pattern = "Optimized (?P<model>[A-Za-z0-9_./-]{1,180}) exists .*Skipping convers
 action = "skip"
 close = "export"
 group = "model_transformation"
-label = "Chat Q&A: {model} export"
+label = "Convert model {model} to OpenVINO"
 
 [[log_rules]]
 service = "audio-analyzer"
@@ -185,7 +185,7 @@ pattern = "utils.ensure_model:.*Exporting whisper-medium"
 action = "start"
 key = "export"
 group = "model_combined"
-label = "Whisper-medium: snapshot download and OpenVINO export"
+label = "Download and convert Whisper-medium"
 
 [[log_rules]]
 service = "audio-analyzer"
@@ -198,7 +198,7 @@ service = "audio-analyzer"
 pattern = "utils.ensure_model:.*Using cached export at "
 action = "skip"
 group = "model_combined"
-label = "Whisper-medium: prepared model"
+label = "Whisper-medium model (already prepared)"
 
 [[log_rules]]
 service = "tts"
@@ -206,7 +206,7 @@ pattern = "Exporting SpeechT5 model microsoft/speecht5_tts"
 action = "start"
 key = "export"
 group = "model_combined"
-label = "SpeechT5: model/vocoder download and OpenVINO export"
+label = "Download and convert SpeechT5 model and vocoder"
 
 [[log_rules]]
 service = "tts"
@@ -214,10 +214,10 @@ pattern = "Using cached OpenVINO TTS model at "
 action = "close_or_skip"
 key = "export"
 group = "model_combined"
-label = "SpeechT5: prepared model"
+label = "SpeechT5 model (already prepared)"
 
 [ready_patterns]
 all = "Application startup complete\\."
 close_key = "export"
 close_group = "model_combined"
-append = " and model initialization/loading"
+append = " and load"

@@ -68,8 +68,8 @@ sleep 0.1
         self.assertEqual(by_label["Compile"]["parent_id"], by_label["Build image"]["id"])
         self.assertEqual(by_label["Build image"]["service"], "backend")
         self.assertEqual(by_label["Detector model cache"]["status"], "cached")
-        self.assertIn("**Result:** Succeeded in", text)
-        self.assertIn("was busy longest", text)
+        self.assertIn("**Succeeded in", text)
+        self.assertIn("What took longest", text)
         self.assertIn("partly warm", text)
         self.assertIn("| Build image | Backend |", text)  # undeclared names are title-cased
         self.assertIn("↳ Compile", text)
@@ -78,6 +78,25 @@ sleep 0.1
         self.assertNotIn("## Details", text)  # exact-partition maths stay out of the default view
         self.assertLessEqual(len(result.stdout.strip().splitlines()), 12)
         self.assertIn("Report:", result.stdout)
+
+    def test_summary_json_and_paste_ready_summary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = Path(tmp) / "app.sh"
+            script.write_text(f'source "{HELPERS}"\n'
+                              'timed --service db load "Load data" sleep 0.2\n'
+                              'timed --service web start "Start web" sleep 0.1\n')
+            run = subprocess.run(["bash", str(HELPERS), "run", "--name", "x", "--", "bash", str(script)],
+                                 cwd=tmp, capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            data = json.loads((Path(tmp) / "startup-timings/latest/summary.json").read_text())
+            self.assertEqual(data["schema"], "startup-timing-summary/1")
+            self.assertEqual([s["id"] for s in data["services"]], ["db", "web"])
+            self.assertEqual(data["bottleneck"]["id"], "db")
+            self.assertEqual(data["bottleneck"]["work"][0]["label"], "Load data")
+            brief = subprocess.run(["bash", str(HELPERS), "summary"], cwd=tmp, capture_output=True, text=True)
+            self.assertIn("## Time by service", brief.stdout)
+            self.assertNotIn("<details>", brief.stdout)  # short enough to paste into a cycle report
+            self.assertIn("What each service spent its time on", (Path(tmp) / "startup-timings/latest/report.md").read_text())
 
     def test_failure_and_unfinished_step_still_produce_a_partial_report(self):
         script = (f"source {HELPERS}; timed setup Good true; timed setup Bad false; "
@@ -90,7 +109,7 @@ sleep 0.1
         self.assertEqual((data["status"], data["returncode"]), ("failed", 3))
         dangling = next(s for s in data["steps"] if s["label"] == "Dangling")
         self.assertIsNone(dangling["seconds"])
-        self.assertIn("**FAILED** (exit 3)", text)
+        self.assertIn("**FAILED (exit 3)", text)
         self.assertIn("| Dangling | Setup | unavailable | failed (no end recorded) |", text)
         self.assertIn("FAILED (exit 3)", result.stdout)
 
@@ -148,7 +167,7 @@ class TestFixes(unittest.TestCase):
         self.assertEqual(render.facts(data)["slowest"]["label"], "Parent")
 
     def test_render_edges(self):
-        self.assertEqual(render.seconds(59.96), "1m 00.0s")
+        self.assertEqual(render.seconds(59.96), "1m 00s")
         self.assertEqual(render.offset(59.96), "+1:00")
         self.assertEqual(config.pretty("gpu_setup"), "Gpu Setup")
         self.assertEqual(config.pretty("API_start"), "API Start")
@@ -192,6 +211,15 @@ class TestReport(unittest.TestCase):
         self.assertAlmostEqual(data["idle_seconds"], 2.0)
         self.assertIn("run in parallel", render.markdown(data))
 
+    def test_alongside_means_actual_overlap(self):
+        data = build([step("g", "First", 0, 4.0, service="a"), step("g", "Second", 4.0, 3.0, service="b"),
+                      step("g", "Third", 4.0, 2.0, service="c")], total=7.0)
+        text = render.markdown(data)
+        self.assertIn("**What took longest:** A", text)
+        self.assertNotIn("Ran alongside it:** B", text)  # B started after A finished
+        data = build([step("g", "One", 0, 4.0, service="a"), step("g", "Two", 1.0, 3.0, service="b")], total=4.0)
+        self.assertIn("**Ran alongside it:** B, 3.0 s of its 3.0 s", render.markdown(data))
+
     def test_nesting_ordering_cold_warm_and_unavailable(self):
         steps = [step("g", "Later", 5.0, 1.0), step("g", "Parent", 0.0, 4.0, id="p"),
                  step("g", "Child", 1.0, 1.0, parent_id="p"),
@@ -202,11 +230,11 @@ class TestReport(unittest.TestCase):
         rows = [line for line in text.splitlines() if line.startswith("| +")]
         self.assertEqual([r.split("|")[2].strip() for r in rows],
                          ["Parent", "&nbsp;&nbsp;↳ Child", "Later", "Lost"])
-        self.assertIn("partly warm: 1 of 5 steps cached", text)
+        self.assertIn("partly warm (1 of 5 steps cached)", text)
         self.assertIn("| Lost | G | unavailable | unavailable |", text)
         self.assertNotIn("Lost: 0", text)
         cold = render.markdown(build([step("g", "A", 0, 1.0)]))
-        self.assertIn("cold run, nothing cached", cold)
+        self.assertIn("cold start (nothing cached)", cold)
 
     def test_explain_and_gantt_are_opt_in(self):
         data = build([step("model_download", "Fetch", 0, 2.0)])
@@ -291,7 +319,7 @@ class TestLogPlugin(unittest.TestCase):
         self.assertEqual([s["group"] for s in steps],
                          ["model_packages", "model_packages", "model_download",
                           "model_transformation", "model_transformation", "model_transformation"])
-        self.assertIn("INT8 with calibration acquisition", steps[-1]["label"])
+        self.assertIn("INT8 (incl. calibration data)", steps[-1]["label"])
         self.assertTrue(all(s["seconds"] == 1 for s in steps))
 
     def test_chat_exports_and_embedded_downloads_are_not_fabricated(self):
@@ -436,7 +464,7 @@ esac
                 report = json.loads(path.read_text())
                 self.assertGreater(report["overall_seconds"], 0)
                 self.assertTrue(any(step["group"] == "readiness" for step in report["steps"]))
-                self.assertTrue((path.parent / "report.md").read_text().startswith("# Startup timing report"))
+                self.assertTrue((path.parent / "report.md").read_text().startswith("# Startup timing:"))
                 build_statuses.extend(step["status"] for step in report["steps"]
                                       if step["group"] == "backend_build")
             self.assertEqual(set(build_statuses), {"ok", "failed"})

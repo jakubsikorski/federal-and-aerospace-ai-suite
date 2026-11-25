@@ -5,7 +5,7 @@
 from . import config as configuration
 from .report import SKIPPED, measured, union_seconds
 
-SHARED = "Shared setup and orchestration"
+SHARED = "Shared setup"
 STRIP = 24
 
 
@@ -62,6 +62,36 @@ def strip(row, total):
     return "".join(cells)
 
 
+def overlap(first, second):
+    """Seconds during which both services had a step running."""
+    if not first["spans"] or not second["spans"]:
+        return 0.0
+    both = union_seconds(first["spans"] + second["spans"])
+    return max(0.0, union_seconds(first["spans"]) + union_seconds(second["spans"]) - both)
+
+
 def parallel(rows, total):
     """True when the services' busy times add up to clearly more than the run."""
     return bool(total) and sum(r["busy"] or 0 for r in rows if r["service"]) > total * 1.05
+
+
+def summary(report, cfg, limit=5):
+    """Small stable JSON for other tools. Keys are documented in the README; do not rename them."""
+    from .report import facts
+    total, rows = report["overall_seconds"], analyse(report, cfg)
+
+    def part(step):
+        return {"label": step["label"], "seconds": round(step["seconds"], 2)}
+
+    services = [{"id": r["service"], "name": r["name"], "busy_seconds": round(r["busy"], 2),
+                 "share": round(r["busy"] / total, 4) if total else None,
+                 "first_seconds": round(r["first"], 2), "last_seconds": round(r["last"], 2),
+                 "cached_steps": r["cached"], "failed_steps": r["failed"],
+                 "work": [part(p) for p in r["parts"][:limit]]}
+                for r in rows if r["busy"]]
+    top = next((s for s in services if s["id"]), None)
+    return {"schema": "startup-timing-summary/1", "name": report["name"], "status": report["status"],
+            "returncode": report.get("returncode"), "started_at": report["started_at"],
+            "total_seconds": round(total, 2), "run_type": facts(report)["temperature"],
+            "idle_seconds": round(report["idle_seconds"], 2) if report.get("idle_seconds") is not None else None,
+            "bottleneck": top, "services": services}
