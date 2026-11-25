@@ -9,6 +9,35 @@ SHARED = "Shared setup"
 STRIP = 24
 
 
+def peak(spans):
+    """Most steps running at the same moment."""
+    moments = sorted([(a, 1) for a, _ in spans] + [(b, -1) for _, b in spans], key=lambda m: (m[0], m[1]))
+    now = best = 0
+    for _, change in moments:
+        now += change
+        best = max(best, now)
+    return best
+
+
+def activities(report, cfg):
+    """Time by kind of work (the step group), longest first. Parallel steps are counted once."""
+    steps = report["steps"]
+    parents = {s["parent_id"] for s in steps}
+    leaves = [s for s in measured(steps) if s["id"] not in parents and s["offset"] is not None]
+    rows = []
+    for group in dict.fromkeys(s["group"] for s in leaves):
+        items = sorted((s for s in leaves if s["group"] == group), key=lambda s: s["seconds"], reverse=True)
+        spans = [(s["offset"], s["offset"] + s["seconds"]) for s in items]
+        wall = union_seconds(spans)
+        size = sum(s.get("bytes") or 0 for s in items)
+        count = peak(spans)
+        rows.append({"group": group, "name": configuration.group_title(cfg, group), "wall": wall,
+                     "steps": items, "bytes": size, "peak": count,
+                     "batch": len(items) >= 3 and count >= 3,
+                     "rate": size / wall if size and wall >= 1 else None})
+    return sorted(rows, key=lambda r: -r["wall"])
+
+
 def _short(label, row):
     """Drop a leading 'Chat Q&A: ' style prefix; the row already names the service."""
     head, sep, rest = label.partition(": ")
@@ -20,18 +49,22 @@ def analyse(report, cfg):
     """One row per service, busiest first. Steps without a service are grouped as shared."""
     steps = report["steps"]
     parents = {s["parent_id"] for s in steps}
+    batches = {a["group"] for a in activities(report, cfg) if a["batch"]}
     rows = {}
     for step in steps:
         key = step.get("service")
         row = rows.setdefault(key, {"name": configuration.service_title(cfg, key) if key else SHARED,
                                     "service": key, "spans": [], "parts": [], "cached": 0,
-                                    "failed": 0, "unavailable": 0, "description": ""})
+                                    "failed": 0, "unavailable": 0, "description": "", "batched": False})
         row["description"] = cfg.get("services", {}).get(key, {}).get("description", "") if key else ""
         row["cached"] += step["status"] in SKIPPED
         row["failed"] += step["status"] == "failed"
         row["unavailable"] += step["seconds"] is None and step["status"] not in SKIPPED
     for step in measured(steps):
         if step["offset"] is None:
+            continue
+        if step["group"] in batches:  # parallel batches share a resource: counted once under activities
+            rows[step.get("service")]["batched"] = True
             continue
         row = rows[step.get("service")]
         row["spans"].append((step["offset"], step["offset"] + step["seconds"]))
@@ -62,14 +95,6 @@ def strip(row, total):
     return "".join(cells)
 
 
-def overlap(first, second):
-    """Seconds during which both services had a step running."""
-    if not first["spans"] or not second["spans"]:
-        return 0.0
-    both = union_seconds(first["spans"] + second["spans"])
-    return max(0.0, union_seconds(first["spans"]) + union_seconds(second["spans"]) - both)
-
-
 def parallel(rows, total):
     """True when the services' busy times add up to clearly more than the run."""
     return bool(total) and sum(r["busy"] or 0 for r in rows if r["service"]) > total * 1.05
@@ -94,4 +119,8 @@ def summary(report, cfg, limit=5):
             "returncode": report.get("returncode"), "started_at": report["started_at"],
             "total_seconds": round(total, 2), "run_type": facts(report)["temperature"],
             "idle_seconds": round(report["idle_seconds"], 2) if report.get("idle_seconds") is not None else None,
-            "bottleneck": top, "services": services}
+            "bottleneck": top, "services": services,
+            "activities": [{"group": a["group"], "name": a["name"], "wall_seconds": round(a["wall"], 2),
+                            "share": round(a["wall"] / total, 4) if total else None,
+                            "steps": len(a["steps"]), "bytes": a["bytes"] or None,
+                            "parallel": a["batch"]} for a in activities(report, cfg)]}

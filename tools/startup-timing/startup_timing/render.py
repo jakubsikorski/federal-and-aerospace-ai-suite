@@ -7,7 +7,7 @@ from pathlib import Path
 
 from . import config as configuration
 from .report import SKIPPED, facts, timeline
-from .services import analyse, overlap, parallel, strip
+from .services import activities, analyse, parallel, strip
 
 BAR = 20
 
@@ -92,23 +92,44 @@ def work(part):
     return f"{cell(title(part))} ({seconds(part['seconds'])})"
 
 
-def verdict(report, rows, total):
-    """What took longest, in one or two plain sentences."""
+def activity_detail(act):
+    """One short phrase: what the time went on."""
+    items = act["steps"]
+    if act["bytes"] and len(items) > 1:
+        big = sorted(items, key=lambda s: s.get("bytes") or 0, reverse=True)[:3]
+        rate = f" at about {size(act['rate'])}/s" if act["rate"] else ""
+        text = f"{len(items)} downloads, {size(act['bytes'])}{rate}"
+        return text + "; largest: " + ", ".join(cell(title(s)) for s in big)
+    if act["batch"]:
+        return f"{len(items)} steps in parallel (up to {act['peak']} at once); longest: {work(items[0])}"
+    if len(items) == 1:
+        return work(items[0])
+    return f"{len(items)} steps; longest: {work(items[0])}"
+
+
+def verdict(report, rows, total, cfg):
+    """What took longest, in one to three plain sentences."""
+    acts = activities(report, cfg)
+    lines = []
+    if acts and total:
+        top = acts[0]
+        lines.append(f"**What took longest:** {cell(top['name'])}, {seconds(top['wall'])}"
+                     f"{share(top['wall'], total, ' ({} of the run)')}. {activity_detail(top)}.")
+        later = [a for a in acts[1:] if not all(s["background"] for s in a["steps"])]  # not log umbrellas
+        if later and later[0]["wall"] >= 0.1 * total:
+            nxt = later[0]
+            lines.append(f"**Then:** {cell(nxt['name'])}, {seconds(nxt['wall'])}"
+                         f"{share(nxt['wall'], total, ' ({} of the run)')}. {activity_detail(nxt)}.")
     named = [r for r in rows if r["service"] and r["busy"]]
-    if not named or not total:
-        return []
-    top = named[0]
-    text = f"**What took longest:** {cell(top['name'])}, {seconds(top['busy'])}{share(top['busy'], total, ' ({} of the run)')}"
-    lines = [text + (f". Mainly: {work(top['parts'][0])}." if top["parts"] else ".")]
-    others = [(overlap(top, r), r) for r in named[1:]]
-    together, other = max(others, key=lambda pair: pair[0], default=(0.0, None))
-    if other and together >= max(1.0, 0.1 * other["busy"]):
-        lines.append(f"**Ran alongside it:** {cell(other['name'])}, {seconds(together)} of its {seconds(other['busy'])}"
-                     + (f". Mainly: {work(other['parts'][0])}." if other["parts"] else "."))
+    if named and total:
+        top = named[0]
+        lines.append(f"**Busiest service:** {cell(top['name'])}, {seconds(top['busy'])}"
+                     f"{share(top['busy'], total, ' ({} of the run)')}"
+                     + (f". Mainly: {work(top['parts'][0])}." if top["parts"] else "."))
     return lines
 
 
-def headline(report, info, rows):
+def headline(report, info, rows, cfg):
     total = report["overall_seconds"]
     ok = report["status"] == "ok"
     started = datetime.fromisoformat(report["started_at"].replace("Z", "+00:00"))
@@ -120,7 +141,7 @@ def headline(report, info, rows):
     failed = [s for s in report["steps"] if s["status"] == "failed"]
     if failed:
         lines += ["**Failed step:** " + "; ".join(cell(title(s)) for s in failed[:3]), ""]
-    lines += [f"> {line}  " for line in verdict(report, rows, total)]
+    lines += [f"> {line}  " for line in verdict(report, rows, total, cfg)]
     return lines
 
 
@@ -131,9 +152,19 @@ def services_table(rows, total):
         out.append(f"| {cell(row['name'])}{mark} | {'-' if row['busy'] is None else seconds(row['busy'])} "
                    f"| {percent(row['busy'], total) or '-'} "
                    f"| {work(row['parts'][0]) if row['parts'] else '-'} |")
-    idle = [r["name"] for r in rows if r["busy"] is None and not r["failed"]]
+    idle = [r["name"] for r in rows if r["busy"] is None and not r["failed"] and not r["batched"]]
     if idle:
         out += ["", "Cached, already running or not started: " + ", ".join(cell(n) for n in idle) + "."]
+    return out
+
+
+def activity_table(acts, total, limit=8):
+    out = ["| Activity | Time | Share | What |", "|---|---:|---:|---|"]
+    for act in acts[:limit]:
+        out.append(f"| {cell(act['name'])} | {seconds(act['wall'])} | {percent(act['wall'], total)} "
+                   f"| {activity_detail(act)} |")
+    if len(acts) > limit:
+        out.append(f"| {len(acts) - limit} smaller activities | {seconds(sum(a['wall'] for a in acts[limit:]))} | | |")
     return out
 
 
@@ -237,14 +268,22 @@ def brief(report, cfg=None):
     """The part worth pasting into a cycle report: result, what took longest, one table."""
     cfg, info, total = cfg or {}, facts(report), report["overall_seconds"]
     rows = analyse(report, cfg)
-    lines = [f"# Startup timing: {cell(report['name'])}", "", *headline(report, info, rows)]
+    lines = [f"# Startup timing: {cell(report['name'])}", "", *headline(report, info, rows, cfg)]
     while lines[-1] == "":
         lines.pop()
     lines.append("")
     if nothing_measured(report):
         return lines + [nothing_measured(report), ""]
-    lines += ["## Time by service", "", *services_table(rows, total), ""]
+    acts = activities(report, cfg)
+    lines += ["## Time by activity", "", *activity_table(acts, total), "",
+              "Time during which at least one step of that kind was running."
+              + (" Parallel steps are counted once." if any(x["peak"] > 1 for x in acts) else ""), "",
+              "## Time by service", "", *services_table(rows, total), ""]
     note = []
+    batches = [a["name"] for a in acts if a["batch"]]
+    if batches:
+        note.append("Not counted per service: parallel " + ", ".join(n.lower() for n in batches)
+                    + " (see Time by activity).")
     if parallel(rows, total):
         note.append("Services run in parallel, so shares add up to more than 100%.")
     idle = report.get("idle_seconds")
@@ -300,12 +339,16 @@ def console(report, path, cfg=None):
              f" in {seconds(total)}"
              + (f" ({info['temperature']}: {info['skipped']}/{info['total_steps']} steps cached)"
                 if info["temperature"] not in ("unknown", "cold") else " (cold)" if info["total_steps"] else "")]
-    width = max([len(r["name"]) for r in rows[:5]] + [1])
-    for row in rows[:5]:
+    for act in activities(report, cfg or {})[:3]:
+        lines.append(f"  {act['name']}: {seconds(act['wall'])} ({percent(act['wall'], total)})"
+                     + (f", {size(act['bytes'])}" if act["bytes"] else ""))
+    lines.append("  By service:")
+    width = max([len(r["name"]) for r in rows[:3]] + [1])
+    for row in rows[:3]:
         main = f"  {cell(title(row['parts'][0]))} {seconds(row['parts'][0]['seconds'])}" if row["parts"] else ""
         lines.append(f"  {row['name']:<{width}}  {seconds(row['busy']):>9}  {percent(row['busy'], total):>4}{main}")
     if parallel(rows, total):
-        lines.append("  (services ran in parallel, so shares can add up to more than 100%)")
+        lines.append("  (shares can add up to more than 100%: steps ran in parallel)")
     if nothing_measured(report):
         lines.append(f"  {nothing_measured(report)}")
     unavailable = info["counts"].get("unavailable", 0)

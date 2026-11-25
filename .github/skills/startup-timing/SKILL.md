@@ -78,13 +78,15 @@ carry a dagger and nest under the tightest recorded step with the same `--servic
 
 ## Explaining a report to a human
 
-Report order: headline (result, then "What took longest" and "Ran alongside it"), Time by service,
+Report order: headline (result, then "What took longest", "Then" and "Busiest service"), Time by
+activity, Time by service,
 a text chart of when each service was busy, the five biggest steps per service, then a collapsed list
 of all timed steps (`--explain` adds per-section totals).
 
 1. State the headline: result (succeeded or FAILED with exit code and the failed step), total time,
    the service that took longest and its main cost. Quote the sentence the report already gives.
-2. Walk the Time by service table top to bottom. Shares can exceed 100% because services run in
+2. Start with Time by activity: it says what kind of work dominated (for example container image
+   downloads at 73% of the run, with size and speed). Then walk the Time by service table. Shares can exceed 100% because services run in
    parallel; use the chart to say which ran at the same time.
 3. Steps without `--service` land in *Shared setup*. If that row is large, tag the steps with the
    service that owns them. A line under the table reports run time with no timed step running: a

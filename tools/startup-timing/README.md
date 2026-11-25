@@ -39,18 +39,24 @@ shell function through it disables `set -e` inside that function. For a function
 `report.md` reads top to bottom, and the first two parts are short enough to paste into a cycle report
 (`timing.sh summary` prints just those):
 
-- **Headline:** result, total time, cold or warm start, then up to two sentences: what took longest
-  and its main cost, and what ran alongside it.
-- **Time by service:** one row per service, busiest first: time, share of the run, and its biggest
-  cost. Services whose steps were all cached are named in one line. Shares can add up to more than
-  100% because services run in parallel.
+- **Headline:** result, total time, cold or warm start, then up to three sentences: the kind of
+  work that took longest (with its share of the run), the next one, and the busiest service.
+- **Time by activity:** one row per kind of work (the step *group*, e.g. container image
+  downloads, model downloads, builds, readiness waits), longest first. Parallel steps of the same
+  kind are counted once, so "13 image downloads: 21m, 15 GB at about 12 MB/s" is one row, not
+  thirteen overlapping ones. This is where "most of the time was downloads" shows up.
+- **Time by service:** one row per service, busiest first: time, share and biggest cost. Steps in a
+  parallel batch (three or more steps of one kind running together, such as image pulls that share
+  the network) are left out here, because each would otherwise look busy for the whole batch.
+  Shares can add up to more than 100% because services run in parallel.
 - **When each service was busy:** a text chart, one bar per service, so overlaps are visible.
 - **What each service spent its time on:** the five largest steps per service as a short list.
 - **All timed steps** (collapsed): every step by start time, nested steps indented.
 - A step that never ended is shown as **unavailable**, never as zero. A failed run still writes a
   partial report that names the failed step. Commands, environment variables and output are never stored.
 
-Tag steps with the service that owns them (`timed --service db ...`); steps without one are
+Pick group names that say what kind of work it is (`container_download`, `model_download`,
+`build`, `readiness`): they become the *Time by activity* rows. The `pull` command records image sizes, which adds size and speed. Tag steps with the service that owns them (`timed --service db ...`); steps without one are
 grouped as *Shared setup*. Write labels for a reader: "Download model neural-chat-7b", not a log
 phrase. The console summary at the end of a run shows the top five services.
 
@@ -64,6 +70,8 @@ within `startup-timing-summary/1`:
 {"schema": "startup-timing-summary/1", "name": "demo-up", "status": "ok", "returncode": 0,
  "started_at": "2026-11-25T11:36:39Z", "total_seconds": 1155.7, "run_type": "cold",
  "idle_seconds": 3.1,
+ "activities": [{"group": "container_download", "name": "Container image downloads",
+                  "wall_seconds": 1266.0, "share": 0.73, "steps": 13, "bytes": 15000000000, "parallel": true}],
  "bottleneck": {"id": "chatqna", "name": "Chat Q&A", "busy_seconds": 1112.4, "share": 0.9625,
                 "first_seconds": 3.8, "last_seconds": 1116.2, "cached_steps": 0, "failed_steps": 0,
                 "work": [{"label": "Download model neural-chat-7b", "seconds": 737.7}]},

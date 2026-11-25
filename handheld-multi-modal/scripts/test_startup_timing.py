@@ -211,14 +211,20 @@ class TestReport(unittest.TestCase):
         self.assertAlmostEqual(data["idle_seconds"], 2.0)
         self.assertIn("run in parallel", render.markdown(data))
 
-    def test_alongside_means_actual_overlap(self):
-        data = build([step("g", "First", 0, 4.0, service="a"), step("g", "Second", 4.0, 3.0, service="b"),
-                      step("g", "Third", 4.0, 2.0, service="c")], total=7.0)
+    def test_parallel_downloads_are_one_activity_not_every_services_time(self):
+        pulls = [step("container_download", f"image-{n}", 1.0, 90.0, service=f"s{n}", bytes=2_000_000_000)
+                 for n in range(4)]
+        work = [step("startup", "Start app", 95.0, 5.0, service="s0")]
+        data = build(pulls + work, total=100.0)
         text = render.markdown(data)
-        self.assertIn("**What took longest:** A", text)
-        self.assertNotIn("Ran alongside it:** B", text)  # B started after A finished
-        data = build([step("g", "One", 0, 4.0, service="a"), step("g", "Two", 1.0, 3.0, service="b")], total=4.0)
-        self.assertIn("**Ran alongside it:** B, 3.0 s of its 3.0 s", render.markdown(data))
+        self.assertIn("**What took longest:** Container Download, 1m 30s (90% of the run). 4 downloads, 8.0 GB", text)
+        table = text.split("## Time by service")[1].split("##")[0]
+        self.assertIn("| S0 | 5.0 s |", table)  # its own work, not 90 s of pulling
+        self.assertNotIn("S1", table)  # a service that only pulled an image has no row of its own
+        self.assertNotIn("Cached, already running", table)
+        self.assertIn("Not counted per service: parallel container download", table)
+        summary = json.loads(json.dumps(__import__("startup_timing.services", fromlist=["x"]).summary(data, {})))
+        self.assertEqual(summary["activities"][0]["parallel"], True)
 
     def test_nesting_ordering_cold_warm_and_unavailable(self):
         steps = [step("g", "Later", 5.0, 1.0), step("g", "Parent", 0.0, 4.0, id="p"),
