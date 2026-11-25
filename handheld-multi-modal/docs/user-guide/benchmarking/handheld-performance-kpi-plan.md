@@ -27,6 +27,17 @@ The work is split into two phases:
   service-side Prometheus metrics. Section 3 is written as a hand-off
   specification for the teams that own those services.
 
+Out of scope for this plan:
+
+- **Performance gating.** Pass/fail evaluation of KPIs against targets, whether
+  as CI jobs, automated tests, or acceptance checks, is a separate effort. The
+  per-service reference values in Section 1 exist so such a mechanism can
+  reuse them later; this plan only measures and displays.
+- **Per-service metric aggregation in the Backend.** Metrics Manager owns
+  collection, aggregation, and histograms for per-microservice metrics (see
+  Section 3). The Backend only ingests what Metrics Manager provides, as it
+  does today for hardware telemetry.
+
 Design rules, from [AGENTS.md](../../../AGENTS.md):
 
 - Open Edge Platform microservices stay unmodified and pinned. Missing data is
@@ -70,10 +81,12 @@ standard layer sits underneath, per service:
 | Compute busy, Memory headroom | USE utilization and saturation |
 | Time to ready | Readiness: every required service passes its health check and the first live frame is shown |
 
-Standard signals the plan did not previously carry, now part of the design:
+Standard signals the plan did not previously carry, now part of the design.
+Per-service values come from each service's own `/metrics` through Metrics
+Manager (Section 3); the Backend does not compute them:
 
-- **Error rate and availability** per service: failed ÷ total requests per
-  window, with outcomes `ok`, `error`, `timeout`. Shown on the service tile.
+- **Error rate and availability** per service: failed ÷ total requests, with
+  outcomes `ok`, `error`, `timeout`. Shown on the service tile.
 - **Saturation:** queue wait and in-flight requests per service. Services
   serialize generation behind locks, so without queue wait, queueing shows up
   as a slow model.
@@ -92,11 +105,14 @@ for single-token answers.
 
 ### Per-service KPI set
 
-Targets are starting guidance, not standards. Published figures come from
-datacenter or server hardware, so calibrate them on the target device. A KPI
-marked "Detail" lives in the drill-down, not on the tile.
+The reference values are starting guidance, not standards, and **are not
+evaluated**: the Panel shows measured values only, with no pass/fail status for
+these per-service KPIs. They are recorded so a later CI or automated-test
+gate can adopt them. Published figures come from datacenter or server
+hardware, so calibrate them on the target device first. Detail items live in
+the drill-down, not on the tile.
 
-| Service | Tile headline (plain words) | Standard name | Default target | Detail (drill-down) |
+| Service | Tile headline (plain words) | Standard name | Reference value (not evaluated) | Detail (drill-down) |
 | --- | --- | --- | --- | --- |
 | Chat Q&A (LLM) | "First words in 0.8 s" | TTFT p95 | < 2 s (≤ 1 s well tuned) | Decode tokens/s (≥ 15), TPOT, queue wait, retrieval and rerank time, input/output tokens, error rate |
 | Audio Analyzer (ASR) | "Speech heard 2× faster than real time" | RTFx (audio s ÷ processing s); RTF = 1 / RTFx | RTFx > 1, aim ≥ 2 | Time to final transcript p95, queue wait, error rate. WER only in offline benchmark runs, never a live tile |
@@ -629,10 +645,31 @@ dispatch completion) with `{mode, outcome}` labels, plus request counters.
 Handheld already measures its own dispatch call, so this is low priority. No
 relevant change in this release.
 
+### Metrics Manager: the aggregation path
+
+Per-microservice metrics follow the same route as hardware telemetry:
+**service `/metrics` (or pushed custom metrics) → Metrics Manager → Backend →
+UI**. Metrics Manager is Telegraf-based, accepts pushed custom metrics (JSON,
+InfluxDB line protocol, OTLP), and re-exports Prometheus text. Duration series
+from B1–B3 arrive as Prometheus histograms; Metrics Manager is where any
+histogram handling or re-aggregation belongs, not the Backend.
+
+- Handheld change: enable scraping of each service's `/metrics` in
+  `config/metrics/telegraf.conf` (the `[[inputs.prometheus]]` block is present
+  but commented out) once the service ships the endpoint.
+- Backend change: read the new series in `telemetry.py` the way it reads the
+  existing ones, keep stale/missing/zero distinct, and relay them. No
+  per-service windows, percentiles, or call timing in the Backend.
+- To confirm before implementation: whether the pinned Metrics Manager image
+  can produce histogram quantiles (for example via a Telegraf histogram
+  aggregator) or only passes raw buckets through. If only buckets, p50/p95 are
+  derived from bucket counts at the Backend read step, which is a read-side
+  calculation, not collection.
+
 ### Not requested
 
-- **Metrics Manager:** existing host CPU/GPU/NPU and per-service CPU/RAM are
-  sufficient.
+- **Metrics Manager changes:** existing host CPU/GPU/NPU and per-service
+  CPU/RAM are sufficient as-is; only scrape configuration is added above.
 - **Model Download, MediaMTX, Coturn, Mosquitto:** no KPI gap for this plan.
 
 ## 4. How the KPIs appear in the Panel
@@ -652,11 +689,13 @@ relevant change in this release.
    the slowest stage.
 6. **Be honest about precision of data.** Approximate values carry "~" and a
    tooltip naming the upstream update that makes them exact.
-7. **One tile per service, one headline number.** Each service shows a status
-   (✓ / ! / …) and a single plain-words number, such as "First words in
-   0.8 s" or "2× faster than real time". The standard name (TTFT, RTF) appears
-   in small text beside it. Histograms, p99, queue, and token-level values stay
-   in the detail view. Validate the wording with operators.
+7. **One tile per service, one headline number.** Each service shows a single
+   plain-words number, such as "First words in 0.8 s" or "2× faster than real
+   time", with "Not available yet" when its series is absent (never a
+   synthesized value). The standard name (TTFT, RTF) appears in small text
+   beside it. No pass/fail judgement is shown for per-service tiles.
+   Histograms, p99, queue, and token-level values stay in the detail view.
+   Validate the wording with operators.
 
 ### Placement map
 
@@ -781,7 +820,7 @@ downloaded as JSON. A saved pass is never shown as a live green status.
 | B1. Chat Q&A | Exact tokens, TTFT/TPOT, RAG timings, `/metrics`, INT4 option | Upstream release |
 | B2–B3. ASR, TTS | Stage timings, headers, `/metrics`, verified precision | Upstream release |
 | B4–B5. DLSPS, Alert Agent | Optional improvements | Upstream release |
-| B6. Adopt | Pin new images; the Backend reads new fields when present and keeps the Phase A values otherwise | Each upstream release |
+| B6. Adopt | Pin new images; enable the service scrape in Metrics Manager; the Backend reads the new series when present and keeps the Phase A values otherwise | Each upstream release |
 
 Phase B never blocks Phase A; the Panel shows "~" approximate values or
 "needs Chat Q&A update" until the upstream value is available.
