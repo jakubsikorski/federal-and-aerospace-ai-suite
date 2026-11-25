@@ -43,7 +43,7 @@ x-gpu-healthcheck: &gpu-healthcheck
 # See scripts/dlsps/README.md.
 services:
   model-downloader:
-    image: intel/model-download:2026.3.0-rc1
+    image: intel/model-download:2026.3.0-rc2
     profiles: [assets]
     command: ["--plugins", "ultralytics"]
     restart: "no"
@@ -99,7 +99,7 @@ services:
       - ../config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
     networks: [handheld]
   dlsps:
-    image: intel/dlstreamer-pipeline-server:2026.3.0-ubuntu24-rc1
+    image: intel/dlstreamer-pipeline-server:2026.3.0-ubuntu24-rc3
     restart: "no"
     depends_on: [mediamtx, mqtt]
     security_opt:
@@ -149,7 +149,7 @@ services:
       - ${ASSET_ROOT:-..}/data/dlsps/crops:/opt/handheld-crops-output
     networks: [handheld]
   metrics:
-    image: intel/metrics-manager:2026.3.0-rc1
+    image: intel/metrics-manager:2026.3.0-rc2
     container_name: handheld-multi-modal-metrics
     restart: "no"
     # Stock upstream compose.yaml defaults (microservices/metrics-manager,
@@ -197,7 +197,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks: [handheld]
   alert-agent:
-    image: intel/alert-agent-service:2026.3.0-rc1
+    image: intel/alert-agent-service:2026.3.0-rc2
     container_name: handheld-multi-modal-alert-agent
     restart: "no"
     depends_on: [mqtt]
@@ -225,7 +225,7 @@ services:
       - ../config/alert-agent/resources:/app/resources:ro
     networks: [handheld]
   audio-analyzer:
-    image: intel/audio-analyzer:2026.3.0-rc1
+    image: intel/audio-analyzer:2026.3.0-rc2
     container_name: handheld-multi-modal-audio-analyzer
     restart: "no"
     # Hardcoded to match the image's baked-in app user and the ownership of
@@ -305,7 +305,7 @@ services:
   # reused as-is; profile/build/UI/nginx machinery is dropped since this
   # the application only needs the running backend, not upstream's dev workflow).
   chatqna:
-    image: intel/chatqna:core_2026.3.0-rc1
+    image: intel/chatqna:core_2026.3.0-rc2
     container_name: handheld-multi-modal-chatqna-core-gpu
     restart: "no"
     group_add:

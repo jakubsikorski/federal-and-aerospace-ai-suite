@@ -49,7 +49,7 @@ Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-handheld-multi-modal
 
 PackageName: dlstreamer-pipeline-server
 SPDXID: SPDXRef-Package-dlstreamer-pipeline-server
-PackageVersion: 2026.3.0-ubuntu24-rc1
+PackageVersion: 2026.3.0-ubuntu24-rc3
 PackageSupplier: Organization: Intel Corporation
 PackageDownloadLocation: https://hub.docker.com/r/intel/dlstreamer-pipeline-server
 PackageHomePage: https://github.com/open-edge-platform/edge-ai-libraries/tree/main/microservices/dlstreamer-pipeline-server
@@ -57,14 +57,14 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: Apache-2.0
 PackageCopyrightText: <text>Copyright (C) Intel Corporation</text>
 PackageSummary: <text>Intel DL Streamer Pipeline Server (DLSPS); runs the YOLO26s detection and tracking pipelines on NPU/GPU/CPU, publishes annotated WebRTC video to MediaMTX, detection metadata over MQTT, and evidence crops.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:docker/intel/dlstreamer-pipeline-server@2026.3.0-ubuntu24-rc1
+ExternalRef: PACKAGE-MANAGER purl pkg:docker/intel/dlstreamer-pipeline-server@2026.3.0-ubuntu24-rc3
 FilesAnalyzed: false
 
 Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-dlstreamer-pipeline-server
 
 PackageName: chatqna
 SPDXID: SPDXRef-Package-chatqna
-PackageVersion: core_2026.3.0-rc1
+PackageVersion: core_2026.3.0-rc2
 PackageSupplier: Organization: Intel Corporation
 PackageDownloadLocation: https://hub.docker.com/r/intel/chatqna
 PackageHomePage: https://github.com/open-edge-platform/edge-ai-libraries/tree/main/sample-applications/chat-question-and-answer-core
@@ -72,14 +72,14 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: Apache-2.0
 PackageCopyrightText: <text>Copyright (C) Intel Corporation</text>
 PackageSummary: <text>Chat Question-and-Answer Core; ingests mission documents and answers operator questions with retrieval-augmented generation on the OpenVINO GPU runtime.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:docker/intel/chatqna@core_2026.3.0-rc1
+ExternalRef: PACKAGE-MANAGER purl pkg:docker/intel/chatqna@core_2026.3.0-rc2
 FilesAnalyzed: false
 
 Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-chatqna
 
 PackageName: audio-analyzer
 SPDXID: SPDXRef-Package-audio-analyzer
-PackageVersion: 2026.3.0-rc1
+PackageVersion: 2026.3.0-rc2
 PackageSupplier: Organization: Intel Corporation
 PackageDownloadLocation: https://hub.docker.com/r/intel/audio-analyzer
 PackageHomePage: https://github.com/open-edge-platform/edge-ai-libraries/tree/main/microservices/audio-analyzer
@@ -87,14 +87,14 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: Apache-2.0
 PackageCopyrightText: <text>Copyright (C) Intel Corporation</text>
 PackageSummary: <text>Audio Analyzer microservice providing speech-to-text with the Whisper-medium model on OpenVINO GPU.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:docker/intel/audio-analyzer@2026.3.0-rc1
+ExternalRef: PACKAGE-MANAGER purl pkg:docker/intel/audio-analyzer@2026.3.0-rc2
 FilesAnalyzed: false
 
 Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-audio-analyzer
 
 PackageName: text-to-speech
 SPDXID: SPDXRef-Package-text-to-speech
-PackageVersion: 2026.3.0-rc1
+PackageVersion: 2026.3.0-rc2
 PackageSupplier: Organization: Intel Corporation
 PackageDownloadLocation: https://hub.docker.com/r/intel/text-to-speech
 PackageHomePage: https://github.com/open-edge-platform/edge-ai-libraries/tree/main/microservices/text-to-speech
@@ -102,14 +102,14 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: Apache-2.0
 PackageCopyrightText: <text>Copyright (C) Intel Corporation</text>
 PackageSummary: <text>Text-to-speech microservice that synthesizes spoken alerts and answers with the SpeechT5 model on OpenVINO GPU.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:docker/intel/text-to-speech@2026.3.0-rc1
+ExternalRef: PACKAGE-MANAGER purl pkg:docker/intel/text-to-speech@2026.3.0-rc2
 FilesAnalyzed: false
 
 Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-text-to-speech
 
 PackageName: alert-agent-service
 SPDXID: SPDXRef-Package-alert-agent-service
-PackageVersion: 2026.3.0-rc1
+PackageVersion: 2026.3.0-rc2
 PackageSupplier: Organization: Intel Corporation
 PackageDownloadLocation: https://hub.docker.com/r/intel/alert-agent-service
 PackageHomePage: https://github.com/open-edge-platform/edge-ai-libraries/tree/main/microservices/alert-agent-service
@@ -117,14 +117,14 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: Apache-2.0
 PackageCopyrightText: <text>Copyright (C) Intel Corporation</text>
 PackageSummary: <text>Alert Agent service used in rule mode (no LLM) to dispatch operator alerts.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:docker/intel/alert-agent-service@2026.3.0-rc1
+ExternalRef: PACKAGE-MANAGER purl pkg:docker/intel/alert-agent-service@2026.3.0-rc2
 FilesAnalyzed: false
 
 Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-alert-agent-service
 
 PackageName: metrics-manager
 SPDXID: SPDXRef-Package-metrics-manager
-PackageVersion: 2026.3.0-rc1
+PackageVersion: 2026.3.0-rc2
 PackageSupplier: Organization: Intel Corporation
 PackageDownloadLocation: https://hub.docker.com/r/intel/metrics-manager
 PackageHomePage: https://github.com/open-edge-platform/edge-ai-libraries/tree/main/microservices/metrics-manager
@@ -132,14 +132,14 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: Apache-2.0
 PackageCopyrightText: <text>Copyright (C) Intel Corporation</text>
 PackageSummary: <text>Edge metrics collector (Telegraf-based) that gathers CPU/GPU/NPU/temperature hardware telemetry shown in the operator console.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:docker/intel/metrics-manager@2026.3.0-rc1
+ExternalRef: PACKAGE-MANAGER purl pkg:docker/intel/metrics-manager@2026.3.0-rc2
 FilesAnalyzed: false
 
 Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-metrics-manager
 
 PackageName: model-download
 SPDXID: SPDXRef-Package-model-download
-PackageVersion: 2026.3.0-rc1
+PackageVersion: 2026.3.0-rc2
 PackageSupplier: Organization: Intel Corporation
 PackageDownloadLocation: https://hub.docker.com/r/intel/model-download
 PackageHomePage: https://github.com/open-edge-platform/edge-ai-libraries/tree/main/microservices/model-download
@@ -147,7 +147,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: Apache-2.0
 PackageCopyrightText: <text>Copyright (C) Intel Corporation</text>
 PackageSummary: <text>Model Download service; its Ultralytics plugin exports the YOLO26s INT8 OpenVINO IR on first start (assets profile).</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:docker/intel/model-download@2026.3.0-rc1
+ExternalRef: PACKAGE-MANAGER purl pkg:docker/intel/model-download@2026.3.0-rc2
 FilesAnalyzed: false
 
 Relationship: SPDXRef-Package-handheld-multi-modal DEPENDS_ON SPDXRef-Package-model-download
