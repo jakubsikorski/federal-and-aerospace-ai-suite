@@ -806,6 +806,148 @@ Implemented, in the existing targets (`make test-all`):
 Still to add: reading the new service series, time to ready, and stale-state
 handling for the Performance tab.
 
+## 7. Work packages for the implementing agent
+
+Do these in order. Each package is small, ends with passing tests, and can be
+committed on its own. Paths are relative to `handheld-multi-modal/`.
+
+### Guardrails (read first)
+
+- Follow [AGENTS.md](../../../AGENTS.md). Do not modify Open Edge Platform
+  services or images. Do not put the Backend in the video path.
+- **No gating.** Add no target comparison, pass/fail status, or threshold
+  config for per-service values. Reference values stay in this document only.
+- **No Backend aggregation of per-service metrics.** The Backend reads series
+  from Metrics Manager and relays them. It does not time its own calls to
+  services, keep per-service windows, or count outcomes.
+- The upstream services do not expose `/metrics` yet, so every package below
+  must work, and be testable, with the series absent. Absent means the tile
+  says "Not available yet". Never synthesize a value; keep missing, stale,
+  and real zero distinct (same rule as
+  `.agents/skills/oep-metrics-manager/SKILL.md`).
+- Reuse existing code: `backend/app/telemetry.py` (`normalize`, `Telemetry`),
+  the Performance tab in `backend/app/static/index.html`
+  (`renderPerformance`), and the existing test targets.
+
+### WP0. Confirm what Metrics Manager can do (no code)
+
+Goal: decide how p50/p95 reach the Backend.
+
+1. Start the pinned image (`intel/metrics-manager`, tag in
+   `compose/handheld-multi-modal.yaml`) and list its Telegraf plugins, for
+   example `docker run --rm --entrypoint telegraf <image> --input-list`
+   and `--aggregator-list`. Check for a histogram aggregator.
+2. Push a small test histogram through the custom-metrics path (port 8186, or
+   the Prometheus scrape) and read it back at `:9273/metrics`.
+3. Record the answer in this section: either "Metrics Manager emits quantiles"
+   or "it passes raw `_bucket` series through". If the latter, WP2 computes
+   p50/p95 from bucket counts at read time. That is a read-side calculation,
+   not collection.
+
+Done when: the finding is written down and WP2's approach is chosen.
+
+### WP1. Scrape configuration in Metrics Manager
+
+Files: `config/metrics/telegraf.conf`, `compose/handheld-multi-modal.yaml` if
+service hostnames or ports need to be reachable from the `metrics` container.
+
+- Replace the commented `[[inputs.prometheus]]` example with one block listing
+  the Chat Q&A, Audio Analyzer, and Text To Speech `/metrics` URLs, with
+  `metric_version = 2` and the same `namepass` discipline as the docker block
+  (only the series in the minimum set).
+- Keep it **commented out** until the pinned service image actually serves
+  `/metrics`, with a one-line comment saying which release enables it. A
+  scrape of a missing endpoint only produces log noise.
+
+Done when: with the block enabled against a stub endpoint, the series appear at
+`:9273/metrics`. Disabling it leaves current behaviour unchanged.
+
+### WP2. Backend reads per-service series
+
+Files: `backend/app/telemetry.py`, `backend/test_backend.py`.
+
+- Add one mapping table at the top of `telemetry.py` from upstream series names
+  to Panel fields (for example Chat Q&A time to first token, queue wait,
+  tokens/s; ASR and TTS audio duration and request duration; every service's
+  `outcome` counters and in-flight gauge). Names come from the upstream
+  release; keep them in this one table so a rename is a one-line change.
+- In `normalize()`, add a `services` object to the returned snapshot:
+  `{ "chat": {...}, "asr": {...}, "tts": {...} }`. Each value carries the
+  number, its unit, and `state` (`ok`, `stale`, `missing`). Reuse
+  `_epoch_ms` and `STALE_AFTER_SECONDS`.
+- Derived values computed here are read-side only: RTF and RTFx from request
+  and audio duration, tokens/s from output tokens and decode time, p50/p95 from
+  histogram buckets if WP0 says so (nearest rank on cumulative buckets).
+  Error rate is `error + timeout` over total from the counters.
+- No new endpoint or SSE event: `services` rides in the existing telemetry
+  snapshot and `telemetry` event.
+
+Tests (fixture payloads, like the existing `test_telemetry_*` tests): series
+absent gives `missing`; stale timestamps give `stale`; a real zero stays zero;
+RTF and tokens/s derivations; bucket-to-percentile; unknown series ignored.
+
+Done when: `make test-all` (backend coverage gate) passes and `GET /api/metrics` shows `services`
+with every field `missing` on a stack that has no service metrics.
+
+### WP3. Service tiles in the Panel
+
+Files: `backend/app/static/index.html`, `backend/test_ui.py`.
+
+- In `renderPerformance()` add a "Services" row under the five KPI tiles: one
+  small tile per service, one plain-words headline from the table in
+  Section 1 ("First words in 0.8 s", "Speech heard 2× faster than real time",
+  "Voice ready in 0.4 s"), the standard name in small text, units always
+  visible.
+- Detail line (collapsed, `<details>`): error rate, queue wait or in-flight,
+  p95. Show p99 only with at least 100 samples.
+- Absent data shows "Not available yet" and the tooltip names what provides it
+  (for example "needs Chat Q&A update"). Stale shows "◷ Stale". No ✓/! and no
+  coloured left border for service tiles.
+- Update the LLM answer-speed tile: label "decode tokens/s" and use the exact
+  value from `services.chat` when present, otherwise keep the "~words/s"
+  fallback.
+- Keep the existing a11y rules: no 1 Hz screen-reader announcements.
+
+Tests: fixture snapshot with and without `services`; "Not available yet"
+renders; no status icon on service tiles; Resources view still restores.
+
+Done when: `make test-ui` passes and a screenshot of the Performance tab
+(narrow handheld width) shows the tiles readable without scrolling sideways.
+
+### WP4. Time to ready (optional, last)
+
+Only if asked. See A4: a start marker written by `make up` / `make demo-up`
+after prerequisite checks, first-ready times read from the existing
+`wait_for` checks in the `Makefile`, and the header "Ready in" text. Use the
+readiness definition from Section 1: every required service passes its health
+check, then the first live frame.
+
+### WP5. Documentation and release hygiene
+
+- Update `.agents/skills/oep-metrics-manager/SKILL.md` with the per-service
+  series and the scrape block.
+- Update `docs/user-guide/release-notes.md` and the Implementation status
+  table in Section 2. Move finished rows to "Implemented".
+- Run `make test-all` and report the result, including anything skipped.
+
+### Not part of this work
+
+- Per-service target evaluation, CI gates, or automated acceptance checks.
+- Removing the existing Phase A targets and `on_target` / `missed` statuses.
+  Those ship today; removing them is a separate decision and code change.
+- Expanded Performance view, measurement runs, scorecards, and sparklines.
+- Any change to Open Edge Platform service code. Missing values are requested
+  upstream using Section 3.
+
+### Definition of done
+
+- On a stack with no service `/metrics`: the Panel shows five KPI tiles plus
+  three service tiles reading "Not available yet"; nothing errors; all tests
+  pass.
+- With the series present (stub or upstream release): tiles show measured
+  numbers with units, derived values match the formulas, and nothing is
+  computed from the Backend's own calls.
+
 ## References
 
 Handheld:
