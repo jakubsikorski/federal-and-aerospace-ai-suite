@@ -5932,6 +5932,165 @@ def test_telemetry_poller_reports_unavailable_and_timestamp_units():
     assert ids["cpu_temperature_c"] == 55.0 and ids["gpu_engine_render_percent"] == 12.0, ids
 
 
+def _svc_payload(series, ts=2_000_000_000_000_000_000):
+    rows = {}
+    for index, (name, value, tags) in enumerate(series):
+        rows[str(index)] = {"name": name, "tags": {"host": "h", **tags},
+                            "fields": {"value": value}, "timestamp": ts}
+    return {"metrics": rows}
+
+
+def _svc_keys():
+    from app.telemetry import SERVICE_METRICS
+    return {svc: set(keys) for svc, keys in SERVICE_METRICS.items()}
+
+
+def test_telemetry_services_all_missing_when_series_absent():
+    from app.telemetry import normalize
+    answer = normalize(_svc_payload([("cpu_usage_idle", 90, {"cpu": "cpu-total"})]),
+                       "h", now=2_000_000_000)
+    assert set(answer["services"]) == {"chat", "asr", "tts"}
+    for svc, keys in _svc_keys().items():
+        assert answer["services"][svc]["state"] == "missing"
+        assert set(answer["services"][svc]["metrics"]) == keys
+        for metric in answer["services"][svc]["metrics"].values():
+            assert metric["state"] == "missing" and metric["value"] is None
+            assert metric["p50"] is None and metric["p95"] is None
+            assert metric["count"] is None and metric["unit"]
+    assert normalize({"metrics": {}}, "h")["services"]["chat"]["state"] == "missing"
+    assert normalize([], "h")["services"]["tts"]["state"] == "missing"
+    other = _svc_payload([("x", 1, {})])
+    assert normalize(other, "zzz")["services"]["asr"]["state"] == "missing"
+
+
+def test_telemetry_services_zero_stale_and_unknown_series():
+    from app.telemetry import normalize
+    series = [
+        ("chatqna_requests_in_flight", 0, {}),
+        ("chatqna_requests_total", 5, {"outcome": "ok"}),
+        ("chatqna_requests_total", 0, {"outcome": "error"}),
+        ("chatqna_unknown_seconds", 9, {}),
+        ("tts_mystery_total", 3, {}),
+    ]
+    answer = normalize(_svc_payload(series), "h", now=2_000_000_000)
+    chat = answer["services"]["chat"]
+    assert chat["state"] == "ok"
+    assert chat["metrics"]["in_flight"]["value"] == 0.0
+    assert chat["metrics"]["in_flight"]["state"] == "ok"
+    assert chat["metrics"]["error_rate_percent"]["value"] == 0.0
+    assert chat["metrics"]["error_rate_percent"]["state"] == "ok"
+    assert chat["metrics"]["ttft_seconds"]["state"] == "missing"
+    assert answer["services"]["tts"]["state"] == "missing"
+    assert "chatqna_unknown_seconds" not in str(answer["services"])
+
+    # Nothing counted yet is not a zero rate.
+    empty = normalize(_svc_payload([("tts_requests_total", 0, {"outcome": "ok"})]),
+                      "h", now=2_000_000_000)
+    assert empty["services"]["tts"]["metrics"]["error_rate_percent"]["value"] is None
+
+    stale = normalize(_svc_payload(series, ts=1_999_999_990_000_000_000),
+                      "h", now=2_000_000_000)
+    assert stale["services"]["chat"]["state"] == "stale"
+    assert stale["services"]["chat"]["metrics"]["in_flight"]["state"] == "stale"
+    assert stale["services"]["chat"]["metrics"]["in_flight"]["value"] == 0.0
+    assert stale["services"]["asr"]["state"] == "missing"
+
+
+def test_telemetry_services_derivations_and_error_rate():
+    from app.telemetry import normalize
+    series = [
+        ("audio_analyzer_audio_duration_seconds_sum", 60.0, {}),
+        ("audio_analyzer_audio_duration_seconds_count", 3, {}),
+        ("audio_analyzer_inference_seconds_sum", 10.0, {}),
+        ("audio_analyzer_inference_seconds_count", 3, {}),
+        ("audio_analyzer_requests_total", 7, {"outcome": "ok"}),
+        ("audio_analyzer_requests_total", 2, {"outcome": "error"}),
+        ("audio_analyzer_requests_total", 1, {"outcome": "timeout"}),
+        ("chatqna_decode_tokens_per_second_avg", 42.5, {"service_name": "chat"}),
+        ("chatqna_decode_tokens_per_second_count", 4, {"service_name": "chat"}),
+        ("tts_rtf", 0.25, {}),
+    ]
+    answer = normalize(_svc_payload(series), "h", now=2_000_000_000)
+    asr = answer["services"]["asr"]["metrics"]
+    assert asr["audio_seconds"]["value"] == 20.0
+    assert asr["request_seconds"]["value"] == 10.0 / 3
+    assert asr["request_seconds"]["count"] == 3
+    assert abs(asr["rtfx"]["value"] - 6.0) < 1e-9 and asr["rtfx"]["unit"] == "x"
+    assert asr["error_rate_percent"]["value"] == 30.0
+    assert asr["request_seconds"]["p50"] is None and asr["request_seconds"]["p95"] is None
+    chat = answer["services"]["chat"]["metrics"]["decode_tokens_per_second"]
+    assert chat["value"] == 42.5 and chat["count"] == 4 and chat["p95"] is None
+    assert answer["services"]["tts"]["metrics"]["rtf"]["value"] == 0.25
+    # Without request time there is no RTFx to invent.
+    only_audio = normalize(_svc_payload(series[:2]), "h", now=2_000_000_000)
+    assert only_audio["services"]["asr"]["metrics"]["rtfx"]["state"] == "missing"
+
+
+def test_telemetry_services_bucket_percentiles_nearest_rank():
+    from app.telemetry import normalize
+    series = [("chatqna_ttft_seconds_bucket", cum, {"le": le, "url": "http://c/metrics"})
+              for le, cum in (("0.1", 50), ("0.5", 90), ("1", 100), ("+Inf", 100))]
+    series += [("chatqna_ttft_seconds_sum", 30.0, {"url": "http://c/metrics"}),
+               ("chatqna_ttft_seconds_count", 100, {"url": "http://c/metrics"})]
+    ttft = normalize(_svc_payload(series), "h",
+                     now=2_000_000_000)["services"]["chat"]["metrics"]["ttft_seconds"]
+    assert ttft["p50"] == 0.1 and ttft["p95"] == 1.0
+    assert ttft["count"] == 100 and ttft["value"] == 0.3 and ttft["state"] == "ok"
+    # Rank beyond the last finite bucket has no finite upper bound.
+    over = [("chatqna_ttft_seconds_bucket", cum, {"le": le})
+            for le, cum in (("0.1", 10), ("+Inf", 100))]
+    over += [("chatqna_ttft_seconds_sum", 100.0, {}), ("chatqna_ttft_seconds_count", 100, {})]
+    ttft = normalize(_svc_payload(over), "h",
+                     now=2_000_000_000)["services"]["chat"]["metrics"]["ttft_seconds"]
+    assert ttft["p50"] is None and ttft["p95"] is None and ttft["count"] == 100
+
+
+def test_telemetry_malformed_bucket_does_not_blank_host_metrics():
+    from app.telemetry import normalize
+    for tags in ({}, {"le": "oops"}, {"le": None}, {"le": "nan"}):
+        series = [("cpu_usage_idle", 90, {"cpu": "cpu-total"}),
+                  ("chatqna_ttft_seconds_bucket", 1, tags)]
+        answer = normalize(_svc_payload(series), "h", now=2_000_000_000)
+        assert answer["status"] == "ok" and answer["metrics"], tags
+        assert answer["services"]["chat"]["metrics"]["ttft_seconds"]["state"] == "missing"
+        assert answer["services"]["chat"]["state"] == "missing"
+    # A good family next to a bad bucket still reads.
+    series = [("chatqna_ttft_seconds_bucket", 1, {}),
+              ("chatqna_ttft_seconds_bucket", 100, {"le": "+Inf"}),
+              ("chatqna_ttft_seconds_sum", 30.0, {}), ("chatqna_ttft_seconds_count", 100, {})]
+    ttft = normalize(_svc_payload(series), "h",
+                     now=2_000_000_000)["services"]["chat"]["metrics"]["ttft_seconds"]
+    assert ttft["state"] == "ok" and ttft["value"] == 0.3
+
+
+def test_telemetry_service_reader_failure_keeps_host_metrics():
+    from app import telemetry
+
+    def boom(*args):
+        raise RuntimeError("boom")
+
+    original = telemetry._services
+    telemetry._services = boom
+    try:
+        answer = telemetry.normalize(
+            _svc_payload([("cpu_usage_idle", 90, {"cpu": "cpu-total"})]), "h", now=2_000_000_000)
+    finally:
+        telemetry._services = original
+    assert answer["status"] == "ok" and answer["metrics"]
+    assert answer["services"]["tts"]["state"] == "missing"
+
+
+def test_telemetry_snapshot_has_services_before_first_poll():
+    from app import telemetry
+    poller = telemetry.Telemetry(object(), "h")
+    first = poller.snapshot()
+    assert first["reason"] == "starting"
+    assert set(first["services"]) == {"chat", "asr", "tts"}
+    first["services"]["chat"]["metrics"]["ttft_seconds"]["value"] = 99
+    again = poller.snapshot()
+    assert again["services"]["chat"]["metrics"]["ttft_seconds"]["value"] is None
+
+
 def test_server_signal_stops_streams_before_uvicorn_drains_them():
     """SSE loops watch pipelines.shutdown; uvicorn alone would wait for them."""
     import uvicorn

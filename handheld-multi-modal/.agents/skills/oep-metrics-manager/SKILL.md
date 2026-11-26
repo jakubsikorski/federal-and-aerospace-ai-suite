@@ -60,6 +60,46 @@ source `edge-ai-libraries/microservices/metrics-manager/`. Compose service
 - Keep missing, stale, unsupported, sentinel and real-zero values distinct;
   never synthesize a value.
 
+## Per-service series (not served by the pinned images yet)
+
+Chat Q&A, Audio Analyzer and Text To Speech are meant to expose these series;
+until the pinned images do, every one reads as `missing`. The one name table is
+`SERVICE_METRICS` at the top of `backend/app/telemetry.py`; a rename is a
+one-line change there (names from section 3 of
+`docs/user-guide/benchmarking/handheld-performance-kpi-plan.md`).
+
+- Chat: `chatqna_ttft_seconds`, `chatqna_queue_wait_seconds`,
+  `chatqna_decode_tokens_per_second`, `chatqna_request_seconds`,
+  `chatqna_requests_total{outcome}`, `chatqna_requests_in_flight`.
+- ASR: `audio_analyzer_inference_seconds`, `audio_analyzer_queue_wait_seconds`,
+  `audio_analyzer_audio_duration_seconds`, `audio_analyzer_rtf`,
+  `audio_analyzer_requests_total{outcome}`, `audio_analyzer_requests_in_flight`.
+- TTS: `tts_generate_seconds`, `tts_audio_duration_seconds`, `tts_rtf`,
+  `tts_queue_wait_seconds`, `tts_requests_total{outcome}`,
+  `tts_requests_in_flight`.
+
+Shape seen by the Backend: every series is `{name, tags{host,...}, fields{value},
+timestamp}`; types are lost. A Prometheus-scraped histogram arrives as flat
+`<name>_bucket{le}`, `_sum` and `_count` series, so p50/p95 can be read from the
+cumulative buckets (cumulative since service start, not a window). An OTLP push
+keeps only `_count`, `_sum`, `_avg`, `_min`, `_max` (no buckets), so p50/p95 stay
+null. Series stay on `:9273` up to 60 s after the last write with their original
+timestamp, which is how stale is told from fresh.
+
+Scrape block: `config/metrics/telegraf.conf` has a **commented-out**
+`[[inputs.prometheus]]` block for the three services' `/metrics` with a `namepass`
+list. Enable it only when the pinned images serve `/metrics`. It must keep
+`metric_version = 1`: version 2 makes a scraped histogram emit a duplicate `le`
+label, `/api/v1/metrics/latest` returns HTTP 500 and all telemetry stops.
+
+Snapshot: the telemetry snapshot (`GET /api/metrics`, SSE `telemetry` event)
+carries a top-level `services` key: `{chat, asr, tts}`, each
+`{state, metrics{key: {value, unit, state, p50, p95, count}}}` with
+`state` of `ok`, `stale` or `missing`. Every key is always present; absent
+series are `missing` with `value` null, and a real 0 stays 0. The Backend only
+reads and relays these series: no timing of its own calls, no windows, no
+outcome counting, no targets or pass/fail.
+
 Check that host and container series are fresh:
 
 ```sh

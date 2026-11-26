@@ -383,6 +383,17 @@ SPDX-License-Identifier: Apache-2.0
   .kpi[data-status="on_target"] .kpi-status { color: var(--good); }
   .kpi[data-status="missed"] { border-left-color: var(--bad); }
   .kpi[data-status="missed"] .kpi-status { color: var(--bad); }
+  #service-heading { margin: 10px 0 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+  #service-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 6px; }
+  .svc { min-width: 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+  .svc > span, .svc > strong, .svc > small { display: block; }
+  .svc > span { color: var(--muted); font-size: 12px; }
+  .svc > strong { font-size: 15px; line-height: 1.3; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  .svc > small, .svc li { font-size: 12px; line-height: 1.3; color: var(--muted); }
+  .svc summary { cursor: pointer; display: flex; align-items: center; min-height: 44px; font-size: 12px; color: var(--muted); }
+  .svc summary::before { content: "▸"; display: inline-block; width: 1.2em; }
+  .svc details[open] > summary::before { content: "▾"; }
+  .svc ul { margin: 0 0 4px; padding-left: 16px; }
   #camera-performance { width: 100%; margin-top: 8px; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
   #camera-performance th, #camera-performance td { padding: 8px 6px; text-align: left; border-bottom: 1px solid var(--line); }
   #camera-performance th { color: var(--muted); font-weight: 600; }
@@ -873,6 +884,8 @@ SPDX-License-Identifier: Apache-2.0
         <div id="performance-view" aria-label="Performance, last 5 minutes">
           <div id="kpi-grid"></div>
           <p id="kpi-explain" role="status" hidden></p>
+          <h3 id="service-heading">Services</h3>
+          <div id="service-grid" aria-labelledby="service-heading"></div>
           <table id="camera-performance" hidden>
             <thead><tr><th scope="col">Camera</th><th scope="col">Health</th><th scope="col">Frames/s</th><th scope="col">Skipped</th><th scope="col">Detect</th></tr></thead>
             <tbody></tbody>
@@ -4044,9 +4057,77 @@ function setTelemetryView(view) {
 $("view-resources").onclick = () => setTelemetryView("resources");
 $("view-performance").onclick = () => setTelemetryView("performance");
 
+// Plain-words service tiles. Values come from state.telemetry.services as the
+// Backend relayed them; nothing here is compared with a target.
+function svcSeconds(seconds) {
+  return seconds < 0.1 ? Math.round(seconds * 1000) + " ms" : seconds.toFixed(1) + " s";
+}
+const svcCount = (v) => String(v);
+// headline entries: [key, headline text, p95 label, p95 formatter]; a headline
+// without a seconds-style p95 formatter shows no 95% line.
+const SERVICE_TILES = [
+  {id: "chat", label: "Chat Q&A", standard: "TTFT", provider: "needs Chat Q&A update",
+    headline: [["ttft_seconds", (m) => "First words in " + svcSeconds(m.value), "First words", svcSeconds]],
+    extras: [["queue_wait_seconds", "Queue wait", svcSeconds], ["in_flight", "In flight", svcCount]], extraOne: true},
+  {id: "asr", label: "Audio Analyzer", standard: "RTFx", provider: "needs Audio Analyzer update",
+    headline: [["rtfx", (m) => "Speech heard " + m.value.toFixed(1) + "x faster than real time"]],
+    extras: [["in_flight", "In flight", svcCount]]},
+  {id: "tts", label: "Text To Speech", standard: "TTFA / RTF", provider: "needs Text To Speech update",
+    headline: [["time_to_first_audio_seconds", (m) => "Voice ready in " + svcSeconds(m.value), "Voice ready", svcSeconds],
+      ["rtf", (m) => "Takes " + m.value.toFixed(2) + " s per second of speech", "Speech speed",
+        (v) => v.toFixed(2) + " s per second of speech"]],
+    extras: [["in_flight", "In flight", svcCount]]},
+];
+function serviceMetricState(metric) {
+  return metric && ["ok", "stale"].includes(metric.state) && metric.value != null ? metric.state : "missing";
+}
+// Tiles are built once and updated in place so focus and taps on Details
+// survive the once-a-second telemetry refresh.
+function serviceTile(spec) {
+  const box = document.createElement("div");
+  box.className = "svc"; box.dataset.service = spec.id;
+  const label = document.createElement("span"); label.textContent = spec.label;
+  const strong = document.createElement("strong");
+  const std = document.createElement("small");
+  const details = document.createElement("details"); details.dataset.service = spec.id;
+  const summary = document.createElement("summary"); summary.textContent = "Details";
+  details.append(summary, document.createElement("ul"));
+  box.append(label, strong, std, details);
+  return box;
+}
+function renderServices() {
+  const grid = $("service-grid");
+  if (grid.children.length !== SERVICE_TILES.length) grid.replaceChildren(...SERVICE_TILES.map(serviceTile));
+  SERVICE_TILES.forEach((spec, index) => {
+    const metrics = state.telemetry?.services?.[spec.id]?.metrics || {};
+    const pick = spec.headline.find(([key]) => serviceMetricState(metrics[key]) === "ok")
+      || spec.headline.find(([key]) => serviceMetricState(metrics[key]) === "stale");
+    const head = pick && metrics[pick[0]], headState = pick ? serviceMetricState(head) : "missing";
+    const box = grid.children[index], strong = box.querySelector("strong");
+    box.dataset.state = headState;
+    strong.textContent = headState === "ok" ? pick[1](head) : headState === "stale" ? "◷ Stale" : "Not available yet";
+    strong.title = headState === "missing" ? "Not available yet: " + spec.provider : "";
+    box.querySelector("small").textContent = spec.standard + (headState === "missing" ? " · " + spec.provider : "");
+    const list = box.querySelector("ul"), lines = [];
+    const show = (metric, fmt) => {
+      const st = serviceMetricState(metric);
+      return st === "missing" ? "not available" : (st === "stale" ? "◷ " : "") + fmt(metric.value);
+    };
+    lines.push("Error rate: " + show(metrics.error_rate_percent, (v) => v.toFixed(1) + "%"));
+    for (const [key, name, fmt] of spec.extras) {
+      if (spec.extraOne && key === "in_flight" && serviceMetricState(metrics.queue_wait_seconds) !== "missing") continue;
+      lines.push(name + ": " + show(metrics[key], fmt));
+      if (spec.extraOne) break;
+    }
+    if (pick && pick[3] && head.p95 != null && headState !== "missing") lines.push(pick[2] + ", 95% at or below: " + pick[3](head.p95));
+    list.replaceChildren(...lines.map((text) => { const li = document.createElement("li"); li.textContent = text; return li; }));
+  });
+}
+
 function renderPerformance() {
   renderVideoBadge();
   if (state.telemetryView !== "performance") return;
+  renderServices();
   const snapshot = state.performance, kpis = snapshot?.kpis;
   if (!kpis) {
     $("kpi-grid").replaceChildren(); $("camera-performance").hidden = true; $("kpi-explain").hidden = true;
@@ -4058,6 +4139,8 @@ function renderPerformance() {
   const stages = Object.entries(voice.stages || {}).filter(([, value]) => value != null)
     .map(([name, value]) => titleCase(name) + " " + perfSeconds(value)).join(", ");
   const worst = Object.entries(snapshot.cameras || {}).find(([, camera]) => camera.reason && camera.health !== "starting");
+  const chatSpeed = state.telemetry?.services?.chat?.metrics?.decode_tokens_per_second;
+  const decode = chatSpeed && chatSpeed.state === "ok" && chatSpeed.value != null ? chatSpeed : null;
   const tiles = [
     {id: "alert", label: "Time to alert", status: alert.status, value: perfSeconds(alert.p95),
       detail: alert.count ? typical(alert, "alerts")
@@ -4076,12 +4159,14 @@ function renderPerformance() {
         : cameras.running ? "No dropped frames or delay" : "No camera is sending frames",
       target: `Target ${cameras.target} or more smooth`,
       title: "Smooth: no more than 10% of frames skipped, keeping up with the camera, detection delay on target."},
-    {id: "speed", label: "Answer speed", status: speed.status,
-      value: speed.p50 == null ? "—" : "~" + speed.p50 + " words/s",
+    {id: "speed", label: decode ? "Answer speed · decode tokens/s" : "Answer speed", status: speed.status,
+      value: decode ? decode.value.toFixed(1) + " tokens/s" : speed.p50 == null ? "—" : "~" + speed.p50 + " words/s",
       detail: speed.first_words_p50 != null ? "First words typical " + perfSeconds(speed.first_words_p50) : "Ask a question",
-      target: speed.tokens_per_second == null ? "Tokens/s: needs Chat Q&A update"
+      target: decode ? "Measured by Chat Q&A"
+        : speed.tokens_per_second == null ? "Tokens/s: needs Chat Q&A update"
         : `${speed.tokens_per_second} tokens/s · target ${speed.token_target}`,
-      title: "Approximate: streamed words per second, not model tokens."},
+      title: decode ? "Decode tokens per second reported by Chat Q&A."
+        : "Approximate: streamed words per second, not model tokens."},
     {id: "memory", label: "Peak memory", status: memory.status,
       value: memory.peak == null ? "—" : Math.round(memory.peak) + "%",
       detail: memory.last == null ? "Waiting for readings" : "Now " + Math.round(memory.last) + "% of host RAM",
@@ -5003,6 +5088,7 @@ function connectEvents() {
     state.telemetry = JSON.parse(event.data);
     rememberTelemetry(state.telemetry);
     renderTelemetry();
+    if (state.telemetryView === "performance") renderServices();
   });
   events.addEventListener("performance", (event) => {
     if (state.events !== events) return;

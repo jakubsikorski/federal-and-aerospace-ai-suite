@@ -29,6 +29,7 @@ lifecycle.
 - Readiness check (`make check`) and offline copy to other devices (`make bundle`,
   `make bundle-load`).
 - Bundled AI agent skills in `.agents/skills`.
+- Per-service speed tiles (Chat Q&A, speech input, spoken answers) in the Performance tab; they read "Not available yet" until the services publish metrics.
 
 **Removed**:
 

@@ -153,6 +153,11 @@ Platform service is modified.
 | A5. Host memory peak against the 80 % target | Implemented | collector reads existing telemetry |
 | A6. Collector, `GET /api/performance`, `performance` SSE event, marks endpoint | Implemented | `backend/app/performance.py`, `backend/app/main.py` |
 | Panel: video badge, answer footer, alert tooltip, Resources \| Performance tab | Implemented | `backend/app/static/index.html` |
+| WP0. Metrics Manager finding | Done | Section 7, WP0 |
+| WP1. Scrape block in `config/metrics/telegraf.conf` | Done, commented out (pinned images serve no `/metrics`) | `config/metrics/telegraf.conf` |
+| WP2. Backend reads per-service series into `services` | Done | `backend/app/telemetry.py`, `backend/test_backend.py` |
+| WP3. Service tiles in the Panel | Done | `backend/app/static/index.html`, `backend/test_ui.py` |
+| WP5. Documentation and release notes | Done | `.agents/skills/oep-metrics-manager/SKILL.md`, `docs/user-guide/release-notes.md` |
 | A4. Deployment time to ready | Deferred | — |
 | Backend `/metrics` export, measurement runs, `make perf`, saved scorecards | Not planned here | — |
 | Expanded Performance view, model-strip chips, header "Ready in" | Later | — |
@@ -321,7 +326,9 @@ are stored.
 ## 3. Phase B — upstream requests (hand-off specification)
 
 Source checked: [`open-edge-platform/edge-ai-libraries`](https://github.com/open-edge-platform/edge-ai-libraries)
-at tag `v2026.3.0-rc1`, the source of the stock images pinned in Compose. File
+at tag `v2026.3.0-rc1`. The source check was done at rc1 and the Compose pins have since
+moved to `2026.3.0-rc2` (rc3 for DL Streamer Pipeline Server); the content was not
+re-verified. File
 references below are relative to that tag. Each "Current state" was re-checked
 against the previous tag (`v2026.2.0-rc3`); changes are listed under
 **New in this release**. None of the requested values below is exposed yet.
@@ -831,6 +838,30 @@ committed on its own. Paths are relative to `handheld-multi-modal/`.
 
 ### WP0. Confirm what Metrics Manager can do (no code)
 
+**Status: done.** Finding (checked in the local `intel/metrics-manager:2026.3.0-rc2` image
+and a throwaway container; the upstream rc2 tag returned 404, so shipped source was read):
+
+- Prometheus scrape keeps histogram buckets: yes. OTLP push keeps them: no (only
+  `_count`, `_sum`, `_avg`, `_min`, `_max`). p50/p95 possible: yes, via scrape or explicit
+  `_bucket` series pushed as JSON; over OTLP they must be null.
+- The Backend reads `GET :9090/api/v1/metrics/latest` (`/metrics/stream` carries the same
+  series). Both are Telegraf's `:9273` export parsed into one sample per series
+  `{name, tags{host,...}, fields{value}, timestamp}`; type is lost. Timestamps are ns on
+  `/latest`, ms on the stream. A scrape adds a `url` tag. A scraped histogram arrives as
+  `_bucket{le}`, `_sum`, `_count`. The raw store copy of pushed series (no `host` tag,
+  timestamp in seconds) is ignored.
+- Gotchas: a `metric_version = 2` scrape of a histogram duplicates `le` and turns
+  `/latest` into HTTP 500 and the stream into errors (all telemetry), so scrape blocks must
+  use `metric_version = 1` (this corrects the `metric_version = 2` in WP1 below).
+  `inputs.prometheus` is commented out in the repo config, so scraping needs a repo-local
+  edit. Series persist up to 60 s after the last write with their original timestamp.
+- Limit: the export is a latest-value snapshot, so a windowed p95 or error-rate delta would
+  need Backend-held history, which the guardrails forbid. Percentiles are therefore
+  cumulative since service start.
+- Chosen for WP2: read-side nearest-rank percentiles on cumulative `le` buckets, mean from
+  sum/count, with OTLP-shaped `_count`/`_sum`/`_avg` as fallback.
+
+
 Goal: decide how p50/p95 reach the Backend.
 
 1. Start the pinned image (`intel/metrics-manager`, tag in
@@ -848,6 +879,9 @@ Done when: the finding is written down and WP2's approach is chosen.
 
 ### WP1. Scrape configuration in Metrics Manager
 
+**Status: done.** Commented-out `[[inputs.prometheus]]` block with `metric_version = 1` and a `namepass` list for the three services; enable it only once the pinned images serve `/metrics`. Not exercised against a stub endpoint.
+
+
 Files: `config/metrics/telegraf.conf`, `compose/handheld-multi-modal.yaml` if
 service hostnames or ports need to be reachable from the `metrics` container.
 
@@ -863,6 +897,9 @@ Done when: with the block enabled against a stub endpoint, the series appear at
 `:9273/metrics`. Disabling it leaves current behaviour unchanged.
 
 ### WP2. Backend reads per-service series
+
+**Status: done.** `SERVICE_METRICS` table and `services` object in the telemetry snapshot (`backend/app/telemetry.py`), with fixture tests in `backend/test_backend.py`. p50/p95 are nearest rank on cumulative buckets (since service start). The TTS time-to-first-audio series name is a placeholder because the plan does not list one. Not yet checked against a live stack.
+
 
 Files: `backend/app/telemetry.py`, `backend/test_backend.py`.
 
@@ -890,6 +927,9 @@ Done when: `make test-all` (backend coverage gate) passes and `GET /api/metrics`
 with every field `missing` on a stack that has no service metrics.
 
 ### WP3. Service tiles in the Panel
+
+**Status: done.** Service tiles in the Performance tab and the decode tokens/s tile in `backend/app/static/index.html`, with tests in `backend/test_ui.py`. A narrow-width screenshot was not taken.
+
 
 Files: `backend/app/static/index.html`, `backend/test_ui.py`.
 
@@ -923,6 +963,9 @@ readiness definition from Section 1: every required service passes its health
 check, then the first live frame.
 
 ### WP5. Documentation and release hygiene
+
+**Status: done.** Skill, release notes and status table updated. `make test-all` exits 0 (test-image, test-coverage 92% against the 75% gate, test-crops, test-assets, test-ui all pass). `test-live`, `test-history`, `test-crops-live` and `test-fuzz` need a running stack and were not run. WP4 is not done.
+
 
 - Update `.agents/skills/oep-metrics-manager/SKILL.md` with the per-service
   series and the scrape block.

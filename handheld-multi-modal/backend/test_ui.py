@@ -900,6 +900,41 @@ def main():
                 if (!$('kpi-explain').hidden) return "tile explanation not closed";
                 if ([...$('kpi-grid').children, $('view-resources'), $('view-performance')].some(el => el.getBoundingClientRect().height < 44)) return "performance touch target under 44px";
                 if ($('camera-performance').tBodies[0].rows.length !== 2 || $('camera-performance').tBodies[0].rows[1].dataset.health !== 'dropping') return "camera table";
+                const svcTiles = () => [...$('service-grid').children];
+                const svcText = () => svcTiles().map(tile => tile.textContent);
+                const svcSaved = state.telemetry;
+                state.telemetry = {metrics: [], services: undefined}; renderPerformance();
+                if (svcTiles().length !== 3 || svcText().some(text => !text.includes('Not available yet'))) return "services absent: " + svcText();
+                if (!svcTiles()[0].querySelector('strong').title.includes('needs Chat Q&A update') || !svcTiles()[0].querySelector('small').textContent.includes('needs Chat Q&A update')) return "chat provider hint not visible";
+                if (!$('kpi-grid').children[3].textContent.includes('~9.5 words/s') || $('kpi-grid').children[3].textContent.includes('decode tokens/s')) return "speed fallback changed";
+                const svcM = (value, unit, st, extra) => Object.assign({value, unit, state: st || 'ok', p50: null, p95: null, count: null}, extra || {});
+                const svcMiss = () => svcM(null, '', 'missing');
+                state.telemetry = {metrics: [], services: {
+                  chat: {state: 'ok', metrics: {ttft_seconds: svcM(.8, 's', 'ok', {p95: 1.2, count: 40}), queue_wait_seconds: svcM(.05, 's'),
+                    decode_tokens_per_second: svcM(21.4, 'tokens/s'), request_seconds: svcMiss(), error_rate_percent: svcM(0, '%'), in_flight: svcM(1, '')}},
+                  asr: {state: 'ok', metrics: {rtfx: svcM(2, 'x'), request_seconds: svcMiss(), audio_seconds: svcMiss(), error_rate_percent: svcM(0, '%'), in_flight: svcM(0, '')}},
+                  tts: {state: 'ok', metrics: {rtf: svcM(.3, ''), time_to_first_audio_seconds: svcM(.4, 's'), request_seconds: svcMiss(), error_rate_percent: svcM(2.5, '%'), in_flight: svcM(0, '')}}}};
+                renderPerformance();
+                const svcOk = svcText();
+                if (!svcOk[0].includes('First words in 0.8 s') || !svcOk[0].includes('TTFT') || !svcOk[0].includes('Queue wait: 50 ms') || !svcOk[0].includes('First words, 95% at or below: 1.2 s')) return "chat service tile: " + svcOk[0];
+                if (!svcOk[1].includes('Speech heard 2.0x faster than real time') || !svcOk[1].includes('RTFx') || svcOk[1].includes('95% at or below')) return "asr service tile: " + svcOk[1];
+                if (!svcOk[2].includes('Voice ready in 0.4 s') || !svcOk[2].includes('Error rate: 2.5%')) return "tts service tile: " + svcOk[2];
+                if (!$('kpi-grid').children[3].textContent.includes('21.4 tokens/s') || !$('kpi-grid').children[3].textContent.includes('decode tokens/s')) return "decode speed tile: " + $('kpi-grid').children[3].textContent;
+                svcTiles()[0].querySelector('details').open = true; await new Promise(r => setTimeout(r, 50)); renderPerformance();
+                if (!svcTiles()[0].querySelector('details').open || svcTiles()[1].querySelector('details').open) return "details open state lost on re-render";
+                const svcSummary = svcTiles()[0].querySelector('summary'), svcNode = svcTiles()[0];
+                svcSummary.focus(); renderServices();
+                if (svcTiles()[0] !== svcNode || document.activeElement !== svcSummary) return "service refresh dropped focus on Details";
+                if (getComputedStyle(svcSummary, '::before').content === 'none') return "Details has no disclosure marker";
+                state.telemetry.services.tts.metrics.time_to_first_audio_seconds = svcMiss();
+                state.telemetry.services.tts.metrics.rtf = svcM(.3, '', 'ok', {p95: .4, count: 10}); renderPerformance();
+                if (!svcText()[2].includes('Takes 0.30 s per second of speech') || !svcText()[2].includes('Speech speed, 95% at or below: 0.40 s per second of speech') || /400 ms/.test(svcText()[2])) return "tts rtf fallback: " + svcText()[2];
+                state.telemetry.services.chat.metrics.ttft_seconds = svcM(.8, 's', 'stale'); renderPerformance();
+                if (!svcText()[0].includes('◷ Stale') || svcText()[0].includes('First words in')) return "stale service tile: " + svcText()[0];
+                if (svcTiles().some(tile => /✓|!|Meets target|Misses target/.test(tile.textContent) || tile.querySelector('.kpi-status') || getComputedStyle(tile).borderLeftWidth !== '1px')) return "service tile has status icon or accent border";
+                if ($('performance-view').scrollWidth > $('performance-view').clientWidth) return "performance view scrolls sideways";
+                if ($('kpi-grid').children.length !== 5) return "service tiles leaked into KPI grid";
+                state.telemetry = svcSaved;
                 setTelemetryView('resources');
                 if (perfShown('performance-view') || !perfShown('telemetry-grid')) return "resources view not restored";
                 const perfNow = performance.now();
