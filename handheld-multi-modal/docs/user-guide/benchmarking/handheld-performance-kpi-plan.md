@@ -3,233 +3,184 @@ SPDX-FileCopyrightText: (C) 2026 Intel Corporation
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Handheld Performance KPI Implementation Plan
+# Handheld Performance KPI Plan
 
-## Scope and outcome
+## 1. Scope
 
-Give the Handheld application the ability to measure, display, and export a
-small set of industry-standard performance KPIs for the application, its models,
-and the hardware underneath. The operator sees them in the Handheld Panel. A
-tester can run a repeatable measurement and save the result.
+The Handheld measures and shows a small set of industry-standard performance
+KPIs for the application, its services, and the hardware underneath. The
+operator reads them in the Panel. Tools read the same values from
+`GET /api/performance` and `GET /api/metrics`.
 
-The goal is measurement capability, not a target-device qualification. No
-target hardware is available, so this plan does not include acceptance runs.
-Targets are configurable thresholds that the Panel compares against.
+The goal is to make performance visible and explainable. It is not a
+qualification of a target device; no target hardware is available.
 
-The work is split into two phases:
+**Out of scope**
 
-- **Phase A — application-owned (first).** Everything the Handheld application
-  can measure with its own code: end-to-end latency for video and voice, FPS
-  and drop counters, approximate answer speed, host memory peak, and the Panel
-  UI. Deployment time to ready is planned but deferred. No microservice changes.
-- **Phase B — upstream requests (later).** Values that only the service itself
-  can produce: exact LLM token timing, internal ASR/TTS stage timings, and
-  service-side Prometheus metrics. Section 3 is written as a hand-off
-  specification for the teams that own those services.
+- **Performance gating.** The Panel never judges a value: no target
+  comparison, no pass/fail, no ✓/! status, no threshold settings. The reference
+  values in Section 2 are kept so a later CI job or automated test can adopt
+  them.
+- **Measurement runs and saved scorecards**, an expanded multi-tab view,
+  sparklines, and model-strip chips. Possible follow-ups, not planned here.
+- **Changes to Open Edge Platform services.** Values only a service can produce
+  are requested upstream (Section 6).
 
-Out of scope for this plan:
+**Who measures what**
 
-- **Performance gating.** Pass/fail evaluation of KPIs against targets, whether
-  as CI jobs, automated tests, or acceptance checks, is a separate effort. The
-  per-service reference values in Section 1 exist so such a mechanism can
-  reuse them later; this plan only measures and displays.
-- **Per-service metric aggregation in the Backend.** Metrics Manager owns
-  collection, aggregation, and histograms for service-internal metrics (queue
-  wait, outcomes, in-flight, histograms; see Section 3). The Backend ingests
-  what Metrics Manager provides, as it does for hardware telemetry. The one
-  exception is end-to-end durations the Handheld observes itself on successful
-  calls (see the boundary subsection in Section 2).
+| Owner | Measures | Examples |
+| --- | --- | --- |
+| Handheld (Backend, browser, own DLSPS callbacks) | What the operator experiences end to end, at call sites the Handheld already has | Time to alert, time to spoken answer and its stages, camera FPS and drops, first words, speech-to-text and text-to-speech call time, approximate words/s, peak memory |
+| Metrics Manager | Service-internal metrics, scraped from each service | Queue wait, model time, exact tokens/s, outcomes and error rate, in-flight requests, histograms |
 
-Design rules, from [AGENTS.md](../../../AGENTS.md):
+The Backend keeps no queue, in-flight, outcome, or histogram state for
+services. It reads the service series from Metrics Manager, as it already does
+for hardware telemetry, and relays them.
 
-- Open Edge Platform microservices stay unmodified and pinned. Missing data is
-  requested upstream, never patched locally.
-- The Backend owns collection and aggregation. The browser receives data only
-  through the Backend.
-- The Backend stays out of the video path. Video timing travels as metadata.
-- All new endpoints stay behind the existing loopback/NGINX boundary.
+**Design rules** (from [AGENTS.md](../../../AGENTS.md)):
 
-## 1. KPIs, targets, and what the user experiences
+- Open Edge Platform services stay unmodified and pinned.
+- The browser receives data only through the Backend.
+- The Backend stays out of the video path; video timing travels as metadata.
+- New endpoints stay behind the existing loopback/NGINX boundary.
+- No transcripts or questions are stored for KPIs.
 
-| KPI | Default target | What the user experiences | Measured from → to | Phase |
+## 2. KPIs
+
+### Operator KPIs
+
+| KPI | Operator question | Measured from → to | Reference value (not evaluated) | Status |
 | --- | --- | --- | --- | --- |
-| Time to ready (Dashboard TTFV) | < 5 min | "How long until the console is usable after I start it?" | `make up` / `make demo-up` invoked → Panel shows live video and the assistant reports ready. Images present and models already prepared; pulls, downloads, conversion, compilation, and license prompts excluded. | A (deferred) |
-| Time to alert | < 400 ms | "How quickly am I told something appeared?" | Decoded frame enters the pipeline → alert event created by the Backend. | A |
-| Time to spoken answer | < 3 s | "After I stop talking, how long until I hear the answer?" | End of the operator's speech → first audible sound of the spoken answer. | A |
-| Smooth cameras | ≥ 3 at 1080p | "Can I watch all my cameras without stutter or delay?" | Per camera: processed FPS vs. source FPS, frame drops, and time to alert over a rolling window. | A |
-| Answer speed (LLM decode tokens/s, = 1 / TPOT) — stretch | > 15 tokens/s (7B, 4-bit) | "Does the answer stream faster than I can read it?" | Per request: (output tokens − 1) ÷ (first generated token → last generated token). A per-request decode speed, not aggregate throughput. | B (A shows an approximate words/s) |
-| Compute busy | > 70 % under sustained load | "Is the hardware doing work, or idling while I wait?" | Host CPU utilization averaged over a sustained-load window. | A (existing Resources tab) |
-| Memory headroom | < 80 % at peak | "Am I close to running out of memory?" | Peak host RAM vs. capacity over the rolling window. | A |
+| Time to alert | "How quickly am I told something appeared?" | Decoded frame enters the pipeline → alert raised by the Backend | < 400 ms | Implemented |
+| Time to spoken answer | "After I stop talking, how long until I hear the answer?" | End of the operator's speech → first audible sound of the answer | < 3 s | Implemented |
+| Smooth cameras | "Can I watch all my cameras without stutter?" | Per camera: processed vs. source FPS and skipped frames | ≥ 3 cameras at 1080p | Implemented |
+| Answer speed | "Does the answer stream faster than I can read it?" | Decode tokens/s = (output tokens − 1) ÷ (first → last token), per request | > 15 tokens/s (7B, 4-bit) | Approximate words/s now; exact after B1 |
+| Peak memory | "Am I close to running out of memory?" | Peak host RAM over the rolling window | < 80 % | Implemented |
+| Compute busy | "Is the hardware working or idle?" | Host CPU utilization under load | > 70 % under load | Resources tab |
+| Time to ready | "How long until the console is usable?" | `make up` / `make demo-up` → every required service healthy and first live frame shown (pulls and model preparation excluded) | < 5 min | Not built (WP4) |
 
-### Industry standards behind the KPIs
+Reference values come from datacenter-class sources or product goals. They
+are starting guidance; calibrate them on the device before any gate uses them.
 
-The seven operator KPIs are plain-words roll-ups, not named standards. Each is
-built from standard signals so it can be explained and drilled into:
+### Service tiles
+
+One tile per service. The headline is what the operator experiences, measured
+by the Handheld. The service's own numbers explain it, in Details.
+
+| Service | Headline (Handheld) | Details (Chat Q&A / Audio Analyzer / Text To Speech, via Metrics Manager) | Reference value |
+| --- | --- | --- | --- |
+| Chat Q&A | "First words in 1.2 s": question sent → first streamed text | Model time to first token (TTFT), queue wait, error rate | TTFT < 2 s |
+| Audio Analyzer | "Speech heard 2.0x faster than real time": audio length ÷ call time | Model-only speed (RTFx), error rate | > 1x, aim ≥ 2x |
+| Text To Speech | "Voice ready in 0.4 s": call time for one clip (SpeechT5 returns the whole clip, so this is time to first audio) | Real-time factor (RTF), queue wait, error rate | RTF < 1.0 |
+
+Video and alert KPIs already sit on the video badge, alert rows, and camera
+table (Section 7), so DL Streamer and Alert Agent get no service tile.
+
+**Why the headline is always the Handheld value:** it is what the operator
+feels, and it exists today. Service values measure only part of the path (no
+loopback, often no queue or retrieval). Swapping the headline to them would
+make the number jump with no visible reason. The one exception is answer
+speed: exact tokens/s **replaces** the approximate words/s, because both
+measure the same thing and one is exact.
+
+### Industry standards behind them
+
+The operator KPIs are plain-words roll-ups, built from standard signals:
 
 | Operator KPI | Standard parts |
 | --- | --- |
-| Time to spoken answer | ASR latency + LLM time to first token (TTFT) + TTS time to first audio, plus the silence wait |
+| Time to spoken answer | Silence wait + ASR latency + LLM time to first token + TTS time to first audio + playback start |
 | Time to alert | Pipeline latency (decode → detection) + rule and dispatch time |
-| Smooth cameras | Processed FPS vs. source FPS + dropped-frame ratio |
-| Answer speed | Decode tokens/s (1 / time per output token) |
-| Compute busy, Memory headroom | USE method: utilization and saturation |
-| Time to ready | Every required service passes its health check, then first live frame |
+| Smooth cameras | Processed FPS vs. source FPS, dropped-frame ratio |
+| Answer speed | Decode tokens/s = 1 / time per output token (TPOT) |
+| Peak memory, Compute busy | USE method: utilization and saturation |
+| Time to ready | Readiness: every required service passes its health check |
 
-Per service, show the same few signals (RED: rate, errors, duration; plus
-saturation from the Google SRE golden signals): requests, error rate, latency
-p50/p95, and queue wait or in-flight count. Latency of failed requests is kept
-apart from successful ones. Domain signals sit on top: TTFT and decode
-tokens/s for the LLM, real-time factor (RTF) for ASR and TTS, FPS and drops for
-video.
-
-### Per-service tiles
-
-One tile per service, one plain-words number. Reference values are starting
-guidance from datacenter-class sources, **not evaluated** by this plan (no
-pass/fail on these tiles); a later CI or test gate can adopt them. Calibrate on
-the device first.
-
-| Service | Tile says | Standard name | Reference value |
-| --- | --- | --- | --- |
-| Chat Q&A | "First words in 0.8 s" | TTFT p95 | < 2 s |
-| Audio Analyzer | "Speech heard 2× faster than real time" | RTFx (RTF = 1 / RTFx) | > 1, aim ≥ 2 |
-| Text To Speech | "Voice ready in 0.4 s" | Time to first audio; RTF | RTF < 1.0 |
-| DL Streamer | "Camera 1: 29.8 of 30 fps" | Processed vs. source FPS; dropped % | ≥ 90 % of source; < 10 % dropped |
-| Alert Agent | "Alert delivered in 190 ms" | Detection → dispatch p95 | < 400 ms |
-
-Errors, queue wait, and p99 go in each tile's detail line. p99 appears only
-with at least 100 samples. WER (ASR accuracy) is an offline benchmark value, not
-a live tile.
+Per service, Metrics Manager carries the RED and golden signals: request rate,
+error rate, duration, and saturation (queue wait, in-flight). Domain signals
+sit on top: TTFT and tokens/s for the LLM, RTF/RTFx for speech, FPS and drops
+for video. ASR accuracy (WER) is an offline benchmark, never a live tile.
 
 ### Measurement rules
 
-- Latency is reported as the last value and the p50/p95 of a rolling window,
-  with the sample count. Percentiles are never averaged or added. p99 is shown
-  only in the drill-down and only with enough samples (at least 100); at
-  handheld request volumes it is too noisy for a headline. Averages are fine
-  for throughput values such as FPS and tokens/s, never for latency.
-- A value with too few samples shows "Not enough data", not a pass.
-- Intervals inside one process use that process's monotonic clock. Intervals
-  that cross containers use the host wall clock (all containers share one
-  kernel clock on a single device). Browser intervals use the browser's
-  monotonic clock only; browser and server timestamps are never subtracted.
-- Utilization and memory targets only make sense under load. Idle time is never
-  shown as a failure.
-- Every saved result records hardware, driver versions, application revision,
-  image digests, model revisions and precision, device placement, camera
-  count, and duration.
+- **Latency:** p50 ("typical") and p95 ("95% at or below") over a rolling
+  window, with the sample count. Percentiles are never averaged or added.
+  No p99: at handheld request volumes it is noise.
+- **Throughput** (FPS, tokens/s, words/s, RTF): p50 of per-request values.
+- **Few samples:** fewer than 5 samples reads "Not enough data yet". One
+  sample is never shown as typical.
+- **Missing, stale, zero:** kept distinct. Missing reads "Not available yet",
+  stale reads "◷ Stale", a real zero is shown as zero. Nothing is synthesized.
+- **Successful requests only** for Handheld timings; failures are not timed.
+  Error rates come only from services.
+- **Clocks:** one process uses its monotonic clock. Intervals across containers
+  use the host wall clock (one kernel clock on one device). Browser intervals
+  use `performance.now()` only; browser and server timestamps are never
+  subtracted.
+- **Windows:** Handheld values cover the last 5 minutes. Service values from
+  Metrics Manager are cumulative since the service started (Section 5), and
+  the Panel says so.
 
-### Time to spoken answer — definition
+### Time to spoken answer: definition
 
-This is the main UX metric, so its boundaries are fixed:
+- **Start:** the operator stops speaking. Tap-to-send: the second tap.
+  Auto-send: the last audio buffer above the voice threshold, not the moment
+  auto-send fires.
+- **End:** the browser `playing` event of the first answer clip.
+- **Included:** silence wait, upload, transcription, assistant routing and
+  generation, synthesis of the first answer chunk, delivery, playback start.
+- **Excluded:** the "Checking." acknowledgement (shown separately as
+  "Acknowledged in"), and turns with audio off or playback blocked (counted as
+  "not timed").
 
-- **Start:** the operator stops speaking. With tap-to-send this is the second
-  tap. With auto-send it is the last audio buffer above the voice-activity
-  threshold, not the moment auto-send fires.
-- **End:** the browser `playing` event of the first answer clip, not when the
-  WAV is ready.
-- **Included:** silence-detection wait, upload, transcription, assistant
-  routing and generation, synthesis of the first answer chunk, delivery, and
-  playback start.
-- **Excluded from the target:** the "Checking." acknowledgement (shown
-  separately as "Acknowledged in"), and turns where audio is off or playback
-  was blocked (counted, but not timed).
+Auto-send waits 1.5 s of silence. The Panel shows it as its own "Listening"
+stage so its cost is visible; tuning it is a product decision.
 
-The current auto-send waits 1.5 s of silence, which uses half the 3 s budget.
-The Panel shows this as its own "Listening" stage, so its cost is visible.
-Tuning that delay is a product decision outside this plan.
-
-## 2. Phase A — application-owned instrumentation
-
-Everything in this phase lives in the Handheld component: Backend, browser,
-and the application's own DL Streamer `gvapython` callbacks. No Open Edge
-Platform service is modified.
-
-### Implementation status
+## 3. Status
 
 | Item | Status | Where |
 | --- | --- | --- |
-| A1. Video: ingress stamp, pipeline latency, FPS and drop counters, camera health, time to alert | Implemented | `scripts/dlsps/frame_ingress.py`, `crop_candidates.py`, `config/dlsps/*/config.json`, `backend/app/{ingest,alerts,performance}.py` |
-| A2. Voice: time to spoken answer and its four stages, measured in the browser | Implemented | `backend/app/static/index.html`, `POST /api/performance/marks` |
-| A3. Approximate answer speed (words/s) and time to first words | Implemented | `backend/app/assistant.py` → collector |
-| A5. Host memory peak against the 80 % target | Implemented | collector reads existing telemetry |
-| A6. Collector, `GET /api/performance`, `performance` SSE event, marks endpoint | Implemented | `backend/app/performance.py`, `backend/app/main.py` |
-| Panel: video badge, answer footer, alert tooltip, Resources \| Performance tab | Implemented | `backend/app/static/index.html` |
-| WP0. Metrics Manager finding | Done | Section 7, WP0 |
-| WP1. Scrape block in `config/metrics/telegraf.conf` | Done, commented out (pinned images serve no `/metrics`) | `config/metrics/telegraf.conf` |
-| WP2. Backend reads per-service series into `services` | Done | `backend/app/telemetry.py`, `backend/test_backend.py` |
-| WP3. Service tiles in the Panel | Done | `backend/app/static/index.html`, `backend/test_ui.py` |
-| WP5. Documentation and release notes | Done | `.agents/skills/oep-metrics-manager/SKILL.md`, `docs/user-guide/release-notes.md` |
-| A4. Deployment time to ready | Deferred | — |
-| Backend `/metrics` export, measurement runs, `make perf`, saved scorecards | Not planned here | — |
-| Expanded Performance view, model-strip chips, header "Ready in" | Later | — |
-| Browser `alert_shown` marks, WebRTC rendered FPS and frozen frames | Deferred | — |
-| Backend-side ASR/TTS request time and real-time factor, plus time to first words, shown on the service tiles | Implemented as Handheld-observed (client-observed, includes queue wait and loopback); Metrics Manager series replace them when present | `backend/app/performance.py` (`kpis.services`), `backend/app/static/index.html` |
+| Video: ingress stamp, pipeline latency, FPS and drops, camera health, time to alert | Done | `scripts/dlsps/frame_ingress.py`, `crop_candidates.py`, `backend/app/{ingest,alerts,performance}.py` |
+| Voice: time to spoken answer and its four stages (browser) | Done | `backend/app/static/index.html`, `POST /api/performance/marks` |
+| First words and approximate words/s | Done | `backend/app/assistant.py` → collector |
+| Speech-to-text and text-to-speech call timing | Done | `backend/app/voice.py`, `backend/app/main.py` `build_synthesizer` → collector |
+| Peak memory | Done | collector reads existing telemetry |
+| Collector, `GET /api/performance`, `performance` SSE event | Done | `backend/app/performance.py`, `backend/app/main.py` |
+| Service series read from Metrics Manager (`services` in telemetry) | Done; no service exports yet | `backend/app/telemetry.py` |
+| Scrape block for service `/metrics` | Done, commented out | `config/metrics/telegraf.conf` |
+| Panel: video badge, answer footer, alert tooltip, Performance tab, service tiles | Done; needs WP6 and WP7 to match this plan | `backend/app/static/index.html` |
+| Time to ready | Not built (WP4) | — |
 
-### Boundary: Handheld-observed values and Metrics Manager series
+## 4. Handheld instrumentation
 
-The Handheld records the end-to-end durations it can observe itself, at call
-sites that already exist: speech-to-text request time and speed over real time,
-text-to-speech request time and real-time factor, and time to first words.
+### Video: time to alert and FPS
 
-- Successful calls only. No outcome or error counts.
-- No queue wait, in-flight counts, or histograms of service internals. Those
-  stay with Metrics Manager.
-- Each value is labelled as measured by the Handheld. It is client-observed, so
-  it includes queue wait and loopback. It is not the service's own number.
-- No target, threshold, or pass/fail status. Too few samples reads "Not enough
-  data", never a pass. Nothing is synthesized.
-- No transcripts or questions are stored.
-- When the service-reported Metrics Manager series are present and fresh, the
-  tiles show those instead.
-
-Targets live in `config/backend/backend.yaml` under `performance_targets`
-(`time_to_alert_seconds`, `spoken_answer_seconds`, `smooth_cameras`,
-`tokens_per_second`, `memory_percent`). Invalid values fall back to the
-defaults above.
-
-### A1. Video: time to alert and FPS counters
-
-The pipelines in `config/dlsps/{npu,gpu,cpu}/config.json` are owned by the
-application and already ran the application callback
-[`crop_candidates.py`](../../../scripts/dlsps/crop_candidates.py) after
-`gvametaconvert`. That callback runs after detection and tracking, so on its
-own it cannot see pipeline latency or frames dropped by the leaky queues.
-
-**Ingress callback.** A new application `gvapython` element,
-[`frame_ingress.py`](../../../scripts/dlsps/frame_ingress.py) (`FrameIngress`),
-sits after the source and before the first leaky `queue`:
+The pipelines in `config/dlsps/{npu,gpu,cpu}/config.json` belong to the
+application. Two application `gvapython` callbacks carry the timing:
 
 ```text
 {auto_source} ! … ! gvapython name=ingress module=/opt/handheld-crops/frame_ingress.py class=FrameIngress
   ! queue … leaky=downstream ! gvadetect … ! gvatrack … ! gvametaconvert … ! gvapython name=cropcandidates … ! …
 ```
 
-For each frame it increments a per-pipeline counter and attaches one JSON
-message, `{"handheld_ingress": {"wall": time.time(), "mono_ns": time.monotonic_ns(), "sequence": n}}`.
-The message travels with the frame buffer, so no PTS or FIFO pairing is
-needed, and frames dropped by a leaky queue simply never arrive. It never maps
-pixel data.
+[`frame_ingress.py`](../../../scripts/dlsps/frame_ingress.py) sits before the
+first leaky queue. For each frame it increments a counter and attaches
+`{"handheld_ingress": {"wall": …, "mono_ns": …, "sequence": n}}`. The message
+travels with the buffer, so frames dropped by a leaky queue simply never
+arrive. It never maps pixel data.
 
-**`crop_candidates.py`** removes that message (otherwise DLSPS would merge it
-into the published payload) and adds to `crop_context`:
+[`crop_candidates.py`](../../../scripts/dlsps/crop_candidates.py) removes that
+message and adds to `crop_context`:
 
 | Field | Value |
 | --- | --- |
-| `ingress_at` | Host wall-clock seconds when the decoded frame entered the pipeline. |
-| `pipeline_ms` | Ingress → this callback, on the shared monotonic clock (both callbacks run in one DLSPS process). |
-| `frames_in` | Ingress counter at this frame. |
-| `frame_sequence` | Existing per-instance counter; used as frames out. |
-| `source_fps` | `video_info().fps_n / fps_d`, only when both are positive. |
+| `ingress_at` | Host wall-clock seconds when the decoded frame entered the pipeline |
+| `pipeline_ms` | Ingress → this callback, on the monotonic clock of the DLSPS process |
+| `frames_in` | Ingress counter at this frame |
+| `frame_sequence` | Frames out |
+| `source_fps` | `fps_n / fps_d` when both are positive |
 
-Counts are cumulative per tracking session; the Backend derives rates from
-deltas, so a lost MQTT message does not break them. Verified in the
-stock `intel/dlstreamer-pipeline-server` image (tag pinned in Compose) with a real
-GStreamer pipeline (one merged message per frame, stamp removed,
-`pipeline_ms` ≈ 1 ms on `videotestsrc`), and covered offline by
-`make test-crops`.
-
-**Backend** ([`ingest.py`](../../../backend/app/ingest.py) `_on_message` →
+The Backend ([`ingest.py`](../../../backend/app/ingest.py) →
 [`performance.py`](../../../backend/app/performance.py) `Performance.frame`)
 keeps per camera:
 
@@ -238,44 +189,38 @@ keeps per camera:
 | Processed FPS | `Δframe_sequence / Δt` | 5 s |
 | Ingress FPS | `Δframes_in / Δt` | 5 s |
 | Skipped frames | `1 − Δframe_sequence / Δframes_in` | 5 s |
-| Detection delay | Backend receive wall time − `ingress_at` (0–60 s accepted) | 30 s |
+| Detection delay | Backend receive time − `ingress_at` (0–60 s accepted) | 30 s |
 | Pipeline latency | `pipeline_ms` | 30 s |
-| Health | Offline (no frames for 5 s), Measuring, Dropping (> 10 % skipped, or processed < 90 % of source FPS), Delayed (detection delay p95 over the time-to-alert target), Smooth | — |
+| Health | Offline (no frames for 5 s), Measuring, Dropping (> 10 % skipped or processed < 90 % of source), Delayed (detection delay p95 over 400 ms), Smooth | — |
 
-A new tracking session, or a counter that goes backwards, restarts the
-camera's counts.
+Health is the camera's operating state, shown to explain a stutter. Its fixed
+limits are part of the state definition, not KPI targets.
 
-**Time to alert** = alert raised (wall clock) − `ingress_at` of the frame that
-first saw the object. [`alerts.py`](../../../backend/app/alerts.py) records it
-only for alerts raised on that first observation by a rule without dwell, so a
-rule that intentionally waits, an object that later enters a zone, or a
-confidence that rises later is not counted as a slow pipeline. Every alert
-still carries its own `latency.time_to_alert` for display.
+A new tracking session, or a counter that goes backwards, restarts the counts.
 
-**Not used:** DLSPS `avg_pipeline_latency`/`frame_latency` pair a source-pad
-probe with an appsink probe through a FIFO; with leaky queues, dropped frames
-leave unmatched entries and the value drifts. `avg_fps` is lifetime, not live.
+**Time to alert** = alert raised − `ingress_at` of the frame that first saw
+the object. [`alerts.py`](../../../backend/app/alerts.py) records it only for
+alerts raised on that first observation by a rule without dwell, so a rule that
+waits on purpose is not counted as a slow pipeline.
 
-### A2. Voice: time to spoken answer and stages
+DLSPS's own `avg_pipeline_latency` is not used: it pairs probes through a FIFO
+that drifts when leaky queues drop frames.
 
-Measured entirely in the browser on one monotonic clock
-(`performance.now()`), so no cross-machine clock is subtracted.
+### Voice: time to spoken answer and stages
+
+Measured in the browser on one monotonic clock.
 
 | Mark | When |
 | --- | --- |
-| `speechEnd` | Last loud audio buffer when auto-sent after silence; the tap when sent manually. |
-| `sent` | Upload to `/api/voice/transcribe` starts. |
-| `heard` | Transcription returned with text. |
-| `firstText` | First streamed answer text (`delta` or `answer`) from `/api/ask`. |
-| `playing` | `playing` event of the first answer clip that is not the "Checking." cue. |
+| `speechEnd` | Last loud audio buffer (auto-send) or the tap (manual) |
+| `sent` | Upload to `/api/voice/transcribe` starts |
+| `heard` | Transcription returned with text |
+| `firstText` | First streamed answer text from `/api/ask` |
+| `playing` | `playing` event of the first answer clip that is not "Checking." |
 
-Stages: **Listening** = sent − speechEnd (includes the 1.5 s silence wait),
-**Hear** = heard − sent, **Think** = firstText − heard, **Speak** = playing −
-firstText. Marks are clamped to be non-decreasing. The "Checking." cue time is
-kept separately as `ack_ms`; the speech snapshot now marks that clip with
-`ack: true`.
-
-The browser posts one mark per voice turn:
+Stages: **Listening** = sent − speechEnd, **Hear** = heard − sent, **Think** =
+firstText − heard, **Speak** = playing − firstText. The browser posts one mark
+per turn:
 
 ```json
 POST /api/performance/marks
@@ -283,753 +228,437 @@ POST /api/performance/marks
  "ack_ms": 820, "stages": {"listening": 1540, "hear": 310, "think": 420, "speak": 140}}
 ```
 
-`outcome` is `spoken`, `blocked` (browser blocked audio), or `failed`
-(transcription or answer failed, playback error, or no answer audio within
-30 s). Only `spoken` carries timings; the others are counted as "not timed".
-Turns with Audio off or cancelled by the operator are not posted. The Backend
-validates the body strictly (known keys only, whole milliseconds 0–120 000)
-and returns 422 otherwise.
+`outcome` is `spoken`, `blocked`, or `failed`; only `spoken` carries timings.
+The Backend accepts only known keys and whole milliseconds 0–120 000 (else
+422).
 
-### A3. LLM speed without upstream changes
+### Service calls seen by the Handheld
 
-[`assistant.py`](../../../backend/app/assistant.py) `_chat_stream` already
-timed `first_text_ms` and `generation_ms`; it now reports each streamed answer
-to the collector:
+Timed with `time.monotonic()` around calls the Backend already makes, and
+recorded only after success:
 
-- **Time to first words** = first streamed text (client-observed TTFT).
-- **Answer speed** = words ÷ (generation − first text), only for answers with
-  at least 5 words streamed over at least 0.2 s. Shown as "~N words/s".
+| Value | Call | Formula |
+| --- | --- | --- |
+| First words | `assistant.py` `_chat_stream` | Request start → first streamed text |
+| Approximate words/s | same | Words ÷ (generation − first text); answers with ≥ 5 words over ≥ 0.2 s |
+| Speech-to-text call time and speed | `voice.py` `transcribe` | Call time; speed = WAV length ÷ call time |
+| Text-to-speech call time and RTF | `main.py` `build_synthesizer` | Call time; RTF = call time ÷ WAV length |
 
-Text chunks are not tokens and the Backend has no tokenizer, so the Panel
-never shows tokens/s and never compares words/s against the 15 tokens/s
-target. It shows "Tokens/s: needs Chat Q&A update" until B1 ships.
+Not recorded: failures, TTS cache hits, and the idle warm-up calls (the
+"Checking." warm-up and the silent Whisper wake-up), which are not operator
+requests.
 
-### A4. Deployment time to ready (deferred)
+These values include the service's queue and the loopback hop. That is
+intended: it is what the operator waits for. Text chunks are not tokens, so
+words/s is always shown with "~" and never as tokens/s.
 
-Proposal kept for later: Make `up`/`demo-up` write a start marker after
-prerequisite checks; the Backend records when each service first passes its
-readiness check; the browser marks the first live frame. Time to ready =
-ready − start, excluding image pulls and model preparation.
+### Collector and endpoints
 
-### A5. Hardware
-
-The collector reads the existing 1 Hz telemetry snapshot
-([`telemetry.py`](../../../backend/app/telemetry.py)) and keeps host
-`memory_used_percent` samples (deduplicated by sample time) for the peak. Host
-CPU and per-container CPU/RAM stay on the Resources tab. Per-service GPU/NPU
-usage and device memory are out of scope.
-
-### A6. Collector and endpoints
-
-[`performance.py`](../../../backend/app/performance.py) holds bounded rolling
-windows (5 minutes, at most 2000 samples each, at most 64 cameras). Summaries
-are last, p50, p95 (nearest rank), and count. Status is `on_target` (p95 below
-target), `missed`, `insufficient` (fewer than 5 samples), `no_data`, or `info`
-(no target). Too few samples is never a pass.
+[`performance.py`](../../../backend/app/performance.py) keeps bounded rolling
+windows (5 minutes, at most 2000 samples each, at most 64 cameras). Each
+summary has `last`, `p50`, `p95` (nearest rank), `count`, and `status`
+(`no_data`, `insufficient` below 5 samples, otherwise `info`).
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /api/performance` | Versioned snapshot: `{version, window_seconds, generated_at, kpis, cameras}` |
-| `performance` event on `/api/stream` | Same snapshot, with the other live events (about 1 Hz) |
-| `POST /api/performance/marks` | Browser voice-turn marks (above) |
+| `GET /api/performance` | Snapshot `{version, window_seconds, generated_at, kpis, cameras}` |
+| `performance` event on `/api/stream` | Same snapshot, about 1 Hz |
+| `POST /api/performance/marks` | Browser voice-turn marks |
 
-`kpis` contains `time_to_alert` (+ `detection_delay_p50`), `spoken_answer`
-(+ stage p50s, `acknowledged_p50`, `untimed`), `cameras`
-(`smooth`, `running`, `target`, `status`), `answer_speed` (words/s,
-`approximate: true`, `first_words_p50`, `tokens_per_second: null`,
-`token_target`), and `memory` (`last`, `peak`, `target`). `cameras` maps each
-enabled stream to health, reason, FPS values, skipped %, and delay summaries.
-All routes sit behind the existing NGINX boundary; no transcripts or questions
-are stored.
+`kpis` holds `time_to_alert`, `spoken_answer` (with stage p50s,
+`acknowledged_p50`, `untimed`), `cameras` (`smooth`, `running`),
+`answer_speed` (approximate words/s, `first_words_p50`), `memory` (`last`,
+`peak`), and `services`:
 
-## 3. Phase B — upstream requests (hand-off specification)
+```json
+"services": {
+  "chat": {"first_words": {…summary, "unit": "s", "source": "handheld"}},
+  "asr":  {"request_seconds": {…, "unit": "s"}, "rtfx": {…, "unit": "x"}},
+  "tts":  {"request_seconds": {…, "unit": "s"}, "rtf": {…, "unit": "ratio"}}
+}
+```
+
+### Hardware
+
+The collector reads the existing 1 Hz telemetry snapshot
+([`telemetry.py`](../../../backend/app/telemetry.py)) for peak memory. Host
+CPU and per-container CPU/RAM stay on the Resources tab.
+
+## 5. Service metrics through Metrics Manager
+
+Path: **service `/metrics` → Metrics Manager (Telegraf scrape) → Backend
+`telemetry.py` → Panel**.
+
+### What Metrics Manager does (checked in `intel/metrics-manager:2026.3.0-rc2`)
+
+- **Prometheus scrape keeps histograms.** `_bucket{le}`, `_sum`, and `_count`
+  reach `:9273`, `GET :9090/api/v1/metrics/latest`, and `/metrics/stream`.
+- **OTLP push drops buckets.** It keeps only `_count`, `_sum`, `_avg`, `_min`,
+  `_max`, so services should be scraped, not pushed, when percentiles matter.
+- **Every series arrives flat:** `{name, tags{host, …}, fields{value},
+  timestamp}`. The type is lost; a scrape adds a `url` tag. Timestamps are ns
+  on `/latest`, ms on the stream. Series live up to 60 s after the last write.
+- **Latest value only, no history.** Percentiles from buckets are therefore
+  cumulative since the service started. The Backend keeps no history to turn
+  them into a window, by design.
+- **`metric_version` must be 1.** With 2, a scraped histogram duplicates the
+  `le` label, `/latest` returns HTTP 500, and *all* telemetry stops.
+
+### Handheld side
+
+- `config/metrics/telegraf.conf`: one commented-out `[[inputs.prometheus]]`
+  block for the three services, `metric_version = 1`, `namepass` limited to
+  the series below. Enable it only after a pinned release serves `/metrics`.
+- `backend/app/telemetry.py`: one name table, `SERVICE_METRICS`, maps upstream
+  series to Panel keys, so a rename is a one-line change. `normalize()` adds a
+  `services` object to the telemetry snapshot. It is always present, all
+  `missing` before the first poll or if parsing fails, so host telemetry is
+  never lost. Derivations are read-side only: RTFx and RTF from durations,
+  error rate = (`error` + `timeout`) ÷ total from the `outcome` counter, p50/p95
+  by nearest rank on cumulative buckets, mean from `_sum` / `_count`.
+
+| Service | Panel key | Upstream series |
+| --- | --- | --- |
+| Chat Q&A | `ttft_seconds` | `chatqna_ttft_seconds` (histogram) |
+| | `queue_wait_seconds` | `chatqna_queue_wait_seconds` (histogram) |
+| | `decode_tokens_per_second` | `chatqna_decode_tokens_per_second` (histogram) |
+| | `request_seconds` | `chatqna_request_seconds` (histogram) |
+| | `error_rate_percent` | `chatqna_requests_total{outcome}` |
+| | `in_flight` | `chatqna_requests_in_flight` (gauge) |
+| Audio Analyzer | `model_seconds` | `audio_analyzer_inference_seconds` (histogram) |
+| | `audio_seconds` | `audio_analyzer_audio_duration_seconds` (histogram) |
+| | `rtfx` | derived: `audio_seconds` ÷ `model_seconds` |
+| | `error_rate_percent` | `audio_analyzer_requests_total{outcome}` |
+| | `in_flight` | `audio_analyzer_requests_in_flight` (gauge) |
+| Text To Speech | `time_to_first_audio_seconds` | `tts_time_to_first_audio_seconds` (histogram) |
+| | `rtf` | `tts_rtf` (histogram) |
+| | `request_seconds` | `tts_generate_seconds` (histogram) |
+| | `error_rate_percent` | `tts_requests_total{outcome}` |
+| | `in_flight` | `tts_requests_in_flight` (gauge) |
+
+Each value is `{value, unit, state: ok|stale|missing, p50, p95, count}`.
+
+## 6. Upstream requests (hand-off)
 
 Source checked: [`open-edge-platform/edge-ai-libraries`](https://github.com/open-edge-platform/edge-ai-libraries)
-at tag `v2026.3.0-rc1`. The source check was done at rc1 and the Compose pins have since
-moved to `2026.3.0-rc2` (rc3 for DL Streamer Pipeline Server); the content was not
-re-verified. File
-references below are relative to that tag. Each "Current state" was re-checked
-against the previous tag (`v2026.2.0-rc3`); changes are listed under
-**New in this release**. None of the requested values below is exposed yet.
-Confirm against the released image source before implementation.
+at tag `v2026.3.0-rc1`. Compose now pins `2026.3.0-rc2` (rc3 for DL Streamer
+Pipeline Server); re-check the "Current state" notes against the pinned
+release before filing. None of the requested values is exposed yet.
 
-### Minimum request (ask for this first)
+### Minimum request
 
-Keep the upstream ask small. Each service needs only these, exposed on
-`GET /metrics` (Prometheus text, internal port) for Metrics Manager to scrape:
+Each service exposes these on `GET /metrics` (Prometheus text, internal port),
+exactly with the names in Section 5:
 
 | Service | Minimum set |
 | --- | --- |
-| Chat Q&A | Queue wait, time to first token, output tokens and decode time (gives tokens/s), request duration, requests by `outcome`, in-flight |
-| Audio Analyzer | Request duration, audio duration (gives RTFx), requests by `outcome`, in-flight |
-| Text To Speech | Request duration, time to first audio, audio duration (gives RTF), requests by `outcome`, in-flight |
+| Chat Q&A | Queue wait, time to first token, decode tokens/s, request duration (histograms); requests by `outcome`; in-flight |
+| Audio Analyzer | Inference (model) duration, audio duration (histograms); requests by `outcome`; in-flight |
+| Text To Speech | Time to first audio, RTF, generate duration (histograms); requests by `outcome`; in-flight |
 
-Everything else listed under B1–B3 (retrieval and rerank time, TPOT, headers,
-per-request JSON, model-info fields, load and warmup durations, INT4 option) is
-an optional extra: useful, but not required for the Panel tiles. Derived
-values (TPOT, tokens/s, RTF) are computed from the minimum set when not
-supplied.
+Everything else under B1–B3 is optional.
 
-### Common contract for all services
+### Common contract
 
-Same shape for every service, so consumers integrate once:
-
-1. **Backward compatible.** Existing responses stay unchanged; new data is
-   additive or opt-in.
-2. **Durations in seconds as histograms**, totals as counters, in-flight as a
-   gauge, on `GET /metrics`.
-3. **Bounded labels only:** `model`, `device`, `precision`, `outcome`. Never
-   request IDs, text, filenames, or session IDs.
-4. **Queue wait** measured from before lock acquisition to after it, so
-   queueing is not mistaken for slow inference.
-5. **Requested vs. verified precision** reported separately where a service
+1. Backward compatible: existing responses unchanged; new data additive or
+   opt-in.
+2. Durations in seconds as histograms, totals as counters, in-flight as a
+   gauge.
+3. Bounded labels only: `model`, `device`, `precision`, `outcome` (`ok`,
+   `error`, `timeout`). Never request IDs, text, filenames, or session IDs.
+4. Queue wait measured from before lock acquisition to after it.
+5. Requested and verified precision reported separately where the service
    reports its model.
 
-### B1. Chat Q&A Core — exact LLM token metrics (highest priority)
+### B1. Chat Q&A Core (highest priority)
 
 **Current state**
 
-- `POST /v1/chatqna/chat` takes `{input, stream=true}`
-  ([`app/server.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.3.0-rc1/sample-applications/chat-question-and-answer-core/app/server.py)).
-  Streaming yields raw `data: {chunk}\n\n` frames with no event name, usage, or
-  timing (`app/chain.py` `process_query`). Non-streaming returns
-  `{"status", "metadata"}` and only logs elapsed time.
-- Generation uses LangChain `HuggingFacePipeline.from_model_id(backend="openvino")`
-  (`app/openvino_backend.py`), not `openvino_genai.LLMPipeline`, so OpenVINO
-  GenAI `PerfMetrics` (TTFT, TPOT, throughput) is not available at the call site.
-  The tokenizer is reachable as `llm.pipeline.tokenizer`.
-- On CPU and GPU, the LLM is exported with a fixed `weight_format="int8"`
-  (`app/openvino_backend.py` `OVModelForCausalLM.from_pretrained`). **The 4-bit
-  stretch profile cannot be deployed on CPU or GPU** (see the NPU path below).
-- RAG is `retriever (FAISS) → optional ContextualCompressionRetriever (reranker)
-  → prompt → llm → StrOutputParser` (`app/chain.py` `build_chain`, `get_retriever`).
-- `GET /model` returns only the configured model ID. No `/metrics`, Prometheus,
-  or OpenTelemetry.
-
-**New in this release**
-
-- A process-wide `_generation_lock` (`app/chain.py`) now serializes generation,
-  so concurrent questions queue implicitly. The wait is not measured, which
-  makes `queue_wait_s` more important: without it, queue time shows up as TTFT.
-- Streaming generation is cancelled when the client disconnects.
-- With sources enabled, streaming sends `event: sources` before the answer
-  `data:` frames; non-streaming adds `sources`. There is still no usage or
-  timing event, so the opt-in metrics event below is still needed.
-- **NPU path:** with the LLM on NPU, the model is exported as int4 channel-wise
-  and runs through OpenVINO GenAI (`GenAILLM`, `app/openvino_xpu.py`) with a
-  prompt-token limit (`NPU_MAX_PROMPT_LEN`). `GenAILLM` has a `count_tokens`
-  helper (used for prompt fitting) and streams through a text callback, so
-  exact token counts and GenAI `PerfMetrics` are reachable on this path but
-  not returned. CPU and GPU keep the `HuggingFacePipeline` int8 path, so the
-  4-bit stretch profile is still only possible on NPU.
-- The image is now a single `core` image for all devices; the upstream Compose
-  service is `chatqna-core-openvino`.
-
-**Requested values**
-
-| Value | Definition | How to compute |
-| --- | --- | --- |
-| `input_tokens` | Tokens in the fully rendered prompt (system + context + question) | `len(tokenizer(rendered_prompt).input_ids)` |
-| `output_tokens` | Generated tokens, excluding the echoed prompt | Token IDs from the generation streamer, or `len(tokenizer(answer, add_special_tokens=False).input_ids)` |
-| `queue_wait_s` | Request arrival → generation admitted | Timestamp before and after acquiring the existing `_generation_lock` in `app/chain.py` |
-| `retrieval_s` | Query embedding + FAISS search | Wrap the base retriever (`Runnable` timing or LangChain callback `on_retriever_start/end`) |
-| `rerank_s` | Reranker compression | Wrap the compressor separately |
-| `ttft_s` | Generation start → first generated token | Timestamp of the first token from the streamer, measured from the LLM call start (exclude retrieval) |
-| `decode_s` | First token → last token | Streamer timestamps |
-| `tpot_s` | Mean time per output token after the first | `decode_s / (output_tokens − 1)`, only when `output_tokens ≥ 2` |
-| `decode_tokens_per_s` | Decode throughput | `(output_tokens − 1) / decode_s` |
-| `e2e_tokens_per_s` | Whole-response throughput | `output_tokens / (ttft_s + decode_s)` |
-| `request_s` | Request received → last byte | Monotonic, in the route handler |
-
-Two implementation options:
-
-1. **Minimal:** keep LangChain; attach a callback handler that timestamps
-   `on_llm_new_token` and counts tokens with the pipeline tokenizer. Token
-   boundaries from `TextIteratorStreamer` are decoded text pieces, so recount
-   the final answer with the tokenizer for the exact `output_tokens`.
-2. **Preferred long-term:** generate with `openvino_genai.LLMPipeline` and
-   return its `PerfMetrics` (`get_ttft`, `get_tpot`, `get_throughput`,
-   `num_generated_tokens`, `num_input_tokens`). Exact, runtime-measured, and
-   lower overhead.
-
-**Requested exposure**
-
-- **Streaming, opt-in:** request field `"stream_options": {"include_metrics": true}`
-  (mirrors OpenAI `include_usage`). After the last text frame, emit
-  `event: metrics\ndata: {"usage": {...}, "timing": {...}, "model": {...}}\n\n`.
-  Opt-in is required because current clients concatenate every `data:` frame
-  into the answer text.
-- **Non-streaming:** add sibling fields `usage` and `timing` next to
-  `metadata`.
-- **`GET /metrics`:** histograms `chatqna_queue_wait_seconds`,
-  `chatqna_retrieval_seconds`, `chatqna_rerank_seconds`,
-  `chatqna_ttft_seconds`, `chatqna_tpot_seconds`,
-  `chatqna_decode_tokens_per_second`, `chatqna_request_seconds`; counters
-  `chatqna_input_tokens_total`, `chatqna_output_tokens_total`,
-  `chatqna_requests_total{outcome}`; gauges `chatqna_requests_in_flight`,
-  `chatqna_requests_waiting`.
-- **`GET /model`:** add `runtime`, `device` (LLM, embedding, reranker),
-  `weight_format_requested`, `weight_format_verified` (from the exported
-  model's `openvino_config.json` / IR `rt_info` / weight element types),
-  `model_revision`, `load_seconds`, `warmup_seconds`.
-- **Configuration:** `LLM_WEIGHT_FORMAT` (`int8` default, `int4`, `fp16`)
-  for CPU and GPU, with INT4 group size/ratio, so the stretch profile can be
-  deployed off NPU.
-
-**Handheld use:** opts into `include_metrics`, replaces the approximate words/s
-with exact tokens/s, compares against the 15 tokens/s target only when
-`weight_format_verified` is 4-bit, and uses `ttft_s` and `retrieval_s` in the
-"Think" stage.
-
-### B2. Audio Analyzer — ASR stage timings
-
-**Current state**
-
-- `POST /v1/audio/transcriptions` (OpenAI-compatible; `response_format`
-  `json` (default, `{"text"}`), `verbose_json` (with `duration` and
-  `segments`), `text`, `srt`, `vtt`; `stream=true` sends SSE text deltas and a
-  final transcript event for `json`/`verbose_json`)
-  ([`api/openai_endpoints.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.3.0-rc1/microservices/audio-analyzer/api/openai_endpoints.py)).
-- Uses `openvino_genai.WhisperPipeline`; audio loaded with `soundfile`,
-  resampled with `librosa`; `generate()` is serialized by a module-level
-  `_TRANSCRIBE_LOCK` (`components/asr/openvino_genai/whisper.py`). No
-  `result.perf_metrics` is read.
-- `/v1/performance` returns only the **last** ASR latency in ms
-  (`utils/latency_store.py`); with several clients it cannot be attributed to
-  a request. `/v1/model-info` reports configured `weight_format`, not verified
-  precision. Load and warmup are logged without durations. No `/metrics`.
-
-**New in this release**
-
-- `POST /v1/audio/transcriptions` now honors an optional per-request `device`
-  (`CPU`, `GPU`, `NPU`); unsupported or unavailable devices return 400. A
-  `diarization` field can turn diarization off per request. Because the device
-  can now vary per request, the `performance` object below must include the
-  resolved `device`.
-- The VSS-style job route rejects a `model_name` that does not match the
-  configured model (400) instead of logging a warning.
-- English-only (`.en`) Whisper checkpoints drop the `language` hint instead of
-  failing.
-- The realtime WebSocket `/v1/realtime` adds `input_audio_buffer.preview`
-  (a throwaway transcript of the trailing ~2 s while the user is still
-  speaking), `sequence` numbers on transcript events, and a `low_latency`
-  session mode in which a full-buffer preview can be reused by the commit.
-  `config.yaml` can define a smaller `preview:` ASR model. These lower the
-  perceived ASR delay for clients that stream microphone audio; the Handheld
-  uploads one bounded WAV per utterance, so they do not apply today.
-- The Handheld client (`model=whisper-1`, `response_format=json`, `/health`)
-  is unaffected.
+- `POST /v1/chatqna/chat` streams raw `data: {chunk}` frames with no usage or
+  timing ([`app/server.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.3.0-rc1/sample-applications/chat-question-and-answer-core/app/server.py),
+  `app/chain.py` `process_query`). With sources enabled it first sends
+  `event: sources`.
+- CPU and GPU generate through LangChain `HuggingFacePipeline` with a fixed
+  `weight_format="int8"` (`app/openvino_backend.py`), so OpenVINO GenAI
+  `PerfMetrics` is not reachable and **the 4-bit profile cannot run on CPU or
+  GPU**. The tokenizer is reachable as `llm.pipeline.tokenizer`.
+- The NPU path exports int4 and runs OpenVINO GenAI (`GenAILLM`,
+  `app/openvino_xpu.py`), so exact token counts and `PerfMetrics` are reachable
+  there but not returned.
+- A process-wide `_generation_lock` serializes generation. Its wait is not
+  measured, so queueing currently shows up as slow first words.
+- RAG is FAISS retriever → optional reranker → prompt → LLM.
+- `GET /model` returns only the model ID. No `/metrics`.
 
 **Requested values**
 
 | Value | Definition |
 | --- | --- |
-| `queue_wait_s` | Before → after acquiring `_TRANSCRIBE_LOCK` |
-| `preprocess_s` | Decode + resample + channel mix |
-| `inference_s` | `WhisperPipeline.generate()` duration; if the installed GenAI version provides `result.perf_metrics`, also `features_extraction_s` and `ttft_s` |
-| `postprocess_s` | Segment/text assembly |
-| `audio_duration_s` | Decoded samples ÷ sample rate (not last segment end) |
-| `rtf` | `(preprocess_s + inference_s + postprocess_s) / audio_duration_s` |
-| `request_s` | Route entry → response |
+| `input_tokens`, `output_tokens` | Rendered-prompt tokens; generated tokens, excluding the prompt |
+| `queue_wait_s` | Before → after acquiring `_generation_lock` |
+| `retrieval_s`, `rerank_s` | Embedding + FAISS search; reranker (optional) |
+| `ttft_s` | LLM call start → first generated token (retrieval excluded) |
+| `decode_s` | First token → last token |
+| `decode_tokens_per_s` | `(output_tokens − 1) / decode_s`, only when `output_tokens ≥ 2` |
+| `request_s` | Request received → last byte |
 
-**Requested exposure**
+Implementation options: a LangChain callback that timestamps
+`on_llm_new_token` and recounts the answer with the tokenizer (minimal), or
+`openvino_genai.LLMPipeline` `PerfMetrics` (preferred long term).
 
-- JSON responses: optional `performance` object with the values above, enabled
-  by a request flag or always present in `verbose_json`.
-- All non-streaming responses: `Server-Timing: queue;dur=…, pre;dur=…, infer;dur=…, post;dur=…`
-  (milliseconds) and `X-Audio-Duration-Seconds`.
-- Streaming (SSE/NDJSON): a final event with the same `performance` object.
-- `/metrics`: histograms `audio_analyzer_queue_wait_seconds`,
-  `audio_analyzer_preprocess_seconds`, `audio_analyzer_inference_seconds`,
-  `audio_analyzer_postprocess_seconds`, `audio_analyzer_audio_duration_seconds`,
-  `audio_analyzer_rtf`; counter `audio_analyzer_requests_total{outcome}`; gauge
-  `audio_analyzer_requests_in_flight`; gauges `audio_analyzer_model_load_seconds`,
-  `audio_analyzer_warmup_seconds`.
-- `/v1/model-info`: add `runtime`, `device`, `precision_verified`.
+**Requested exposure:** the `/metrics` series in Section 5 (plus optional
+`chatqna_retrieval_seconds`, `chatqna_rerank_seconds`,
+`chatqna_input_tokens_total`, `chatqna_output_tokens_total`). Optional:
+`"stream_options": {"include_metrics": true}` emitting a final
+`event: metrics` (opt-in, because current clients join every `data:` frame
+into the answer); `GET /model` with runtime, devices, requested and verified
+weight format; `LLM_WEIGHT_FORMAT` (`int8`, `int4`, `fp16`) for CPU and GPU.
 
-**Handheld use:** splits the "Hear" stage into queue, preprocessing, and model
-time, and shows model-only RTF instead of API RTF.
+**Handheld use:** the Answer speed tile shows exact tokens/s instead of
+~words/s; the Chat Q&A tile Details show model TTFT and queue wait.
 
-### B3. Text To Speech — TTS stage timings
+### B2. Audio Analyzer
 
 **Current state**
 
-- `POST /v1/audio/speech` returns a fully buffered WAV (or JSON with base64)
+- `POST /v1/audio/transcriptions` (OpenAI-compatible) runs
+  `openvino_genai.WhisperPipeline`, serialized by `_TRANSCRIBE_LOCK`
+  ([`api/openai_endpoints.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.3.0-rc1/microservices/audio-analyzer/api/openai_endpoints.py),
+  `components/asr/openvino_genai/whisper.py`). An optional per-request `device`
+  is honored.
+- `/v1/performance` holds only the **last** latency, so it cannot be attributed
+  to a request. `/v1/model-info` reports configured, not verified, precision.
+  No `/metrics`.
+- `/v1/realtime` adds previews and a low-latency mode for streaming clients;
+  the Handheld uploads one WAV per utterance, so they do not apply.
+
+**Requested values:** `queue_wait_s` (around `_TRANSCRIBE_LOCK`),
+`inference_s` (`generate()`), `audio_duration_s` (decoded samples ÷ rate),
+optional `preprocess_s` and `postprocess_s`.
+
+**Requested exposure:** the `/metrics` series in Section 5 (plus optional
+`audio_analyzer_queue_wait_seconds`). Optional: `Server-Timing` headers and a
+`performance` object in `verbose_json`; `/v1/model-info` with runtime, device,
+verified precision.
+
+**Handheld use:** the Audio Analyzer tile Details show model-only speed
+next to the Handheld's call speed.
+
+### B3. Text To Speech
+
+**Current state**
+
+- `POST /v1/audio/speech` returns a fully buffered WAV
   ([`api/openai_endpoints.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.3.0-rc1/microservices/text-to-speech/api/openai_endpoints.py)).
-- SpeechT5 runs through `openvino_genai.Text2SpeechPipeline`; text
-  normalization is `normalize_for_speech`; `generate()` is serialized by an
-  inference lock (`components/tts/openvino/speecht5.py`). Acoustic model and
-  vocoder run inside one GenAI call, so they cannot be timed separately without
-  runtime support.
-- `/v1/performance` returns only the last latency in ms (`pipeline.py`,
-  `utils/latency_store.py`). Startup warmup is logged without duration. No
-  `/metrics`.
+  SpeechT5 runs through `openvino_genai.Text2SpeechPipeline` behind an
+  inference lock.
+- `POST /v1/audio/speech/stream` exists, but SpeechT5 emits one event after
+  full synthesis, so it does not shorten time to first audio for the Handheld.
+- `/v1/performance` holds only the last latency. No `/metrics`.
 
-**New in this release**
+**Requested values:** `queue_wait_s`, `generate_s`, `time_to_first_audio_s`
+(request start → first audio bytes ready; equals `generate_s` for SpeechT5
+today), `audio_duration_s`, `rtf` = `generate_s / audio_duration_s`.
 
-- `POST /v1/audio/speech/stream`
-  ([`api/streaming_endpoints.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.3.0-rc1/microservices/text-to-speech/api/streaming_endpoints.py))
-  returns SSE `data:` events, each a JSON object with `index`, `duration`,
-  `sampling_rate`, `voice` and one phrase as base64 WAV, then `[DONE]`.
-  `POST /v1/audio/speech` is unchanged.
-- Only backends with incremental decoding (Kokoro) emit several phrases.
-  SpeechT5, which the Handheld uses, emits **one** event after full synthesis,
-  so the stream does not reduce time to first audio for the Handheld today.
-- For streamed requests, `/v1/performance` now records latency to the first
-  chunk instead of total synthesis. It is still a last-value store, not per
-  request.
-- The optional streaming request below is therefore **partly met**: the
-  transport exists. Still missing are per-phrase streaming for SpeechT5 and
-  `time_to_first_audio_s` in the first event.
+**Requested exposure:** the `/metrics` series in Section 5 (plus optional
+`tts_queue_wait_seconds`). Optional, highest UX value: phrase-level output on
+`/v1/audio/speech/stream` for SpeechT5, so the first sentence plays sooner.
 
-**Requested values**
+**Handheld use:** the Text To Speech tile Details show RTF and queue wait.
 
-| Value | Definition |
-| --- | --- |
-| `queue_wait_s` | Before → after acquiring the inference lock |
-| `normalize_s` | `normalize_for_speech` duration |
-| `generate_s` | `Text2SpeechPipeline.generate()` duration |
-| `encode_s` | WAV encoding |
-| `audio_duration_s` | Output samples ÷ sample rate |
-| `rtf` | `generate_s / audio_duration_s` |
-| `chars_per_s` | Normalized input characters ÷ `generate_s` |
+### B4. DL Streamer Pipeline Server (optional)
 
-**Requested exposure**
+The Handheld callbacks already cover video. Useful for all DLSPS users:
+`frames_in/out/dropped_total` counters, a windowed FPS, decode → publish
+latency paired per buffer instead of a FIFO, per-element inference latency, and
+an option on `gvametaconvert` to add the ingress timestamp, which would retire
+`frame_ingress.py`
+([`src/server/gstreamer_pipeline.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.3.0-rc1/microservices/dlstreamer-pipeline-server/src/server/gstreamer_pipeline.py)).
 
-- Response headers (body is binary): `Server-Timing: queue;dur=…, norm;dur=…, gen;dur=…, enc;dur=…`,
-  `X-Audio-Duration-Seconds`, `X-Real-Time-Factor`; add them to CORS
-  `expose_headers`.
-- `/metrics`: histograms `tts_queue_wait_seconds`, `tts_generate_seconds`,
-  `tts_audio_duration_seconds`, `tts_rtf`; counters `tts_requests_total{outcome}`,
-  `tts_input_characters_total`; gauge `tts_requests_in_flight`; gauges
-  `tts_model_load_seconds`, `tts_warmup_seconds`.
-- `/v1/model-info`: add `precision_verified` and load/warmup durations.
-- **Optional, highest UX value:** phrase-level output on the existing
-  `/v1/audio/speech/stream` for SpeechT5: split normalized text into sentences
-  and send each sentence's audio as soon as it is ready, with
-  `time_to_first_audio_s` and the `performance` values in the events. The
-  Handheld arbiter already splits answers into chunks, so this mainly helps
-  longer first sentences.
+### B5. Alert Agent (optional, low priority)
 
-**Handheld use:** splits the "Speak" stage into queue wait and synthesis, and
-shows TTS RTF from the service.
-
-### B4. DL Streamer Pipeline Server — optional improvements
-
-Phase A covers the Handheld needs with application callbacks. These upstream
-changes would benefit all DLSPS users and remove the need for the ingress
-callback:
-
-**Current state** ([`src/server/gstreamer_pipeline.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.3.0-rc1/microservices/dlstreamer-pipeline-server/src/server/gstreamer_pipeline.py)):
-status has `avg_fps` (lifetime), `frame_fps` (about 1 s window), and, when
-probes match, `avg_pipeline_latency`/`frame_latency`. Latency pairs a probe on
-the source element's pad with an appsink probe through a FIFO, which
-mispairs when any queue drops frames or when source buffers are not one per
-frame. OpenTelemetry export exists with only `cpu_usage_percentage`,
-`memory_usage_bytes`, and `fps_per_pipeline` (`src/opentelemetry/opentelemetryexport.py`).
-No relevant change in this release.
-
-**Requested**
-
-| Value | Definition | Exposure |
-| --- | --- | --- |
-| `frames_in_total`, `frames_out_total`, `frames_dropped_total` | Counted after decode, at appsink/publish, and from leaky-queue `overrun` signals | Status fields + OTel counters |
-| `fps_window` | `Δframes_out / Δt` over a configurable window (default 5 s), plus window length | Status field |
-| `pipeline_latency` | Decode → publish, paired by a per-buffer custom meta or frame ID instead of a FIFO | Status p50/p95 + OTel histogram `dlsps_pipeline_latency_seconds` |
-| `inference_latency` | Per `gvadetect`/`gvaclassify` element processing time | OTel histogram `dlsps_element_latency_seconds{element}` |
-| `ingress_unix_ns`, `frame_seq` | Optional fields in published metadata. The Handheld `FrameIngress` callback already adds `ingress_at` and `frame_sequence`; a built-in option would remove that application callback. | `gvametaconvert` property, e.g. `add-timing=true` |
-
-### B5. Alert Agent — optional
-
-`POST /alerts` and `POST /actions/execute` exist; `duration_ms` covers only the
-action execution, and `/metrics` is explicitly 404
+`/metrics` returns 404 and `duration_ms` covers only action execution
 ([`src/main.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.3.0-rc1/microservices/alert-agent-service/src/main.py)).
-Request: an `alert_agent_ingest_to_dispatch_seconds` histogram (route entry →
-dispatch completion) with `{mode, outcome}` labels, plus request counters.
-Handheld already measures its own dispatch call, so this is low priority. No
-relevant change in this release.
+Request: `alert_agent_ingest_to_dispatch_seconds{mode, outcome}`. The
+Handheld already times its own dispatch.
 
-### Metrics Manager: the aggregation path
+**Not requested:** Metrics Manager changes (only scrape config is added),
+Model Download, MediaMTX, Coturn, Mosquitto.
 
-Per-microservice metrics follow the same route as hardware telemetry:
-**service `/metrics` (or pushed custom metrics) → Metrics Manager → Backend →
-UI**. Metrics Manager is Telegraf-based, accepts pushed custom metrics (JSON,
-InfluxDB line protocol, OTLP), and re-exports Prometheus text. Duration series
-from B1–B3 arrive as Prometheus histograms; Metrics Manager is where any
-histogram handling or re-aggregation belongs, not the Backend.
-
-- Handheld change: enable scraping of each service's `/metrics` in
-  `config/metrics/telegraf.conf` (the `[[inputs.prometheus]]` block is present
-  but commented out) once the service ships the endpoint.
-- Backend change: read the new series in `telemetry.py` the way it reads the
-  existing ones, keep stale/missing/zero distinct, and relay them. No
-  service-internal windows, outcome counts, or histograms in the Backend; the
-  Handheld-observed end-to-end durations are a separate, labelled fallback.
-- To confirm before implementation: whether the pinned Metrics Manager image
-  can produce histogram quantiles (for example via a Telegraf histogram
-  aggregator) or only passes raw buckets through. If only buckets, p50/p95 are
-  derived from bucket counts at the Backend read step, which is a read-side
-  calculation, not collection.
-
-### Not requested
-
-- **Metrics Manager changes:** existing host CPU/GPU/NPU and per-service
-  CPU/RAM are sufficient as-is; only scrape configuration is added above.
-- **Model Download, MediaMTX, Coturn, Mosquitto:** no KPI gap for this plan.
-
-## 4. How the KPIs appear in the Panel
+## 7. Display in the Panel
 
 ### Principles
 
-1. **Answer the operator's question where they look.** Time to alert sits on
-   the video; time to spoken answer sits under the answer; camera health sits
-   in the camera list. The expanded view is for detail, not the main view.
-2. **Plain words first, numbers second.** "Answered aloud in 2.4 s" beats
-   "e2e p95 2412 ms". Units are always visible.
-3. **Status by text and icon, not color alone:** ✓ On target, ! Slow,
-   … Not enough data, ~ Approximate, — Unsupported, ◷ Stale.
-4. **Never cover the scene or interrupt work.** No pop-ups; updates are quiet;
-   screen readers are not spammed at 1 Hz.
-5. **Show why, on demand.** Every slow value opens a stage breakdown that names
-   the slowest stage.
-6. **Be honest about precision of data.** Approximate values carry "~" and a
-   tooltip naming the upstream update that makes them exact.
-7. **One tile per service, one headline number.** Each service shows a single
-   plain-words number, such as "First words in 0.8 s" or "2× faster than real
-   time", with "Not available yet" when its series is absent (never a
-   synthesized value). The standard name (TTFT, RTF) appears in small text
-   beside it. No pass/fail judgement is shown for per-service tiles.
-   Histograms, p99, queue, and token-level values stay in the detail view.
-   Validate the wording with operators.
-8. **Nothing to configure, nothing to learn.** The default view is the tiles
-   only. Operators never pick metrics, windows, or percentiles. A tile that has
-   no data says so in words, and every number has its unit.
+1. **Answer the question where the operator looks.** Time to alert on the
+   video, time to spoken answer under the answer, camera health in the camera
+   list. The Performance tab is the summary.
+2. **Plain words, then the number, always with a unit.** "Answered aloud in
+   2.4 s", not "e2e p95 2412 ms". The standard name (TTFT, RTFx, RTF) is small
+   text beside it.
+3. **Describe, never judge.** No ✓/!, no "Meets target", no coloured status
+   border. The only state markers are text: "Not enough data yet", "Not
+   available yet", "◷ Stale", "~" for approximate.
+4. **The headline is what the operator experiences.** Service values explain
+   it in Details and never replace it, except exact tokens/s replacing ~words/s.
+5. **Say where a number comes from.** Details name the source: "Measured by
+   the Handheld (last 5 min)" or "Reported by Chat Q&A (since it started)".
+6. **Show only what exists.** Details list only values that are present. One
+   closing line says what would add more, for example "More detail after the
+   Chat Q&A update."
+7. **One number per tile, nothing to configure.** Operators never pick
+   metrics, windows, or percentiles. Typical (p50) first, 95% in Details.
+8. **Quiet and touch-friendly.** No pop-ups, no 1 Hz screen-reader
+   announcements, 44 px touch targets, tiles wrap on narrow screens, and
+   anything important is visible text, not only a tooltip. Tiles are built once
+   and updated in place, so an open Details stays open.
 
-### Placement map
+### Where values appear
 
-Items 3–6 are implemented; items 1–2 are deferred.
-
-```text
-┌ Header ───────────────────────────────────────────────────────────────┐
-│ Field console  [Cameras 3 ✓]  Talk  Mission  Alerts  Audio    ● Ready  │ ← (1)
-├ Model strip ──────────────────────────────────────────────────────────┤
-│ Architecture | YOLO26 NPU 30 fps | Whisper GPU 0.2×RT | LLM GPU ~9 w/s │ ← (2)
-├ Live camera ────────────────────────┬ Evidence / Assistant ───────────┤
-│ ┌───────────────────────────────┐   │ Q: Any vehicles at the gate?     │
-│ │ Detect 120 ms · 30/30 fps     │ ← (3)  A: Two vehicles ...         │
-│ │            (video)            │   │                                  │
-│ └───────────────────────────────┘   │ 🔊 Answered aloud in 2.4 s ✓  ▸  │ ← (4)
-│ Alerts: Person · North gate · 190 ms │                                  │ ← (5)
-├ Resources | Performance ────────────┤                                  │
-│ Alert  Spoken  Cameras  Speed  Mem  │                                  │ ← (6)
-└─────────────────────────────────────┴──────────────────────────────────┘
-```
-
-1. **Header status (`#connection` area).** After a deployment, shows
-   "Ready in 2 min 14 s" for one minute, then collapses to "● Ready". The
-   Cameras button gains a health icon: ✓ all smooth, ! one or more degraded.
-2. **Model strip (`#model-buttons`).** Each model chip gets one small live
-   number: detector processed FPS, Whisper real-time factor, LLM speed
-   ("~9 w/s" in Phase A, "18 t/s" after B1). The **Model details** panel
-   (`#model-details`) gains a Performance block: last/p95 latency, throughput,
-   device, precision (requested vs. verified), and that service's CPU and RAM.
-3. **Video overlay (`#latency-badge`).** Implemented. For the selected
-   camera the existing badge reads "Detect 120 ms · 29.8/30 fps", followed by
-   the browser's own video delay estimate when WebRTC stats are available.
-   When the camera is not smooth, the badge starts with the reason
-   ("Dropping frames", "Delayed") in the warning colour and the tooltip gives
-   the detail. While counters warm up it shows "Measuring camera…". Deferred:
-   per-tile health dots in the all-cameras grid and health in **Manage
-   cameras**.
-4. **Assistant answer footer (`#answer-timing`, below
-   `#assistant-speech-line`).** Implemented. After each voice turn:
-   "Answered aloud in 2.4 s · ✓ within 3.0 s target" (or "! over"). It is a
-   `<details>` element; opening it shows a stage bar and legend:
+1. **Video badge (`#latency-badge`).** "Detect 120 ms · 29.8/30 fps". When a
+   camera is not smooth the badge starts with the reason ("Dropping frames",
+   "Delayed"); while warming up, "Measuring camera…".
+2. **Answer footer (`#answer-timing`).** "Answered aloud in 2.4 s". Opening it
+   shows the stages:
 
    ```text
    [Listening 1.5 s][Hear 310 ms][Think 420 ms][Speak 140 ms]
    From the end of your speech to the first sound of the answer. Acknowledged after 820 ms.
    ```
 
-   Typed questions show "First words in 0.6 s". A voice turn that could not
-   be timed says why: "Spoken answer not timed · Audio is off", "· browser
-   blocked audio", or "· no spoken answer was heard". Service-internal stage
-   parts (queue, model, retrieval) are added after B1–B3.
-5. **Alert rows (`#alerts`).** Implemented. The existing latency chip's
-   tooltip and accessible label start with "Time to alert (camera frame to
-   alert raised): 210 ms".
-6. **Performance tab next to Resources (`#telemetry`).** Implemented. The
-   panel heading is a two-button switch, **Resources | Performance**.
-   Performance shows five tiles and a per-camera table:
+   Typed questions show "First words in 0.6 s". An untimed turn says why:
+   "Spoken answer not timed · Audio is off" (or "· browser blocked audio",
+   "· no spoken answer was heard").
+3. **Alert rows (`#alerts`).** The latency chip reads "Time to alert (camera
+   frame to alert raised): 210 ms".
+4. **Performance tab (Resources | Performance switch).** Five KPI tiles, the
+   service row, and the camera table:
 
    ```text
-   ┌ Time to alert ───┐┌ Spoken answer ───┐┌ Smooth cameras ──┐┌ Answer speed ─────┐┌ Peak memory ─────┐
-   │ 350 ms           ││ 2.8 s            ││ 1 of 2           ││ ~9.5 words/s      ││ 52%              │
-   │ 95% of 12 alerts ││ 95% of 14 voice  ││ Camera 2: 25% of ││ First words       ││ Now 41% of host  │
-   │ · typical 250 ms ││ · typical 2.4 s  ││ frames skipped   ││ typical 800 ms    ││ RAM              │
-   │ Target under 400 ││ Target under 3 s ││ Target 3 or more ││ Tokens/s: needs   ││ Target under 80% │
-   │ ✓ Meets target   ││ ✓ Meets target   ││ ! Misses target  ││ Chat Q&A update   ││ ✓ Meets target   │
-   └──────────────────┘└──────────────────┘└──────────────────┘└───────────────────┘└──────────────────┘
-   Camera   | Health          | Frames/s    | Skipped | Detect
-   Camera 1 | Smooth          | 29.8 / 30   | 0%      | 120 ms
-   Camera 2 | Dropping frames | 22.5 / 30   | 25%     | 200 ms
+   ┌ Time to alert ─┐┌ Spoken answer ─┐┌ Smooth cameras ┐┌ Answer speed ──┐┌ Peak memory ───┐
+   │ 250 ms         ││ 2.4 s          ││ 1 of 2         ││ ~9.5 words/s   ││ 52%            │
+   │ typical, 12    ││ typical, 14    ││ Camera 2:      ││ Approximate:   ││ Now 41% of     │
+   │ alerts         ││ answers        ││ dropping frames││ words, not     ││ host RAM       │
+   │                ││                ││                ││ tokens         ││                │
+   └────────────────┘└────────────────┘└────────────────┘└────────────────┘└────────────────┘
+   Services
+   ┌ Chat Q&A ──────────┐┌ Audio Analyzer ────────────┐┌ Text To Speech ──┐
+   │ First words in 1.2 s││ Speech heard 2.0x faster   ││ Voice ready in   │
+   │ TTFT                ││ than real time · RTFx      ││ 0.4 s · RTF      │
+   │ ▸ Details           ││ ▸ Details                  ││ ▸ Details        │
+   └─────────────────────┘└────────────────────────────┘└──────────────────┘
+   Camera   | Health          | Frames/s  | Skipped | Detect
+   Camera 1 | Smooth          | 29.8 / 30 | 0%      | 120 ms
+   Camera 2 | Dropping frames | 22.5 / 30 | 25%     | 200 ms
    ```
 
-   The headline is the p95 over the last 5 minutes; the status line is text
-   (✓ Meets target, ! Misses target, Not enough data yet, No data yet,
-   Information only) with a coloured left border as a secondary cue. Tile
-   tooltips define each value; the Spoken answer tooltip lists typical stage
-   times. Sparklines are deferred. Compute busy % stays on the Resources tab.
+   Chat Q&A Details today, and after the service update:
 
-### Later (not planned here)
+   ```text
+   Typical 1.2 s · 95% at or below 2.1 s          Typical 1.2 s · 95% at or below 2.1 s
+   Measured by the Handheld (last 5 min, 18       Measured by the Handheld (last 5 min, 18
+   requests), including time waiting in the       requests), including time waiting in the
+   service queue                                  service queue
+   More detail after the Chat Q&A update          Reported by Chat Q&A (since it started):
+                                                    model first token 0.6 s, queue wait 0.3 s,
+                                                    errors 0.0%
+   ```
 
-Expanded multi-tab Performance view, model-strip chips, header "Ready in",
-sparklines, and scripted measurement runs with saved scorecards are possible
-follow-ups. They are not part of this plan, and none of them introduces
-pass/fail gating.
+   Compute busy stays on the Resources tab.
 
-## 5. Delivery steps
+## 8. Remaining work
 
-| Step | Deliverable | Status |
-| --- | --- | --- |
-| **Phase A** | | |
-| A1. Contracts | KPI definitions, configurable targets, payload schema | Done |
-| A2. Collector and APIs | Rolling windows, `/api/performance`, SSE event, marks | Done; `/metrics` deferred |
-| A3. Video counters and latency | `frame_ingress.py`, `crop_context` fields, camera health, time to alert | Done |
-| A4. Voice latency | Browser marks and stages, ack timing | Done; Backend-side stage timings deferred |
-| A5. LLM approx | Words/s and first-words time | Done |
-| A6. Panel UI | Badge, answer footer, alert tooltip, Performance tab | Done; model chips, header, expanded view deferred |
-| A7. Deployment time to ready | Make start marker and ready mark | Deferred |
-| **Phase B** | | |
-| B0. Hand-off | Section 3 filed as requests to each service team | Ready to file |
-| B1. Chat Q&A | Minimum set above (exact tokens, TTFT, queue wait, `/metrics`) | Upstream release |
-| B2–B3. ASR, TTS | Minimum set above (durations, audio length, `/metrics`) | Upstream release |
-| B4–B5. DLSPS, Alert Agent | Optional; not needed for the tiles | Upstream release |
-| B6. Adopt | Pin new images; enable the service scrape in Metrics Manager; the Backend reads the new series when present and keeps the Phase A values otherwise | Each upstream release |
+Paths are relative to `handheld-multi-modal/`. Each package ends with
+`make test-all` passing.
 
-Phase B never blocks Phase A; the Panel shows "~" approximate values or
-"needs Chat Q&A update" until the upstream value is available.
+**Guardrails:** no gating; no Backend queue, in-flight, outcome, or histogram
+state for services; Handheld timings only at existing call sites, successful
+calls only; never synthesize a value; no OEP service changes.
 
-## 6. Tests
+### WP6. Service tiles follow the headline rule
 
-Implemented, in the existing targets (`make test-all`):
+Files: `backend/app/static/index.html`, `backend/app/telemetry.py`,
+`backend/test_ui.py`, `backend/test_backend.py`.
 
-- `make test-crops`: ingress stamp consumed and removed; `frames_in` vs.
-  `frame_sequence`; `pipeline_ms` and `ingress_at` present; malformed stamps
-  ignored; unstamped frames carry no timing.
-- `make test-coverage` (`backend/test_backend.py`):
-  `test_performance_frame_rates_drops_health_and_session_reset`,
-  `test_performance_status_needs_samples_and_valid_targets`,
-  `test_voice_marks_are_validated_and_time_the_spoken_answer`,
-  `test_time_to_alert_counts_only_alerts_raised_on_appearance`; the live SSE
-  batch includes the `performance` event; the speech snapshot flags the
-  acknowledgement clip.
-- `make test-ui` (`backend/test_ui.py`): badge text from a fixture snapshot;
-  Performance tab shows five tiles, "Not enough data" is not a pass, camera
-  table and degraded reason; Resources view restores; a voice turn ignores the
-  acknowledgement, renders the footer and stages, and posts one valid mark;
-  typed questions show first words.
+- Headline always from `kpis.services` (Handheld). Remove the code path that
+  swaps the headline to the service series.
+- Details: Handheld typical and 95% with sample count and window; then, only
+  when present, one "Reported by … (since it started)" line with the service
+  values; otherwise one "More detail after the … update" line. Drop the
+  "not available" rows.
+- Rename the ASR key `request_seconds` → `model_seconds` (it reads the
+  inference histogram), and unify the TTS RTF unit to `ratio` in both
+  snapshots.
+- Remove the "First words" line from the Answer speed tile (the Chat Q&A tile
+  carries it).
 
-Still to add: reading the new service series, time to ready, and stale-state
-handling for the Performance tab.
+Tests: the headline does not change when service series appear; Details list
+only present values; source and window are visible text.
 
-## 7. Work packages for the implementing agent
+### WP7. Remove target judgement from the Panel
 
-Do these in order. Each package is small, ends with passing tests, and can be
-committed on its own. Paths are relative to `handheld-multi-modal/`.
+Files: `backend/app/performance.py`, `backend/app/static/index.html`,
+`config/backend/backend.yaml`, tests.
 
-### Guardrails (read first)
+- Remove `performance_targets` from `backend.yaml` and `targets()`; summaries
+  report `no_data`, `insufficient`, or `info` only.
+- KPI tiles: drop the target line, ✓/! status, and coloured border; the
+  headline becomes the typical (p50) value with the count. Answer footer: drop
+  "within 3.0 s target".
+- Camera health keeps its fixed limits (Section 4); Delayed uses a 400 ms
+  constant instead of the time-to-alert target.
 
-- Follow [AGENTS.md](../../../AGENTS.md). Do not modify Open Edge Platform
-  services or images. Do not put the Backend in the video path.
-- **No gating.** Add no target comparison, pass/fail status, or threshold
-  config for per-service values. Reference values stay in this document only.
-- **No Backend aggregation of service-internal metrics.** The Backend reads
-  series from Metrics Manager and relays them. It does not keep queue,
-  in-flight, outcome, or histogram state for services. It does record the
-  end-to-end duration of successful calls it already makes (speech-to-text,
-  text-to-speech, first words), labelled "Measured by Handheld", as a fallback
-  until the service series exist.
-- The upstream services do not expose `/metrics` yet, so every package below
-  must work, and be testable, with the series absent. Absent means the tile
-  says "Not available yet". Never synthesize a value; keep missing, stale,
-  and real zero distinct (same rule as
-  `.agents/skills/oep-metrics-manager/SKILL.md`).
-- Reuse existing code: `backend/app/telemetry.py` (`normalize`, `Telemetry`),
-  the Performance tab in `backend/app/static/index.html`
-  (`renderPerformance`), and the existing test targets.
+Tests: no target text or status icon anywhere in the Performance tab; the
+snapshot carries no target fields.
 
-### WP0. Confirm what Metrics Manager can do (no code)
+### WP4. Time to ready
 
-**Status: done.** Finding (checked in the local `intel/metrics-manager:2026.3.0-rc2` image
-and a throwaway container; the upstream rc2 tag returned 404, so shipped source was read):
+`make up` / `make demo-up` writes a start marker after prerequisite checks;
+the Backend records when each required service first passes its existing
+health check (the Makefile `wait_for` checks); the browser marks the first
+live frame. The header shows "Ready in 2 min 14 s" for one minute, then
+"● Ready".
 
-- Prometheus scrape keeps histogram buckets: yes. OTLP push keeps them: no (only
-  `_count`, `_sum`, `_avg`, `_min`, `_max`). p50/p95 possible: yes, via scrape or explicit
-  `_bucket` series pushed as JSON; over OTLP they must be null.
-- The Backend reads `GET :9090/api/v1/metrics/latest` (`/metrics/stream` carries the same
-  series). Both are Telegraf's `:9273` export parsed into one sample per series
-  `{name, tags{host,...}, fields{value}, timestamp}`; type is lost. Timestamps are ns on
-  `/latest`, ms on the stream. A scrape adds a `url` tag. A scraped histogram arrives as
-  `_bucket{le}`, `_sum`, `_count`. The raw store copy of pushed series (no `host` tag,
-  timestamp in seconds) is ignored.
-- Gotchas: a `metric_version = 2` scrape of a histogram duplicates `le` and turns
-  `/latest` into HTTP 500 and the stream into errors (all telemetry), so scrape blocks must
-  use `metric_version = 1` (this corrects the `metric_version = 2` in WP1 below).
-  `inputs.prometheus` is commented out in the repo config, so scraping needs a repo-local
-  edit. Series persist up to 60 s after the last write with their original timestamp.
-- Limit: the export is a latest-value snapshot, so a windowed p95 or error-rate delta would
-  need Backend-held history, which the guardrails forbid. Percentiles are therefore
-  cumulative since service start.
-- Chosen for WP2: read-side nearest-rank percentiles on cumulative `le` buckets, mean from
-  sum/count, with OTLP-shaped `_count`/`_sum`/`_avg` as fallback.
+### When an upstream release ships `/metrics`
 
+Pin the image, check the series names against Section 5 (fix only the
+`SERVICE_METRICS` table if they differ), uncomment the scrape block, and run
+`make test-live`.
 
-Goal: decide how p50/p95 reach the Backend.
+## 9. Tests
 
-1. Start the pinned image (`intel/metrics-manager`, tag in
-   `compose/handheld-multi-modal.yaml`) and list its Telegraf plugins, for
-   example `docker run --rm --entrypoint telegraf <image> --input-list`
-   and `--aggregator-list`. Check for a histogram aggregator.
-2. Push a small test histogram through the custom-metrics path (port 8186, or
-   the Prometheus scrape) and read it back at `:9273/metrics`.
-3. Record the answer in this section: either "Metrics Manager emits quantiles"
-   or "it passes raw `_bucket` series through". If the latter, WP2 computes
-   p50/p95 from bucket counts at read time. That is a read-side calculation,
-   not collection.
+In `make test-all`:
 
-Done when: the finding is written down and WP2's approach is chosen.
+- `make test-crops`: ingress stamp consumed and removed, `frames_in` vs.
+  `frame_sequence`, malformed stamps ignored.
+- `make test-coverage` (`backend/test_backend.py`, 75 % gate): camera rates,
+  drops, health and session reset; voice marks validation; time to alert only
+  for alerts raised on appearance; speech-to-text and text-to-speech recorders
+  (success only, cache hits and warm-ups excluded, malformed WAV skipped);
+  `services` in telemetry (missing, stale, real zero, derivations, bucket
+  percentiles, malformed buckets do not drop host telemetry).
+- `make test-ui` (`backend/test_ui.py`): video badge, answer footer and stages,
+  Performance tiles, "Not enough data yet", service tiles (Handheld values,
+  "Not available yet", no status icon, tiles survive refresh, no sideways
+  scroll).
 
-### WP1. Scrape configuration in Metrics Manager
-
-**Status: done.** Commented-out `[[inputs.prometheus]]` block with `metric_version = 1` and a `namepass` list for the three services; enable it only once the pinned images serve `/metrics`. Not exercised against a stub endpoint.
-
-
-Files: `config/metrics/telegraf.conf`, `compose/handheld-multi-modal.yaml` if
-service hostnames or ports need to be reachable from the `metrics` container.
-
-- Replace the commented `[[inputs.prometheus]]` example with one block listing
-  the Chat Q&A, Audio Analyzer, and Text To Speech `/metrics` URLs, with
-  `metric_version = 2` and the same `namepass` discipline as the docker block
-  (only the series in the minimum set).
-- Keep it **commented out** until the pinned service image actually serves
-  `/metrics`, with a one-line comment saying which release enables it. A
-  scrape of a missing endpoint only produces log noise.
-
-Done when: with the block enabled against a stub endpoint, the series appear at
-`:9273/metrics`. Disabling it leaves current behaviour unchanged.
-
-### WP2. Backend reads per-service series
-
-**Status: done.** `SERVICE_METRICS` table and `services` object in the telemetry snapshot (`backend/app/telemetry.py`), with fixture tests in `backend/test_backend.py`. p50/p95 are nearest rank on cumulative buckets (since service start). The TTS time-to-first-audio series name is a placeholder because the plan does not list one. Not yet checked against a live stack.
-
-
-Files: `backend/app/telemetry.py`, `backend/test_backend.py`.
-
-- Add one mapping table at the top of `telemetry.py` from upstream series names
-  to Panel fields (for example Chat Q&A time to first token, queue wait,
-  tokens/s; ASR and TTS audio duration and request duration; every service's
-  `outcome` counters and in-flight gauge). Names come from the upstream
-  release; keep them in this one table so a rename is a one-line change.
-- In `normalize()`, add a `services` object to the returned snapshot:
-  `{ "chat": {...}, "asr": {...}, "tts": {...} }`. Each value carries the
-  number, its unit, and `state` (`ok`, `stale`, `missing`). Reuse
-  `_epoch_ms` and `STALE_AFTER_SECONDS`.
-- Derived values computed here are read-side only: RTF and RTFx from request
-  and audio duration, tokens/s from output tokens and decode time, p50/p95 from
-  histogram buckets if WP0 says so (nearest rank on cumulative buckets).
-  Error rate is `error + timeout` over total from the counters.
-- No new endpoint or SSE event: `services` rides in the existing telemetry
-  snapshot and `telemetry` event.
-
-Tests (fixture payloads, like the existing `test_telemetry_*` tests): series
-absent gives `missing`; stale timestamps give `stale`; a real zero stays zero;
-RTF and tokens/s derivations; bucket-to-percentile; unknown series ignored.
-
-Done when: `make test-all` (backend coverage gate) passes and `GET /api/metrics` shows `services`
-with every field `missing` on a stack that has no service metrics.
-
-### WP3. Service tiles in the Panel
-
-**Status: done.** Service tiles in the Performance tab and the decode tokens/s tile in `backend/app/static/index.html`, with tests in `backend/test_ui.py`. A narrow-width screenshot was not taken.
-
-
-Files: `backend/app/static/index.html`, `backend/test_ui.py`.
-
-- In `renderPerformance()` add a "Services" row under the five KPI tiles: one
-  small tile per service, one plain-words headline from the table in
-  Section 1 ("First words in 0.8 s", "Speech heard 2× faster than real time",
-  "Voice ready in 0.4 s"), the standard name in small text, units always
-  visible.
-- Detail line (collapsed, `<details>`): error rate, queue wait or in-flight,
-  p95. Show p99 only with at least 100 samples.
-- Absent data shows "Not available yet" and the tooltip names what provides it
-  (for example "needs Chat Q&A update"). Stale shows "◷ Stale". No ✓/! and no
-  coloured left border for service tiles.
-- Update the LLM answer-speed tile: label "decode tokens/s" and use the exact
-  value from `services.chat` when present, otherwise keep the "~words/s"
-  fallback.
-- Keep the existing a11y rules: no 1 Hz screen-reader announcements.
-
-Tests: fixture snapshot with and without `services`; "Not available yet"
-renders; no status icon on service tiles; Resources view still restores.
-
-Done when: `make test-ui` passes and a screenshot of the Performance tab
-(narrow handheld width) shows the tiles readable without scrolling sideways.
-
-### WP4. Time to ready (optional, last)
-
-Only if asked. See A4: a start marker written by `make up` / `make demo-up`
-after prerequisite checks, first-ready times read from the existing
-`wait_for` checks in the `Makefile`, and the header "Ready in" text. Use the
-readiness definition from Section 1: every required service passes its health
-check, then the first live frame.
-
-### WP5. Documentation and release hygiene
-
-**Status: done.** Skill, release notes and status table updated. `make test-all` exits 0 (test-image, test-coverage 92% against the 75% gate, test-crops, test-assets, test-ui all pass). `test-live`, `test-history`, `test-crops-live` and `test-fuzz` need a running stack and were not run. WP4 is not done.
-
-**Status: Handheld-observed fallback done.** Service tiles show Handheld-observed ASR, TTS and first-words values until Metrics Manager series appear; see the boundary subsection in Section 2. The guardrail "Backend does not time its own calls" is relaxed only for these successful end-to-end durations. `make test-all` exited 0 (test-coverage 92% against the 75% gate; `app/performance.py` 99%).
-
-
-- Update `.agents/skills/oep-metrics-manager/SKILL.md` with the per-service
-  series and the scrape block.
-- Update `docs/user-guide/release-notes.md` and the Implementation status
-  table in Section 2. Move finished rows to "Implemented".
-- Run `make test-all` and report the result, including anything skipped.
-
-### Not part of this work
-
-- Per-service target evaluation, CI gates, or automated acceptance checks.
-- Removing the existing Phase A targets and `on_target` / `missed` statuses.
-  Those ship today; removing them is a separate decision and code change.
-- Expanded Performance view, measurement runs, scorecards, and sparklines.
-- Any change to Open Edge Platform service code. Missing values are requested
-  upstream using Section 3.
-
-### Definition of done
-
-- On a stack with no service `/metrics`: the Panel shows five KPI tiles plus
-  three service tiles reading "Not available yet"; nothing errors; all tests
-  pass.
-- With the series present (stub or upstream release): tiles show measured
-  numbers with units, derived values match the formulas, and service-reported
-  values win over the Handheld-observed fallback.
+Not run offline: `make test-live` and the other targets that need a running
+stack.
 
 ## References
 
 Handheld:
 
 - [Architecture and constraints](../../../AGENTS.md)
-- [Application README](../../../README.md)
-- [Telemetry poller](../../../backend/app/telemetry.py)
+- [Telemetry and service series](../../../backend/app/telemetry.py)
+- [KPI collector](../../../backend/app/performance.py)
 - [LLM streaming timing](../../../backend/app/assistant.py)
 - [Voice upload and transcription](../../../backend/app/voice.py)
 - [Speech arbiter](../../../backend/app/speech.py)
-- [Routes, TTS callback, and SSE](../../../backend/app/main.py)
+- [Routes, TTS call, and SSE](../../../backend/app/main.py)
 - [Observation ingest](../../../backend/app/ingest.py)
 - [Alert dispatch timing](../../../backend/app/alerts.py)
-- [Pipeline crop callback](../../../scripts/dlsps/crop_candidates.py)
+- [Pipeline callbacks](../../../scripts/dlsps/crop_candidates.py)
+- [Metrics Manager scrape config](../../../config/metrics/telegraf.conf)
 - [Panel UI](../../../backend/app/static/index.html)
 - [Edge Workloads and Benchmarks guide](run-edge-benchmarks.md)
 
@@ -1043,13 +672,12 @@ Upstream (tag `v2026.3.0-rc1`):
 
 Standards:
 
-- [OpenAI streaming usage (`stream_options.include_usage`)](https://platform.openai.com/docs/api-reference/chat/create)
-- [OpenVINO GenAI performance metrics](https://docs.openvino.ai/2025/openvino-workflow-generative/inference-with-genai.html)
-- [W3C Server-Timing](https://www.w3.org/TR/server-timing/)
+- [Google SRE book: four golden signals](https://sre.google/sre-book/monitoring-distributed-systems/)
 - [Prometheus histograms](https://prometheus.io/docs/practices/histograms/)
-- [Google SRE book: Monitoring Distributed Systems (four golden signals)](https://sre.google/sre-book/monitoring-distributed-systems/)
 - [OpenTelemetry HTTP metrics](https://opentelemetry.io/docs/specs/semconv/http/http-metrics/)
 - [OpenTelemetry GenAI metrics](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-metrics.md)
-- [vLLM metrics design (TTFT, TPOT, queue time)](https://docs.vllm.ai/en/stable/design/metrics/)
-- [LLM inference latency overview (chat target guidance)](https://clickhouse.com/resources/engineering/llm-inference-latency)
-- [MLPerf inference scenarios](https://mlcommons.org/benchmarks/inference-datacenter/)
+- [vLLM metrics (TTFT, TPOT, queue time)](https://docs.vllm.ai/en/stable/design/metrics/)
+- [OpenVINO GenAI performance metrics](https://docs.openvino.ai/2025/openvino-workflow-generative/inference-with-genai.html)
+- [OpenAI streaming usage](https://platform.openai.com/docs/api-reference/chat/create)
+- [W3C Server-Timing](https://www.w3.org/TR/server-timing/)
+- [LLM inference latency overview](https://clickhouse.com/resources/engineering/llm-inference-latency)
