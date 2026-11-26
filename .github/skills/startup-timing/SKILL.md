@@ -9,6 +9,27 @@ description: "Use when adding startup or bring-up timing to an application (make
 
 Shared tool: `tools/startup-timing/` (Python 3.11+, stdlib only; full docs in its `README.md`).
 It times the steps of a startup command and writes a human-readable report. No config file needed.
+**It is meant to be copied into other applications.** Keep it self-contained: it must not
+import or reference anything from Handheld or any other application.
+
+## Copy it into another application
+
+1. Copy the whole directory `tools/startup-timing/` into the other repository (keep the
+   `startup_timing/` package next to `timing.sh` and `timing.py`; they locate each other by path).
+   Put it anywhere, for example `tools/startup-timing/`. Copy this skill too
+   (`.github/skills/startup-timing/SKILL.md`) so agents there can use it.
+2. Requirements: a host with `bash` and `python3` 3.11+. No pip installs, no Docker needed
+   (Docker is only used by the optional `pull` and log-marker plugins).
+3. Do NOT copy `handheld-multi-modal/startup-timing.toml`, its `[[log_rules]]`, or its
+   `chat_cache.py`/`demo_assets.py` usage. They are Handheld specifics. Start with no TOML.
+4. Add `.gitignore` entry `startup-timings/` (reports are generated output), then follow the steps below.
+5. Check the copy works: run `timing.sh run --name smoke -- bash -c 'source tools/startup-timing/timing.sh; timed demo "Wait" sleep 0.2'`
+   and open `startup-timings/latest/report.md`.
+6. Limits to tell the owner: services cannot time themselves from inside a container (the journal
+   is a host file); steps must be launched from bash/Make (other launchers call
+   `timing.py begin/end`); the image-size lines come from the Docker-compose-only `pull` command.
+7. When improving the tool, change the shared copy and keep the copies in sync; do not fork
+   application logic into it.
 
 ## Add timing to a new app (zero config)
 

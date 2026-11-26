@@ -3,11 +3,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """Chat Q&A model cache check. Standalone: the Makefile runs it inside the Chat Q&A image
-(PyYAML, standard library only), so it must not import anything else from this repository."""
+(PyYAML, standard library only; the host import needs no PyYAML), so it must not import anything else from this repository."""
 from pathlib import Path
 import time
-
-import yaml
 
 
 def repair_chat_cache(directory, models):
@@ -35,6 +33,7 @@ def chat_cache_ready(directory, models):
 
 
 def main():
+    import yaml  # pylint: disable=import-outside-toplevel  # present in the Chat Q&A image only
     cache = Path("/tmp/model_cache")
     models = yaml.safe_load(Path("/tmp/model_config/config.yaml").read_text())["model_settings"]
     ids = [models[role + "_MODEL_ID"] for role in ("LLM", "EMBEDDING", "RERANKER")]

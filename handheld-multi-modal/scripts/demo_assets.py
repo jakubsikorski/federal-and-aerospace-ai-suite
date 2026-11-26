@@ -23,7 +23,17 @@ import xml.etree.ElementTree as ET  # nosec B405
 REPO = Path(__file__).resolve().parents[1]
 # Shared timing journal: no-ops unless a timing run is active.
 sys.path.insert(0, str(REPO.parent / "tools/startup-timing"))
-from startup_timing.journal import begin, cached, end  # noqa: E402  pylint: disable=wrong-import-position
+try:
+    from startup_timing.journal import begin, cached, end  # noqa: E402  pylint: disable=wrong-import-position
+except ImportError:  # inside a container that mounts only scripts/ (make check)
+    def begin(*_args, **_kwargs):
+        return None
+
+    def end(*_args, **_kwargs):
+        return None
+
+    def cached(*_args, **_kwargs):
+        return None
 from chat_cache import chat_cache_ready  # noqa: E402  pylint: disable=wrong-import-position
 REQUEST = json.loads((REPO / "config/model-download/yolo26s.json").read_text())
 MODEL = REQUEST["models"][0]["name"]
