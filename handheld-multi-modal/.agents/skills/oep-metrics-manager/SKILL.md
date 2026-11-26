@@ -97,8 +97,11 @@ carries a top-level `services` key: `{chat, asr, tts}`, each
 `{state, metrics{key: {value, unit, state, p50, p95, count}}}` with
 `state` of `ok`, `stale` or `missing`. Every key is always present; absent
 series are `missing` with `value` null, and a real 0 stays 0. The Backend only
-reads and relays these series: no timing of its own calls, no windows, no
-outcome counting, no targets or pass/fail.
+reads and relays these series: no outcome counting, no queue or in-flight
+counters, no histograms, no targets or pass/fail. Separately, the collector in
+`backend/app/performance.py` records successful end-to-end durations it observes
+(`kpis.services`, labelled Handheld-observed, includes queue wait). The Panel
+prefers these `services` series when present.
 
 Check that host and container series are fresh:
 

@@ -5,7 +5,10 @@
 speech text preparation for the stock SpeechT5 service."""
 import io
 import re
+import time
 import wave
+
+from .speech import wav_duration
 
 MAX_AUDIO_BYTES = 10 * 1024 * 1024
 
@@ -23,7 +26,10 @@ def validate_audio(data: bytes) -> None:
         raise ValueError('Invalid WAV recording.') from exc
 
 
-def transcribe(services, url: str, data: bytes) -> str:
+def transcribe(services, url: str, data: bytes, performance=None) -> str:
+    """Whisper transcript. With `performance`, a successful call is timed for the
+    Handheld's own view of the service (warm-ups pass none)."""
+    started = time.monotonic()
     response = services.client.post(url.rstrip('/') + '/v1/audio/transcriptions',
         files={'file': ('recording.wav', data, 'audio/wav')},
         data={'model': 'whisper-1', 'response_format': 'json'}, timeout=60)
@@ -34,6 +40,10 @@ def transcribe(services, url: str, data: bytes) -> str:
     text = text.strip()
     if len(text) > 500:
         raise ValueError('Please ask a shorter question (up to 500 characters).')
+    if performance is not None:
+        audio_seconds = wav_duration(data)
+        if audio_seconds:
+            performance.asr_call(time.monotonic() - started, audio_seconds)
     return text
 
 

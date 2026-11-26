@@ -4,7 +4,8 @@
 """Rolling, process-local performance KPIs for the Panel.
 
 Time to alert, time to spoken answer, per-camera frame rates and drops,
-approximate answer speed and peak memory. Every store is bounded and every
+approximate answer speed, peak memory and the Handheld's own view of
+service calls (speech recognition, speech synthesis, first words). Every store is bounded and every
 call is a few dictionary operations under one lock, so recording never slows
 ingest, inference or playback. Targets are thresholds to compare against, not
 a qualification: a value with too few samples is never reported as a pass.
@@ -92,6 +93,12 @@ def summary(values: list[float], target: float | None, digits: int = 3) -> dict:
             "p95": round(p95, digits), "count": len(values), "target": target, "status": status}
 
 
+def _handheld(values: dict, unit: str) -> dict:
+    """A target-free summary labelled as measured by the Handheld. Fewer than
+    MIN_SAMPLES keeps the summary's 'insufficient' status, never a typical value."""
+    return {**values, "unit": unit, "source": "handheld"}
+
+
 class Camera:
     def __init__(self):
         self.session = None
@@ -115,6 +122,9 @@ class Performance:
         self.untimed = Window()
         self.words_per_second = Window()
         self.first_words = Window()
+        # Handheld-observed service calls: successful end-to-end durations only.
+        self.asr_seconds, self.asr_rtfx = Window(), Window()
+        self.tts_seconds, self.tts_rtf = Window(), Window()
         self.memory = Window()
         self.memory_sampled = None
 
@@ -191,6 +201,28 @@ class Performance:
             if words >= 5 and streaming >= 0.2:
                 self.words_per_second.add(words / streaming, now)
 
+    def asr_call(self, seconds: float, audio_seconds: float) -> None:
+        """One successful transcription as the Backend saw it: request time
+        (includes queue wait and loopback) and the speed factor over real time."""
+        self._service_call(self.asr_seconds, self.asr_rtfx, seconds, audio_seconds,
+                           lambda: audio_seconds / seconds)
+
+    def tts_call(self, seconds: float, audio_seconds: float) -> None:
+        """One successful synthesis (not a cache hit). SpeechT5 returns the whole
+        WAV, so request time is also the time to first audio."""
+        self._service_call(self.tts_seconds, self.tts_rtf, seconds, audio_seconds,
+                           lambda: seconds / audio_seconds)
+
+    def _service_call(self, request_window: Window, ratio_window: Window, seconds, audio_seconds,
+                      ratio) -> None:
+        seconds, audio_seconds = _number(seconds), _number(audio_seconds)
+        if seconds is None or audio_seconds is None or seconds <= 0 or audio_seconds <= 0:
+            return
+        now = self.clock()
+        with self.lock:
+            request_window.add(seconds, now)
+            ratio_window.add(ratio(), now)
+
     def _sample_memory(self, telemetry: dict | None, now: float) -> None:
         for metric in (telemetry or {}).get("metrics") or []:
             if metric.get("id") != "memory_used_percent" or metric.get("state") != "ok":
@@ -247,7 +279,10 @@ class Performance:
             ack = summary(self.ack.values(now), None)["p50"]
             untimed = len(self.untimed.values(now))
             speed = summary(self.words_per_second.values(now), None, digits=1)
-            first_words = summary(self.first_words.values(now), None)["p50"]
+            first_words_all = summary(self.first_words.values(now), None)
+            first_words = first_words_all["p50"]
+            asr = summary(self.asr_seconds.values(now), None), summary(self.asr_rtfx.values(now), None, 2)
+            tts = summary(self.tts_seconds.values(now), None), summary(self.tts_rtf.values(now), None, 2)
             memory_values = self.memory.values(now)
         running = [c for c in cameras.values() if c["health"] not in ("no_data", "offline")]
         smooth = sum(c["health"] == "smooth" for c in running)
@@ -280,6 +315,15 @@ class Performance:
                            "status": ("no_data" if peak is None else "insufficient"
                                       if len(memory_values) < MIN_SAMPLES else
                                       "on_target" if peak < memory_target else "missed")},
+                # Observed by the Handheld, so it includes queue wait and loopback.
+                # No target: the service-reported series replace these when present.
+                "services": {
+                    "chat": {"first_words": _handheld(first_words_all, "s")},
+                    "asr": {"request_seconds": _handheld(asr[0], "s"),
+                            "rtfx": _handheld(asr[1], "x")},
+                    "tts": {"request_seconds": _handheld(tts[0], "s"),
+                            "rtf": _handheld(tts[1], "s per s")},
+                },
             },
             "cameras": cameras,
         }

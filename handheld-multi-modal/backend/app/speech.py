@@ -198,6 +198,14 @@ def wav_seconds(data: bytes) -> float:
         return clip.getnframes() / float(clip.getframerate() or 1)
 
 
+def wav_duration(data: bytes) -> float | None:
+    """Seconds of audio in a WAV, or None when it cannot be read (nothing is raised)."""
+    try:
+        return wav_seconds(data)
+    except (wave.Error, EOFError):
+        return None
+
+
 class AudioCache:
     """Tiny byte-bounded LRU for successful TTS WAVs."""
 
@@ -348,7 +356,8 @@ class Arbiter:
         self.cond.release()
         try:
             try:
-                wav = self.synthesize(text)
+                # A warm-up is not an operator request; it is never timed for the KPIs.
+                wav = getattr(self.synthesize, "unmeasured", self.synthesize)(text)
             except Exception as exc:
                 wav = None
                 log.info("TTS warm-up failed: %s", type(exc).__name__)

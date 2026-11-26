@@ -34,9 +34,11 @@ Out of scope for this plan:
   per-service reference values in Section 1 exist so such a mechanism can
   reuse them later; this plan only measures and displays.
 - **Per-service metric aggregation in the Backend.** Metrics Manager owns
-  collection, aggregation, and histograms for per-microservice metrics (see
-  Section 3). The Backend only ingests what Metrics Manager provides, as it
-  does today for hardware telemetry.
+  collection, aggregation, and histograms for service-internal metrics (queue
+  wait, outcomes, in-flight, histograms; see Section 3). The Backend ingests
+  what Metrics Manager provides, as it does for hardware telemetry. The one
+  exception is end-to-end durations the Handheld observes itself on successful
+  calls (see the boundary subsection in Section 2).
 
 Design rules, from [AGENTS.md](../../../AGENTS.md):
 
@@ -162,7 +164,24 @@ Platform service is modified.
 | Backend `/metrics` export, measurement runs, `make perf`, saved scorecards | Not planned here | — |
 | Expanded Performance view, model-strip chips, header "Ready in" | Later | — |
 | Browser `alert_shown` marks, WebRTC rendered FPS and frozen frames | Deferred | — |
-| Backend-side ASR/TTS stage timings and real-time factor | Deferred (browser stages cover the UX need; exact values come from B2/B3) | — |
+| Backend-side ASR/TTS request time and real-time factor, plus time to first words, shown on the service tiles | Implemented as Handheld-observed (client-observed, includes queue wait and loopback); Metrics Manager series replace them when present | `backend/app/performance.py` (`kpis.services`), `backend/app/static/index.html` |
+
+### Boundary: Handheld-observed values and Metrics Manager series
+
+The Handheld records the end-to-end durations it can observe itself, at call
+sites that already exist: speech-to-text request time and speed over real time,
+text-to-speech request time and real-time factor, and time to first words.
+
+- Successful calls only. No outcome or error counts.
+- No queue wait, in-flight counts, or histograms of service internals. Those
+  stay with Metrics Manager.
+- Each value is labelled as measured by the Handheld. It is client-observed, so
+  it includes queue wait and loopback. It is not the service's own number.
+- No target, threshold, or pass/fail status. Too few samples reads "Not enough
+  data", never a pass. Nothing is synthesized.
+- No transcripts or questions are stored.
+- When the service-reported Metrics Manager series are present and fresh, the
+  tiles show those instead.
 
 Targets live in `config/backend/backend.yaml` under `performance_targets`
 (`time_to_alert_seconds`, `spoken_answer_seconds`, `smooth_cameras`,
@@ -644,7 +663,8 @@ histogram handling or re-aggregation belongs, not the Backend.
   but commented out) once the service ships the endpoint.
 - Backend change: read the new series in `telemetry.py` the way it reads the
   existing ones, keep stale/missing/zero distinct, and relay them. No
-  per-service windows, percentiles, or call timing in the Backend.
+  service-internal windows, outcome counts, or histograms in the Backend; the
+  Handheld-observed end-to-end durations are a separate, labelled fallback.
 - To confirm before implementation: whether the pinned Metrics Manager image
   can produce histogram quantiles (for example via a Telegraf histogram
   aggregator) or only passes raw buckets through. If only buckets, p50/p95 are
@@ -824,9 +844,12 @@ committed on its own. Paths are relative to `handheld-multi-modal/`.
   services or images. Do not put the Backend in the video path.
 - **No gating.** Add no target comparison, pass/fail status, or threshold
   config for per-service values. Reference values stay in this document only.
-- **No Backend aggregation of per-service metrics.** The Backend reads series
-  from Metrics Manager and relays them. It does not time its own calls to
-  services, keep per-service windows, or count outcomes.
+- **No Backend aggregation of service-internal metrics.** The Backend reads
+  series from Metrics Manager and relays them. It does not keep queue,
+  in-flight, outcome, or histogram state for services. It does record the
+  end-to-end duration of successful calls it already makes (speech-to-text,
+  text-to-speech, first words), labelled "Measured by Handheld", as a fallback
+  until the service series exist.
 - The upstream services do not expose `/metrics` yet, so every package below
   must work, and be testable, with the series absent. Absent means the tile
   says "Not available yet". Never synthesize a value; keep missing, stale,
@@ -966,6 +989,8 @@ check, then the first live frame.
 
 **Status: done.** Skill, release notes and status table updated. `make test-all` exits 0 (test-image, test-coverage 92% against the 75% gate, test-crops, test-assets, test-ui all pass). `test-live`, `test-history`, `test-crops-live` and `test-fuzz` need a running stack and were not run. WP4 is not done.
 
+**Status: Handheld-observed fallback done.** Service tiles show Handheld-observed ASR, TTS and first-words values until Metrics Manager series appear; see the boundary subsection in Section 2. The guardrail "Backend does not time its own calls" is relaxed only for these successful end-to-end durations. `make test-all` exited 0 (test-coverage 92% against the 75% gate; `app/performance.py` 99%).
+
 
 - Update `.agents/skills/oep-metrics-manager/SKILL.md` with the per-service
   series and the scrape block.
@@ -988,8 +1013,8 @@ check, then the first live frame.
   three service tiles reading "Not available yet"; nothing errors; all tests
   pass.
 - With the series present (stub or upstream release): tiles show measured
-  numbers with units, derived values match the formulas, and nothing is
-  computed from the Backend's own calls.
+  numbers with units, derived values match the formulas, and service-reported
+  values win over the Handheld-observed fallback.
 
 ## References
 

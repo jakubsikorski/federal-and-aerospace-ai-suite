@@ -3281,6 +3281,181 @@ def test_voice_marks_are_validated_and_time_the_spoken_answer():
     assert body["cameras"] == {"cam1": {"health": "no_data"}}, "disabled cameras are not listed"
 
 
+def test_service_call_recorders_derive_rates_and_stay_bounded():
+    from app.performance import MAX_SAMPLES, MIN_SAMPLES, Performance
+
+    clock = [0.0]
+    perf = Performance({}, clock=lambda: clock[0])
+    services = lambda: perf.snapshot([])["kpis"]["services"]  # noqa: E731
+    empty = services()
+    assert set(empty) == {"chat", "asr", "tts"} and set(empty["asr"]) == {"request_seconds", "rtfx"}
+    assert empty["chat"]["first_words"]["status"] == "no_data" and empty["asr"]["rtfx"]["count"] == 0
+    for bad in ((0, 2), (-1, 2), (1, 0), (1, -2), (float("nan"), 2), (1, float("inf")), (True, 2), (1, None)):
+        perf.asr_call(*bad)
+        perf.tts_call(*bad)
+    assert services() == empty, "zero, negative, non-finite and missing durations are ignored"
+
+    perf.asr_call(0.5, 2.0)
+    perf.tts_call(0.4, 2.0)
+    one = services()
+    # One sample is recorded but never presented as a typical value.
+    assert one["asr"]["rtfx"]["status"] == "insufficient" and one["asr"]["rtfx"]["count"] == 1
+    assert one["tts"]["request_seconds"]["status"] == "insufficient"
+    assert (one["asr"]["rtfx"]["last"], one["asr"]["request_seconds"]["last"]) == (4.0, 0.5)
+    assert (one["tts"]["rtf"]["last"], one["tts"]["request_seconds"]["last"]) == (0.2, 0.4)
+    for _ in range(MIN_SAMPLES - 1):
+        perf.asr_call(0.5, 2.0)
+        perf.tts_call(0.4, 2.0)
+        perf.answer_streamed(0.8, 2.0, "one two")
+    done = services()
+    assert done["asr"]["rtfx"]["status"] == "info" and done["asr"]["rtfx"]["p50"] == 4.0
+    assert done["tts"]["rtf"]["p95"] == 0.2 and done["tts"]["request_seconds"]["p50"] == 0.4
+    assert done["chat"]["first_words"]["status"] == "insufficient", "four answers are too few"
+    perf.answer_streamed(0.8, 2.0, "one two")
+    chat = services()["chat"]["first_words"]
+    assert (chat["status"], chat["p50"], chat["count"]) == ("info", 0.8, 5)
+    for entry in (done["chat"]["first_words"], done["asr"]["rtfx"], done["asr"]["request_seconds"],
+                  done["tts"]["rtf"], done["tts"]["request_seconds"]):
+        assert entry["source"] == "handheld" and entry["unit"] and entry["target"] is None, entry
+    assert (done["asr"]["rtfx"]["unit"], done["asr"]["request_seconds"]["unit"]) == ("x", "s")
+    snapshot = perf.snapshot([])
+    assert snapshot["version"] == 1 and {"time_to_alert", "spoken_answer", "cameras", "answer_speed",
+                                         "memory", "services"} == set(snapshot["kpis"])
+    assert snapshot["kpis"]["answer_speed"]["first_words_p50"] == 0.8, "existing key is unchanged"
+    for _ in range(MAX_SAMPLES + 500):
+        perf.tts_call(0.4, 2.0)
+    assert services()["tts"]["rtf"]["count"] == MAX_SAMPLES, "windows are bounded"
+    assert len(perf.tts_seconds.samples) == MAX_SAMPLES
+    clock[0] += 400
+    assert services() == empty, "old samples age out"
+
+
+def test_asr_call_is_recorded_only_after_a_successful_transcription():
+    from types import SimpleNamespace
+    from app.performance import Performance
+    from app.voice import transcribe
+
+    perf = Performance({})
+    reply = [httpx.Response(200, json={"text": "How many people?"})]
+    services = SimpleNamespace(client=httpx.Client(transport=httpx.MockTransport(lambda request: reply[0])))
+    count = lambda: perf.snapshot([])["kpis"]["services"]["asr"]["rtfx"]["count"]  # noqa: E731
+
+    assert transcribe(services, "http://whisper", _wav(.5), perf) == "How many people?"
+    snapshot = perf.snapshot([])["kpis"]["services"]["asr"]
+    assert snapshot["rtfx"]["count"] == 1 and snapshot["request_seconds"]["count"] == 1
+    elapsed, rtfx = perf.asr_seconds.samples[-1][1], perf.asr_rtfx.samples[-1][1]
+    assert elapsed > 0 and abs(rtfx - 0.5 / elapsed) < 1e-6, "rtfx is audio seconds over request seconds"
+    assert transcribe(services, "http://whisper", _wav(.5)) == "How many people?" and count() == 1, \
+        "warm-ups and callers without a collector are not timed"
+    assert transcribe(services, "http://whisper", b"not a wav", perf) == "How many people?" and count() == 1, \
+        "a malformed WAV is skipped, the transcript still returned"
+    assert transcribe(services, "http://whisper", _wav(0), perf) == "How many people?" and count() == 1
+    for failing, error in ((httpx.Response(503), httpx.HTTPStatusError),
+                           (httpx.Response(200, json={}), ValueError),
+                           (httpx.Response(200, json={"text": "x" * 501}), ValueError)):
+        reply[0] = failing
+        try:
+            transcribe(services, "http://whisper", _wav(.5), perf)
+        except error:
+            pass
+        else:
+            raise AssertionError("failure was swallowed")
+        assert count() == 1, "a failed call is never recorded"
+
+
+def test_tts_synthesis_is_recorded_once_and_not_for_cache_hits_failures_or_warmups():
+    from types import SimpleNamespace
+    from app import speech
+    from app.main import build_synthesizer
+    from app.performance import Performance
+
+    speech.PLAYBACK_MARGIN_SECONDS = 0.0
+    perf = Performance({})
+    requests = []
+    reply = [lambda: httpx.Response(200, json={"audio_base64": base64.b64encode(_wav(0.5)).decode()})]
+
+    def upstream(request):
+        requests.append(json.loads(request.content)["input"])
+        return reply[0]()
+
+    app = SimpleNamespace(state=SimpleNamespace(
+        performance=perf, services=SimpleNamespace(client=httpx.Client(transport=httpx.MockTransport(upstream)))))
+    synthesize = build_synthesizer(app, {"services": {"tts": "http://tts"}})
+    tts = lambda: perf.snapshot([])["kpis"]["services"]["tts"]  # noqa: E731
+
+    assert synthesize("Hello there.")[:4] == b"RIFF"
+    assert tts()["request_seconds"]["count"] == 1 and tts()["rtf"]["count"] == 1
+    elapsed, rtf = perf.tts_seconds.samples[-1][1], perf.tts_rtf.samples[-1][1]
+    assert elapsed > 0 and abs(rtf - elapsed / 0.5) < 1e-9, "rtf is request seconds over audio seconds"
+    synthesize.unmeasured("Warm.")
+    assert tts()["rtf"]["count"] == 1 and len(requests) == 2, "a warm-up is a call, but is not timed"
+    reply[0] = lambda: httpx.Response(500)
+    try:
+        synthesize("Fails.")
+    except httpx.HTTPStatusError:
+        pass
+    else:
+        raise AssertionError("failure was swallowed")
+    reply[0] = lambda: httpx.Response(200, json={"audio_base64": base64.b64encode(b"not wav").decode()})
+    try:
+        synthesize("Not audio.")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("invalid audio accepted")
+    assert tts()["rtf"]["count"] == 1, "failed calls are never recorded"
+
+    reply[0] = lambda: httpx.Response(200, json={"audio_base64": base64.b64encode(_wav(0.05)).decode()})
+    arbiter = speech.Arbiter(synthesize, alert_floor=0.0)
+    arbiter.start()
+    try:
+        arbiter.say("answer", "person on Camera 1", ref="c1")
+        _settle(arbiter)
+        assert tts()["rtf"]["count"] == 2
+        arbiter.say("answer", "person on Camera 1", ref="c2")
+        _settle(arbiter)
+        assert arbiter.snapshot()["last"]["cached"] is True and tts()["rtf"]["count"] == 2, \
+            "a cache hit is not a synthesis call"
+        assert requests.count("person on Camera 1,") == 1
+        before = len(requests)
+        assert arbiter.warm("Checking.")
+        deadline = time.monotonic() + 5
+        while len(requests) == before and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert len(requests) == before + 1
+        time.sleep(0.1)
+        assert tts()["rtf"]["count"] == 2, "the Arbiter's warm-up is not timed"
+    finally:
+        arbiter.close()
+
+
+def test_performance_endpoint_includes_service_kpis_measured_by_the_handheld():
+    import asyncio
+    from types import SimpleNamespace
+    from app.main import create_app
+    from app.performance import Performance
+
+    async def check():
+        app = create_app()
+        app.state.performance = Performance({})
+        app.state.cfg = {"streams": [], "services": {"audio_analyzer": "http://whisper"}}
+        app.state.telemetry = types.SimpleNamespace(snapshot=lambda: {"metrics": []})
+        app.state.services = SimpleNamespace(client=httpx.Client(transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json={"text": "Any vehicles?"}))))
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            before = (await client.get("/api/performance")).json()["data"]["kpis"]["services"]
+            assert (await client.post("/api/voice/transcribe", content=b"bad")).status_code == 422
+            assert (await client.post("/api/voice/transcribe", content=_wav(.5))).status_code == 200
+            after = (await client.get("/api/performance")).json()["data"]["kpis"]["services"]
+        return before, after
+
+    before, after = asyncio.run(check())
+    assert before["asr"]["rtfx"]["count"] == 0 and before["asr"]["rtfx"]["status"] == "no_data"
+    assert after["asr"]["rtfx"]["count"] == 1 and after["asr"]["request_seconds"]["count"] == 1, \
+        "only the successful upload is recorded"
+    assert after["asr"]["rtfx"]["source"] == "handheld" and after["tts"]["rtf"]["count"] == 0
+
+
 def test_time_to_alert_counts_only_alerts_raised_on_appearance():
     from app.main import _latency
     from app.performance import Performance
@@ -4443,9 +4618,9 @@ def test_audio_upload_limits_and_stock_alias():
             release = asyncio.Event()
             import app.main as main_module
             original_transcribe = main_module.transcribe
-            def slow(services, url, data):
+            def slow(services, url, data, performance=None):
                 asyncio.run_coroutine_threadsafe(release.wait(), loop).result(2)
-                return original_transcribe(services, url, data)
+                return original_transcribe(services, url, data, performance)
             loop = asyncio.get_running_loop()
             main_module.transcribe = slow
             try:

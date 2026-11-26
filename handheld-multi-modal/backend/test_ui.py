@@ -934,6 +934,47 @@ def main():
                 if (svcTiles().some(tile => /✓|!|Meets target|Misses target/.test(tile.textContent) || tile.querySelector('.kpi-status') || getComputedStyle(tile).borderLeftWidth !== '1px')) return "service tile has status icon or accent border";
                 if ($('performance-view').scrollWidth > $('performance-view').clientWidth) return "performance view scrolls sideways";
                 if ($('kpi-grid').children.length !== 5) return "service tiles leaked into KPI grid";
+                // Handheld-observed fallback: used only when the service reports nothing usable.
+                const hhSaved = state.performance;
+                const hh = (p50, p95, count, status, unit) => ({last: p50, p50, p95, count, target: null, status: status || 'info', unit, source: 'handheld'});
+                const hhServices = (chat, asr, tts) => ({chat: {first_words: chat}, asr: {request_seconds: asr[0], rtfx: asr[1]}, tts: {request_seconds: tts[0], rtf: tts[1]}});
+                const hhShow = (services) => { state.performance = {...hhSaved, kpis: {...hhSaved.kpis, services}}; renderPerformance(); };
+                const svcAllClean = () => svcTiles().some(tile => /✓|!|Meets target|Misses target/.test(tile.textContent) || tile.querySelector('.kpi-status') || getComputedStyle(tile).borderLeftWidth !== '1px');
+                state.telemetry = {metrics: [], services: undefined};
+                renderPerformance();
+                const hhNodes = svcTiles(), hhDetails = hhNodes.map(tile => tile.querySelector('details')), hhStrong = hhNodes.map(tile => tile.querySelector('strong'));
+                hhShow(hhServices(hh(.8, 1.2, 12, 'info', 's'), [hh(.5, .9, 12, 'info', 's'), hh(4.2, 3, 12, 'info', 'x')], [hh(.4, .6, 12, 'info', 's'), hh(.3, .4, 12, 'info', 's/s')]));
+                const hhText = svcText();
+                if (!hhText[0].includes('First words in 0.8 s') || !hhText[0].includes('Measured by Handheld') || !hhText[0].includes('TTFT') || !hhText[0].includes('First words, typical (50% at or below): 0.8 s') || !hhText[0].includes('First words, 95% at or below: 1.2 s') || hhText[0].includes('Not available yet')) return "chat handheld tile: " + hhText[0];
+                if (hhText.some(text => !text.includes('Includes queue wait and loopback; exact values need the service update'))) return "handheld caveat not visible: " + hhText;
+                if (!hhText[1].includes('Speech heard 4.2x faster than real time') || !hhText[1].includes('Measured by Handheld') || !hhText[1].includes('Request time, typical (50% at or below): 0.5 s')) return "asr handheld tile: " + hhText[1];
+                if (!hhText[2].includes('Voice ready in 0.4 s') || !hhText[2].includes('Speech speed, typical: 0.30 s per second of speech') || !hhText[2].includes('Measured by Handheld')) return "tts handheld tile: " + hhText[2];
+                if (!hhText[0].includes('Error rate: not available')) return "handheld tile claims an error rate: " + hhText[0];
+                const hhSource = svcTiles()[0].querySelector('.svc-source');
+                if (hhSource.hidden || !hhSource.title.includes('includes queue wait') || !hhSource.title.includes('service update') || !hhStrong[0].title.includes('includes queue wait')) return "handheld tooltip: " + hhSource.title;
+                if (svcAllClean()) return "handheld tile has status icon or accent border";
+                if (svcTiles().some((tile, i) => tile !== hhNodes[i] || tile.querySelector('details') !== hhDetails[i] || tile.querySelector('strong') !== hhStrong[i])) return "handheld refresh rebuilt tiles";
+                if ($('performance-view').scrollWidth > $('performance-view').clientWidth) return "handheld tiles scroll sideways";
+                // Too few samples (below the minimum, or none) is never a typical value.
+                hhShow(hhServices(hh(.8, .8, 2, 'insufficient', 's'), [hh(null, null, 0, 'no_data', 's'), hh(null, null, 0, 'no_data', 'x')], [hh(.4, .4, 4, 'insufficient', 's'), hh(.3, .3, 4, 'insufficient', 's/s')]));
+                const hhFew = svcText();
+                if (hhFew.some(text => !text.includes('Not enough data yet') || text.includes('Measured by Handheld') || /First words in|faster than real time|Voice ready in/.test(text))) return "too few samples shown as a value: " + hhFew;
+                if (svcTiles().some(tile => !tile.querySelector('.svc-source').hidden) || svcAllClean()) return "too few samples got a source label or status";
+                // The service's own series win when fresh; the Handheld fills in when they are missing or stale.
+                state.telemetry = {metrics: [], services: {
+                  chat: {state: 'ok', metrics: {ttft_seconds: svcM(.3, 's', 'ok', {p95: .5, count: 40}), error_rate_percent: svcM(0, '%')}},
+                  asr: {state: 'ok', metrics: {rtfx: svcM(2, 'x', 'stale')}}, tts: {state: 'ok', metrics: {}}}};
+                hhShow(hhServices(hh(.8, 1.2, 12, 'info', 's'), [hh(.5, .9, 12, 'info', 's'), hh(4.2, 3, 12, 'info', 'x')], [hh(.4, .6, 12, 'info', 's'), hh(.3, .4, 12, 'info', 's/s')]));
+                const hhPref = svcText();
+                if (!hhPref[0].includes('First words in 0.3 s') || hhPref[0].includes('First words in 0.8 s') || hhPref[0].includes('Measured by Handheld') || hhPref[0].includes('Includes queue wait and loopback') || !svcTiles()[0].querySelector('.svc-source').hidden) return "service series not preferred: " + hhPref[0];
+                if (!hhPref[1].includes('Speech heard 4.2x faster than real time') || !hhPref[1].includes('Measured by Handheld')) return "stale service did not fall back: " + hhPref[1];
+                if (!hhPref[2].includes('Voice ready in 0.4 s') || !hhPref[2].includes('Measured by Handheld')) return "missing service did not fall back: " + hhPref[2];
+                if (svcTiles().some((tile, i) => tile !== hhNodes[i])) return "tiles rebuilt when the source changed";
+                state.performance = {...hhSaved, kpis: {...hhSaved.kpis, services: hhServices(hh(null, null, 0, 'no_data', 's'), [hh(null, null, 0, 'no_data', 's'), hh(null, null, 0, 'no_data', 'x')], [hh(null, null, 0, 'no_data', 's'), hh(null, null, 0, 'no_data', 's/s')])}}; renderPerformance();
+                if (!svcText()[1].includes('◷ Stale') || svcText()[1].includes('Speech heard')) return "stale service with no Handheld data: " + svcText()[1];
+                state.performance = hhSaved; state.telemetry = {metrics: [], services: undefined}; renderPerformance();
+                if (svcText().some(text => !text.includes('Not available yet') || text.includes('Measured by Handheld'))) return "snapshot without services must say Not available yet: " + svcText();
+                if ($('kpi-grid').children.length !== 5) return "handheld tiles leaked into KPI grid";
                 state.telemetry = svcSaved;
                 setTelemetryView('resources');
                 if (perfShown('performance-view') || !perfShown('telemetry-grid')) return "resources view not restored";

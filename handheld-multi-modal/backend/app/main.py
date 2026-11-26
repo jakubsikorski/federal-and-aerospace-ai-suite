@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import alerts as alerting, cameras, history, pipelines, reset
-from .speech import Arbiter, complete_answer_sentences, early_head
+from .speech import Arbiter, complete_answer_sentences, early_head, wav_duration
 from .voice import MAX_AUDIO_BYTES, silent_wav, speakable, validate_audio, transcribe
 from .assistant import (
     Assistant,
@@ -233,6 +233,44 @@ def warm_voice_path(app) -> None:
     app.state.voice_warm_task = task  # keep a reference until it finishes
 
 
+def build_synthesizer(app, cfg: dict):
+    """The text-to-speech call the Arbiter uses; successful calls are timed for the KPIs."""
+    def synthesize(text: str, measured: bool = True) -> bytes:
+        # Stock JSON mode: the WAV arrives as audio_base64 and is handed to the
+        # browser as-is inside the speech state, so no clip endpoint is needed.
+        # SpeechT5 can run on past an unpunctuated mid-sentence chunk (measured:
+        # "... radiation and" gave 6.7 s instead of 3.1 s); a comma ends it cleanly.
+        text = speakable(text)
+        if text and text[-1] not in ".,;:!?…":
+            text += ","
+        started = time.monotonic()
+        body = {"input": text, "response_format": "json"}
+        if cfg.get("tts_voice"):
+            body["voice"] = cfg["tts_voice"]
+        response = app.state.services.client.post(
+            cfg["services"]["tts"].rstrip("/") + "/v1/audio/speech", json=body,
+            timeout=float(cfg.get("tts_timeout_seconds", 30.0)))
+        response.raise_for_status()
+        audio = base64.b64decode(response.json()["audio_base64"], validate=True)
+        if not audio.startswith(b"RIFF"):
+            raise ValueError("TTS response is not WAV audio")
+        if measured:
+            # Success only; the Arbiter never calls this for a cache hit.
+            audio_seconds = wav_duration(audio)
+            if audio_seconds:
+                app.state.performance.tts_call(time.monotonic() - started, audio_seconds)
+        return audio
+
+    synthesize.unmeasured = lambda text: synthesize(text, measured=False)
+    synthesize.cache_identity = json.dumps({
+        "service": cfg["services"]["tts"].rstrip("/"),
+        "voice": cfg.get("tts_voice") or "",
+        "model": cfg.get("tts_model") or "",
+        "acronyms": "letter-names-1",
+    }, sort_keys=True)
+    return synthesize
+
+
 def warm_chatqna_once(services: Services, timeout: float) -> None:
     def run():
         url = services.urls.get("chatqna")
@@ -300,32 +338,7 @@ async def lifespan(app: FastAPI):
     app.state.assistant.models = lambda: app.state.placement.snapshot({}, {})
     warm_chatqna_once(app.state.services, float(cfg.get("assistant_chat_timeout_seconds", 60)))
 
-    def synthesize(text: str) -> bytes:
-        # Stock JSON mode: the WAV arrives as audio_base64 and is handed to the
-        # browser as-is inside the speech state, so no clip endpoint is needed.
-        # SpeechT5 can run on past an unpunctuated mid-sentence chunk (measured:
-        # "... radiation and" gave 6.7 s instead of 3.1 s); a comma ends it cleanly.
-        text = speakable(text)
-        if text and text[-1] not in ".,;:!?…":
-            text += ","
-        body = {"input": text, "response_format": "json"}
-        if cfg.get("tts_voice"):
-            body["voice"] = cfg["tts_voice"]
-        response = app.state.services.client.post(
-            cfg["services"]["tts"].rstrip("/") + "/v1/audio/speech", json=body,
-            timeout=float(cfg.get("tts_timeout_seconds", 30.0)))
-        response.raise_for_status()
-        audio = base64.b64decode(response.json()["audio_base64"], validate=True)
-        if not audio.startswith(b"RIFF"):
-            raise ValueError("TTS response is not WAV audio")
-        return audio
-
-    synthesize.cache_identity = json.dumps({
-        "service": cfg["services"]["tts"].rstrip("/"),
-        "voice": cfg.get("tts_voice") or "",
-        "model": cfg.get("tts_model") or "",
-        "acronyms": "letter-names-1",
-    }, sort_keys=True)
+    synthesize = build_synthesizer(app, cfg)
     app.state.arbiter = Arbiter(synthesize, alert_floor=float(cfg.get("alert_speech_floor_seconds", 3.0)),
                                 trace_path=cfg.get("arbiter_trace_path"))
     app.state.voice_warmed = float("-inf")
@@ -824,7 +837,8 @@ def create_app() -> FastAPI:
             async with lock:
                 try:
                     text = await asyncio.to_thread(transcribe, request.app.state.services,
-                        request.app.state.cfg["services"]["audio_analyzer"], bytes(data))
+                        request.app.state.cfg["services"]["audio_analyzer"], bytes(data),
+                        getattr(request.app.state, "performance", None))
                 except ValueError as exc:
                     raise HTTPException(422, str(exc)) from exc
                 except Exception as exc:
