@@ -762,7 +762,7 @@ code { color: var(--accent); }
 
 /* ---- Architecture dialog (js/arch.js) ---- */
 .arch-dialog {
-  width: min(1560px, 100%); height: min(960px, 100%);
+  width: min(2400px, 100%); height: min(1400px, 100%);
   --c-video: #5fd4e8; --c-webrtc: #8be0b5; --c-mqtt: #c3a6ff; --c-rest: #7fb2ff; --c-files: #f4c779;
   --c-oep: #3fa0ff; --c-oss: #8a9db6; --c-app: #3fc1c0;
   --c-cpu: #7fb2ff; --c-gpu: #6fd0a0; --c-npu: #b99bff;
@@ -852,12 +852,8 @@ code { color: var(--accent); }
 .lg-video { color: var(--c-video); } .lg-webrtc { color: var(--c-webrtc); }
 .lg-mqtt { color: var(--c-mqtt); } .lg-rest { color: var(--c-rest); } .lg-files { color: var(--c-files); }
 
-/* Large screens: an always-visible sidebar -- <summary> is hidden and <details>
-   forced open, so visually this is a plain panel with no collapse affordance.
-   Small screens (media query below): a real collapsible <details>/<summary>,
-   closed by default, so it doesn't permanently take half the room away from
-   the diagram; arch.js opens it automatically the moment there's something to
-   show (a node/flow/provider was selected). */
+/* The "Details" sidebar: an always-visible panel -- <summary> is hidden and
+   <details> forced open, so visually it has no collapse affordance. */
 .arch-card-details { grid-column: 2; grid-row: 1; min-width: 0; min-height: 0; overflow: hidden; }
 .arch-card-details > summary { display: none; }
 .arch-card {
@@ -884,7 +880,7 @@ code { color: var(--accent); }
 .arch-link { background: none; border: none; padding: 0; color: #8cc6ff; cursor: pointer; font: inherit; text-decoration: underline; text-underline-offset: 2px; }
 
 /* Same always-visible-sidebar/footer pattern as .arch-card-details above --
-   on wide screens this is the full-width row below the diagram+details row. */
+   the full-width row below the diagram+details row. */
 .arch-devices-details { grid-column: 1 / -1; grid-row: 2; min-width: 0; flex-shrink: 0; }
 .arch-devices-details > summary { pointer-events: none; }
 summary.arch-h3 { margin: 4px 0 0; font-size: 15px; list-style: none; cursor: default; }
@@ -896,51 +892,6 @@ summary.arch-h3::-webkit-details-marker { display: none; }
 .arch-device ul { margin: 0; padding-left: 18px; font-size: 12.5px; color: #c6d0db; }
 .arch-device li { margin: 3px 0; }
 .arch-note { grid-column: 1 / -1; margin: 0; font-size: 12px; }
-
-/* The "Info" dropdown toggle only exists for small/compact screens -- on wide
-   screens Details and "Where each model runs" are always-visible panels and
-   this button plays no role, so it stays hidden there. */
-.arch-info-toggle {
-  display: none; align-items: center; gap: 5px; border: 1px solid var(--panel-border); background: rgba(255, 255, 255, 0.04);
-  color: var(--text); border-radius: 999px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
-}
-.arch-info-toggle:hover { border-color: var(--accent); }
-.arch-info-caret { display: inline-block; transition: transform 0.15s; font-size: 10px; }
-.arch-dialog.info-open .arch-info-caret { transform: rotate(180deg); }
-
-@media (max-width: 1100px) {
-  .arch-stage { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr); }
-  .arch-info-toggle { display: inline-flex; }
-  .arch-card-details, .arch-devices-details {
-    position: fixed; left: 14px; right: 14px; z-index: 30;
-    border: 1px solid var(--panel-border); border-radius: 10px; background: #11161c;
-    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
-    max-height: 40vh; overflow-y: auto;
-    /* Hidden by default, regardless of the <details> element's own open/closed
-       state -- visibility is driven entirely by .arch-dialog.info-open below,
-       via #arch-info-toggle, not by each <details>'s native disclosure. */
-    visibility: hidden; opacity: 0; pointer-events: none; transform: translateY(6px);
-    transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
-  }
-  .arch-card-details { bottom: calc(14px + 40vh + 10px); }
-  .arch-devices-details { bottom: 14px; }
-  .arch-dialog.info-open .arch-card-details, .arch-dialog.info-open .arch-devices-details {
-    visibility: visible; opacity: 1; pointer-events: auto; transform: none;
-  }
-  .arch-card-details > summary {
-    display: flex; align-items: center; gap: 6px; padding: 10px 14px; font-size: 13px; font-weight: 600;
-    border-bottom: 1px solid var(--panel-border);
-  }
-  .arch-card { border: none; border-radius: 0; max-height: none; }
-  .arch-devices-details > summary {
-    display: flex; align-items: center; gap: 6px; padding: 10px 14px 0;
-  }
-  .arch-devices { grid-template-columns: 1fr; padding: 0 14px 12px; }
-}
-@media (max-width: 900px) {
-  .arch-dialog { width: 100%; height: 100%; border-radius: 0; }
-  .arch-card-details, .arch-devices-details { left: 10px; right: 10px; }
-}
 
 @media (max-height: 700px) {
   .arch-dialog .modal-header { padding: 8px 18px; }

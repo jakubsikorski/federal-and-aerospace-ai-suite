@@ -22,8 +22,8 @@ Use this guide after provisioning an edge node with the Infrastructure software 
 
 ## Prerequisites
 
-- [Edge Node Infrastructure software](../infrastructure-setup.md) deployed.
-- During target system installation, set `host_type=container` in the `config-file`.
+- An edge node set up per [Infrastructure Setup](../infrastructure-setup.md).
+- Docker Engine installed on the target.
 - Network connectivity for model and media downloads.
 
 ### Verify Hardware Readiness

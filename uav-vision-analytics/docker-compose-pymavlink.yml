@@ -6,8 +6,8 @@ services:
     environment:
       - http_proxy=${http_proxy}
       - https_proxy=${https_proxy}
-      - no_proxy=${no_proxy},${HOST_IP}
-      - NO_PROXY=${no_proxy},${HOST_IP}
+      - no_proxy=${no_proxy:+${no_proxy},}${HOST_IP:-127.0.0.1}
+      - NO_PROXY=${no_proxy:+${no_proxy},}${HOST_IP:-127.0.0.1}
     volumes:
       - ./configs/mosquitto:/mosquitto/config
     networks:
@@ -18,6 +18,8 @@ services:
     image: px4io/px4-sitl:v1.18.0-beta1-660-g61907962c9
     hostname: px4-sitl
     container_name: uav-va-px4
+    environment:
+      - PX4_PARAM_MAV_SYS_ID=${MAV_SYS_ID:-1}
     volumes:
       - ./10040_sihsim_quadx.post:/opt/px4/etc/init.d-posix/airframes/10040_sihsim_quadx.post
     stdin_open: true
@@ -64,8 +66,9 @@ services:
     environment:
       - http_proxy=${http_proxy}
       - https_proxy=${https_proxy}
-      - no_proxy=${no_proxy},${HOST_IP},host.docker.internal
-      - NO_PROXY=${no_proxy},${HOST_IP},host.docker.internal
+      # The image rejects a no_proxy that starts with a comma, so the host's value is prefixed only when set.
+      - no_proxy=${no_proxy:+${no_proxy},}${HOST_IP:-127.0.0.1},host.docker.internal
+      - NO_PROXY=${no_proxy:+${no_proxy},}${HOST_IP:-127.0.0.1},host.docker.internal
       - ENABLE_RTSP=true
       - RTSP_PORT=8555
       - APPEND_PIPELINE_NAME_TO_PUBLISHER_TOPIC=true
@@ -121,7 +124,7 @@ services:
       - "host.docker.internal:host-gateway"
 
   metrics-manager:
-    image: intel/metrics-manager:2026.3.0-rc1
+    image: intel/metrics-manager:2026.3.0-rc2
     container_name: uav-va-metrics-manager
     privileged: true
     pid: host

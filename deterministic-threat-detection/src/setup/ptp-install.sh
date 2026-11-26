@@ -5,7 +5,7 @@
 # Installs linuxptp (if missing), the ptp4l/phc2sys systemd services, the two
 # PTP profiles (802.1AS gPTP and IEEE 1588v2), the `ptp-profile` switch command,
 # and a narrow sudoers rule so that user can run ONLY `ptp-profile` without a
-# password.
+# password. On Ubuntu it also adds an AppArmor override so phc2sys can reach ptp4l.
 #
 # Run once per machine (e.g. after it is flashed), as root:
 #   scp ptp-install.sh <host>:/tmp/ && ssh -t <host> 'sudo bash /tmp/ptp-install.sh'
@@ -38,7 +38,7 @@ while [ $# -gt 0 ]; do
     --no-start)   START=0; shift ;;
     --no-sudoers) SUDOERS=0; shift ;;
     --uninstall)  UNINSTALL=1; shift ;;
-    -h|--help)    sed -n '2,27p' "$0"; exit 0 ;;
+    -h|--help)    sed -n '2,28p' "$0"; exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -234,6 +234,21 @@ RestartSec=2
 WantedBy=multi-user.target
 EOF
 chmod 644 "$UNIT_DIR/ptp4l-tsn.service" "$UNIT_DIR/phc2sys-tsn.service"
+
+# Ubuntu confines /usr/sbin/ptp4l and /usr/sbin/phc2sys with AppArmor. The stock profiles block
+# phc2sys -w from reaching /run/ptp4l ("Waiting for ptp4l..." forever) and ptp4l from answering
+# pmc. Both profiles include this local file, so one override covers them.
+AA_LOCAL=/etc/apparmor.d/local/usr.sbin.ptp4l
+if [ -f /etc/apparmor.d/usr.sbin.ptp4l ] && command -v apparmor_parser >/dev/null 2>&1; then
+  install -d -m 755 -o root -g root /etc/apparmor.d/local
+  for rule in '  @{run}/ptp4l rw,' '  @{run}/pmc.[0-9]* rw,'; do
+    grep -qxF "$rule" "$AA_LOCAL" 2>/dev/null || echo "$rule" >>"$AA_LOCAL"
+  done
+  for profile in /etc/apparmor.d/usr.sbin.ptp4l /etc/apparmor.d/usr.sbin.phc2sys; do
+    [ -f "$profile" ] && apparmor_parser -r "$profile"
+  done
+  echo "      AppArmor: allowed ptp4l/phc2sys/pmc management sockets ($AA_LOCAL)"
+fi
 
 # --- 5. ptp-profile command -------------------------------------------------
 echo "[5/6] Installing /usr/local/bin/ptp-profile..."

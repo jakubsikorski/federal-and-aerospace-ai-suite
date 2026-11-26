@@ -65,8 +65,9 @@ Manual commands: [Create VLANs on all machines](./how-to-guides/moxa/create-vlan
 ## 3. PTP (Every Machine)
 
 The `ptp-install.sh` script installs `linuxptp`, the `ptp4l` and `phc2sys` services, and the
-`ptp-profile` command, and disables NTP clients. The switch is the grandmaster; the machines
-are slaves.
+`ptp-profile` command, and disables NTP clients. On Ubuntu it also adds an AppArmor override so that
+`phc2sys` can reach `ptp4l` (without it, `phc2sys` keeps logging `Waiting for ptp4l...`). The switch
+is the grandmaster, while the machines are receivers.
 
 ```bash
 sudo src/setup/ptp-install.sh               # machine-1; default profile: IEEE 1588v2
@@ -93,7 +94,7 @@ Check: from machine-1, `ping 192.168.127.12` reaches machine-2 over VLAN 1.
 
 ## 5. Switch Time-Aware Shaper
 
-In the switch web interface, turn on **Schedule Gate** for port 1 (Layer 2 Switching > Time-aware
+In the switch web interface, turn on **Schedule Gate** for port 1 (`SWITCH_PORT`) (Layer 2 Switching > Time-aware
 Shaper). The dashboard then adds and removes the schedule. For details, see
 [Enable TSN traffic shaping](./how-to-guides/moxa/enable-tsn-traffic-shaping.md).
 Check: once the dashboard runs, its Qbv toggle is enabled and shows no warning banner.
@@ -119,8 +120,11 @@ make -C src/dashboard deploy-switch SWITCH_HOST=<user>@<machine-2 lab address>
 The switch scripts run from machine-2, so the switch is never reached over the shaped port.
 `deploy-switch` copies them to `~/moxa` on machine-2.
 
-The first `make up` creates `src/dashboard/.env`. To let the dashboard toggle Qbv, set
-`SWITCH_ALLOW_WRITE=1` in that file and run `make up` again (the default is read-only).
+The first `make up` creates `src/dashboard/.env`. It sets `SWITCH_ALLOW_WRITE=1`, so the
+dashboard can toggle Qbv; set it to `0` and run `make up` again for read-only.
+It also sets `SWITCH_PORT=1`, the switch port machine-1 is connected to. Change it (not to 2,
+which is machine-2's management port) if machine-1 uses another port, and turn on **Schedule
+Gate** for that port.
 
 ## Basler Cameras Only
 

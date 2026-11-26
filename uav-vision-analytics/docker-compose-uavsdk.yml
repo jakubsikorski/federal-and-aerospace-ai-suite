@@ -6,8 +6,9 @@ services:
     environment:
       - http_proxy=${http_proxy}
       - https_proxy=${https_proxy}
-      - no_proxy=${no_proxy},${HOST_IP},host.docker.internal
-      - NO_PROXY=${no_proxy},${HOST_IP},host.docker.internal
+      # The image rejects a no_proxy that starts with a comma, so the host's value is prefixed only when set.
+      - no_proxy=${no_proxy:+${no_proxy},}${HOST_IP:-127.0.0.1},host.docker.internal
+      - NO_PROXY=${no_proxy:+${no_proxy},}${HOST_IP:-127.0.0.1},host.docker.internal
       - ENABLE_WEBRTC=true
       - ENABLE_RTSP=true
       - RTSP_PORT=8555
@@ -69,7 +70,7 @@ services:
   # (/metrics/stream and /api/v1/metrics/latest). The service name is what nginx uses; the container is
   # prefixed uav-va- so it never clashes with the SDK's own metrics-manager container.
   metrics-manager:
-    image: intel/metrics-manager:2026.3.0-rc1
+    image: intel/metrics-manager:2026.3.0-rc2
     container_name: uav-va-metrics-manager
     privileged: true
     pid: host

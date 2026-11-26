@@ -24,6 +24,10 @@ RUN git clone --depth 1 https://github.com/mavlink-router/mavlink-router.git /sr
 
 ENV http_proxy= https_proxy= no_proxy=
 
+RUN useradd --system --no-create-home --uid 10001 --shell /usr/sbin/nologin mavrouter
+
 COPY main.conf /etc/mavlink-router/main.conf
+
+USER mavrouter
 
 CMD ["mavlink-routerd", "-c", "/etc/mavlink-router/main.conf"]

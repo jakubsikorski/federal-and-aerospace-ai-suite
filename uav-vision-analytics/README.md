@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 
 The UAV Vision Analytics application is an AI-powered UAV object detection application with live telemetry overlay, optimized for Intel® edge hardware. It processes video from a UAV-mounted camera (or a simulated video file), runs YOLO11s inference across 80 object classes, and overlays correlated MAVLink telemetry (GPS, altitude, speed, heading) on the output RTSP stream. The stream is consumable by any capable client, such as QGroundControl (QGC), VLC, and ffplay.
 
-The application is built on Intel DL Streamer Pipeline Server and supports two deployment modes: a self-contained **Standalone (pymavlink)** mode using Gazebo/PX4 Software-in-the-Loop (SITL) simulation, and a **UAV Mission Compute SDK** mode that integrates with a running instance of the UAV Mission Compute SDK for full mission control and multi-camera pipeline management. Both modes are deployed on top of the Edge Node Infrastructure software - an edge computing platform, which enables hardware acceleration capabilities. See [Infrastructure Setup](docs/user-guide/infrastructure-setup.md) for build and provisioning steps.
+The application is built on Intel DL Streamer Pipeline Server and supports two deployment modes: a self-contained **Standalone (pymavlink)** mode using Gazebo/PX4 Software-in-the-Loop (SITL) simulation, and a **UAV Mission Compute SDK** mode that integrates with a running instance of the UAV Mission Compute SDK for full mission control and multi-camera pipeline management. Both modes are deployed on top of the Edge Node Infrastructure software - an edge computing platform, which enables hardware acceleration capabilities. See [Installation on Ubuntu](docs/user-guide/infrastructure/installation-on-ubuntu.md) or [Customized Image](docs/user-guide/infrastructure/customized-image.md) for installation and provisioning steps.
 
 ![UAV Vision Analytics application architecture](docs/user-guide/_assets/uav-application-architecture.svg)
 
@@ -41,8 +41,8 @@ Container names use the prefix `uav-va-` (vision analytics), for example `uav-va
 | `broker` | `eclipse-mosquitto:2.0.22` | MQTT broker for telemetry and pipeline events |
 | `px4` | `px4io/px4-sitl:v1.18.0-beta1-660-g61907962c9` | PX4 SITL flight controller simulation |
 | `mavlink-router` | Built from `uav-mission-compute-sdk/infra/px4-sim/mavlink-router` | Routes MAVLink telemetry between PX4 and the pipeline server; publishes UDP `14551` for a remote QGroundControl |
-| `dlstreamer-pipeline-server` | `intel/dlstreamer-pipeline-server:2026.3.0-ubuntu24-rc1` (+ `pymavlink`) | Core inference engine — YOLO11s detection and telemetry overlay |
-| `metrics-manager` | `intel/metrics-manager:2026.3.0-rc1` | Host platform (CPU/GPU) metrics |
+| `dlstreamer-pipeline-server` | `intel/dlstreamer-pipeline-server:2026.3.0-ubuntu24-rc3` (+ `pymavlink`) | Core inference engine — YOLO11s detection and telemetry overlay |
+| `metrics-manager` | `intel/metrics-manager:2026.3.0-rc2` | Host platform (CPU/GPU) metrics |
 | `nginx` | `nginx:1.27-alpine` | Reverse proxy for HTTPS, RTSP and MQTT |
 
 All services share the `app_network` Docker network and are defined in [`docker-compose-pymavlink.yml`](docker-compose-pymavlink.yml). Only `nginx` (HTTPS, RTSP, MQTT) and `mavlink-router` (MAVLink UDP `14551`, for a remote QGroundControl) publish ports to the host; `dlstreamer-pipeline-server` and `metrics-manager` are reachable exclusively through `nginx`.
@@ -51,7 +51,7 @@ All services share the `app_network` Docker network and are defined in [`docker-
 
 | Service | Image | Role |
 | ------- | ----- | ---- |
-| `dlstreamer-pipeline-server` | `intel/dlstreamer-pipeline-server:2026.3.0-ubuntu24-rc1` | Core inference engine — YOLO11s detection and telemetry overlay; connects to an externally running UAV Mission Compute SDK stack |
+| `dlstreamer-pipeline-server` | `intel/dlstreamer-pipeline-server:2026.3.0-ubuntu24-rc3` | Core inference engine — YOLO11s detection and telemetry overlay; connects to an externally running UAV Mission Compute SDK stack |
 | `nginx` | `nginx:1.27-alpine` | Reverse proxy — the only service that publishes ports to the host |
 
 Defined in [`docker-compose-uavsdk.yml`](docker-compose-uavsdk.yml). Requires the
@@ -73,7 +73,10 @@ Run `make init` after cloning to create `.env` from `.env.example`, auto-detect 
 
 ## Quick Start
 
-Run the commands from the `uav-vision-analytics` directory (`cd federal-and-aerospace-ai-suite/uav-vision-analytics` after `git clone https://github.com/open-edge-platform/federal-and-aerospace-ai-suite.git`, or the directory of the downloaded ZIP; see [Get Started](docs/user-guide/get-started/get-started-standalone.md)).
+To install and run the application on Ubuntu 24.04 with the OEP CLI Installer instead, see
+[Installation on Ubuntu](docs/user-guide/infrastructure/installation-on-ubuntu.md).
+
+Run the commands from the `uav-vision-analytics` directory (`cd federal-and-aerospace-ai-suite/uav-vision-analytics` after `git clone https://github.com/open-edge-platform/federal-and-aerospace-ai-suite.git`, or the directory of the downloaded ZIP; see [Get Started](docs/user-guide/uav-vision-analytics/deploy/deploy-standalone.md)).
 
 ### Step 1: Initialize and download the models
 
@@ -113,7 +116,7 @@ detect objects, whether a VLM writes scene captions (device, model, prompt) and 
 The shipped file has three cameras (`front_camera`, `bottom_camera`, `back_camera`), detection on the NPU and captions from
 the VLM on the GPU, so arming the vehicle is all that is needed. After editing the file, `make check-cameras` validates
 it, `make start-rtsp` (or disarm and arm again) applies it, and `make cameras-status` compares the file with what is
-running. See [Configure the Cameras](docs/user-guide/how-to-customize/camera-management/configure-cameras.md).
+running. See [Configure the Cameras](docs/user-guide/uav-vision-analytics/how-to-customize/camera-management/configure-cameras.md).
 
 Streams are published as `rtsp://<HOST_IP>:8555/uav-<camera>` (for example `uav-front-camera`) and the captions of a
 camera on MQTT `uav/caption/<camera>`. Captions need the VLM model (`make vlm-model`, Step 1).
@@ -140,7 +143,7 @@ whole GOPs so the loop point is clean, and verifies the result. If you have seve
 Other options: `--bitrate`, `--fps`, `--size WxH`, `--gop`, `--no-trim`; run it with `--help`.
 It uses `ffmpeg` from the host if installed, otherwise the DL Streamer image from `.env`, so only Docker is
 required. Restart the cameras (`make start-rtsp`) after replacing a file. See
-[Use Your Own Videos](docs/user-guide/how-to-customize/model-and-video-management/use-your-own-video.md) for the full steps.
+[Use Your Own Videos](docs/user-guide/uav-vision-analytics/how-to-customize/model-and-video-management/use-your-own-video.md) for the full steps.
 
 ### Starting pipelines without arming the drone
 
@@ -152,7 +155,7 @@ docker exec -it -e HOST_IP=<HOST_IP> uav-va-dlstreamer-pipeline-server \
   python3 /home/pipeline-server/scripts/pipeline_manager.py --start-now
 ```
 
-For a single ad-hoc pipeline, use the REST API (see [Manage Pipelines](docs/user-guide/how-to-customize/pipeline-management/manage-pipelines.md#rest-api)).
+For a single ad-hoc pipeline, use the REST API (see [Manage Pipelines](docs/user-guide/uav-vision-analytics/how-to-customize/pipeline-management/manage-pipelines.md#rest-api)).
 The RTSP output is H.264 encoded, which is what the `uav-ground-station` relay expects.
 
 ## Endpoints
@@ -199,6 +202,7 @@ make build          Alias: start the default pymavlink stack
 ## Related Documentation
 
 - [User Guide](docs/user-guide/index.md) — Full deployment, configuration, and how-to guides.
-- [Infrastructure Setup](docs/user-guide/infrastructure-setup.md) — Build the OS image, flash it to a bootable USB, and validate the provisioned platform.
+- [Installation on Ubuntu](docs/user-guide/infrastructure/installation-on-ubuntu.md) — Install and start the application with the OEP CLI Installer.
+- [Customized Image](docs/user-guide/infrastructure/customized-image.md) — Build a customized Ubuntu image for deployment at scale.
 - [Benchmarks](docs/user-guide/benchmark.md) — Measure stream density and hardware utilization.
 - [Agent SKILLs](docs/user-guide/agents.md) — AI agent skills for platform automation and DL Streamer pipeline generation.

@@ -6,6 +6,7 @@ priority picks the egress queue, so this decides which Qbv gate the traffic uses
 
   port_priority.py get --ports 5,6
   port_priority.py set --ports 5,6 --value 3
+  port_priority.py ensure --ports 5,6 --value 0   (sets only the ports that differ; no write if all match)
 Add --dry-run to print the CLI commands without sending them.
 Port 2 is refused: our own management session reaches the switch through it.
 """
@@ -33,7 +34,7 @@ def read_priorities(sw):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("action", choices=["get", "set"])
+    ap.add_argument("action", choices=["get", "set", "ensure"])
     ap.add_argument("--ports", required=True, help="comma separated port numbers, e.g. 5,6")
     ap.add_argument("--value", type=int, help="priority 0-7 (set)")
     ap.add_argument("--dry-run", action="store_true")
@@ -47,22 +48,31 @@ def main():
         sys.exit(f"refusing to touch port(s) {sorted(FORBIDDEN_PORTS & set(ports))}: management connection uses it")
     if not all(1 <= p <= 8 for p in ports):
         sys.exit("ports must be 1-8")
-    if a.action == "set" and (a.value is None or not 0 <= a.value <= 7):
+    if a.action in ("set", "ensure") and (a.value is None or not 0 <= a.value <= 7):
         sys.exit("--value 0-7 is required for set")
 
-    cmds = ["configure"]
-    for p in ports:
-        cmds += [f"interface ethernet 1/{p}", f"qos default-priority {a.value}", "exit"]
-    cmds.append("end")
+    def commands(change):
+        cmds = ["configure"]
+        for p in change:
+            cmds += [f"interface ethernet 1/{p}", f"qos default-priority {a.value}", "exit"]
+        cmds.append("end")
+        return cmds
+
     if a.dry_run:
-        print("\n".join(cmds))
+        print("\n".join(commands(ports)))
         return
 
     sw = Switch(a.host)
     try:
         sw.login(a.user, a.password)
-        if a.action == "set":
-            for c in cmds:
+        change = ports
+        if a.action == "ensure":
+            current = read_priorities(sw)
+            change = [p for p in ports if current.get(p) != a.value]
+            if change:
+                print(f"port(s) {change} not at priority {a.value}, setting")
+        if a.action != "get" and change:
+            for c in commands(change):
                 out = sw.run(c)
                 if "%" in out:
                     sw.run("end")
@@ -76,7 +86,7 @@ def main():
         now = read_priorities(sw)
         for p in ports:
             print(f"port {p}: default-priority {now.get(p)}")
-        if a.action == "set" and any(now.get(p) != a.value for p in ports):
+        if a.action != "get" and any(now.get(p) != a.value for p in ports):
             sys.exit("VERIFY FAILED: priority does not match the request")
     finally:
         sw.close()

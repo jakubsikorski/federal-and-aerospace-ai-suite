@@ -21,8 +21,7 @@ Based on DL Streamer Pipeline Server, the application processes video from a UAV
 camera or a simulated video file, detects common object across 80 classes (person, car, truck, bus, bicycle, motorcycle, and more), and outputs an RTSP stream annotated with MAVLink telemetry (GPS, altitude, speed, heading). The stream is consumable by any capable client, such as QGroundControl (QGC), VLC, and ffplay.
 It runs the YOLO11s, Ultralytics' pretrained small object detection model. Each camera's
 pipeline can optionally also run a vision-language model (VLM) alongside detection to
-publish natural-language scene captions over MQTT -- see
-[Configure the Cameras](./how-to-customize/camera-management/configure-cameras.md).
+publish natural-language scene captions over MQTT.
 
 ![UAV drone](./_assets/fedaero-drone.svg)
 
@@ -45,28 +44,33 @@ The application supports two deployment modes.
 
 Self-contained mode using PX4 SITL simulation and Pymavlink for MAVLink communication. No external dependencies required.
 
-[Get Started — Standalone Mode](./get-started/get-started-standalone.md)
+[Deploy in Standalone Mode](./uav-vision-analytics/deploy/deploy-standalone.md)
 
 ### 2. UAV Mission Compute SDK Mode
 
 Integration mode that connects to a running instance of the UAV Mission Compute SDK, enabling full mission control and multi-camera pipeline management.
 
-[Get Started — UAV Mission Compute SDK Mode](./get-started/get-started-uavsdk.md)
+[Deploy in UAV Mission Compute SDK Mode](./uav-vision-analytics/deploy/deploy-uavsdk.md)
 
 To learn more about the application and how to use it, see
-[How-To Guides](./how-to-guides.md); to change what it does, see
-[How to Customize](./how-to-customize.md).
+[How-To Guides](./uav-vision-analytics/how-to-guides.md); to change what it does, see
+[How to Customize](./uav-vision-analytics/how-to-customize.md).
 
 ## Installation Guide
 
 Follow the steps below to set up and run the UAV Blueprint:
 
-1. [Infrastructure Setup](./infrastructure-setup.md) — Build the OS image, flash it to a bootable USB, and validate the provisioned platform.
+1. [Infrastructure Setup](./infrastructure-setup.md) — Prepare the target with [Installation on Ubuntu](./infrastructure/installation-on-ubuntu.md) or a [Customized Image](./infrastructure/customized-image.md).
 2. [Install OEP SDK and Usage](./get-started/install-oep-sdks.md) — Verify hardware accelerators and install the UAV Mission Compute SDK on the provisioned target.
-3. [Install UAV Vision Analytics Application](install-uav-app.md) — Choose and follow the deployment mode that matches your setup (Standalone or UAV Mission Compute SDK).
-4. [How-To Guides](./how-to-guides.md) — Operate the application: QGroundControl, the ground station, deployment modes, troubleshooting.
-5. [How to Customize](./how-to-customize.md) — Change cameras, models, pipelines, the overlay and live-search tuning.
+3. [Install UAV Vision Analytics Application](./uav-vision-analytics/install-uav-app.md) — Choose and follow the deployment mode that matches your setup (Standalone or UAV Mission Compute SDK).
+4. [How-To Guides](./uav-vision-analytics/how-to-guides.md) — Operate the application: QGroundControl, the ground station, deployment modes, troubleshooting.
+5. [How to Customize](./uav-vision-analytics/how-to-customize.md) — Change cameras, models, pipelines, the overlay and live-search tuning.
 6. [Benchmarks](./benchmark.md) — Measure stream density and hardware utilization.
+
+Alternatively, on an Ubuntu 24.04 target, use [Installation on Ubuntu](./infrastructure/installation-on-ubuntu.md) to
+install and start the UAV Vision Analytics application with the OEP CLI Installer in place of
+steps 1–3. To view the cameras on a ground station, see
+[Installation of the UAV Ground Station on Ubuntu](./uav-ground-station/installation-on-ubuntu.md).
 
 ## AI Agent Skills
 
@@ -99,13 +103,11 @@ immediately.
 :hidden:
 
 Infrastructure Setup <./infrastructure-setup.md>
-Install UAV SDK and Usage <./get-started/install-oep-sdks.md>
-UAV Vision Analytics Application <install-uav-app.md>
+UAV Vision Analytics Application <./uav-vision-analytics/index.md>
 UAV Ground Station Application <./uav-ground-station/index.md>
-How-To Guides <./how-to-guides.md>
-How to Customize <./how-to-customize.md>
 Benchmarks <./benchmark.md>
 Agent SKILLs <./agents.md>
+Install UAV SDK and Usage <./get-started/install-oep-sdks.md>
 Release Notes <./release-notes.md>
 
 :::

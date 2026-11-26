@@ -41,6 +41,6 @@
 - **Search Videos** is available only after `make up-vss`, and the first start downloads the VSS models into
   Docker volumes. Footage indexed from UAVs that are no longer connected stays searchable until
   `make clean-vss-index`.
-- The VSS images use the `2026.3.0-rc1` tag.
+- The VSS images use the `2026.3.0` tag.
 - The ground station and the UAV Mission Compute SDK use overlapping ports. Install the SDK before the ground
   station on the same machine, or set different ports in `.env`.

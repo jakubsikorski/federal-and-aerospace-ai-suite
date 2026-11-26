@@ -31,6 +31,9 @@ and the html version on
 
 ## Quick Start
 
+To install and run the ground station on Ubuntu 24.04 with the OEP CLI Installer instead, see
+[Installation on Ubuntu](../uav-vision-analytics/docs/user-guide/uav-ground-station/installation-on-ubuntu.md).
+
 Prerequisites: Docker with the Compose plugin and `make` on this machine.
 
 ```bash
@@ -48,20 +51,20 @@ make logs    # tail the container's logs
 ```
 
 Want **Live Natural Language Search** too? Run `make up-vss DEVICE=CPU|GPU|NPU|all`
-instead of `make up` -- see [Get Started -- VSS search](docs/user-guide/get-started.md#vss-search)
+instead of `make up` -- see [Get Started -- VSS search](../uav-vision-analytics/docs/user-guide/uav-ground-station/get-started.md#vss-search)
 for the extra setup it needs and `make down-vss`/`make clean-vss-index` for
 tearing it down.
 
-See **[Get Started](docs/user-guide/get-started.md)** for: downloading the source two
+See **[Get Started](../uav-vision-analytics/docs/user-guide/uav-ground-station/get-started.md)** for: downloading the source two
 ways, the UAV-side prerequisite in detail, the VSS search overlay walkthrough,
 multiple UAVs in one session, and the Flight Summary report. See
-**[Configuration](docs/user-guide/configuration.md)** for every `.env` variable and the
-full backend route reference, and **[Release Notes](docs/user-guide/release-notes.md)** for
+**[Configuration](../uav-vision-analytics/docs/user-guide/uav-ground-station/configuration.md)** for every `.env` variable and the
+full backend route reference, and **[Release Notes](../uav-vision-analytics/docs/user-guide/uav-ground-station/release-notes.md)** for
 what each version adds and its known issues.
 
 ## What it shows
 
-![UAV Ground Station dashboard with live video, scene captions, and utilization](docs/user-guide/_assets/dashboard-live.gif)
+![UAV Ground Station dashboard with live video, scene captions, and utilization](../uav-vision-analytics/docs/user-guide/uav-ground-station/_assets/dashboard-live.gif)
 
 - The live video stream, via **H.264 Relay**: the local uav-gs-backend
   configures a mediamtx sidecar (`docker-compose-mediamtx.yml`, always
@@ -90,11 +93,11 @@ what each version adds and its known issues.
   next to a clip player (arrow keys move between results, `Esc` closes), from a
   separately deployed
   [Video Search and Summarization (VSS)](https://github.com/open-edge-platform/edge-ai-libraries/tree/main/sample-applications/video-search-and-summarization)
-  search stack -- see [Get Started -- VSS search](docs/user-guide/get-started.md#vss-search).
+  search stack -- see [Get Started -- VSS search](../uav-vision-analytics/docs/user-guide/uav-ground-station/get-started.md#vss-search).
 - An interactive **Architecture** popup: the services on the UAV host, the ground station and the optional VSS stack, color-coded by origin (Open Edge Platform, open source, application). Pick a flow such as live video, captions, live indexing or search to highlight its path, click a service for its role, image and APIs, and see which models run on the NPU, GPU and CPU.
-- A **Flight Summary** report (top bar's **Flight Summary** button): pick one or more cameras that are currently captioning and a time window, and get an extractive summary -- an overview paragraph, recurring subjects, and a timeline of de-duplicated scene highlights grouped camera-by-camera (not interleaved by arrival time, so each camera's own story reads start-to-finish) -- built entirely from the MQTT caption stream already flowing for captioning-enabled pipelines. No VSS deployment or LLM call required; see [Get Started -- Flight Summary](docs/user-guide/get-started.md#flight-summary).
+- A **Flight Summary** report (top bar's **Flight Summary** button): pick one or more cameras that are currently captioning and a time window, and get an extractive summary -- an overview paragraph, recurring subjects, and a timeline of de-duplicated scene highlights grouped camera-by-camera (not interleaved by arrival time, so each camera's own story reads start-to-finish) -- built entirely from the MQTT caption stream already flowing for captioning-enabled pipelines. No VSS deployment or LLM call required; see [Get Started -- Flight Summary](../uav-vision-analytics/docs/user-guide/uav-ground-station/get-started.md#flight-summary).
 
-![Architecture popup following the live video, scene caption, and utilization flows](docs/user-guide/_assets/architecture-flows.gif)
+![Architecture popup following the live video, scene caption, and utilization flows](../uav-vision-analytics/docs/user-guide/uav-ground-station/_assets/architecture-flows.gif)
 ## Project Structure
 
 ```text
@@ -104,9 +107,6 @@ uav-ground-station/
 ├── configs/mediamtx.yml  # mediamtx settings (WebRTC only, 60 s on-demand timeouts)
 ├── docker-compose-vss.yml  # optional VSS search containers (make up-vss)
 ├── .env.example         # Copy to .env; all vars have loopback-safe defaults
-├── docs/user-guide/get-started.md   # Full deployment walkthrough (both sides, VSS, multi-UAV, Flight Summary)
-├── docs/user-guide/configuration.md # Every .env variable and the backend route reference
-├── docs/user-guide/release-notes.md # What each version adds, with known issues
 └── backend/             # FastAPI app: static UI + proxy/bridge APIs
     ├── main.py
     ├── vss_search.py    # /api/search* proxy to the separate VSS stack

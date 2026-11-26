@@ -20,11 +20,13 @@ Live Natural Language Search over the camera footage, and it builds Flight Summa
 scene captions.
 
 Pair it with a UAV host running the
-[UAV Vision Analytics](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/blob/main/uav-vision-analytics/docs/user-guide/index.md)
+[UAV Vision Analytics](../uav-vision-analytics/index.md)
 application.
 
 ## Documentation
 
+- [Installation on Ubuntu](./installation-on-ubuntu.md): install and start the ground station on Ubuntu 24.04
+  with the OEP CLI Installer.
 - [Get Started](./get-started.md): deploy the ground station, connect a UAV host, and use VSS search,
   multiple UAVs, and Flight Summary.
 - [Configuration](./configuration.md): every `.env` variable and the backend route reference.
@@ -34,6 +36,7 @@ application.
 :::{toctree}
 :hidden:
 
+Installation on Ubuntu <./installation-on-ubuntu.md>
 Get Started <./get-started.md>
 Configuration <./configuration.md>
 Release Notes <./release-notes.md>

@@ -10,7 +10,7 @@ services:
     volumes:
       - /dev:/dev  # device access for the camera SDK (USB cameras; harmless for GigE)
     image: tsn-dlstreamer-pipeline-server-basler:${SCENESCAPE_VERSION}
-    pull_policy: never  # built by hand, see docs/user-guide/how-to-guides/basler/integrate-basler-camera-with-scenescape.md
+    pull_policy: never  # built by hand, see docs/user-guide/deterministic-threat-detection/how-to-guides/basler/integrate-basler-camera-with-scenescape.md
     networks:
       scenescape:
         gw_priority: 1

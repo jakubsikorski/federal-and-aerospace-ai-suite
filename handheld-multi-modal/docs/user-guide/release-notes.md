@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 
 ## Version 2026.3.0
 
-**Release Date**: TBD
+**Release Date**: December 10, 2026
 
 The Handheld Multi-Modal Application is rebuilt as a localhost-only operator console that
 fuses live video analytics, telemetry, speech, and a local language model on a single device.
@@ -19,8 +19,8 @@ lifecycle.
 - Operator console on <https://localhost:8443/> with live annotated cameras over WebRTC,
   searchable detection history and evidence images, mission documents, alerts, voice
   questions and spoken answers, and resource monitoring.
-- YOLO26s INT8 detection in Deep Learning Streamer Pipeline Server on NPU (default), GPU, or CPU,
-  with verified model digests.
+- YOLO26s INT8 detection in Deep Learning Streamer Pipeline Server on a Neural Processing Unit
+  (NPU, default), GPU, or CPU, with verified model digests.
 - Chat Q&A assistant grounded in detection history, telemetry, and uploaded mission documents.
 - Speech input with Audio Analyzer (Whisper) and spoken answers with Text To Speech (SpeechT5).
 - Alert rules evaluated by Alert Agent Service and platform metrics from Metrics Manager.
@@ -29,8 +29,11 @@ lifecycle.
 - Readiness check (`make check`) and offline copy to other devices (`make bundle`,
   `make bundle-load`).
 - Bundled AI agent skills in `.agents/skills`.
-- The Visual Pipeline and Platform Evaluation Tool, OpenVINO Model Server, Open WebUI, and the
-  Grafana dashboard used by the previous version are removed.
+
+**Removed**:
+
+- The Visual Pipeline and Platform Evaluation Tool (ViPPET), OpenVINO™ Model Server, Open WebUI,
+  and the Grafana dashboard used by the previous version.
 
 **Known issues and limitations**:
 
@@ -38,8 +41,8 @@ lifecycle.
   supported only through an SSH tunnel.
 - The first start downloads and converts models and can take up to 90 minutes.
 - The Backend container runs as root to manage its crop store; Compose drops its capabilities.
-- The demo camera publisher uses a third-party FFmpeg container image that is pulled by the
-  user and is not redistributed with the application.
+- The demo camera publisher uses a third-party FFmpeg container image. The user pulls this image,
+  and the application does not redistribute it.
 
 ## Version 2026.2.1
 

@@ -178,4 +178,4 @@ streams_<NN>/hw_samples.log  raw hardware snapshots (key=value, "---" per snapsh
 
 For benchmark-related troubleshooting (missing tools, connectivity issues, result anomalies, GPU/NPU
 visibility, and power readings), see the
-[Troubleshooting guide](../how-to-guides/troubleshooting.md#benchmark).
+[Troubleshooting guide](../uav-vision-analytics/troubleshooting.md#benchmark).

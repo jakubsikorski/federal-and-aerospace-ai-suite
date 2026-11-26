@@ -1,7 +1,4 @@
-# Release Notes: Mission Systems
-
-
-
+# Release Notes: Mission Sensing Service Blueprint
 
 ## Version 2026.3.0
 
@@ -18,12 +15,12 @@
 - Setup scripts for the Time-Sensitive Networking (TSN) NIC, VLANs, and PTP profiles
   (`src/setup/`).
 
-**Changed**:
+**Improved**:
 
 - Replaced the patched Scenescape checkout with a single `gvapython` adapter in the Scenescape
   integration. The integration now uses unmodified Scenescape 2026.3 images.
 - Rewrote the documentation around the new design. Removed the AXIS RTSP camera, sensor
-  producer, and MQTT aggregator use case and the offline HOTA scripts.
+  producer, and Message Queuing Telemetry Transport (MQTT) aggregator use case and the offline HOTA scripts.
 
 ## Version 1.0.1
 

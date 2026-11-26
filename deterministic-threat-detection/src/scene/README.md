@@ -4,7 +4,7 @@ SceneScape `hota-scene` fed by two RTSP "cameras" published over the TSN VLAN
 (`rtsp://192.168.127.12:8554/Cam_x1_0`, `rtsp://192.168.127.13:8554/Cam_x2_0`).
 Part of the repository: it uses `../camera-node` (streams) and `../data` (models) and the shared dashboard in `../dashboard`.
 Run it on its own with `make up` in this folder, or start everything with `make up` in the repository root
-(see [Get started](../../docs/user-guide/get-started.md); do the [first-time setup](../../docs/user-guide/first-time-setup.md) first).
+(see [Get started](../../docs/user-guide/deterministic-threat-detection/get-started.md); do the [first-time setup](../../docs/user-guide/deterministic-threat-detection/first-time-setup.md) first).
 
 ## Services
 ntpserver, broker, pgserver, web, scene-loader (one-shot appdata import), scene (controller),
@@ -16,12 +16,12 @@ is set by `DLSTREAMER_PIPELINE_SERVER_IMAGE` (defaults in `.env.example`).
 
 ## Usage
 ```bash
-make up         # start RTSP streams on machines 2/3, then secrets, certs, .env, docker compose up -d
+make up SOURCE=video   # (or SOURCE=basler) start RTSP streams on machines 2/3, then secrets, certs, .env, docker compose up -d
 make status
 make test       # end-to-end test via the SceneScape UI and data flow (needs the stack running; this is `make test-e2e` in the repository root)
 make down       # stop the stack and the remote streams;  make clean also deletes volumes
 make streams-up | streams-down | streams-status   # remote streams only
-make up STREAMS=0   # skip the remote streams (also for down/clean)
+make up SOURCE=video STREAMS=0   # skip the remote streams (also for down/clean)
 ```
 Log in at `https://<machine-1 lab address>/` (or `https://localhost/` on machine-1) as `admin`; the password is in `secrets/supass`.
 The certificate is self-signed: accept the browser warning.

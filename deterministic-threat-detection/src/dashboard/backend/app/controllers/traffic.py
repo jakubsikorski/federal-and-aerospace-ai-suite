@@ -113,7 +113,8 @@ class TrafficController:
         data = json.dumps(body).encode() if body is not None else None
         req = urllib.request.Request(self.agent_url + path, data=data, method=method,
                                      headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # lab host, never via a proxy
+        with opener.open(req, timeout=self.timeout_s) as resp:
             return json.load(resp)
 
     def _push_locked(self, rate):

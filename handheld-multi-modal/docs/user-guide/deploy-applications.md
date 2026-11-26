@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # Handheld Multi-Modal Application Deployment
 
-This guide provides instructions on how to deploy the Handheld Multi-Modal application on a
+This guide provides instructions on how to deploy the Handheld Multi-Modal application with custom settings on a
 local machine.
 
 ## Prerequisites
@@ -64,27 +64,36 @@ Verify the Docker daemon's proxy configuration:
 docker info | grep -i proxy
 ```
 
-## Deploying the Application
+## Installing application
 
-Download the compressed file:
+If `openedge-cli` wasn't installed in previous steps, start by installing it:
 
 ```bash
-curl -OjL https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/releases/download/fedaero-latest/handheld-multi-modal.zip
+curl -fsSL https://raw.githubusercontent.com/open-edge-platform/edge-ai-libraries/refs/heads/release-2026.3.0/frameworks/oep-installer-cli/rendered/openedge-cli > /tmp/openedge-cli
+sudo chmod +x /tmp/openedge-cli
+sudo mv /tmp/openedge-cli /usr/bin
 ```
 
-Decompress the downloaded file and enter the application directory:
+After that, install application:
 
 ```bash
-unzip handheld-multi-modal.zip
-cd handheld-multi-modal
+openedge-cli install handheld_multi_modal
 ```
 
-Optionally, export a Hugging Face token. The configured models are public and do not require
-it; a token only helps when Hugging Face rate-limits anonymous downloads. Do not store the
-token in configuration files or commit it to version control.
+After installation is done, start application by running
 
 ```bash
-export HF_TOKEN=hf_...
+openedge-cli start handheld_multi_modal
+```
+
+## Deploying the Application with different settings
+
+If you want to use application with non-default settings, that are described in [openedge-cli start](./infrastructure/installation-on-ubuntu.md#step-3-start-the-application), you can modify options as following:
+
+Go into application folder
+
+```bash
+cd ~/.local/open-edge-platform/handheld-multi-modal
 ```
 
 Start the application with the looping demo camera feeds:

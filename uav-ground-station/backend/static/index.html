@@ -8,7 +8,7 @@ SPDX-License-Identifier: Apache-2.0
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>UAV Ground Station</title>
-  <link rel="stylesheet" href="css/styles.css?v=58" />
+  <link rel="stylesheet" href="css/styles.css?v=59" />
 </head>
 <body>
   <header class="topbar">
@@ -217,14 +217,6 @@ SPDX-License-Identifier: Apache-2.0
           <div class="arch-scenarios" role="group" aria-label="Follow a data flow">
             <span class="muted">Follow a flow:</span>
           </div>
-          <!-- Small/compact screens only (hidden on wide screens via CSS, where
-               Details and "Where each model runs" are always-visible panels
-               instead): opens both as a single overlay sheet that floats over
-               the diagram, so the diagram's own box never has to shrink to make
-               room for them. See arch.js for the show/hide logic. -->
-          <button type="button" id="arch-info-toggle" class="arch-info-toggle" aria-haspopup="true" aria-expanded="false">
-            Info <span class="arch-info-caret" aria-hidden="true">▾</span>
-          </button>
         </div>
         <div class="arch-stage">
           <div class="arch-diagram">
@@ -247,11 +239,7 @@ SPDX-License-Identifier: Apache-2.0
               <span><i class="lg-files"></i>Video segments / clips</span>
             </div>
           </div>
-          <!-- Wide screens: two independent always-visible grid items (sidebar +
-               full-width footer), exactly as before. Compact screens: both become
-               one fixed-position overlay sheet toggled by #arch-info-toggle above,
-               entirely removed from the diagram's layout flow either way (open or
-               closed) -- see styles.css's compact media query. -->
+          <!-- Two always-visible grid items: sidebar + full-width footer. -->
           <details id="arch-card-details" class="arch-card-details" open>
             <summary class="arch-card-summary">Details <span class="muted">— select a service or a flow</span></summary>
             <aside id="arch-card" class="arch-card" aria-live="polite"></aside>
@@ -266,10 +254,10 @@ SPDX-License-Identifier: Apache-2.0
   </div>
 
   <script src="js/vendor/chart.js"></script>
-  <script src="js/utils/charts.js?v=58"></script>
-  <script src="js/app.js?v=58"></script>
-  <script src="js/search.js?v=58"></script>
-  <script src="js/summary.js?v=58"></script>
-  <script src="js/arch.js?v=58"></script>
+  <script src="js/utils/charts.js?v=59"></script>
+  <script src="js/app.js?v=59"></script>
+  <script src="js/search.js?v=59"></script>
+  <script src="js/summary.js?v=59"></script>
+  <script src="js/arch.js?v=59"></script>
 </body>
 </html>

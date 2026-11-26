@@ -1,8 +1,3 @@
-<!--
-SPDX-FileCopyrightText: (C) 2026 Intel Corporation
-SPDX-License-Identifier: Apache-2.0
--->
-
 # Infrastructure AI Agent Integration
 
 The Edge Node Infrastructure software ships a set of agent skills that let you run platform workflows through natural language, using GitHub Copilot or Claude Code. Instead of manually running scripts and commands, describe the outcome you want and the agent takes care of the rest.

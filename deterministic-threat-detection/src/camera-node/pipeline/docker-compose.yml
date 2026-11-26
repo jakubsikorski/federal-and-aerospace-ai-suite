@@ -7,7 +7,7 @@ name: tsn-camera-pipeline
 
 services:
   dlsps:
-    image: ${DLSTREAMER_PIPELINE_SERVER_IMAGE:-intel/dlstreamer-pipeline-server:2026.3.0-ubuntu24-rc1}
+    image: ${DLSTREAMER_PIPELINE_SERVER_IMAGE:-intel/dlstreamer-pipeline-server:2026.3.0-ubuntu24-rc3}
     # Host networking: reads the local mediamtx on 127.0.0.1 and publishes MQTT on the TSN VLAN.
     network_mode: host
     tty: true
@@ -35,7 +35,7 @@ services:
 
   # System load of this camera machine for the dashboard's "System load" card.
   metrics-manager:
-    image: docker.io/intel/metrics-manager:2026.3.0-rc1
+    image: docker.io/intel/metrics-manager:2026.3.0-rc2
     privileged: true
     pid: host
     volumes:

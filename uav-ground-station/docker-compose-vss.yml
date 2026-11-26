@@ -61,7 +61,7 @@ services:
 
   pipeline-manager:
     container_name: uav-gs-vss-pipeline-manager
-    image: ${VSS_REGISTRY:-intel/}pipeline-manager:${VSS_TAG:-2026.3.0-rc1}
+    image: ${VSS_REGISTRY:-intel/}pipeline-manager:${VSS_TAG:-2026.3.0-rc2}
     ports:
       - "${VIZ_HOST_IP:-127.0.0.1}:${VSS_MANAGER_PORT:-3001}:3000"
     environment:
@@ -104,7 +104,7 @@ services:
 
   video-search:
     container_name: uav-gs-vss-video-search
-    image: ${VSS_REGISTRY:-intel/}video-search:${VSS_TAG:-2026.3.0-rc1}
+    image: ${VSS_REGISTRY:-intel/}video-search:${VSS_TAG:-2026.3.0-rc2}
     environment:
       <<: *vss-proxy-env
       no_proxy_env: ${no_proxy:-},localhost,multimodal-embedding-serving,multimodal-dataprep,minio-service,vdms-vector-db,vector-retriever,pipeline-manager
@@ -126,7 +126,7 @@ services:
 
   multimodal-dataprep:
     container_name: uav-gs-vss-dataprep
-    image: ${VSS_REGISTRY:-intel/}multimodal-dataprep:${VSS_TAG:-2026.3.0-rc1}
+    image: ${VSS_REGISTRY:-intel/}multimodal-dataprep:${VSS_TAG:-2026.3.0-rc2}
     hostname: multimodal-dataprep
     <<: *vss-accel
     environment:
@@ -199,7 +199,7 @@ services:
   # Embeds the search prompt (query side); dataprep embeds the video frames.
   multimodal-embedding-serving:
     container_name: uav-gs-vss-embedding
-    image: ${VSS_REGISTRY:-intel/}multimodal-embedding-serving:${VSS_TAG:-2026.3.0-rc1}
+    image: ${VSS_REGISTRY:-intel/}multimodal-embedding-serving:${VSS_TAG:-2026.3.0-rc2}
     <<: *vss-accel
     environment:
       <<: *vss-proxy-env
@@ -227,7 +227,7 @@ services:
 
   vector-retriever:
     container_name: uav-gs-vss-retriever
-    image: ${VSS_REGISTRY:-intel/}vector-retriever-vdms:${VSS_TAG:-2026.3.0-rc1}
+    image: ${VSS_REGISTRY:-intel/}vector-retriever-vdms:${VSS_TAG:-2026.3.0-rc2}
     hostname: vector-retriever
     environment:
       <<: *vss-proxy-env

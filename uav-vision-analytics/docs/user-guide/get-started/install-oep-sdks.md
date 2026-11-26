@@ -148,7 +148,7 @@ make down
 
 This section is a practical guide for developers building a new application on top of a running SDK stack. It focuses on the integration contracts your app must respect, a minimal app skeleton, an inner development loop, and a tuning workflow.
 
-The [UAV Vision Analytics](./get-started-uavsdk.md) application is referenced only as a working example of these patterns; you do not need to replicate its structure.
+The [UAV Vision Analytics](../uav-vision-analytics/deploy/deploy-uavsdk.md) application is referenced only as a working example of these patterns; you do not need to replicate its structure.
 
 ### 1. What the SDK gives your app
 
@@ -202,7 +202,7 @@ my-uav-app/
   Makefile                 # up / down / logs / model / lint targets
 ```
 
-For a concrete implementation of this shape, see [UAV Vision Analytics Get Started](./get-started-uavsdk.md).
+For a concrete implementation of this shape, see [Deploy in UAV Mission Compute SDK Mode](../uav-vision-analytics/deploy/deploy-uavsdk.md).
 
 #### Inner development loop
 
@@ -256,7 +256,7 @@ Treat tuning as a measured loop, not one-off tweaks.
 
 - Review the [UAV Mission Compute SDK Benchmarking Guide](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/blob/main/uav-mission-compute-sdk/docs/user-guide/benchmarking.md) for telemetry and bridge performance benchmarking.
 
-- Refer to [Get Started — UAV Mission Compute SDK Mode](./get-started-uavsdk.md) for application deployment and running the vision analytics stack against the live UAV SDK services.
+- Refer to [Deploy in UAV Mission Compute SDK Mode](../uav-vision-analytics/deploy/deploy-uavsdk.md) for application deployment and running the vision analytics stack against the live UAV SDK services.
 
 ## Related Guides
 

@@ -4,8 +4,10 @@
 FROM python:3.12-slim
 
 # ffmpeg downscales search thumbnails and transcodes low-bitrate playback
-# previews of VSS clips (see vss_search.py).
-RUN apt-get update && apt-get install -y --no-install-recommends curl ffmpeg \
+# previews of VSS clips (see vss_search.py). apt-get upgrade picks up Debian
+# security fixes (e.g. zlib) that the base image has not rebuilt with yet.
+RUN apt-get update && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends curl ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --uid 1000 appuser

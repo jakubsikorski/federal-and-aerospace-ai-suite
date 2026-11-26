@@ -1,29 +1,38 @@
+<!--hide_directive
+```{eval-rst}
+.. meta::
+   :description: Measure the platform performance of an edge node that runs the Mission Sensing Service Blueprint with the Edge Workloads and Benchmarks suite.
+   :keywords: benchmarks, Edge Workloads and Benchmarks, vision AI, media decode, DL Streamer, OpenVINO, GenAI, power efficiency
+```
+hide_directive-->
+
 # Edge Workloads and Benchmarks Guide
 
 ## Overview
 
 The [Edge Workloads and Benchmarks](https://github.com/open-edge-platform/edge-workloads-and-benchmarks)
-suite validates Intel edge platform performance across four workload categories:
-vision AI inference, hardware-accelerated media processing, end-to-end video analytics
-pipelines, and generative AI. It measures throughput, latency, power consumption, and power
-efficiency across CPU, GPU, and NPU devices.
+suite validates Intel edge platform performance across four workload categories: vision AI
+inference, hardware-accelerated media processing, end-to-end video analytics pipelines, and
+generative AI. It measures throughput, latency, power consumption, and power efficiency
+across CPU, GPU, and NPU devices.
 
-Use this guide after provisioning an edge node with the Infrastructure software to quantify
-platform performance and validate hardware acceleration readiness.
+Use this guide after you install the Mission Sensing Service Blueprint on an edge node, as
+described in [Infrastructure Setup](../infrastructure-setup.md), to quantify platform
+performance and validate hardware acceleration readiness.
 
 ## Benchmark Categories
 
-| Category | What It Measures | Devices | Backend |
-| -------- | ---------------- | ------- | ------- |
-| **Vision Benchmarks** | AI model inference (detection, classification) | CPU, GPU, NPU | OpenVINO™ benchmark_app |
-| **Media Benchmarks** | Hardware video decode throughput and stream density | GPU (VA-API) | GStreamer + VA-API |
-| **Edge AI Pipelines** | End-to-end video analytics (decode + detect + track + classify) | GPU, NPU, GPU+NPU | DL Streamer |
-| **GenAI Benchmarks** | LLM/VLM token generation (1st token latency, throughput) | CPU, GPU, NPU | OpenVINO™ GenAI |
+| Category              | What It Measures                                                | Devices       | Backend                 |
+| --------------------- | --------------------------------------------------------------- | ------------- | ----------------------- |
+| **Vision Benchmarks** | AI model inference (detection, classification)                  | CPU, GPU, NPU | OpenVINO™ benchmark_app |
+| **Media Benchmarks**  | Hardware video decode throughput and stream density             | GPU (VA-API)  | GStreamer + VA-API      |
+| **Edge AI Pipelines** | End-to-end video analytics (decode + detect + track + classify) | GPU, NPU, GPU+NPU | DL Streamer         |
+| **GenAI Benchmarks**  | LLM/VLM token generation (1st token latency, throughput)        | CPU, GPU, NPU | OpenVINO™ GenAI         |
 
 ## Prerequisites
 
-- [Edge Node Infrastructure software](../infrastructure-setup.md) deployed.
-- During target system installation, set `host_type=container` in the `config-file`.
+- An edge node set up per [Infrastructure Setup](../infrastructure-setup.md).
+- Docker Engine installed on the target.
 - Network connectivity for model and media downloads.
 
 ### Verify Hardware Readiness
@@ -52,7 +61,7 @@ cd edge-workloads-and-benchmarks
 
 ### Install Prerequisites and Download Collateral
 
-GPU and NPU drivers are already installed by the Infrastructure software provisioning step, so disable their installation by passing `INCLUDE_GPU=False INCLUDE_NPU=False` to `make prereqs`. Then download the benchmark collateral and validate the environment:
+If the GPU and NPU drivers are already installed on the edge node, disable their installation by passing `INCLUDE_GPU=False INCLUDE_NPU=False` to `make prereqs`. Then download the benchmark collateral and validate the environment:
 
 ```bash
 make prereqs INCLUDE_GPU=False INCLUDE_NPU=False
@@ -197,6 +206,4 @@ make clean-all        # Remove all generated content (models, media, results)
 - [Edge Workloads and Benchmarks Repository](https://github.com/open-edge-platform/edge-workloads-and-benchmarks)
 - [OpenVINO™ Toolkit](https://docs.openvino.ai/)
 - [DL Streamer Documentation](https://docs.openedgeplatform.intel.com/dev/edge-ai-libraries/dlstreamer/index.html)
-- [Container Device Interface Guide](../infrastructure/configure-cdi.md) — CDI setup for GPU/NPU access
 - [DL Streamer Pipelines Guide](../infrastructure/build-dlstreamer-pipelines.md) — Building custom pipelines
-- [Platform Capabilities](../infrastructure/platform-capabilities.md) — Hardware and software stack details

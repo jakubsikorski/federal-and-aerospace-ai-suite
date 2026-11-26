@@ -61,7 +61,7 @@ Docker Compose fragment:
 | Service | Image | Ports | Role |
 |---------|-------|-------|------|
 | `dlstreamer-pipeline-server` | `${DLSTREAMER_PIPELINE_SERVER_IMAGE}` | *(none — reached only via `nginx`)* | AI inference + RTSP output; `ARM_SOURCE=mqtt` reads the SDK's MQTT status topic, `CAMERAS_CONFIG=configs/cameras-uavsdk.yaml` |
-| `metrics-manager` | `intel/metrics-manager:2026.3.0-rc1` | — | CPU/GPU/NPU/power metrics collection (container `uav-va-metrics-manager`) |
+| `metrics-manager` | `intel/metrics-manager:2026.3.0-rc2` | — | CPU/GPU/NPU/power metrics collection (container `uav-va-metrics-manager`) |
 | `nginx` | `nginx:1.27-alpine` | `80`, `443`, `8555` | Reverse proxy / TLS termination; this mode has no `broker`/`px4`/`mavlink-router` services — MQTT (caption/telemetry) is the SDK's own broker, reached via `host.docker.internal:${MQTT_BROKER_PORT:-1883}` |
 
 No `broker`, `px4` or `mavlink-router` service exists in this mode — telemetry arrives over
@@ -270,7 +270,7 @@ And set `UAV_ID` env var (default `uav-1`).
 | Var | Set by | Purpose |
 | --- | --- | --- |
 | `HOST_IP` | `make init` (auto-detects LAN IP) | Binds nginx's published ports (`80`/`443`/`8555`/`1883`) and is used in RTSP/REST URLs. `127.0.0.1` restricts to loopback (breaks remote QGroundControl/VLC/ffplay). |
-| `DLSTREAMER_PIPELINE_SERVER_IMAGE` | generated, pinned | e.g. `intel/dlstreamer-pipeline-server:2026.3.0-ubuntu24-rc1` |
+| `DLSTREAMER_PIPELINE_SERVER_IMAGE` | generated, pinned | e.g. `intel/dlstreamer-pipeline-server:2026.3.0-ubuntu24-rc3` |
 | `GPU_DEVICE`, `GPU_RENDER_DEVICE` | `make init` (auto-detect) or manual | GPU device paths, e.g. `/dev/dri/card0`, `/dev/dri/renderD128` |
 | `NPU_DEVICE` | `make init` (auto-detect, `/dev/null` if absent) | NPU device path, e.g. `/dev/accel/accel0` |
 | `GPU_CARD_GID`, `GPU_RENDER_GID`, `NPU_GID`, `CAMERA_GID` | written by `scripts/update_device_gids.sh` on `pymav-up`/`uavsdk-up` | `group_add` values so the container can access the devices; never set these by hand |

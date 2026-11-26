@@ -1,8 +1,3 @@
-<!--
-SPDX-FileCopyrightText: (C) 2026 Intel Corporation
-SPDX-License-Identifier: Apache-2.0
--->
-
 # Infrastructure AI Agent Integration
 
 The Edge Node Infrastructure software ships a set of agent skills that let you run platform workflows through natural language, using GitHub Copilot or Claude Code. Instead of manually running scripts and commands, describe the outcome you want and the agent takes care of the rest.
@@ -14,7 +9,6 @@ Some skills are meant to run from the developer host, while others are meant to 
 | Skill | What it does | Execution target |
 | --- | --- | --- |
 | `create-image` | Builds a host OS image using the Image Composer Tool or ISO based curation | Developer host |
-| `create-usb-installation-files` | Packages a complete bootable USB artifact (`usb-installation-files.tar.gz`), optionally running `create-image` first | Developer host |
 | `validate-platform-config` | Validates a provisioned edge node — checks k3s pod health, binary paths, cloud-init state, network/proxy settings, and device readiness (GPU VFs, NPU) | Provisioned host |
 | `update-install-packages` | Updates Ubuntu package configuration and installs required packages on a provisioned system | Developer host |
 | `set-power-profile` | Sets the platform power envelope — a named profile (LowPower 10 W, BalancedLow 15 W, BalancedHigh 20 W, Performance 25 W, MaxPerformance) or a custom PkgWatt (PL1) / SysWatt (psys) envelope with burst ratio and time window | Provisioned host |
