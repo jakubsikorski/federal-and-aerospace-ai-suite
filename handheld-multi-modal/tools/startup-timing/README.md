@@ -135,7 +135,7 @@ dagger in the report, nested under a recorded step of the same service when it f
 stores raw logs. Rules: `service`, `pattern`, `action` (`start`, `close`, `skip`, `close_or_skip`),
 `key`, `group`, `label`; see `handheld-multi-modal/startup-timing.toml`. `[ready_patterns]` closes
 open phases when the service says it is ready. A missing end marker is reported as unavailable.
-`timing.sh pull -- <cmd listing images>` (plugin, `[image_services]`, `[pull]`) pulls missing images
+`timing.sh pull -- <cmd listing images>` (plugin, `[image_services]`, `[pull]`; `max_parallel` defaults to 4) pulls missing images
 in parallel and times each. Disable the log reading with `--no-logs`.
 
 ## Layout
@@ -143,4 +143,6 @@ in parallel and times each. Disable the log reading with `--no-logs`.
 `timing.sh` (helpers and CLI), `timing.py` (entry point), `startup_timing/`: `journal.py`
 (recorder), `report.py` (build/normalise `report.json`), `render.py` (Markdown, console),
 `compare.py`, `config.py`, `logmarkers.py` and `images.py` (plugins), `cli.py`. Copy the whole
-`tools/startup-timing` directory when packaging an application separately.
+`tools/startup-timing` directory into the application that uses it. In this repository the
+copy lives inside the Handheld application so it ships with every install; the Makefile
+runs without timing if the directory is missing.

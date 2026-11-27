@@ -55,7 +55,7 @@ help:
 	@echo '  make demo-prereq      prereq + download and prepare the demo videos'
 	@echo '  make demo-up          Start the application with looping demo cameras'
 	@echo '                        Report: ASSET_ROOT/startup-timings/latest/report.md'
-	@echo '                        Compare: ../tools/startup-timing/timing.sh compare <older run dir> startup-timings/latest'
+	@echo '                        Compare: tools/startup-timing/timing.sh compare <older run dir> startup-timings/latest'
 	@echo '  make demo-mission     Optional: load examples/demo-mission-packet.pdf'
 	@echo
 	@echo 'Operate'
@@ -96,8 +96,10 @@ help:
 SETUP_NOTE := The stock Model Download installs its UV and pip dependencies on every start (internet required).
 MODEL_NOTE := The first start downloads several GB of models; later starts use the cache.
 
-TIMING_CLI := $(abspath ../tools/startup-timing)/timing.sh
-timing = source "$(TIMING_CLI)"
+# The timing tool is vendored in this application (tools/startup-timing). Without it every
+# timing call is a no-op and the start runs unchanged.
+TIMING_CLI := $(CURDIR)/tools/startup-timing/timing.sh
+timing = if [[ -f "$(TIMING_CLI)" ]]; then source "$(TIMING_CLI)"; else timed() { if [[ $$1 == --service ]]; then shift 2; fi; shift 2; "$$@"; }; timing_begin() { echo -; }; timing_end() { :; }; timing_cached() { :; }; fi
 # Command that runs the real startup graph inside the timing wrapper.
 INNER_MAKE ?= make
 
@@ -246,7 +248,7 @@ endef
 preflight:
 	@$(timing)
 	token=$$(timing_begin --service shared setup 'Host prerequisites')
-	fail() { echo "preflight: $$*" >&2; exit 1; }
+	fail() { echo "preflight: $$*" >&2; timing_end "$$token" --code 1; exit 1; }
 	command -v docker >/dev/null || fail "docker is required"
 	command -v curl >/dev/null || fail "curl is required"
 	command -v python3 >/dev/null || fail "python3 is required"
@@ -300,13 +302,13 @@ model-downloader-up:
 # downloads with their licenses, and asks to accept them. CONFIRM=yes skips the
 # question. Runs before anything is pulled.
 licenses:
-	@$(timing)
-	CONFIRM="$(CONFIRM)" timed --service shared setup 'Third-party license confirmation' \
-	  python3 scripts/license_notice.py $(if $(DEMO_FEEDS),--demo)
+	# Not timed: the time a person takes to read and accept the licenses is not startup work.
+	CONFIRM="$(CONFIRM)" python3 scripts/license_notice.py $(if $(DEMO_FEEDS),--demo)
 
 container-images:
-	@$(TIMING_CLI) pull -- \
-	  $(if $(DEMO_FEEDS),$(COMPOSE),$(ASSET_COMPOSE)) --profile assets config --images $(IMAGE_SERVICES)
+	@if [[ -f "$(TIMING_CLI)" ]]; then $(TIMING_CLI) pull -- \
+	  $(if $(DEMO_FEEDS),$(COMPOSE),$(ASSET_COMPOSE)) --profile assets config --images $(IMAGE_SERVICES); \
+	else echo 'startup timing tool not found; Compose pulls missing images while starting'; fi
 
 # Chat Q&A, Whisper and SpeechT5 download their own models on first start.
 prereq: preflight licenses container-images asset-permissions detector-model
@@ -320,8 +322,8 @@ detector-model:
 	  code=$$?
 	  [[ $$code == 2 ]] || exit "$$code"
 	  token=$$(timing_begin --service model-downloader model_preparation 'YOLO26s downloader startup and model preparation')
-	  make --no-print-directory model-downloader-up
-	  python3 scripts/demo_assets.py model --timeout $(MODEL_WAIT_SECONDS)
+	  make --no-print-directory model-downloader-up || { code=$$?; timing_end "$$token" --code "$$code"; exit "$$code"; }
+	  python3 scripts/demo_assets.py model --timeout $(MODEL_WAIT_SECONDS) || { code=$$?; timing_end "$$token" --code "$$code"; exit "$$code"; }
 	  timing_end "$$token"
 	fi
 
@@ -505,7 +507,7 @@ endef
 # up/demo-up run the real graph (up-run/demo-up-run) inside the timing wrapper.
 # The wrapper line uses a literal `make`, so `make -n up` only prints it.
 up demo-up:
-	@$(TIMING_CLI) run --name $@ -- $(INNER_MAKE) --no-print-directory $@-run
+	@$(if $(wildcard $(TIMING_CLI)),$(TIMING_CLI) run --name $@ -- )$(INNER_MAKE) --no-print-directory $@-run
 
 # prereq's detector-model and demo-videos run inside start_application, after
 # the model services start, so both downloads overlap.
@@ -631,18 +633,17 @@ bundle: preflight
 	mkdir -p "$$BUNDLE"
 	rm -f "$$BUNDLE/images.tar"
 	printf '%s\n' $$images > "$$BUNDLE/images.txt"
-	# source.tar holds this application and the shared startup timing tool it uses.
+	# Run from this directory, git archive packs only this application.
 	if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-	  git -C .. archive --format=tar -o "$$BUNDLE/source.tar" HEAD handheld-multi-modal tools/startup-timing
-	  [[ -z $$(git -C .. status --porcelain --untracked-files=no -- handheld-multi-modal tools/startup-timing) ]] || echo 'note: uncommitted changes are not in source.tar' >&2
+	  git archive --format=tar --prefix=handheld-multi-modal/ -o "$$BUNDLE/source.tar" HEAD
+	  [[ -z $$(git status --porcelain --untracked-files=no -- .) ]] || echo 'note: uncommitted changes are not in source.tar' >&2
 	else
 	  # Release ZIP install: no Git metadata, so skip per-device and runtime files.
-	  app=$(notdir $(CURDIR))
-	  tar -C .. --transform "s,^$$app,handheld-multi-modal," -cf "$$BUNDLE/source.tar" \
-	    --exclude=$$app/data --exclude=$$app/startup-timings --exclude=$$app/datasets --exclude=$$app/config/tls \
-	    --exclude=$$app/config/devices.yaml --exclude=$$app/config/mediamtx.yml --exclude=$$app/config/speech \
-	    --exclude=$$app/docs/application/evidence --exclude=$$app/.env --exclude=$$app/.demo-assets.lock \
-	    --exclude=tools/startup-timing/__pycache__ --exclude=tools/startup-timing/startup_timing/__pycache__ "$$app" tools/startup-timing
+	  tar --transform 's,^\.,handheld-multi-modal,' -cf "$$BUNDLE/source.tar" \
+	    --exclude=./data --exclude=./startup-timings --exclude=./datasets --exclude=./config/tls \
+	    --exclude=./config/devices.yaml --exclude=./config/mediamtx.yml --exclude=./config/speech \
+	    --exclude=./docs/application/evidence --exclude=./.env --exclude=./.demo-assets.lock \
+	    --exclude=__pycache__ .
 	fi
 	if [[ "$(IMAGES)" != no ]]; then
 	  echo "Saving $$(wc -l < "$$BUNDLE/images.txt") images (takes several minutes)"

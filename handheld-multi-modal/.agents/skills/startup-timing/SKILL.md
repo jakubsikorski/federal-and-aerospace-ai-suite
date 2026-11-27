@@ -7,17 +7,17 @@ description: "Use when adding startup or bring-up timing to an application (make
 
 # Startup timing
 
-Shared tool: `tools/startup-timing/` (Python 3.11+, stdlib only; full docs in its `README.md`).
+Tool: `handheld-multi-modal/tools/startup-timing/`, vendored inside the Handheld application so it ships with every install (Python 3.11+, stdlib only; full docs in its `README.md`).
 It times the steps of a startup command and writes a human-readable report. No config file needed.
-**It is meant to be copied into other applications.** Keep it self-contained: it must not
+**It is meant to be copied into other applications.** In this repository the source of truth is the Handheld copy; examples below use `tools/startup-timing/` relative to the application root. Keep it self-contained: it must not
 import or reference anything from Handheld or any other application.
 
 ## Copy it into another application
 
-1. Copy the whole directory `tools/startup-timing/` into the other repository (keep the
+1. Copy the whole directory `handheld-multi-modal/tools/startup-timing/` into the other application (as its own `tools/startup-timing/`) (keep the
    `startup_timing/` package next to `timing.sh` and `timing.py`; they locate each other by path).
    Put it anywhere, for example `tools/startup-timing/`. Copy this skill too
-   (`.github/skills/startup-timing/SKILL.md`) so agents there can use it.
+   (`handheld-multi-modal/.agents/skills/startup-timing/SKILL.md`) so agents there can use it.
 2. Requirements: a host with `bash` and `python3` 3.11+. No pip installs, no Docker needed
    (Docker is only used by the optional `pull` and log-marker plugins).
 3. Do NOT copy `handheld-multi-modal/startup-timing.toml`, its `[[log_rules]]`, or its
@@ -60,7 +60,7 @@ import or reference anything from Handheld or any other application.
    - LABEL is the exact row text shown to people. GROUP is the section name; free text, so
      `model_download` shows as "Model Download"; acronyms like `API` are kept.
    - A timed step started inside another timed command nests under it automatically.
-   - In a Makefile: `timing = source "$(abspath ../tools/startup-timing)/timing.sh"` and use
+   - In a Makefile: `timing = source "$(CURDIR)/tools/startup-timing/timing.sh"` (guard with `[[ -f ... ]]` if the tool may be missing) and use
      `@$(timing); timed setup 'X' cmd` inside one shell recipe.
 
 3. Open `startup-timings/latest/report.md` (the end of the run also prints a ~10 line summary and the path).

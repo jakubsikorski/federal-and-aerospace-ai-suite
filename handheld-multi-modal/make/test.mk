@@ -75,7 +75,6 @@ test-crops:
 test-assets: test-image
 	@$(RUN_TEST) $(SANDBOX) \
 	  -v "$(CURDIR):/srv:ro" \
-	  -v "$(CURDIR)/../tools/startup-timing:/tools/startup-timing:ro" \
 	  -w /srv \
 	  $(OFFLINE_IMAGE) sh -c 'python3 scripts/test_demo_assets.py && python3 scripts/test_startup_timing.py'
 

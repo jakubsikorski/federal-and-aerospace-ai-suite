@@ -22,7 +22,7 @@ import xml.etree.ElementTree as ET  # nosec B405
 
 REPO = Path(__file__).resolve().parents[1]
 # Shared timing journal: no-ops unless a timing run is active.
-sys.path.insert(0, str(REPO.parent / "tools/startup-timing"))
+sys.path.insert(0, str(REPO / "tools/startup-timing"))
 try:
     from startup_timing.journal import begin, cached, end  # noqa: E402  pylint: disable=wrong-import-position
 except ImportError:  # inside a container that mounts only scripts/ (make check)
@@ -34,7 +34,6 @@ except ImportError:  # inside a container that mounts only scripts/ (make check)
 
     def cached(*_args, **_kwargs):
         return None
-from chat_cache import chat_cache_ready  # noqa: E402  pylint: disable=wrong-import-position
 REQUEST = json.loads((REPO / "config/model-download/yolo26s.json").read_text())
 MODEL = REQUEST["models"][0]["name"]
 IMAGE = "intel/model-download:2026.3.0-rc2@sha256:510c41fdad3bc6091350570ca2c6ac1d45cbfa382fbacf22853fdafb3cb566ca"
@@ -173,8 +172,11 @@ def download_video(root):
             staged = Path(temporary) / target.name
             for url in urls:
                 timer = begin("video_download", name)
-                problem = fetch_verified(url, staged, digest)
-                end(timer, 0 if problem is None else 1)
+                problem = "interrupted"
+                try:
+                    problem = fetch_verified(url, staged, digest)
+                finally:
+                    end(timer, 0 if problem is None else 1)
                 if problem is None:
                     staged.rename(target)
                     break
@@ -299,6 +301,11 @@ def chat_models():
     return re.findall(r'^\s*(?:LLM|EMBEDDING|RERANKER)_MODEL_ID:\s*"([^"]+)"', text, re.MULTILINE)
 
 
+def _chat_cache_ready(directory, models):
+    from chat_cache import chat_cache_ready  # pylint: disable=import-outside-toplevel  # scripts/ is on sys.path
+    return chat_cache_ready(directory, models)
+
+
 def check(root, clips):
     """Report, without downloading anything, whether host-side assets are ready."""
     results = []
@@ -322,7 +329,7 @@ def check(root, clips):
     cache = root / "data/chatqna/model_cache"
     for model in chat_models():
         problem = (ir_problem(cache / model / "openvino_model.xml")
-                   or (None if chat_cache_ready(cache, [model]) else "Hub snapshot missing"))
+                   or (None if _chat_cache_ready(cache, [model]) else "Hub snapshot missing"))
         results.append((f"Chat Q&A model {model}", problem, "make up or make demo-up (internet)"))
     return report(results, demo)
 

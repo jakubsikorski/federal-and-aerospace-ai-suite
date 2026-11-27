@@ -6,9 +6,13 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import sys
 import time
 import uuid
 from datetime import datetime, timezone
+
+
+_warned = False
 
 
 def utc():
@@ -24,9 +28,15 @@ def _write(event):
     if not directory:
         return
     # Only labels and measurements are kept: never commands, environment or output.
-    with (Path(directory) / "events.jsonl").open("a", encoding="utf-8") as handle:
-        fcntl.flock(handle, fcntl.LOCK_EX)
-        handle.write(json.dumps(event) + "\n")
+    try:
+        with (Path(directory) / "events.jsonl").open("a", encoding="utf-8") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            handle.write(json.dumps(event) + "\n")
+    except OSError as error:  # timing must never change what the caller does
+        global _warned
+        if not _warned:
+            _warned = True
+            print(f"startup timing: cannot record ({error}); timings are incomplete", file=sys.stderr)
 
 
 def begin(group, label, service=None, parent=None):

@@ -45,7 +45,7 @@ def compare(path_a, path_b):
     for key in keys:
         change, text = delta(left.get(key), right.get(key))
         rows.append((-abs(change) if change is not None else 0, key, left.get(key), right.get(key), text))
-    rows.sort(key=lambda row: (row[0], row[1][2]))
+    rows.sort(key=lambda row: (row[0], str(row[1][0]), str(row[1][1]), row[1][2]))
     total, text = delta({"seconds": first["overall_seconds"], "status": "ok"},
                         {"seconds": second["overall_seconds"], "status": "ok"})
     lines = [f"Total: {seconds(first['overall_seconds'])} -> {seconds(second['overall_seconds'])}  {text}",

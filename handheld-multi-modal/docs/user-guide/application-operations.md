@@ -101,11 +101,11 @@ Reports contain no environment values, commands or raw container logs, and live 
 Compare two starts:
 
 ```bash
-../tools/startup-timing/timing.sh compare startup-timings/<older run dir> startup-timings/latest
+tools/startup-timing/timing.sh compare startup-timings/<older run dir> startup-timings/latest
 ```
 
 Everything else (more detail with `--explain`, adding timing to other apps, how to read
-"unavailable") is in [`tools/startup-timing/README.md`](../../../tools/startup-timing/README.md).
+"unavailable") is in [`tools/startup-timing/README.md`](../../tools/startup-timing/README.md).
 
 ## Readiness Check
 

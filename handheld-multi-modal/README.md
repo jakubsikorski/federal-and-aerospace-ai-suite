@@ -101,7 +101,7 @@ make               # list all commands (status, stop, check, tests, ...)
 Each `make up` or `make demo-up` writes a timing report; open
 `ASSET_ROOT/startup-timings/latest/report.md`. See
 [Startup Timing Reports](docs/user-guide/application-operations.md#startup-timing-reports);
-the engine is documented in [`tools/startup-timing`](../tools/startup-timing/README.md) and
+the engine is documented in [`tools/startup-timing`](tools/startup-timing/README.md) and
 Handheld's optional titles and log rules are in [`startup-timing.toml`](startup-timing.toml).
 
 Before anything is downloaded, `make up` and `make demo-up` list the third-party software and

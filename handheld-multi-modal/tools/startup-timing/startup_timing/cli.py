@@ -18,11 +18,27 @@ from . import journal, render, services
 from .report import build, load
 
 
+def _same_group(child):
+    try:
+        return os.getpgid(child.pid) == os.getpgid(0)
+    except OSError:
+        return False
+
+
 def execute(command):
     """Run the command, forwarding SIGINT/SIGTERM to it and waiting for it before reporting."""
     child = subprocess.Popen(command)
-    previous = {n: signal.signal(n, lambda s, _f: child.send_signal(s))
-                for n in (signal.SIGINT, signal.SIGTERM)}
+
+    def forward(number, _frame):
+        # Ctrl-C reaches the whole foreground process group, so the child already has it.
+        if number == signal.SIGINT and _same_group(child):
+            return
+        try:
+            child.send_signal(number)
+        except ProcessLookupError:  # the child exited just before the signal arrived
+            pass
+
+    previous = {n: signal.signal(n, forward) for n in (signal.SIGINT, signal.SIGTERM)}
     try:
         code = child.wait()
         return 128 - code if code < 0 else code  # killed by signal N: shell convention 128+N
@@ -35,8 +51,11 @@ def collect_logs(cfg, start, finish, enabled=True):
     """Optional service-log plugin; imported only when the config asks for it."""
     if not (enabled and configuration.uses_log_plugin(cfg)):
         return [], []
-    from . import logmarkers
-    return logmarkers.observe_services(cfg, start, finish)
+    try:
+        from . import logmarkers
+        return logmarkers.observe_services(cfg, start, finish)
+    except Exception as error:  # pylint: disable=broad-exception-caught  # best effort, never fatal
+        return [], [f"Service log collection failed ({type(error).__name__}: {error}); stock service timings are missing."]
 
 
 def write(directory, report, cfg, explain=False, gantt=False, keep_json=False):
@@ -56,10 +75,20 @@ def link_latest(root, directory):
         temporary.unlink(missing_ok=True)  # a symlink is a convenience, never a failure
 
 
+def finalise(directory, root, name, start, clock, code, cfg, logs, explain, gantt):
+    finish, elapsed = journal.utc(), time.monotonic() - clock
+    steps = journal.read_steps(directory / "events.jsonl", code != 0)
+    extra, warnings = collect_logs(cfg, start, finish, logs)
+    report = build(name, start, finish, elapsed, code, steps + extra, warnings, clock)
+    path = write(directory, report, cfg, explain, gantt)
+    link_latest(root, directory)
+    print(render.console(report, path, cfg), flush=True)
+
+
 def run(command, name=None, config_path=None, output=None, explain=False, gantt=False, logs=True):
     cfg = configuration.load(config_path)
     found = configuration.find(config_path)
-    root = configuration.report_root(cfg, output)
+    root = configuration.report_root(cfg, output).resolve()  # scripts may change directory
     directory = root / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ-") + uuid.uuid4().hex[:8])
     directory.mkdir(parents=True, mode=0o700)
     os.environ["STARTUP_TIMING_DIR"] = str(directory)
@@ -71,14 +100,12 @@ def run(command, name=None, config_path=None, output=None, explain=False, gantt=
     try:
         code = execute(command)
     finally:
-        finish, elapsed = journal.utc(), time.monotonic() - clock
-        steps = journal.read_steps(directory / "events.jsonl", code != 0)
-        extra, warnings = collect_logs(cfg, start, finish, logs)
-        report = build(name or Path(command[0]).name, start, finish, elapsed, code,
-                       steps + extra, warnings, clock)
-        path = write(directory, report, cfg, explain, gantt)
-        link_latest(root, directory)
-        print(render.console(report, path, cfg), flush=True)
+        try:
+            finalise(directory, root, name or Path(command[0]).name, start, clock, code, cfg, logs, explain, gantt)
+        except Exception as error:  # pylint: disable=broad-exception-caught
+            # The report is a convenience: never replace the command's own exit status.
+            print(f"startup timing: could not write the report ({type(error).__name__}: {error})",
+                  file=sys.stderr)
     return code
 
 

@@ -13,9 +13,7 @@ import unittest
 from unittest.mock import patch
 
 REPO = Path(__file__).resolve().parents[1]
-SHARED = REPO.parent / "tools/startup-timing"
-if not SHARED.is_dir():
-    SHARED = Path("/tools/startup-timing")  # the test container mounts the tool here
+SHARED = REPO / "tools/startup-timing"
 sys.path.insert(0, str(SHARED))
 TIMING = SHARED / "timing.py"
 HELPERS = SHARED / "timing.sh"
@@ -337,7 +335,7 @@ class TestLogPlugin(unittest.TestCase):
         self.assertEqual((steps[0]["group"], steps[0]["seconds"]), ("model_transformation", 2))
         self.assertEqual((steps[1]["group"], steps[1]["seconds"]), ("model_combined", 7))
         for service, start, finish in [
-            ("audio-analyzer", "utils.ensure_model: Exporting whisper-medium", "utils.ensure_model: Export successful"),
+            ("audio-analyzer", "utils.ensure_model: Exporting openai/whisper-medium", "utils.ensure_model: Export successful"),
             ("tts", "Exporting SpeechT5 model microsoft/speecht5_tts to OpenVINO IR",
              "Using cached OpenVINO TTS model at models/openvino"),
         ]:
@@ -386,6 +384,79 @@ class TestImages(unittest.TestCase):
         self.assertEqual((pulled["group"], pulled["bytes"]), ("container_download", 250000000))
         self.assertEqual(next(s for s in steps if s["status"] == "cached")["service"], "chatqna")
         self.assertIn("b:2 (250 MB)", render.markdown(build([dict(pulled, offset=0.0)])))
+
+
+class TestReviewFixes(unittest.TestCase):
+    def test_parent_keeps_time_its_children_do_not_cover(self):
+        from startup_timing import services
+        steps = [step("model_preparation", "Prepare detector", 0.0, 100.0, id="p", service="d"),
+                 step("model_download", "Download", 10.0, 10.0, parent_id="p", service="d")]
+        rows = {a["group"]: a["wall"] for a in services.activities(build(steps, total=100.0), {})}
+        self.assertAlmostEqual(rows["model_preparation"], 90.0)
+        self.assertAlmostEqual(rows["model_download"], 10.0)
+
+    def test_parent_with_cached_child_stays_the_explanation(self):
+        from startup_timing import services
+        steps = [step("startup", "Start service", 0.0, 40.0, id="p", service="x"),
+                 step("startup", "Cache hit", 0.0, 0.0, "cached", parent_id="p", service="x")]
+        row = services.analyse(build(steps, total=40.0), {})[0]
+        self.assertEqual([p["label"] for p in row["parts"]], ["Start service"])
+        self.assertEqual(services.summary(build(steps, total=40.0), {})["services"][0]["work"][0]["seconds"], 40.0)
+
+    def test_compare_ties_are_ordered_by_step(self):
+        first = build([step("b", "Two", 0, 1.0), step("a", "One", 1, 1.0)])
+        second = build([step("b", "Two", 0, 1.0), step("a", "One", 1, 1.0)])
+        with tempfile.TemporaryDirectory() as temporary:
+            paths = []
+            for name, data in (("a.json", first), ("b.json", second)):
+                paths.append(Path(temporary, name))
+                paths[-1].write_text(json.dumps(data))
+            text = compare.compare(*paths)
+        self.assertLess(text.index("One"), text.index("Two"))
+
+    def test_report_failure_keeps_the_commands_exit_code(self):
+        with tempfile.TemporaryDirectory() as temporary, \
+                patch.object(cli, "finalise", side_effect=KeyError("service")), \
+                patch.object(cli, "execute", return_value=7):
+            self.assertEqual(cli.run(["x"], output=temporary), 7)
+
+    def test_log_plugin_failure_becomes_a_warning(self):
+        cfg = {"log_rules": [{}]}
+        with patch.object(logmarkers, "observe_services", side_effect=ValueError("bad")):
+            steps, warnings = cli.collect_logs(cfg, "a", "b")
+        self.assertEqual(steps, [])
+        self.assertIn("ValueError", warnings[0])
+
+    def test_unwritable_journal_never_raises(self):
+        with patch.dict(os.environ, STARTUP_TIMING_DIR="/nonexistent/dir"):
+            journal.end(journal.begin("g", "x"))
+
+    def test_relative_report_root_survives_a_changed_directory(self):
+        script = "cd /; source " + str(HELPERS) + "; timed g 'After cd' sleep 0.1"
+        with tempfile.TemporaryDirectory() as temporary:
+            result = run_tool(script, temporary, "--output", "rel")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("After cd", Path(temporary, "rel", "latest", "report.md").read_text())
+
+    def test_image_pulls_are_capped_and_retried(self):
+        with tempfile.TemporaryDirectory() as temporary, \
+                patch.dict(os.environ, STARTUP_TIMING_DIR=temporary), \
+                patch.object(images.subprocess, "check_output", return_value="\n".join(f"i{n}:1" for n in range(9))), \
+                patch.object(images, "ThreadPoolExecutor", wraps=images.ThreadPoolExecutor) as pool:
+            attempts = []
+
+            def command(args, **_kwargs):
+                if args[1] == "pull":
+                    attempts.append(args[-1])
+                code = 1 if args[1] == "image" or (args[1] == "pull" and attempts.count(args[-1]) == 1) else 0
+                return subprocess.CompletedProcess(args, code, stdout="1\n")
+            with patch.object(images.subprocess, "run", side_effect=command):
+                self.assertEqual(images.pull_images({}, ["x"]), 0)
+        self.assertEqual(pool.call_args.kwargs["max_workers"], 4)
+        self.assertEqual(len(attempts), 18)  # every first pull failed, every retry worked
+
+    def test_shell_script_has_a_bash_shebang(self):
+        self.assertEqual(HELPERS.read_text().splitlines()[0], "#!/usr/bin/env bash")
 
 
 class TestHandheldMake(unittest.TestCase):

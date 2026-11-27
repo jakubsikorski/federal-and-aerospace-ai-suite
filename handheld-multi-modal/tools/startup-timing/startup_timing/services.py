@@ -7,6 +7,7 @@ from .report import SKIPPED, measured, union_seconds
 
 SHARED = "Shared setup"
 STRIP = 24
+MINIMUM_GAP = 0.05  # seconds of a parent step not covered by its children worth showing
 
 
 def peak(spans):
@@ -19,14 +20,47 @@ def peak(spans):
     return best
 
 
+def _uncovered(start, end, spans):
+    """Parts of [start, end] that no span covers."""
+    gaps, at = [], start
+    for a, b in sorted(spans):
+        if a > at:
+            gaps.append((at, min(a, end)))
+        at = max(at, b)
+        if at >= end:
+            break
+    if at < end:
+        gaps.append((at, end))
+    return [(a, b) for a, b in gaps if b - a >= MINIMUM_GAP]
+
+
+def leaves(steps):
+    """Measured steps that explain where time went. A step that has measured children is replaced
+    by the parts of its own time that no child covers; one whose children were never measured
+    (cached, unfinished) stays as it is."""
+    timed = [s for s in measured(steps) if s["offset"] is not None]
+    children = {}
+    for step in timed:
+        children.setdefault(step["parent_id"], []).append(step)
+    result = []
+    for step in timed:
+        inner = children.get(step["id"])
+        if not inner:
+            result.append(step)
+            continue
+        spans = [(c["offset"], c["offset"] + c["seconds"]) for c in inner]
+        for index, (a, b) in enumerate(_uncovered(step["offset"], step["offset"] + step["seconds"], spans)):
+            result.append({**step, "id": f"{step['id']}/rest{index}", "offset": a, "seconds": b - a,
+                           "label": step["label"] + " (own time)", "bytes": None})
+    return result
+
+
 def activities(report, cfg):
     """Time by kind of work (the step group), longest first. Parallel steps are counted once."""
-    steps = report["steps"]
-    parents = {s["parent_id"] for s in steps}
-    leaves = [s for s in measured(steps) if s["id"] not in parents and s["offset"] is not None]
+    leaves_ = leaves(report["steps"])
     rows = []
-    for group in dict.fromkeys(s["group"] for s in leaves):
-        items = sorted((s for s in leaves if s["group"] == group), key=lambda s: s["seconds"], reverse=True)
+    for group in dict.fromkeys(s["group"] for s in leaves_):
+        items = sorted((s for s in leaves_ if s["group"] == group), key=lambda s: s["seconds"], reverse=True)
         spans = [(s["offset"], s["offset"] + s["seconds"]) for s in items]
         wall = union_seconds(spans)
         size = sum(s.get("bytes") or 0 for s in items)
@@ -48,7 +82,6 @@ def _short(label, row):
 def analyse(report, cfg):
     """One row per service, busiest first. Steps without a service are grouped as shared."""
     steps = report["steps"]
-    parents = {s["parent_id"] for s in steps}
     batches = {a["group"] for a in activities(report, cfg) if a["batch"]}
     rows = {}
     for step in steps:
@@ -68,8 +101,9 @@ def analyse(report, cfg):
             continue
         row = rows[step.get("service")]
         row["spans"].append((step["offset"], step["offset"] + step["seconds"]))
-        if step["id"] not in parents:  # a parent would only repeat its own parts
-            row["parts"].append(step)
+    for step in leaves(steps):  # a parent only shows the time its children do not explain
+        if step["group"] not in batches:
+            rows[step.get("service")]["parts"].append(step)
     for row in rows.values():
         row["busy"] = union_seconds(row["spans"]) if row["spans"] else None
         row["parts"].sort(key=lambda s: s["seconds"], reverse=True)

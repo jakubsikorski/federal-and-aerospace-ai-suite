@@ -142,7 +142,8 @@ def _read_logs(cfg, service, container, started, start, finish, warnings):
     try:
         process = subprocess.Popen(
             ["docker", "logs", "--timestamps", "--since", start, "--until", finish, container],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            encoding="utf-8", errors="replace")
     except OSError:
         warnings.append(f"{service}: Docker logs unavailable; internal split unavailable.")
         return []

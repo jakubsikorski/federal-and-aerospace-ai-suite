@@ -23,7 +23,8 @@ Read [README.md](README.md) before changing the deployment.
 | `config/chatqna/` | Chat Q&A prompt template and model configuration |
 | `config/proxy/`, `config/coturn/`, `config/mediamtx/` | TLS proxy, loopback TURN relay, and RTSP/WebRTC relay |
 | `config/model-download/` | YOLO26s download and export request |
-| `scripts/` | Demo asset preparation, live checks, and the WHEP relay diagnostic |
+| `scripts/` | Demo asset preparation, live checks, and the WHEP relay diagnostic; `chat_cache.py` runs inside the Chat Q&A image |
+| `tools/startup-timing/` | Vendored, application-independent startup timing tool; `make up` and `make demo-up` run under it (no-ops if absent). Handheld titles and log rules: `startup-timing.toml` |
 | `.agents/skills/` | Application agent skills; generic service skills are in [open-edge-platform/skills](https://github.com/open-edge-platform/skills) |
 
 ## Useful Commands
@@ -42,6 +43,7 @@ make test               # Backend checks in the Backend image
 make test-all           # offline suite, 75% Backend coverage gate (no running stack)
 # Every test runs in a container; the host needs only Docker and Make.
 make test-live          # checks against the running stack (after up or demo-up)
+# make up and demo-up write startup-timings/latest/report.md; see .agents/skills/startup-timing
 ```
 
 New Backend code needs tests in `backend/test_backend.py` that keep `make test-coverage`

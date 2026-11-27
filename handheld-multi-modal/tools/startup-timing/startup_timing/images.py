@@ -32,12 +32,16 @@ def pull_images(cfg, command):
             return 0
         token = journal.begin(group, image, service)
         code = subprocess.run(["docker", "pull", image]).returncode
+        if code:  # one retry: registries and proxies drop connections
+            code = subprocess.run(["docker", "pull", image]).returncode
         found = subprocess.run(["docker", "image", "inspect", "-f", "{{.Size}}", image],
                                capture_output=True, text=True).stdout.strip() if code == 0 else ""
         journal.end(token, code, size=int(found) if found.isdigit() else None)
         return code
 
     # Pulls overlap and share bandwidth; the timeline shows them side by side.
-    with ThreadPoolExecutor(max_workers=max(1, len(images))) as pool:
+    # [pull] max_parallel (default 4) bounds the load on the registry and the host.
+    limit = int(section.get("max_parallel", 4))
+    with ThreadPoolExecutor(max_workers=max(1, min(len(images), limit))) as pool:
         codes = list(pool.map(pull, images))
     return next((code for code in codes if code), 0)

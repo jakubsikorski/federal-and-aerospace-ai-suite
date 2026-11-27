@@ -181,7 +181,7 @@ label = "Convert model {model} to OpenVINO"
 
 [[log_rules]]
 service = "audio-analyzer"
-pattern = "utils.ensure_model:.*Exporting whisper-medium"
+pattern = "utils.ensure_model:.*Exporting (openai/)?whisper-medium"
 action = "start"
 key = "export"
 group = "model_combined"
