@@ -107,13 +107,20 @@ for video. ASR accuracy (WER) is an offline benchmark, never a live tile.
   window, with the sample count. Percentiles are never averaged or added.
   No p99: at handheld request volumes it is noise.
 - **Throughput** (FPS, tokens/s, words/s, RTF): p50 of per-request values.
+  A ratio of totals, such as `sum(audio) / sum(model time)`, is the
+  audio-weighted mean, not a typical request; the service RTFx in Section 5 is
+  this kind and is labelled as such.
 - **Few samples:** fewer than 5 samples reads "Not enough data yet". One
   sample is never shown as typical.
 - **Missing, stale, zero:** kept distinct. A missing value is left out (a tile
   with nothing to show reads "Not available yet"), a stale service value is
   marked "◷", a real zero is shown as zero. Nothing is synthesized.
 - **Successful requests only** for Handheld timings; failures are not timed.
-  Error rates come only from services.
+  Error rates come only from services: (`error` + `timeout`) ÷ all counted
+  requests. No counted requests means no rate, never 0 %. Cancellations,
+  no-speech, and intentional suppression are not errors.
+- **Utilization only under load:** Compute busy and memory describe load; an
+  idle device is not a problem, and high utilization alone is not efficiency.
 - **Clocks:** one process uses its monotonic clock. Intervals across containers
   use the host wall clock (one kernel clock on one device). Browser intervals
   use `performance.now()` only; browser and server timestamps are never
@@ -127,7 +134,9 @@ for video. ASR accuracy (WER) is an offline benchmark, never a live tile.
 - **Start:** the operator stops speaking. Tap-to-send: the second tap.
   Auto-send: the last audio buffer above the voice threshold, not the moment
   auto-send fires.
-- **End:** the browser `playing` event of the first answer clip.
+- **End:** the browser `playing` event of the first answer clip. This is a
+  playback-start proxy; leading silence in the clip and output-device latency
+  need an acoustic check on the target device.
 - **Included:** silence wait, upload, transcription, assistant routing and
   generation, synthesis of the first answer chunk, delivery, playback start.
 - **Excluded:** the "Checking." acknowledgement (shown separately as
@@ -330,7 +339,7 @@ Path: **service `/metrics` → Metrics Manager (Telegraf scrape) → Backend
 | | `in_flight` | `chatqna_requests_in_flight` (gauge) |
 | Audio Analyzer | `model_seconds` | `audio_analyzer_inference_seconds` (histogram) |
 | | `audio_seconds` | `audio_analyzer_audio_duration_seconds` (histogram) |
-| | `rtfx` | derived: `audio_seconds` ÷ `model_seconds` |
+| | `rtfx` | derived: mean `audio_seconds` ÷ mean `model_seconds` (audio-weighted, since start) |
 | | `error_rate_percent` | `audio_analyzer_requests_total{outcome}` |
 | | `in_flight` | `audio_analyzer_requests_in_flight` (gauge) |
 | Text To Speech | `time_to_first_audio_seconds` | `tts_time_to_first_audio_seconds` (histogram) |
@@ -345,8 +354,13 @@ Each value is `{value, unit, state: ok|stale|missing, p50, p95, count}`.
 
 Source checked: [`open-edge-platform/edge-ai-libraries`](https://github.com/open-edge-platform/edge-ai-libraries)
 at tag `v2026.3.0-rc1`. Compose now pins `2026.3.0-rc2` (rc3 for DL Streamer
-Pipeline Server); re-check the "Current state" notes against the pinned
-release before filing. None of the requested values is exposed yet.
+Pipeline Server); re-check the "Today" notes against the pinned release before
+filing. None of the requested values is exposed yet.
+
+These are reusable service measurements for any caller, benchmark, or
+operations team; the Panel uses a subset. The reference values in Section 2
+are application goals, not service SLOs, and no per-service budget is
+requested.
 
 ### Minimum request
 
@@ -359,135 +373,194 @@ exactly with the names in Section 5:
 | Audio Analyzer | Inference (model) duration, audio duration (histograms); requests by `outcome`; in-flight |
 | Text To Speech | Time to first audio, RTF, generate duration (histograms); requests by `outcome`; in-flight |
 
-Everything else under B1–B3 is optional.
+Everything else under B1–B6 is optional.
 
 ### Common contract
 
 1. Backward compatible: existing responses unchanged; new data additive or
    opt-in.
-2. Durations in seconds as histograms, totals as counters, in-flight as a
-   gauge.
+2. Durations in seconds as histograms with buckets, totals as counters,
+   in-flight as a gauge. Percentiles are derived downstream, never exported
+   pre-averaged.
 3. Bounded labels only: `model`, `device`, `precision`, `outcome` (`ok`,
-   `error`, `timeout`). Never request IDs, text, filenames, or session IDs.
-4. Queue wait measured from before lock acquisition to after it.
-5. Requested and verified precision reported separately where the service
+   `error`, `timeout`). Never request IDs, prompts, transcripts, URLs,
+   filenames, or session IDs.
+4. Scraped as Prometheus text (Section 5). An OTLP exporter is fine for other
+   deployments if it is configurable and keeps histogram buckets; do not
+   hard-code Metrics Manager in service code.
+5. Queue wait measured from before lock acquisition to after it.
+6. Requested and verified precision reported separately where the service
    reports its model.
+7. A failed or missing export never blocks inference and never creates a zero
+   sample.
+
+**Effort** is the upstream change needed to *measure* the value, not to make it
+fast: **Low** adds a timer or counter; **Medium** ties a measurement to the
+individual request; **High** changes how token, frame, or metric data is
+captured. Related values share instrumentation.
 
 ### B1. Chat Q&A Core (highest priority)
 
-**Current state**
+**Today:** `POST /v1/chatqna/chat` streams raw `data: {chunk}` frames with no
+usage or timing ([`app/server.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.3.0-rc1/sample-applications/chat-question-and-answer-core/app/server.py),
+`app/chain.py` `process_query`); with sources enabled it first sends
+`event: sources`. CPU and GPU generate through LangChain `HuggingFacePipeline`
+with a fixed `weight_format="int8"` (`app/openvino_backend.py`), so OpenVINO
+GenAI `PerfMetrics` is not reachable and **the 4-bit profile cannot run on CPU
+or GPU**; the tokenizer is reachable as `llm.pipeline.tokenizer`. The NPU path
+runs OpenVINO GenAI with int4 (`GenAILLM`, `app/openvino_xpu.py`), so exact
+tokens and `PerfMetrics` are reachable there but not returned. A process-wide
+`_generation_lock` serializes generation without timing the wait, so queueing
+shows up as slow first words. RAG is FAISS retriever → optional reranker →
+prompt → LLM. `GET /model` returns only the model ID. No `/metrics`.
 
-- `POST /v1/chatqna/chat` streams raw `data: {chunk}` frames with no usage or
-  timing ([`app/server.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.3.0-rc1/sample-applications/chat-question-and-answer-core/app/server.py),
-  `app/chain.py` `process_query`). With sources enabled it first sends
-  `event: sources`.
-- CPU and GPU generate through LangChain `HuggingFacePipeline` with a fixed
-  `weight_format="int8"` (`app/openvino_backend.py`), so OpenVINO GenAI
-  `PerfMetrics` is not reachable and **the 4-bit profile cannot run on CPU or
-  GPU**. The tokenizer is reachable as `llm.pipeline.tokenizer`.
-- The NPU path exports int4 and runs OpenVINO GenAI (`GenAILLM`,
-  `app/openvino_xpu.py`), so exact token counts and `PerfMetrics` are reachable
-  there but not returned.
-- A process-wide `_generation_lock` serializes generation. Its wait is not
-  measured, so queueing currently shows up as slow first words.
-- RAG is FAISS retriever → optional reranker → prompt → LLM.
-- `GET /model` returns only the model ID. No `/metrics`.
-
-**Requested values**
-
-| Value | Definition |
-| --- | --- |
-| `input_tokens`, `output_tokens` | Rendered-prompt tokens; generated tokens, excluding the prompt |
-| `queue_wait_s` | Before → after acquiring `_generation_lock` |
-| `retrieval_s`, `rerank_s` | Embedding + FAISS search; reranker (optional) |
-| `ttft_s` | LLM call start → first generated token (retrieval excluded) |
-| `decode_s` | First token → last token |
-| `decode_tokens_per_s` | `(output_tokens − 1) / decode_s`, only when `output_tokens ≥ 2` |
-| `request_s` | Request received → last byte |
+| Value | Definition | What is missing | Effort |
+| --- | --- | --- | --- |
+| Request duration | Request received → last byte, including RAG and queue | Callers can time it; the service reports nothing | Low |
+| Requests by outcome | `ok` / `error` / `timeout` counter | No totals, so no error-rate denominator | Low |
+| Queue wait | Before → after acquiring `_generation_lock` | Lock exists, wait not timed | Low |
+| Time to first token (TTFT) | LLM call start → first generated token (retrieval excluded) | Only decoded text leaves the model; CPU/GPU and NPU paths both need changes | High |
+| Decode tokens/s | `(output_tokens − 1) / decode_s`, only when `output_tokens ≥ 2` | No token counts or first/last-token times; text chunks are not tokens | High, shared token work |
+| Input/output tokens | Rendered-prompt tokens; generated tokens | Same token work; totals are Low once counts exist | High → Low |
+| Retrieval, rerank time | Embedding + FAISS search; reranker (optional) | Not timed | Low |
 
 Implementation options: a LangChain callback that timestamps
 `on_llm_new_token` and recounts the answer with the tokenizer (minimal), or
-`openvino_genai.LLMPipeline` `PerfMetrics` (preferred long term).
-
-**Requested exposure:** the `/metrics` series in Section 5 (plus optional
-`chatqna_retrieval_seconds`, `chatqna_rerank_seconds`,
-`chatqna_input_tokens_total`, `chatqna_output_tokens_total`). Optional:
+`openvino_genai.LLMPipeline` `PerfMetrics` (preferred long term). Optional:
 `"stream_options": {"include_metrics": true}` emitting a final
 `event: metrics` (opt-in, because current clients join every `data:` frame
 into the answer); `GET /model` with runtime, devices, requested and verified
 weight format; `LLM_WEIGHT_FORMAT` (`int8`, `int4`, `fp16`) for CPU and GPU.
 
 **Handheld use:** the Answer speed tile shows exact tokens/s instead of
-~words/s; the Chat Q&A tile Details show model TTFT and queue wait.
+~words/s; the Chat Q&A tile Details show model TTFT, queue wait, and error
+rate.
 
 ### B2. Audio Analyzer
 
-**Current state**
+**Today:** `POST /v1/audio/transcriptions` (OpenAI-compatible) runs
+`openvino_genai.WhisperPipeline`, serialized by `_TRANSCRIBE_LOCK`
+([`api/openai_endpoints.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.3.0-rc1/microservices/audio-analyzer/api/openai_endpoints.py),
+`components/asr/openvino_genai/whisper.py`). `/v1/performance` holds only the
+**last** latency, which another caller can overwrite, so it cannot be tied to a
+request. `/v1/model-info` reports configured, not verified, precision. No
+`/metrics`. `/v1/realtime` previews do not apply: the Handheld uploads one WAV
+per utterance.
 
-- `POST /v1/audio/transcriptions` (OpenAI-compatible) runs
-  `openvino_genai.WhisperPipeline`, serialized by `_TRANSCRIBE_LOCK`
-  ([`api/openai_endpoints.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.3.0-rc1/microservices/audio-analyzer/api/openai_endpoints.py),
-  `components/asr/openvino_genai/whisper.py`). An optional per-request `device`
-  is honored.
-- `/v1/performance` holds only the **last** latency, so it cannot be attributed
-  to a request. `/v1/model-info` reports configured, not verified, precision.
-  No `/metrics`.
-- `/v1/realtime` adds previews and a low-latency mode for streaming clients;
-  the Handheld uploads one WAV per utterance, so they do not apply.
+| Value | Definition | What is missing | Effort |
+| --- | --- | --- | --- |
+| Inference duration | `generate()` time for one recording | Only the last latency, not per request | Medium |
+| Audio duration | Decoded samples ÷ sample rate | Not exported, so no service RTFx | Medium, shared with inference |
+| Requests by outcome | `ok` / `error` / `timeout` | No totals | Low |
+| Queue wait (optional) | Wait at `_TRANSCRIBE_LOCK` | Lock exists, wait not timed | Low |
 
-**Requested values:** `queue_wait_s` (around `_TRANSCRIBE_LOCK`),
-`inference_s` (`generate()`), `audio_duration_s` (decoded samples ÷ rate),
-optional `preprocess_s` and `postprocess_s`.
+Optional: `Server-Timing` headers and a `performance` object in
+`verbose_json`; `/v1/model-info` with runtime, resolved device, verified
+precision.
 
-**Requested exposure:** the `/metrics` series in Section 5 (plus optional
-`audio_analyzer_queue_wait_seconds`). Optional: `Server-Timing` headers and a
-`performance` object in `verbose_json`; `/v1/model-info` with runtime, device,
-verified precision.
-
-**Handheld use:** the Audio Analyzer tile Details show model-only speed
-next to the Handheld's call speed.
+**Handheld use:** the Audio Analyzer tile Details show model-only speed and
+error rate next to the Handheld's call speed.
 
 ### B3. Text To Speech
 
-**Current state**
+**Today:** `POST /v1/audio/speech` returns a fully buffered WAV
+([`api/openai_endpoints.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.3.0-rc1/microservices/text-to-speech/api/openai_endpoints.py));
+SpeechT5 runs through `openvino_genai.Text2SpeechPipeline` behind an inference
+lock. `/v1/audio/speech/stream` exists, but SpeechT5 emits one event after full
+synthesis. `/v1/performance` holds only the last latency, and its timer stops
+before the audio is encoded. No `/metrics`.
 
-- `POST /v1/audio/speech` returns a fully buffered WAV
-  ([`api/openai_endpoints.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.3.0-rc1/microservices/text-to-speech/api/openai_endpoints.py)).
-  SpeechT5 runs through `openvino_genai.Text2SpeechPipeline` behind an
-  inference lock.
-- `POST /v1/audio/speech/stream` exists, but SpeechT5 emits one event after
-  full synthesis, so it does not shorten time to first audio for the Handheld.
-- `/v1/performance` holds only the last latency. No `/metrics`.
+| Value | Definition | What is missing | Effort |
+| --- | --- | --- | --- |
+| Time to first audio | Request start → first playable audio encoded and ready to send | Timer stops before encoding; not per request | Medium |
+| Generate duration | Request start → final encoded audio | Not per request | Medium |
+| RTF | `generate_s / audio_duration_s` | Audio duration is returned, matching service time is not | Medium, shared |
+| Requests by outcome | `ok` / `error` / `timeout`; a stream that fails after HTTP 200 is an error | No totals | Low |
+| Queue wait (optional) | Wait at the inference lock | Not timed | Low |
 
-**Requested values:** `queue_wait_s`, `generate_s`, `time_to_first_audio_s`
-(request start → first audio bytes ready; equals `generate_s` for SpeechT5
-today), `audio_duration_s`, `rtf` = `generate_s / audio_duration_s`.
-
-**Requested exposure:** the `/metrics` series in Section 5 (plus optional
-`tts_queue_wait_seconds`). Optional, highest UX value: phrase-level output on
-`/v1/audio/speech/stream` for SpeechT5, so the first sentence plays sooner.
+SpeechT5 produces one chunk, so time to first audio equals generate duration
+today. Neither measures playback start. Earlier first audio needs an
+incremental model; transport changes alone do not give it. Optional, highest
+UX value: phrase-level output on `/v1/audio/speech/stream`.
 
 **Handheld use:** the Text To Speech tile Details show model time to first
-audio and RTF.
+audio, RTF, and error rate.
 
 ### B4. DL Streamer Pipeline Server (optional)
 
-The Handheld callbacks already cover video. Useful for all DLSPS users:
-`frames_in/out/dropped_total` counters, a windowed FPS, decode → publish
-latency paired per buffer instead of a FIFO, per-element inference latency, and
-an option on `gvametaconvert` to add the ingress timestamp, which would retire
-`frame_ingress.py`
-([`src/server/gstreamer_pipeline.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.3.0-rc1/microservices/dlstreamer-pipeline-server/src/server/gstreamer_pipeline.py)).
+The Handheld callbacks already cover video and remain the fallback.
+
+| Value | What is missing | Effort |
+| --- | --- | --- |
+| `frames_in/out/dropped_total` per stream, with bounded drop reasons | Output FPS exists; matching ingress counters and direct drop counts do not | Medium |
+| Decode → result latency paired per buffer | Current probes pair by arrival order (FIFO), which drifts when leaky queues drop frames | High |
+| Frame freshness (age of last output) | Not exposed | Low |
+| Ingress timestamp option on `gvametaconvert` (would retire `frame_ingress.py`) | Not available | Medium |
+
+Source: [`src/server/gstreamer_pipeline.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.3.0-rc1/microservices/dlstreamer-pipeline-server/src/server/gstreamer_pipeline.py).
 
 ### B5. Alert Agent (optional, low priority)
 
 `/metrics` returns 404 and `duration_ms` covers only action execution
 ([`src/main.py`](https://github.com/open-edge-platform/edge-ai-libraries/blob/v2026.3.0-rc1/microservices/alert-agent-service/src/main.py)).
-Request: `alert_agent_ingest_to_dispatch_seconds{mode, outcome}`. The
-Handheld already times its own dispatch.
+One request can trigger several actions and retries, and an accepted webhook
+does not prove delivery.
 
-**Not requested:** Metrics Manager changes (only scrape config is added),
-Model Download, MediaMTX, Coturn, Mosquitto.
+| Value | What is missing | Effort |
+| --- | --- | --- |
+| `alert_agent_ingest_to_dispatch_seconds{mode, outcome}` | Returned duration does not cover the whole request | Low |
+| Action attempts, retries, and failures by outcome | No totals; request counts cannot recover action counts | Medium |
+| Suppressed alerts | The Handheld counts its own; the service exports nothing | Low |
+
+The Handheld already times its own dispatch.
+
+### B6. Metrics Manager (optional)
+
+Only scrape configuration is added on the Handheld side. For other users of
+the service, the useful upstream changes are:
+
+| Value | What is missing | Effort |
+| --- | --- | --- |
+| Keep histogram buckets on OTLP ingest | OTLP push keeps only count, sum, average, min, max, so no percentiles (Section 5) | High |
+| Standard OTLP protobuf/gzip on the HTTP route | At rc1 the route parses JSON only | Medium |
+| Rejected/dropped and forwarded points, by reason and output | Error counters do not cover every lost point | Medium |
+
+**OTLP push as a fallback.** A service that can only push may use the existing
+OTLP/JSON route. The Panel then shows counts and means but p50/p95 stay empty,
+so prefer the scrape. Compose settings for that path (set both proxy-bypass
+variables so in-network exports skip the download proxy):
+
+```yaml
+OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: "http://metrics:9090/api/v1/metrics/otlp"
+OTEL_EXPORTER_OTLP_METRICS_PROTOCOL: "http/json"
+OTEL_EXPORTER_OTLP_METRICS_COMPRESSION: "none"
+OTEL_SERVICE_NAME: "chat-qna"
+no_proxy: "localhost,127.0.0.1,metrics"
+NO_PROXY: "localhost,127.0.0.1,metrics"
+```
+
+The Backend reads the latest value of each series and labels it "since it
+started", which assumes cumulative counters. Check the temporality the route
+stores before relying on this path; with delta, counts cover only the last
+export interval.
+
+**Not requested:** MediaMTX, Coturn, Mosquitto, Model Download; per-service
+GPU/NPU or device-memory metrics.
+
+### Upstream acceptance checks
+
+For each service change, the service team checks:
+
+- Each request is counted once with one outcome; cancellations, no-speech, and
+  warm-up calls do not count as errors or successes.
+- Timings are per request and stay correct under concurrent requests.
+- Token counts use the model's tokenizer; RTF uses decoded audio duration;
+  time to first audio is not playback start.
+- Names, units, labels, and buckets survive restarts and multiple workers.
+- No sensitive or unbounded values appear in labels.
+- Speed comparisons across models also compare quality: WER for ASR,
+  intelligibility for TTS, answer grounding for RAG, precision/recall for
+  video. These are offline benchmarks, never live tiles.
 
 ## 7. Display in the Panel
 
