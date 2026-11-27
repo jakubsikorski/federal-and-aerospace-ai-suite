@@ -21,8 +21,9 @@ qualification of a target device; no target hardware is available.
   comparison, no pass/fail, no ✓/! status, no threshold settings. The reference
   values in Section 2 are kept so a later CI job or automated test can adopt
   them.
-- **Measurement runs and saved scorecards**, an expanded multi-tab view,
-  sparklines, and model-strip chips. Possible follow-ups, not planned here.
+- **Time to ready** (start-up to usable console), **measurement runs and
+  saved scorecards**, an expanded multi-tab view, sparklines, and model-strip
+  chips. Not planned.
 - **Changes to Open Edge Platform services.** Values only a service can produce
   are requested upstream (Section 6).
 
@@ -57,7 +58,6 @@ for hardware telemetry, and relays them.
 | Answer speed | "Does the answer stream faster than I can read it?" | Decode tokens/s = (output tokens − 1) ÷ (first → last token), per request | > 15 tokens/s (7B, 4-bit) | Approximate words/s now; exact after B1 |
 | Peak memory | "Am I close to running out of memory?" | Peak host RAM over the rolling window | < 80 % | Implemented |
 | Compute busy | "Is the hardware working or idle?" | Host CPU utilization under load | > 70 % under load | Resources tab |
-| Time to ready | "How long until the console is usable?" | `make up` / `make demo-up` → every required service healthy and first live frame shown (pulls and model preparation excluded) | < 5 min | Not built (WP4) |
 
 Reference values come from datacenter-class sources or product goals. They
 are starting guidance; calibrate them on the device before any gate uses them.
@@ -94,7 +94,6 @@ The operator KPIs are plain-words roll-ups, built from standard signals:
 | Smooth cameras | Processed FPS vs. source FPS, dropped-frame ratio |
 | Answer speed | Decode tokens/s = 1 / time per output token (TPOT) |
 | Peak memory, Compute busy | USE method: utilization and saturation |
-| Time to ready | Readiness: every required service passes its health check |
 
 Per service, Metrics Manager carries the RED and golden signals: request rate,
 error rate, duration, and saturation (queue wait, in-flight). Domain signals
@@ -159,7 +158,6 @@ stage so its cost is visible; tuning it is a product decision.
 | Service series read from Metrics Manager (`services` in telemetry) | Done; no service exports yet | `backend/app/telemetry.py` |
 | Scrape block for service `/metrics` | Done, commented out | `config/metrics/telegraf.conf` |
 | Panel: video badge, answer footer, alert tooltip, Performance tab, service tiles (headline rule, no target judgement) | Done | `backend/app/static/index.html` |
-| Time to ready | Not built (WP4) | — |
 
 ## 4. Handheld instrumentation
 
@@ -663,14 +661,6 @@ calls only; never synthesize a value; no OEP service changes.
   coloured borders and "within target" are removed. KPI tiles lead with the
   typical (p50) value and the count; 95% is in the tap explanation. Camera
   Delayed uses the fixed `DELAYED_SECONDS = 0.4`.
-
-### WP4. Time to ready
-
-`make up` / `make demo-up` writes a start marker after prerequisite checks;
-the Backend records when each required service first passes its existing
-health check (the Makefile `wait_for` checks); the browser marks the first
-live frame. The header shows "Ready in 2 min 14 s" for one minute, then
-"● Ready".
 
 ### When an upstream release ships `/metrics`
 
