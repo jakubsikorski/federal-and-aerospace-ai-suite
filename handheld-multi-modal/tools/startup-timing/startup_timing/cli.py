@@ -89,13 +89,20 @@ def run(command, name=None, config_path=None, output=None, explain=False, gantt=
     cfg = configuration.load(config_path)
     found = configuration.find(config_path)
     root = configuration.report_root(cfg, output).resolve()  # scripts may change directory
-    directory = root / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ-") + uuid.uuid4().hex[:8])
-    directory.mkdir(parents=True, mode=0o700)
+    try:
+        directory = root / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ-") + uuid.uuid4().hex[:8])
+        directory.mkdir(parents=True, mode=0o700)
+        (directory / "events.jsonl").touch(mode=0o600)
+    except OSError as error:  # a report we cannot write must not stop the application from starting
+        print(f"startup timing: cannot create the report directory ({error}); running without timing",
+              file=sys.stderr)
+        for variable in ("STARTUP_TIMING_DIR", "STARTUP_TIMING_PARENT", "STARTUP_TIMING_CONFIG"):
+            os.environ.pop(variable, None)
+        return execute(command)
     os.environ["STARTUP_TIMING_DIR"] = str(directory)
     os.environ.pop("STARTUP_TIMING_PARENT", None)
     if found:
         os.environ["STARTUP_TIMING_CONFIG"] = found
-    (directory / "events.jsonl").touch(mode=0o600)
     start, clock, code = journal.utc(), time.monotonic(), 1
     try:
         code = execute(command)
@@ -140,7 +147,8 @@ def parser():
     rendering = sub.add_parser("render", parents=[common, view], help="re-render report.md from report.json")
     rendering.add_argument("reports", type=Path, nargs="+")
     summing = sub.add_parser("summary", parents=[common], help="print the short, paste-ready summary of a run")
-    summing.add_argument("report", type=Path, nargs="?", default=Path("startup-timings/latest"))
+    summing.add_argument("report", type=Path, nargs="?",
+                         help="report.json or run directory (default: latest run under the report root)")
     summing.add_argument("--json", action="store_true", help="print summary.json instead of Markdown")
     comparing = sub.add_parser("compare", help="per-step deltas between two reports")
     comparing.add_argument("first", type=Path)
@@ -169,7 +177,7 @@ def main(argv=None):
         return 0
     if args.action == "summary":
         cfg = configuration.load(args.config)
-        data = load(args.report)
+        data = load(args.report or configuration.report_root(cfg) / "latest")
         print(json.dumps(services.summary(data, cfg), indent=2) if args.json else "\n".join(render.brief(data, cfg)))
         return 0
     if args.action == "render":

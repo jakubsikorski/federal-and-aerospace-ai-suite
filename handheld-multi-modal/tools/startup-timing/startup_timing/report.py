@@ -59,16 +59,17 @@ def normalize(report):
 
 
 def _nest_background(steps):
-    """Service-log steps nest under the tightest recorded step of the same service that holds them."""
-    recorded = [s for s in steps if not s["background"] and s["seconds"] is not None
-                and s["offset"] is not None and s["service"]]
+    """Service-log steps nest under the tightest step of the same service that holds them: a recorded
+    step, or a strictly longer service-log step (a phase inside 'start to application ready')."""
+    timed = [s for s in steps if s["seconds"] is not None and s["offset"] is not None and s["service"]]
     for step in steps:
         if not step["background"] or step["parent_id"] or step["seconds"] is None or step["offset"] is None:
             continue
-        holders = [p for p in recorded if p["service"] == step["service"]
+        holders = [p for p in timed if p is not step and p["service"] == step["service"]
+                   and (p["seconds"] > step["seconds"] if p["background"] else True)
                    and p["offset"] - 0.05 <= step["offset"]
                    and step["offset"] + step["seconds"] <= p["offset"] + p["seconds"] + 0.05]
-        if holders:
+        if holders:  # strictly longer holders cannot form a cycle; recorded steps are never nested in logs
             step["parent_id"] = min(holders, key=lambda p: p["seconds"])["id"]
 
 

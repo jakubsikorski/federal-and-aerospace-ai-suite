@@ -72,6 +72,20 @@ def activities(report, cfg):
     return sorted(rows, key=lambda r: -r["wall"])
 
 
+def batch_members(report, cfg):
+    """Ids of the steps that really ran side by side in a parallel batch. A later step of the same
+    group that overlaps no other (a single pull, say) is ordinary work of its service."""
+    members = set()
+    for row in activities(report, cfg):
+        if not row["batch"]:
+            continue
+        for step in row["steps"]:
+            a, b = step["offset"], step["offset"] + step["seconds"]
+            if any(o is not step and o["offset"] < b and o["offset"] + o["seconds"] > a for o in row["steps"]):
+                members.add(step["id"])
+    return members
+
+
 def _short(label, row):
     """Drop a leading 'Chat Q&A: ' style prefix; the row already names the service."""
     head, sep, rest = label.partition(": ")
@@ -82,7 +96,7 @@ def _short(label, row):
 def analyse(report, cfg):
     """One row per service, busiest first. Steps without a service are grouped as shared."""
     steps = report["steps"]
-    batches = {a["group"] for a in activities(report, cfg) if a["batch"]}
+    batched = batch_members(report, cfg)
     rows = {}
     for step in steps:
         key = step.get("service")
@@ -96,20 +110,17 @@ def analyse(report, cfg):
     for step in measured(steps):
         if step["offset"] is None:
             continue
-        if step["group"] in batches:  # parallel batches share a resource: counted once under activities
+        if step["id"] in batched:  # parallel batches share a resource: counted once under activities
             rows[step.get("service")]["batched"] = True
             continue
         row = rows[step.get("service")]
         row["spans"].append((step["offset"], step["offset"] + step["seconds"]))
     for step in leaves(steps):  # a parent only shows the time its children do not explain
-        if step["group"] not in batches:
+        if step["id"] not in batched:
             rows[step.get("service")]["parts"].append(step)
     for row in rows.values():
         row["busy"] = union_seconds(row["spans"]) if row["spans"] else None
         row["parts"].sort(key=lambda s: s["seconds"], reverse=True)
-        # A step that spans the whole service ("start to ready") says nothing about where time went.
-        detail = [p for p in row["parts"] if p["seconds"] < 0.9 * (row["busy"] or 0)]
-        row["parts"] = detail or row["parts"]
         row["parts"] = [{**p, "label": _short(p["label"], row)} for p in row["parts"]]
         row["first"] = min((a for a, _ in row["spans"]), default=None)
         row["last"] = max((b for _, b in row["spans"]), default=None)

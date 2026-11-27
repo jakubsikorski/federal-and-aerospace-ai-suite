@@ -371,11 +371,15 @@ def main():
     assert 'make --no-print-directory detector-model' in own and 'demo-videos' not in own and 'up -d --force-recreate cam' not in own
     assert 'make --no-print-directory demo-videos' in dry and 'up -d --force-recreate cam1 cam2' in dry
     assert dry.index('up -d chatqna audio-analyzer tts') < dry.index('make --no-print-directory detector-model')
-    # Licenses are shown and accepted before anything is pulled; demo starts add the videos.
-    for plan, demo in ((own, False), (dry, True)):
-        notice = plan.index('scripts/license_notice.py')
-        assert notice < plan.index('model-downloader -ec'), 'licenses must be accepted before any download'
+    # Licenses are shown and accepted before the timing wrapper (so reading them is not startup time)
+    # and before anything is pulled; demo starts add the videos.
+    for target, demo in (('up', False), ('demo-up', True)):
+        plan = subprocess.run(['make', '-n', '--no-print-directory', '-C', str(assets.REPO), target],
+                              capture_output=True, text=True).stdout
+        assert plan.index('scripts/license_notice.py') < plan.index('timing.sh run'), 'licenses must precede the timed start'
         assert ('license_notice.py --demo' in plan) == demo
+    for plan in (own, dry):
+        assert 'license_notice' not in plan, 'the timed graph must not prompt'
     # The public targets only wrap the real graph with the timing runner; a dry run creates nothing.
     wrapper_root = root / 'wrapper-dry-run'
     wrapper = subprocess.run(['make', '-n', '--no-print-directory', '-C', str(assets.REPO), 'up', f'ASSET_ROOT={wrapper_root}'],

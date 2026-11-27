@@ -455,6 +455,47 @@ class TestReviewFixes(unittest.TestCase):
         self.assertEqual(pool.call_args.kwargs["max_workers"], 4)
         self.assertEqual(len(attempts), 18)  # every first pull failed, every retry worked
 
+    def test_unwritable_report_root_still_runs_the_command(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            blocker = Path(temporary, "file")
+            blocker.write_text("x")
+            with patch.object(cli, "execute", return_value=5) as execute:
+                self.assertEqual(cli.run(["x"], output=str(blocker / "sub")), 5)
+            execute.assert_called_once()
+            self.assertNotIn("STARTUP_TIMING_DIR", os.environ)
+
+    def test_summary_default_follows_the_report_root(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            result = run_tool("source " + str(HELPERS) + "; timed g 'Work' sleep 0.1", temporary,
+                              env={"STARTUP_TIMING_ROOT": str(Path(temporary, "elsewhere"))})
+            self.assertEqual(result.returncode, 0, result.stderr)
+            shown = subprocess.run(["bash", str(HELPERS), "summary", "--json"], cwd=temporary, text=True, capture_output=True,
+                                   env={**os.environ, "STARTUP_TIMING_ROOT": str(Path(temporary, "elsewhere"))})
+            self.assertEqual(shown.returncode, 0, shown.stderr)
+            self.assertEqual(json.loads(shown.stdout)["schema"], "startup-timing-summary/1")
+
+    def test_log_phase_nests_under_the_startup_interval_and_is_the_biggest_cost(self):
+        from startup_timing import services
+        steps = [step("service_startup", "Chat: start to application ready", 0.0, 100.0, service="chat",
+                      method="stock-log"),
+                 step("model_download", "Download model", 5.0, 90.0, service="chat", method="stock-log"),
+                 step("readiness", "Wait", 95.0, 5.0, service="chat")]
+        data = build(steps, total=100.0)
+        child = next(s for s in data["steps"] if s["label"] == "Download model")
+        self.assertIsNotNone(child["parent_id"])
+        row = services.analyse(data, {})[0]
+        self.assertEqual(row["parts"][0]["label"], "Download model")
+        self.assertEqual(services.summary(data, {})["services"][0]["work"][0]["seconds"], 90.0)
+
+    def test_only_overlapping_pulls_are_a_batch(self):
+        from startup_timing import services
+        pulls = [step("container_download", f"image-{n}", 1.0, 50.0, service=f"s{n}") for n in range(4)]
+        later = step("container_download", "Backend base", 70.0, 10.0, service="backend")
+        data = build(pulls + [later], total=100.0)
+        names = {r["service"]: r for r in services.analyse(data, {})}
+        self.assertAlmostEqual(names["backend"]["busy"], 10.0)
+        self.assertIsNone(names["s0"]["busy"])  # batched pulls are counted once, under activities
+
     def test_shell_script_has_a_bash_shebang(self):
         self.assertEqual(HELPERS.read_text().splitlines()[0], "#!/usr/bin/env bash")
 
@@ -466,7 +507,7 @@ class TestHandheldMake(unittest.TestCase):
             env = dict(os.environ)
             env.pop("STARTUP_TIMING_DIR", None)
             result = subprocess.run([
-                "make", "--no-print-directory", "demo-up", "INNER_MAKE=true",
+                "make", "--no-print-directory", "demo-up", "INNER_MAKE=true", "CONFIRM=yes",
                 f"ASSET_ROOT={root / 'run'}",
             ], cwd=REPO, env=env, text=True, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

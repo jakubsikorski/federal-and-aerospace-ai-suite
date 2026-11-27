@@ -322,7 +322,7 @@ detector-model:
 	  code=$$?
 	  [[ $$code == 2 ]] || exit "$$code"
 	  token=$$(timing_begin --service model-downloader model_preparation 'YOLO26s downloader startup and model preparation')
-	  make --no-print-directory model-downloader-up || { code=$$?; timing_end "$$token" --code "$$code"; exit "$$code"; }
+	  STARTUP_TIMING_PARENT="$$token" make --no-print-directory model-downloader-up || { code=$$?; timing_end "$$token" --code "$$code"; exit "$$code"; }
 	  python3 scripts/demo_assets.py model --timeout $(MODEL_WAIT_SECONDS) || { code=$$?; timing_end "$$token" --code "$$code"; exit "$$code"; }
 	  timing_end "$$token"
 	fi
@@ -506,17 +506,19 @@ endef
 
 # up/demo-up run the real graph (up-run/demo-up-run) inside the timing wrapper.
 # The wrapper line uses a literal `make`, so `make -n up` only prints it.
-up demo-up:
+# licenses run before the timing wrapper: the time a person takes to accept them is not startup time.
+demo-up: DEMO_FEEDS := yes
+up demo-up: licenses
 	@$(if $(wildcard $(TIMING_CLI)),$(TIMING_CLI) run --name $@ -- )$(INNER_MAKE) --no-print-directory $@-run
 
 # prereq's detector-model and demo-videos run inside start_application, after
 # the model services start, so both downloads overlap.
 up-run demo-up-run: IMAGE_SERVICES = model-downloader $(APP_SERVICES) proxy $(if $(DEMO_FEEDS),cam1)
-up-run: preflight licenses container-images asset-permissions setup
+up-run: preflight container-images asset-permissions setup
 	@$(start_application)
 
 demo-up-run: DEMO_FEEDS := yes
-demo-up-run: preflight licenses container-images asset-permissions setup
+demo-up-run: preflight container-images asset-permissions setup
 	@$(start_application)
 
 # Optional: upload the committed example packet. Never part of demo-up; the
