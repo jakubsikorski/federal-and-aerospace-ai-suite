@@ -386,21 +386,25 @@ it against a target.
 5. **Peak memory** - the highest host memory use.
 
 Each tile shows the typical value: half of the measurements are at or below it. Until there
-are a few measurements, a tile shows **Not enough data yet**. Tap a tile to see what it
+are at least five measurements the value reads **—**: the line below it says what to do
+(for example **Ask by voice with Audio on**) or **Not enough data yet** with the count so
+far. Tap a tile to see what it
 measures, the value that 95% of measurements are at or below, and, for **Spoken answer**,
 the typical time of each stage. Tap it again to hide the explanation.
 
 **Services** shows one tile each for Chat Q&A, Audio Analyzer (speech to text), and Text To
 Speech: how soon the first words appear, how much faster than real time speech is
 transcribed, and how soon a spoken answer is ready. The console measures these itself, so
-they include any time spent waiting for the service. Open **Details** for the typical and
-95% values and, once a service reports its own measurements, a **Reported by** line with
+they include any time spent waiting for the service. A service tile reads **Not available yet** until the
+console has timed a request, and **Not enough data yet** for the first few. Open **Details**
+for the typical and 95% values and, once a service reports its own measurements, a **Reported by** line with
 them (since that service started).
 
 The live video badge shows detection time and frames per second for the selected camera. After a
 spoken answer, a line under the assistant such as **Answered aloud in 2.4 s** shows the time
-to the first sound; open it to see the listening, hearing, thinking, and speaking stages. The alert latency chip
-tooltip starts with the time to alert.
+to the first sound; open it to see the listening, hearing, thinking, and speaking stages. For alerts raised as soon as
+an object appears, the alert latency chip tooltip starts with the time to alert; rules that
+wait (dwell) or a later zone entry do not show it.
 
 ## Voice Questions and Spoken Answers
 

@@ -622,10 +622,11 @@ class Alerts:
             # alerts raised on appearance count; a dwell or a later zone entry waits
             # on purpose and is not pipeline latency.
             ingress_at = entry.get("first_ingress_at")
-            if (self.performance is not None and entry.get("admitted_now")
-                    and rule.get("dwell_seconds") is None
+            if (entry.get("admitted_now") and rule.get("dwell_seconds") is None
                     and isinstance(ingress_at, (int, float)) and not isinstance(ingress_at, bool)):
-                self.performance.alert_raised(matched_at - ingress_at)
+                self.latency[match_id]["time_to_alert"] = matched_at - ingress_at
+                if self.performance is not None:
+                    self.performance.alert_raised(matched_at - ingress_at)
             while len(self.latency) > 500:
                 self.latency.pop(next(iter(self.latency)))
             incident_id, notify, reopened = self._attach(conn, rule, entry, track_id, match_id)

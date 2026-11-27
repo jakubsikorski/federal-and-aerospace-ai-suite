@@ -125,7 +125,8 @@ class Performance:
             camera = self.cameras.get(stream_id)
             if camera is None:
                 if len(self.cameras) >= MAX_CAMERAS:
-                    return
+                    # Removed cameras are never reused; drop the longest-silent one.
+                    del self.cameras[min(self.cameras, key=lambda key: self.cameras[key].last or 0)]
                 camera = self.cameras[stream_id] = Camera()
             session = context.get("tracking_session_id")
             if camera.session != session or (camera.counts and frames_out < camera.counts[-1][2]):
@@ -234,7 +235,10 @@ class Performance:
             health, reason = "starting", "Measuring"
         elif drop is not None and drop > MAX_DROP_PERCENT:
             health, reason = "dropping", f"{drop:.0f}% of decoded frames skipped"
-        elif camera.source_fps and processed < MIN_SOURCE_RATIO * camera.source_fps:
+        elif (ingress is None and camera.source_fps
+              and processed < MIN_SOURCE_RATIO * camera.source_fps):
+            # Advertised caps rates can overstate what a camera sends, so they are
+            # only a fallback when the ingress counter is missing.
             health, reason = "dropping", "Processing slower than the camera"
         elif delay["status"] == "info" and delay["p95"] > DELAYED_SECONDS:
             health, reason = "delayed", "Detection delay over 400 ms"

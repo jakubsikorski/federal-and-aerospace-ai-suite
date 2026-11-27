@@ -14,7 +14,9 @@ telemetry in the **Resources** panel of the operator console. See the
 [Operator Guide](operator-guide.md#resources).
 
 The **Performance** tab next to Resources shows time to alert, time to spoken answer, smooth
-cameras, approximate answer speed, and peak memory against configurable targets. See the
+cameras, approximate answer speed, and peak memory over the last 5 minutes, plus one tile
+each for Chat Q&A, Audio Analyzer, and Text To Speech. It describes the values without
+grading them against targets. See the
 [Performance KPI Plan](./benchmarking/handheld-performance-kpi-plan.md) for definitions,
 the implemented measurements, and the upstream service requests.
 

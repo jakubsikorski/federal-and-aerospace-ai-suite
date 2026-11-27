@@ -1308,11 +1308,11 @@ def _latency(state, match_id: str | None) -> dict | None:
         "image_ready": base.get("image_at"),
     }
     detected = base["detected_at"]
-    ingress, matched = base.get("ingress_at"), base.get("matched_at")
+    # Decoded frame of the first sighting to the alert, on the host wall clock; only
+    # for alerts raised on appearance (a dwell or later zone entry waits on purpose).
+    time_to_alert = base.get("time_to_alert")
     return {"detected_at": detected,
-            # Decoded frame of the first sighting to the alert, on the host wall clock.
-            "time_to_alert": (round(matched - ingress, 3)
-                              if ingress is not None and matched is not None else None),
+            "time_to_alert": None if time_to_alert is None else round(time_to_alert, 3),
             "seconds": {name: round(at - detected, 2) for name, at in stamps.items() if at is not None}}
 
 

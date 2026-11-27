@@ -71,7 +71,7 @@ by the Handheld. The service's own numbers explain it, in Details.
 | --- | --- | --- | --- |
 | Chat Q&A | "First words in 1.2 s": question sent → first streamed text | Model time to first token (TTFT), queue wait, error rate | TTFT < 2 s |
 | Audio Analyzer | "Speech heard 2.0x faster than real time": audio length ÷ call time | Model-only speed (RTFx), error rate | > 1x, aim ≥ 2x |
-| Text To Speech | "Voice ready in 0.4 s": call time for one clip (SpeechT5 returns the whole clip, so this is time to first audio) | Model time to first audio, real-time factor (RTF), error rate | RTF < 1.0 |
+| Text To Speech | "Voice ready in 400 ms": call time for one clip (SpeechT5 returns the whole clip, so this is time to first audio) | Model time to first audio, real-time factor (RTF), error rate | RTF < 1.0 |
 
 Video and alert KPIs already sit on the video badge, alert rows, and camera
 table (Section 7), so DL Streamer and Alert Agent get no service tile.
@@ -139,8 +139,9 @@ for video. ASR accuracy (WER) is an offline benchmark, never a live tile.
 - **Included:** silence wait, upload, transcription, assistant routing and
   generation, synthesis of the first answer chunk, delivery, playback start.
 - **Excluded:** the "Checking." acknowledgement (shown separately as
-  "Acknowledged in"), and turns with audio off or playback blocked (counted as
-  "not timed").
+  "Acknowledged in"); turns started with Audio off (not counted, even if Audio
+  is turned on during the turn); turns where the browser blocked playback or no
+  answer was heard (counted as "not timed").
 
 Auto-send waits 1.5 s of silence. The Panel shows it as its own "Listening"
 stage so its cost is visible; tuning it is a product decision.
@@ -199,7 +200,7 @@ keeps per camera:
 | Skipped frames | `1 − Δframe_sequence / Δframes_in` | 5 s |
 | Detection delay | Backend receive time − `ingress_at` (0–60 s accepted) | 30 s |
 | Pipeline latency | `pipeline_ms` | 30 s |
-| Health | Offline (no frames for 5 s), Measuring, Dropping (> 10 % skipped or processed < 90 % of source), Delayed (detection delay p95 over 400 ms, at least 5 samples), Smooth | — |
+| Health | Offline (no frames for 5 s), Measuring, Dropping (> 10 % skipped; without the ingress counter, processed < 90 % of the caps frame rate, which cameras can overstate), Delayed (detection delay p95 over 400 ms, at least 5 samples), Smooth | — |
 
 Health is the camera's operating state, shown to explain a stutter. Its fixed
 limits (`MAX_DROP_PERCENT`, `MIN_SOURCE_RATIO`, `DELAYED_SECONDS` in
@@ -600,11 +601,12 @@ For each service change, the service team checks:
    From the end of your speech to the first sound of the answer. Acknowledged after 820 ms.
    ```
 
-   Typed questions show "First words in 0.6 s". An untimed turn says why:
+   Typed questions show "First words in 640 ms". An untimed turn says why:
    "Spoken answer not timed · Audio is off" (or "· browser blocked audio",
    "· no spoken answer was heard").
 3. **Alert rows (`#alerts`).** The latency chip reads "Time to alert (camera
-   frame to alert raised): 210 ms".
+   frame to alert raised): 210 ms", only for alerts raised on appearance (the
+   same alerts the KPI counts); dwell rules and later zone entries omit it.
 4. **Performance tab (Resources | Performance switch).** Five KPI tiles, the
    service row, and the camera table:
 
@@ -618,7 +620,7 @@ For each service change, the service team checks:
    Services
    ┌ Chat Q&A ──────────┐┌ Audio Analyzer ────────────┐┌ Text To Speech ──┐
    │ First words in 1.2 s││ Speech heard 2.0x faster   ││ Voice ready in   │
-   │ TTFT                ││ than real time · RTFx      ││ 0.4 s · TTFA · RTF│
+   │ TTFT                ││ than real time · RTFx      ││ 400 ms · TTFA·RTF│
    │ ▸ Details           ││ ▸ Details                  ││ ▸ Details        │
    └─────────────────────┘└────────────────────────────┘└──────────────────┘
    Camera   | Health          | Frames/s  | Skipped | Detect
@@ -634,11 +636,15 @@ For each service change, the service team checks:
    requests), including time waiting in the       requests), including time waiting in the
    service queue                                  service queue
    More detail after the Chat Q&A update          Reported by Chat Q&A (since it started):
-                                                    model first token 0.6 s, queue wait 0.3 s,
+                                                    model first token 600 ms, queue wait 300 ms,
                                                     errors 0.0%
    ```
 
-   Compute busy stays on the Resources tab.
+   Durations use one format everywhere: milliseconds below 1 s, otherwise
+   seconds with one decimal. KPI tiles are built once and updated in place,
+   and the tap explanation is rewritten only when it changes. In Performance
+   mode the resource-only header controls (status, Details, Expand) are
+   hidden. Compute busy stays on the Resources tab.
 
 ## 8. Remaining work
 

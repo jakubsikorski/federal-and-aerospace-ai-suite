@@ -369,7 +369,8 @@ SPDX-License-Identifier: Apache-2.0
   #performance-view { display: none; grid-row: 2 / 4; min-height: 0; overflow: auto; padding: 8px 10px; }
   #telemetry.performance-mode #performance-view { display: block; }
   #telemetry.performance-mode #telemetry-grid, #telemetry.performance-mode #trend,
-  #telemetry.performance-mode #diagnostics, #telemetry.performance-mode #toggle-diagnostics { display: none; }
+  #telemetry.performance-mode #diagnostics, #telemetry.performance-mode #toggle-diagnostics,
+  #telemetry.performance-mode #expand-telemetry, #telemetry.performance-mode #telemetry-status { display: none; }
   #kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 6px; }
   .kpi { display: flex; flex-direction: column; justify-content: flex-start; min-width: 0; min-height: 44px; font: inherit; color: inherit; text-align: left; cursor: pointer; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
   .kpi span, .kpi strong, .kpi small { display: block; }
@@ -2818,7 +2819,8 @@ function newAnswerTiming(voiceTurn, fields = {}) {
 }
 function noteAnswerPlayback(item, event) {
   const timing = state.answerTiming;
-  if (!timing?.voice || timing.done || item.kind !== "answer") return;
+  // A turn started with Audio off is not timed, even if Audio is turned on later.
+  if (!timing?.voice || !timing.audio || timing.done || item.kind !== "answer") return;
   if (event === "blocked") return finishAnswerTiming(timing, "blocked");
   if (event === "playing" && item.ack) { timing.ack ??= performance.now(); return; }
   // Answer speech is made from answer text; audio before it is not this answer.
@@ -2860,7 +2862,7 @@ function renderAnswerTiming() {
   const box = $("answer-timing"), timing = state.answerTiming;
   const first = timing?.firstText != null ? perfSeconds((timing.firstText - timing.start) / 1000) : null;
   let content = null;
-  if (timing?.outcome === "spoken") {
+  if (timing?.outcome === "spoken" && timing.stages) {
     const details = document.createElement("details"), summary = document.createElement("summary");
     summary.textContent = "Answered aloud in " + perfSeconds(timing.total / 1000);
     const bar = document.createElement("div"), legend = document.createElement("div");
@@ -4056,29 +4058,25 @@ $("view-performance").onclick = () => setTelemetryView("performance");
 // service queue and loopback). Values the services report through Metrics
 // Manager (state.telemetry.services, cumulative since the service started)
 // only add a line to Details, so the headline never jumps when they appear.
-function svcSeconds(seconds) {
-  if (seconds == null) return "—";
-  return seconds < 0.1 ? Math.round(seconds * 1000) + " ms" : seconds.toFixed(1) + " s";
-}
-const svcTypical = (s) => "Typical " + svcSeconds(s.p50) + " · 95% at or below " + svcSeconds(s.p95);
+const svcTypical = (s) => "Typical " + perfSeconds(s.p50) + " · 95% at or below " + perfSeconds(s.p95);
 const svcPercent = (v) => v.toFixed(1) + "%";
 // headline: the Handheld summary shown; text: the headline sentence;
 // lines: extra Handheld lines; reported: [service key, words, formatter].
 const SERVICE_TILES = [
   {id: "chat", label: "Chat Q&A", standard: "TTFT", headline: "first_words",
-    text: (s) => "First words in " + svcSeconds(s.p50),
+    text: (s) => "First words in " + perfSeconds(s.p50),
     lines: (h) => [svcTypical(h.first_words)],
-    reported: [["ttft_seconds", "model first token", svcSeconds], ["queue_wait_seconds", "queue wait", svcSeconds],
+    reported: [["ttft_seconds", "model first token", perfSeconds], ["queue_wait_seconds", "queue wait", perfSeconds],
       ["error_rate_percent", "errors", svcPercent]]},
   {id: "asr", label: "Audio Analyzer", standard: "RTFx", headline: "rtfx",
     text: (s) => "Speech heard " + s.p50.toFixed(1) + "x faster than real time",
     lines: (h) => enoughSamples(h.request_seconds) ? ["Call time: " + svcTypical(h.request_seconds).toLowerCase()] : [],
     reported: [["rtfx", "model-only speed", (v) => v.toFixed(1) + "x"], ["error_rate_percent", "errors", svcPercent]]},
   {id: "tts", label: "Text To Speech", standard: "TTFA · RTF", headline: "request_seconds",
-    text: (s) => "Voice ready in " + svcSeconds(s.p50),
+    text: (s) => "Voice ready in " + perfSeconds(s.p50),
     lines: (h) => [svcTypical(h.request_seconds)].concat(enoughSamples(h.rtf)
       ? ["Takes " + h.rtf.p50.toFixed(2) + " s per second of speech (RTF)"] : []),
-    reported: [["time_to_first_audio_seconds", "model time to first audio", svcSeconds],
+    reported: [["time_to_first_audio_seconds", "model time to first audio", perfSeconds],
       ["rtf", "RTF", (v) => v.toFixed(2)], ["error_rate_percent", "errors", svcPercent]]},
 ];
 // One line listing only the service values that exist; stale ones are marked.
@@ -4164,7 +4162,7 @@ function renderPerformance() {
       title: "End of your spoken question to the first sound of the answer." + spread(voice)
         + (stages ? "\nTypical stages: " + stages : "")
         + (voice.acknowledged_p50 != null ? "\nAcknowledged after " + perfSeconds(voice.acknowledged_p50) : "")
-        + (voice.untimed ? `\n${voice.untimed} not timed (Audio off, blocked, or no answer heard)` : "")},
+        + (voice.untimed ? `\n${voice.untimed} not timed (browser blocked audio or no answer heard)` : "")},
     {id: "cameras", label: "Smooth cameras",
       value: cameras.running ? `${cameras.smooth} of ${cameras.running}` : "—",
       detail: worst ? cameraLabel(worst[0]) + ": " + worst[1].reason
@@ -4182,16 +4180,25 @@ function renderPerformance() {
       detail: memory.last == null ? "Waiting for readings" : "Now " + Math.round(memory.last) + "% of host RAM",
       title: "Highest host memory use in the window."},
   ];
-  $("kpi-grid").replaceChildren(...tiles.map((tile) => {
-    const box = document.createElement("button");
-    box.type = "button"; box.className = "kpi"; box.dataset.kpi = tile.id;
-    box.setAttribute("aria-pressed", String(state.kpiOpen === tile.id)); box.setAttribute("aria-controls", "kpi-explain");
-    box.onclick = () => { state.kpiOpen = state.kpiOpen === tile.id ? null : tile.id; renderPerformance(); };
-    for (const [tag, text] of [["span", tile.label], ["strong", tile.value], ["small", tile.detail]]) {
-      const node = document.createElement(tag); node.textContent = text; box.append(node);
-    }
-    return box;
-  }));
+  // Built once and updated in place, so focus and taps survive the 1 Hz refresh.
+  const grid = $("kpi-grid");
+  if (grid.children.length !== tiles.length) {
+    grid.replaceChildren(...tiles.map((tile) => {
+      const box = document.createElement("button");
+      box.type = "button"; box.className = "kpi"; box.dataset.kpi = tile.id;
+      box.setAttribute("aria-controls", "kpi-explain");
+      box.onclick = () => { state.kpiOpen = state.kpiOpen === tile.id ? null : tile.id; renderPerformance(); };
+      box.append(document.createElement("span"), document.createElement("strong"), document.createElement("small"));
+      return box;
+    }));
+  }
+  tiles.forEach((tile, index) => {
+    const box = grid.children[index];
+    box.setAttribute("aria-pressed", String(state.kpiOpen === tile.id));
+    [tile.label, tile.value, tile.detail].forEach((text, part) => {
+      if (box.children[part].textContent !== text) box.children[part].textContent = text;
+    });
+  });
   const rows = Object.entries(snapshot.cameras || {}).map(([streamId, camera]) => {
     const row = document.createElement("tr"); row.dataset.health = camera.health; row.title = camera.reason || "";
     const fps = camera.processed_fps == null ? "—" : camera.processed_fps + (camera.source_fps ? " / " + camera.source_fps : "");
@@ -4202,8 +4209,10 @@ function renderPerformance() {
     return row;
   });
   const open = tiles.find((tile) => tile.id === state.kpiOpen);
+  // A live region: write only on change so it is not re-announced every second.
+  const explain = open ? open.label + ": " + open.title.replaceAll("\n", " · ") : "";
   $("kpi-explain").hidden = !open;
-  $("kpi-explain").textContent = open ? open.label + ": " + open.title.replaceAll("\n", " · ") : "";
+  if ($("kpi-explain").textContent !== explain) $("kpi-explain").textContent = explain;
   $("camera-performance").tBodies[0].replaceChildren(...rows);
   $("camera-performance").hidden = !rows.length;
   $("perf-note").textContent = `Measured by the Handheld over the last ${Math.round(snapshot.window_seconds / 60)} min · `

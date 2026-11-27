@@ -3205,6 +3205,24 @@ def test_performance_frame_rates_drops_health_and_session_reset():
     assert [c[1:] for c in perf.cameras["cam1"].counts] == [(1, 1), (None, 2)]
 
 
+def test_performance_caps_rate_is_only_a_fallback_and_cameras_are_evicted():
+    from app.performance import MAX_CAMERAS, Performance
+
+    clock = [0.0]
+    perf = Performance(clock=lambda: clock[0], wall=lambda: 5000.0)
+    # The camera advertises 30 fps but sends 24, and all 24 are processed.
+    for second in range(4):
+        clock[0] = second
+        perf.frame("cam", {"tracking_session_id": "s", "frame_sequence": 24 * second,
+                           "frames_in": 24 * second, "source_fps": 30.0})
+    assert perf.snapshot(["cam"])["cameras"]["cam"]["health"] == "smooth"
+    for index in range(MAX_CAMERAS + 1):
+        clock[0] = 10 + index
+        perf.frame(f"c{index}", {"tracking_session_id": "s", "frame_sequence": 1})
+    assert len(perf.cameras) == MAX_CAMERAS and f"c{MAX_CAMERAS}" in perf.cameras
+    assert "cam" not in perf.cameras, "the longest-silent camera makes room"
+
+
 def test_performance_camera_delayed_uses_fixed_limit():
     from app.performance import DELAYED_SECONDS, MIN_SAMPLES, Performance
 
@@ -3502,7 +3520,8 @@ def test_time_to_alert_counts_only_alerts_raised_on_appearance():
         assert measured["count"] == 1 and 0.25 <= measured["last"] < 2, measured
         state = types.SimpleNamespace(alerts=alerts, arbiter=types.SimpleNamespace(timing=lambda ref: {}))
         readouts = [_latency(state, match_id)["time_to_alert"] for match_id in alerts.latency]
-        assert all(value is not None and value >= 0.25 for value in readouts), readouts
+        # The alert chip shows time to alert only where the KPI counts it.
+        assert readouts.count(None) == 2 and min(v for v in readouts if v is not None) >= 0.25, readouts
         assert perf.snapshot(["cam1"])["cameras"]["cam1"]["detection_delay_seconds"]["count"] == 3
         ing.conn.close()
         alerts.close()

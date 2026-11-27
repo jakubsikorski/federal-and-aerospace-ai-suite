@@ -902,8 +902,14 @@ def main():
                 if (!perfTiles[4].includes('52%') || !perfTiles[4].includes('Now 41% of host RAM')) return "memory tile: " + perfTiles[4];
                 if (perfTiles.some(text => /✓|!|target/i.test(text)) || $('kpi-grid').querySelector('.kpi-status')) return "KPI tile judges a value: " + perfTiles;
                 if ([...$('kpi-grid').children].some(tile => getComputedStyle(tile).borderLeftWidth !== '1px')) return "KPI tile has an accent border";
+                if (perfShown('expand-telemetry') || perfShown('telemetry-status')) return "resource-only header controls shown on Performance";
+                const kpiNodes = [...$('kpi-grid').children];
+                kpiNodes[0].focus(); renderPerformance();
+                if ([...$('kpi-grid').children].some((tile, i) => tile !== kpiNodes[i]) || document.activeElement !== kpiNodes[0]) return "KPI refresh rebuilt tiles or dropped focus";
                 $('kpi-grid').children[0].click();
                 if (!$('kpi-explain').textContent.includes('95% at or below 350 ms')) return "95% not in the explanation: " + $('kpi-explain').textContent;
+                const explainNode = $('kpi-explain').firstChild; renderPerformance();
+                if ($('kpi-explain').firstChild !== explainNode) return "explanation rewritten on refresh (re-announced)";
                 $('kpi-grid').children[1].click();
                 if ($('kpi-explain').hidden || !$('kpi-explain').textContent.includes('first sound of the answer') || !$('kpi-explain').textContent.includes('1 not timed') || $('kpi-explain').textContent.includes('95%') || $('kpi-grid').children[1].getAttribute('aria-pressed') !== 'true') return "tap tile explanation: " + $('kpi-explain').textContent;
                 $('kpi-grid').children[1].click();
@@ -923,9 +929,9 @@ def main():
                 svcDetails.forEach(d => { d.open = true; });
                 const base = svcText();
                 if (svcTiles().length !== 3) return "service tiles: " + base;
-                if (!base[0].includes('First words in 0.8 s') || !base[0].includes('TTFT') || !base[0].includes('Typical 0.8 s · 95% at or below 1.2 s') || !base[0].includes('Measured by the Handheld (last 5 min, 12 requests), including time waiting in the service queue') || !base[0].includes('More detail after the Chat Q&A update')) return "chat tile: " + base[0];
-                if (!base[1].includes('Speech heard 4.2x faster than real time') || !base[1].includes('RTFx') || !base[1].includes('Call time: typical 0.5 s · 95% at or below 0.9 s') || !base[1].includes('More detail after the Audio Analyzer update')) return "asr tile: " + base[1];
-                if (!base[2].includes('Voice ready in 0.4 s') || !base[2].includes('TTFA') || !base[2].includes('Typical 0.4 s · 95% at or below 0.6 s') || !base[2].includes('Takes 0.30 s per second of speech (RTF)') || !base[2].includes('More detail after the Text To Speech update')) return "tts tile: " + base[2];
+                if (!base[0].includes('First words in 800 ms') || !base[0].includes('TTFT') || !base[0].includes('Typical 800 ms · 95% at or below 1.2 s') || !base[0].includes('Measured by the Handheld (last 5 min, 12 requests), including time waiting in the service queue') || !base[0].includes('More detail after the Chat Q&A update')) return "chat tile: " + base[0];
+                if (!base[1].includes('Speech heard 4.2x faster than real time') || !base[1].includes('RTFx') || !base[1].includes('Call time: typical 500 ms · 95% at or below 900 ms') || !base[1].includes('More detail after the Audio Analyzer update')) return "asr tile: " + base[1];
+                if (!base[2].includes('Voice ready in 400 ms') || !base[2].includes('TTFA') || !base[2].includes('Typical 400 ms · 95% at or below 600 ms') || !base[2].includes('Takes 0.30 s per second of speech (RTF)') || !base[2].includes('More detail after the Text To Speech update')) return "tts tile: " + base[2];
                 if (base.some(text => /not available|error rate|in flight/i.test(text)) || svcJudged()) return "details list absent values or judge: " + base;
                 const svcM = (value, unit, st, extra) => Object.assign({value, unit, state: st || 'ok', p50: null, p95: null, count: null}, extra || {});
                 const svcMiss = () => svcM(null, '', 'missing');
@@ -937,10 +943,10 @@ def main():
                 renderPerformance();
                 const rep = svcText();
                 // Service values add a Details line; the headline does not move.
-                if (rep.some((text, i) => svcStrong[i].textContent !== svcTiles()[i].querySelector('strong').textContent) || !rep[0].includes('First words in 0.8 s')) return "headline changed when service series appeared: " + rep;
-                if (!rep[0].includes('Reported by Chat Q&A (since it started): model first token 0.6 s, queue wait 0.3 s, errors 0.0%') || rep[0].includes('More detail after')) return "chat reported line: " + rep[0];
+                if (rep.some((text, i) => svcStrong[i].textContent !== svcTiles()[i].querySelector('strong').textContent) || !rep[0].includes('First words in 800 ms')) return "headline changed when service series appeared: " + rep;
+                if (!rep[0].includes('Reported by Chat Q&A (since it started): model first token 600 ms, queue wait 300 ms, errors 0.0%') || rep[0].includes('More detail after')) return "chat reported line: " + rep[0];
                 if (!rep[1].includes('Speech heard 4.2x faster than real time') || !rep[1].includes('Reported by Audio Analyzer (since it started): model-only speed 2.0x, errors 0.0%')) return "asr reported line: " + rep[1];
-                if (!rep[2].includes('Voice ready in 0.4 s') || !rep[2].includes('Reported by Text To Speech (since it started): model time to first audio 0.5 s, RTF ◷ 0.30, errors 2.5%')) return "tts reported line: " + rep[2];
+                if (!rep[2].includes('Voice ready in 400 ms') || !rep[2].includes('Reported by Text To Speech (since it started): model time to first audio 500 ms, RTF ◷ 0.30, errors 2.5%')) return "tts reported line: " + rep[2];
                 if (rep.some(text => /not available|in flight/i.test(text)) || svcJudged()) return "reported details list absent values or judge: " + rep;
                 const speedTile = $('kpi-grid').children[3].textContent;
                 if (!speedTile.includes('21.4 tokens/s') || !speedTile.includes('Reported by Chat Q&A (since it started)') || speedTile.includes('words/s')) return "exact tokens/s should replace words/s: " + speedTile;
@@ -977,6 +983,12 @@ def main():
                 noteAnswerPlayback({kind:'answer'}, 'playing');
                 const perfFooter = $('answer-timing').textContent;
                 if (!perfTiming.done || $('answer-timing').hidden || !perfFooter.includes('Answered aloud in 2.0 s') || /target|✓|!/.test(perfFooter) || !perfFooter.includes('Think 800 ms')) return "answer footer: " + perfFooter;
+                const savedAudio = state.audioOn; state.audioOn = false;
+                const offTiming = newAnswerTiming(true, {speechEnd: perfNow - 2000, start: perfNow - 2000});
+                state.audioOn = true; offTiming.firstText = perfNow - 500;
+                noteAnswerPlayback({kind:'answer'}, 'playing');
+                if (offTiming.done) return "turn started with Audio off was timed";
+                state.audioOn = savedAudio;
                 const perfTyped = newAnswerTiming(false, {start: perfNow - 1200}); perfTyped.firstText = perfNow; renderAnswerTiming();
                 if ($('answer-timing').textContent !== 'First words in 1.2 s') return "typed footer: " + $('answer-timing').textContent;
                 state.answerTiming = null; renderAnswerTiming(); state.performance = null; state.selected = perfSelected; renderPerformance();
