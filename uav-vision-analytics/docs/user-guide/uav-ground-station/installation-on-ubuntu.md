@@ -18,7 +18,7 @@ To build a customized OS image first, see [Customized Image](../infrastructure/c
 - Ubuntu 24.04 LTS machine with Internet access (or a configured proxy).
 - Sudo access. The installer prompts for the sudo password unless `SUDO_PASSWORD` or `SUDO_ASKPASS`
   is set, or passwordless sudo is granted.
-- A UAV host running [UAV Vision Analytics](../infrastructure/installation-on-ubuntu.md) for the dashboard to connect to.
+- A UAV host running [UAV Vision Analytics](../uav-vision-analytics/installation-on-ubuntu.md) for the dashboard to connect to.
   It can run on a different machine (the usual case) or on this one.
 
 ## Step 1: Install the Ground Station

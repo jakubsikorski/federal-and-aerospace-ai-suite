@@ -28,7 +28,7 @@ This article will show you how to:
 ### Clone the repositories
 
 ```bash
-git clone https://github.com/open-edge-platform/image-composer-tool.git -b ict-2026.3
+git clone https://github.com/open-edge-platform/image-composer-tool.git -b 2026.3.0
 ```
 
 Now, you should have the source code available in `image-composer-tool` directory in your
@@ -68,10 +68,10 @@ Follow the instructions at [Image Composition Prerequisites](https://docs.opened
 The default template location is `$ICT_HOME/image-templates/ubuntu24` or `$ICT_HOME/image-templates/ubuntu26` depending on OS of your choosing. Make sure to select one of the `edgepack` templates, as it will provide best developer experience, since it comes with all Intel drivers preinstalled.
 
 ```bash
-export TEMPLATE="$ICT_HOME/image-templates/ubuntu24/ubuntu24-x86_64-edgepack-unattended-iso.yml"
+export TEMPLATE="$ICT_HOME/image-templates/ubuntu24/ubuntu24-x86_64-fedaero-handheld-blueprint-docker-unattended-iso.yml"
 ```
 
-In `$TEMPLATE`, set the values for `users.name` and `users.password` as desired.
+In parent's `$ICT_HOME/image-templates/ubuntu24/ubuntu24-x86_64-edgepack-unattended-iso.yml`, set the values for `users.name` and `users.password` as desired.
 The password must contain a SHA-512 hash generated using one of the following tools:
 
 ```bash
@@ -81,6 +81,8 @@ openssl passwd -6 'your-password-here'
 # Using mkpasswd (requires `whois` to be installed)
 mkpasswd --method=sha-512 'your-password-here'
 ```
+
+Optionally, if image will be deployed in environment that requires proxy, open `$ICT_HOME/image-templates/ubuntu24/ubuntu24-x86_64-edgepack-unattended-iso.yml` file and configure proxy in `users.proxy` section.
 
 Adapt this template to suit your use case. The advanced customization options are discussed in the [Package curation and template customization](#package-curation-and-template-customization) section below.
 
@@ -114,17 +116,9 @@ When the build completes, expect the following output on the console with build 
 2026-11-20T10:47:56.152+0100	INFO	display/display.go:63	  Image Type:   ISO
 2026-11-20T10:47:56.152+0100	INFO	display/display.go:64
 2026-11-20T10:47:56.152+0100	INFO	display/display.go:65	  Generated Artifacts (including SBOM):
-2026-11-20T10:47:56.152+0100	INFO	display/display.go:83	    • edgepack-os-image-ubuntu-unattended-24.04.iso (2.74 GB)
-2026-11-20T10:47:56.152+0100	INFO	display/display.go:84	      /home/user/image-composer-tool/workspace/ubuntu-ubuntu24-x86_64/imagebuild/Default_ISO/edgepack-os-image-ubuntu-unattended-24.04.iso
-2026-11-20T10:47:56.152+0100	INFO	display/display.go:85
-2026-11-20T10:47:56.152+0100	INFO	display/display.go:83	    • spdx_manifest_deb_edgepack-os-image-ubuntu-unattended_20261120_104723.json (1.55 MB)
-2026-11-20T10:47:56.152+0100	INFO	display/display.go:84	      /home/user/image-composer-tool/workspace/ubuntu-ubuntu24-x86_64/imagebuild/Default_ISO/spdx_manifest_deb_edgepack-os-image-ubuntu-unattended_20261120_104723.json
-2026-11-20T10:47:56.152+0100	INFO	display/display.go:85
+2026-11-20T10:47:56.152+0100	INFO	display/display.go:83	    • fedaero-handheld-blueprint-docker-ubuntu-unattended-24.04.iso (2.74 GB)
+2026-11-20T10:47:56.152+0100	INFO	display/display.go:84	      /home/user/image-composer-tool/workspace/ubuntu-ubuntu24-x86_64/imagebuild/Default_ISO/fedaero-handheld-blueprint-docker-ubuntu-unattended-24.04.iso
 2026-11-20T10:47:56.152+0100	INFO	display/display.go:88	════════════════════════════════════════════════════════════════════════════
-2026-11-20T10:47:56.152+0100	INFO	display/display.go:89
-2026-11-20T10:47:56.185+0100	INFO	system/ownership.go:110	returning build artifact ownership to invoking user 1000:1000 under /home/user/image-composer-tool/workspace
-2026-11-20T10:47:56.185+0100	INFO	system/ownership.go:177	returning ownership of /home/user/image-composer-tool/tmp to invoking user 1000:1000
-2026-11-20T10:47:56.185+0100	INFO	image-composer-tool/build.go:466	image build completed successfully
 2026-11-20T10:47:56.185+0100	INFO	display/display.go:164	  Build Timings:
 2026-11-20T10:47:56.185+0100	INFO	display/display.go:165	  +----------------------------------+----------------+
 2026-11-20T10:47:56.185+0100	INFO	display/display.go:166	  | Stage                            | Duration       |
@@ -151,15 +145,15 @@ The output artefacts are written to:
 
 Expected artifact:
 
-| File                                            | Description                                |
-| ----------------------------------------------- | ------------------------------------------ |
-| `edgepack-os-image-ubuntu-unattended-24.04.iso` | Compressed raw disk image (ready to flash) |
+| File                                                            | Description                                  |
+| --------------------------------------------------------------- | -------------------------------------------  |
+| `fedaero-handheld-blueprint-docker-ubuntu-unattended-24.04.iso` | Unattended installation ISO (ready to flash) |
 
 ## OS installation
 
 After ISO is created, use preferred way of installation (such as USB stick or KVM) to install it on target system. Following commands explain how to write image to USB stick:
 
-Run `lsblk` to undestand how USB stick is mapped to local filesystem. In this case, it is `/dev/sdb`
+Connect USB stick to computer. Run `lsblk` to understand how USB stick is mapped to local filesystem. In this case, it is `/dev/sdb`
 
 ```bash
 $ lsblk
@@ -173,11 +167,12 @@ sdb           8:16   1  28.7G  0 disk
 Remove filesystem on USB stick and write ISO file. Make sure to replace `sdb` to correct path if it is different using output from previous command.
 
 ```bash
+sudo umount /dev/sdb || echo "not mounted"
 sudo wipefs --all /dev/sdb
-sudo dd if=workspace/ubuntu-ubuntu24-x86_64/imagebuild/Default_ISO/edgepack-os-image-ubuntu-unattended-24.04.iso of=/dev/sdb bs=16M status=progress oflag=sync
+sudo dd if=workspace/ubuntu-ubuntu24-x86_64/imagebuild/Default_ISO/fedaero-handheld-blueprint-docker-ubuntu-unattended-24.04.iso of=/dev/sdb bs=16M status=progress oflag=sync
 ```
 
-After writing is done, remove USB stick from computer, connect it to target system and go into BIOS settings of target system. Select `Boot->Boot options` and select USB stick as boot device. Save changes and reboot. After reboot, automatic installation will start.
+After writing is done, remove USB stick from computer, connect it to target system and go into BIOS settings of target system. Select **Boot → Boot options** and select USB stick as boot device. Save changes and reboot. After reboot, automatic installation will start.
 
 After OS is installed, follow [Deploy Application](../deploy-applications.md) using `openedge-cli` tool to install application.
 

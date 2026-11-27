@@ -78,13 +78,22 @@ connected UAV's data.
 curl -s http://${VIZ_HOST_IP:-127.0.0.1}:${VIZ_PORT:-8080}/api/sessions
 ```
 
-Confirms every host you expect to be connected is listed. For a given host,
+Confirms every host you expect to be connected is listed. For a given host, list
+the cameras the dashboard can see:
 
 ```bash
-curl -s http://${VIZ_HOST_IP:-127.0.0.1}:${VIZ_PORT:-8080}/api/pipeline-info?host=<uav-ip>
+curl -s "http://${VIZ_HOST_IP:-127.0.0.1}:${VIZ_PORT:-8080}/api/detect-pipelines?host=<uav-ip>"
 ```
 
-confirms its cameras/pipelines are visible to the dashboard.
+Then query one camera's pipeline, devices and models. The `camera` parameter is
+required and is the RTSP path name returned above, for example `uav-front-camera`:
+
+```bash
+curl -s "http://${VIZ_HOST_IP:-127.0.0.1}:${VIZ_PORT:-8080}/api/pipeline-info?host=<uav-ip>&camera=<camera>"
+```
+
+A response with `"reachable": true` and `"state": "RUNNING"` confirms the camera's
+pipeline is visible to the dashboard.
 
 ## Troubleshooting
 

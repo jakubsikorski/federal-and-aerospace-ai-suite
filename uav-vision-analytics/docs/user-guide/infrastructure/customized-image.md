@@ -14,7 +14,7 @@ distros on x86_64.
 > [!NOTE]
 > This path is intended for advanced users who need fine-grained control over disk
 > layout, installed packages, and package repositories. Most users can start with the simpler
-> path, [using standard Ubuntu image](./installation-on-ubuntu.md).
+> path, [using standard Ubuntu image](../uav-vision-analytics/installation-on-ubuntu.md).
 
 This article will show you how to:
 
@@ -28,7 +28,7 @@ This article will show you how to:
 ### Clone the repositories
 
 ```bash
-git clone -b main https://github.com/open-edge-platform/image-composer-tool.git
+git clone https://github.com/open-edge-platform/image-composer-tool.git -b 2026.3.0
 ```
 
 Now, you should have the source code available in the `image-composer-tool` directory in your workspace (for example, `/home/user`).
@@ -55,7 +55,7 @@ These packages are required before composing any image:
 sudo apt install systemd-ukify mmdebstrap
 ```
 
-Follow the instructions at [Image Composition Prerequisites](https://docs.openedgeplatform.intel.com/dev/image-composer-tool/get-started/installation.html#image-composition-prerequisites) if you face issues installing packages using apt.
+Follow the instructions at [Image Composition Prerequisites](https://docs.openedgeplatform.intel.com/dev/platform-software/image-composer-tool/get-started/installation.html#image-composition-prerequisites) if you face issues installing packages using apt.
 
 > [!NOTE]
 > `mmdebstrap` version 0.8.x (shipped with Ubuntu OS version 22.04) has known
@@ -67,10 +67,10 @@ Follow the instructions at [Image Composition Prerequisites](https://docs.opened
 The default template location is `$ICT_HOME/image-templates/ubuntu24` or `$ICT_HOME/image-templates/ubuntu26`, depending on the OS of your choosing. Select one of the `edgepack` templates, as it provides the best developer experience: it comes with all Intel drivers preinstalled.
 
 ```bash
-export TEMPLATE="$ICT_HOME/image-templates/ubuntu24/ubuntu24-x86_64-edgepack-unattended-iso.yml"
+export TEMPLATE="$ICT_HOME/image-templates/ubuntu24/ubuntu24-x86_64-fedaero-uncrewed-aerial-vehicle-blueprint-docker-unattended-iso.yml"
 ```
 
-In `$TEMPLATE`, set the values for `users.name` and `users.password` as desired.
+In parent's `$ICT_HOME/image-templates/ubuntu24/ubuntu24-x86_64-edgepack-server-unattended-iso.yml`, set the values for `users.name` and `users.password` as desired.
 The password must contain a SHA-512 hash generated using one of the following tools:
 
 ```bash
@@ -80,6 +80,8 @@ openssl passwd -6 'your-password-here'
 # Using mkpasswd (requires `whois` to be installed)
 mkpasswd --method=sha-512 'your-password-here'
 ```
+
+Optionally, if image will be deployed in environment that requires proxy, open `$ICT_HOME/image-templates/ubuntu24/ubuntu24-x86_64-edgepack-server-unattended-iso.yml` file and configure proxy in `users.proxy` section.
 
 Adapt this template to suit your use case. The advanced customization options are discussed in the [Package curation and template customization](#package-curation-and-template-customization) section below.
 
@@ -111,8 +113,8 @@ When the build completes, expect the following output on the console with build 
 2026-11-20T10:47:56.152+0100	INFO	display/display.go:59	╚════════════════════════════════════════════════════════════════════════════╝
 2026-11-20T10:47:56.152+0100	INFO	display/display.go:63	  Image Type:   ISO
 2026-11-20T10:47:56.152+0100	INFO	display/display.go:65	  Generated Artifacts (including SBOM):
-2026-11-20T10:47:56.152+0100	INFO	display/display.go:83	    • edgepack-os-image-ubuntu-unattended-24.04.iso (2.74 GB)
-2026-11-20T10:47:56.152+0100	INFO	display/display.go:84	      /home/user/image-composer-tool/workspace/ubuntu-ubuntu24-x86_64/imagebuild/Default_ISO/edgepack-os-image-ubuntu-unattended-24.04.iso
+2026-11-20T10:47:56.152+0100	INFO	display/display.go:83	    • fedaero-uncrewed-aerial-vehicle-blueprint-docker-24.04.iso (2.74 GB)
+2026-11-20T10:47:56.152+0100	INFO	display/display.go:84	      /home/user/image-composer-tool/workspace/ubuntu-ubuntu24-x86_64/imagebuild/Default_ISO/fedaero-uncrewed-aerial-vehicle-blueprint-docker-ubuntu-unattended-24.04.iso
 2026-11-20T10:47:56.185+0100	INFO	image-composer-tool/build.go:466	image build completed successfully
 2026-11-20T10:47:56.185+0100	INFO	display/display.go:164	  Build Timings:
 2026-11-20T10:47:56.185+0100	INFO	display/display.go:169	  | Total Time                       | 7m53.05s       |
@@ -126,9 +128,9 @@ The output artefacts are written to:
 
 Expected artifact:
 
-| File                                            | Description                                   |
-| ----------------------------------------------- | --------------------------------------------- |
-| `edgepack-os-image-ubuntu-unattended-24.04.iso` | Unattended installation ISO (ready to flash)  |
+| File                                                                           | Description                                   |
+| ------------------------------------------------------------------------------ | --------------------------------------------- |
+| `fedaero-uncrewed-aerial-vehicle-blueprint-docker-ubuntu-unattended-24.04.iso` | Unattended installation ISO (ready to flash)  |
 
 ## OS installation
 
@@ -145,8 +147,9 @@ Erase the filesystem signatures on the USB stick and write the ISO. Replace `sdb
 reported by `lsblk` if it is different — the target device is overwritten:
 
 ```bash
+sudo umount /dev/sdb || echo "not mounted"
 sudo wipefs --all /dev/sdb
-sudo dd if="$ICT_HOME/workspace/ubuntu-ubuntu24-x86_64/imagebuild/Default_ISO/edgepack-os-image-ubuntu-unattended-24.04.iso" of=/dev/sdb bs=16M status=progress oflag=sync
+sudo dd if="$ICT_HOME/workspace/ubuntu-ubuntu24-x86_64/imagebuild/Default_ISO/fedaero-uncrewed-aerial-vehicle-blueprint-docker-ubuntu-unattended-24.04.iso" of=/dev/sdb bs=16M status=progress oflag=sync
 ```
 
 Remove the USB stick, connect it to the target system, open the BIOS settings, and select the USB
@@ -154,7 +157,7 @@ stick under **Boot → Boot options**. Save the changes and reboot; the automati
 
 After the OS is installed, install the applications with `openedge-cli`:
 
-- [Install UAV Vision Analytics on Ubuntu](./installation-on-ubuntu.md)
+- [Install UAV Vision Analytics on Ubuntu](../uav-vision-analytics/installation-on-ubuntu.md)
 - [Install UAV Ground Station on Ubuntu](../uav-ground-station/installation-on-ubuntu.md)
 
 ## Package curation and template customization

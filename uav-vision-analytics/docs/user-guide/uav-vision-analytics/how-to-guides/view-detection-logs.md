@@ -25,7 +25,7 @@ Add this to the start request's `destination`:
 "destination": {
   "metadata": {
     "type": "file",
-    "path": "/tmp/results.jsonl",
+    "path": "/home/pipeline-server/resources/results.jsonl",
     "format": "json-lines"
   },
   "frame": {"type": "rtsp", "path": "uav-my-camera", "encoding": "h264"}
@@ -33,15 +33,18 @@ Add this to the start request's `destination`:
 ```
 
 Several pipelines may write to the same `path` (lines interleave) or each
-to its own, e.g., `/tmp/results_front.jsonl`. The file lives inside the
-container; copy it out with `docker cp` as shown below.
+to its own, e.g., `/home/pipeline-server/resources/results_front.jsonl`. The
+server only accepts a `path` inside `/home/pipeline-server/resources/` (the
+mounted `resources` folder); any other location, such as `/tmp`, is rejected with
+`Invalid destination.metadata.path`. The file is written inside the container;
+copy it out with `docker cp` as shown below.
 
 ## Steps
 
 ### 1. Tail the log live
 
 ```bash
-docker exec uav-va-dlstreamer-pipeline-server tail -f /tmp/results.jsonl
+docker exec uav-va-dlstreamer-pipeline-server tail -f /home/pipeline-server/resources/results.jsonl
 ```
 
 ### 2. Pretty-print and filter with `jq`
@@ -52,22 +55,23 @@ and confidence scores.
 
 ```bash
 # Pretty-print the most recent line
-docker exec uav-va-dlstreamer-pipeline-server tail -n 1 /tmp/results.jsonl | jq .
+docker exec uav-va-dlstreamer-pipeline-server sh -c 'tail -n 1 /home/pipeline-server/resources/results.jsonl | jq .'
 
 # Show only frames where at least one object was detected
-docker exec uav-va-dlstreamer-pipeline-server tail -f /tmp/results.jsonl \
-  | jq -c 'select(.objects | length > 0) | {ts: .timestamp, objects: [.objects[].detection.label]}'
+docker exec uav-va-dlstreamer-pipeline-server sh -c "tail -n 200 /home/pipeline-server/resources/results.jsonl | jq -c 'select(any(.objects[]; .detection.confidence > 0)) | {ts: .timestamp, objects: [.objects[] | select(.detection.confidence > 0) | .detection.label]}'"
 ```
 
 > [!NOTE]
-> `jq` runs inside the container, which already has it available. To run it
+> `objects` also lists the telemetry text lines drawn on the frame (`Name`,
+> `Frame`, `ALT`, ...) with confidence `0`; the filter above skips them. `jq`
+> runs inside the container, which already has it available. To run it
 > from the host instead, see
 > [Troubleshooting — jq: command not found](../troubleshooting.md#jq-command-not-found).
 
 ### 3. Copy the log out for offline analysis
 
 ```bash
-docker cp uav-va-dlstreamer-pipeline-server:/tmp/results.jsonl ./results.jsonl
+docker cp uav-va-dlstreamer-pipeline-server:/home/pipeline-server/resources/results.jsonl ./results.jsonl
 ```
 
 ### 4. Correlate a log entry with a pipeline instance
@@ -80,7 +84,7 @@ and match on the `destination.metadata.path` you started it with.
 
 ## Verify
 
-- The file grows while a pipeline is `RUNNING` (`ls -la /tmp/results.jsonl`
+- The file grows while a pipeline is `RUNNING` (`ls -la /home/pipeline-server/resources/results.jsonl`
   inside the container shows an increasing size / mtime).
 - `jq` parses every line without error (`jq . < results.jsonl > /dev/null`
   reports no parse errors).

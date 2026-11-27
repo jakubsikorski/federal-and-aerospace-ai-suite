@@ -237,7 +237,7 @@ additional network request.
 Clips whose codec the browser cannot decode (for example some stored
 live-stream segments) fall back to VSS's
 server-decoded best-matching frame plus a download link. Live segments older
-than VSS's `LIVE_RETENTION_HOURS` may no longer be available.
+than `VSS_LIVE_RETENTION_HOURS` may no longer be available.
 
 ## Flight Summary
 

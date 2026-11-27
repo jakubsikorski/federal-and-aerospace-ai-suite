@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 
 The UAV Vision Analytics application is an AI-powered UAV object detection application with live telemetry overlay, optimized for Intel® edge hardware. It processes video from a UAV-mounted camera (or a simulated video file), runs YOLO11s inference across 80 object classes, and overlays correlated MAVLink telemetry (GPS, altitude, speed, heading) on the output RTSP stream. The stream is consumable by any capable client, such as QGroundControl (QGC), VLC, and ffplay.
 
-The application is built on Intel DL Streamer Pipeline Server and supports two deployment modes: a self-contained **Standalone (pymavlink)** mode using Gazebo/PX4 Software-in-the-Loop (SITL) simulation, and a **UAV Mission Compute SDK** mode that integrates with a running instance of the UAV Mission Compute SDK for full mission control and multi-camera pipeline management. Both modes are deployed on top of the Edge Node Infrastructure software - an edge computing platform, which enables hardware acceleration capabilities. See [Installation on Ubuntu](docs/user-guide/infrastructure/installation-on-ubuntu.md) or [Customized Image](docs/user-guide/infrastructure/customized-image.md) for installation and provisioning steps.
+The application is built on Intel DL Streamer Pipeline Server and supports two deployment modes: a self-contained **Standalone (pymavlink)** mode using Gazebo/PX4 Software-in-the-Loop (SITL) simulation, and a **UAV Mission Compute SDK** mode that integrates with a running instance of the UAV Mission Compute SDK for full mission control and multi-camera pipeline management. Both modes are deployed on top of the Edge Node Infrastructure software - an edge computing platform, which enables hardware acceleration capabilities. See [Installation on Ubuntu](docs/user-guide/uav-vision-analytics/installation-on-ubuntu.md) or [Customized Image](docs/user-guide/infrastructure/customized-image.md) for installation and provisioning steps.
 
 ![UAV Vision Analytics application architecture](docs/user-guide/_assets/uav-application-architecture.svg)
 
@@ -74,7 +74,7 @@ Run `make init` after cloning to create `.env` from `.env.example`, auto-detect 
 ## Quick Start
 
 To install and run the application on Ubuntu 24.04 with the OEP CLI Installer instead, see
-[Installation on Ubuntu](docs/user-guide/infrastructure/installation-on-ubuntu.md).
+[Installation on Ubuntu](docs/user-guide/uav-vision-analytics/installation-on-ubuntu.md).
 
 Run the commands from the `uav-vision-analytics` directory (`cd federal-and-aerospace-ai-suite/uav-vision-analytics` after `git clone https://github.com/open-edge-platform/federal-and-aerospace-ai-suite.git`, or the directory of the downloaded ZIP; see [Get Started](docs/user-guide/uav-vision-analytics/deploy/deploy-standalone.md)).
 
@@ -202,7 +202,7 @@ make build          Alias: start the default pymavlink stack
 ## Related Documentation
 
 - [User Guide](docs/user-guide/index.md) — Full deployment, configuration, and how-to guides.
-- [Installation on Ubuntu](docs/user-guide/infrastructure/installation-on-ubuntu.md) — Install and start the application with the OEP CLI Installer.
+- [Installation on Ubuntu](docs/user-guide/uav-vision-analytics/installation-on-ubuntu.md) — Install and start the application with the OEP CLI Installer.
 - [Customized Image](docs/user-guide/infrastructure/customized-image.md) — Build a customized Ubuntu image for deployment at scale.
 - [Benchmarks](docs/user-guide/benchmark.md) — Measure stream density and hardware utilization.
 - [Agent SKILLs](docs/user-guide/agents.md) — AI agent skills for platform automation and DL Streamer pipeline generation.

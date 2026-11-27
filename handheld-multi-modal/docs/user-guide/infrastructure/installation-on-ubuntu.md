@@ -25,6 +25,12 @@ For more detailed information on Edge Pack, refer to
 
 ## Step 1: Install the Edge Pack Components
 
+Optionally, export a Hugging Face token. The configured models are public and do not require it; a token only helps when Hugging Face rate-limits anonymous downloads. Do not store the token in configuration files or commit it to version control.
+
+```bash
+export HF_TOKEN=hf_...
+```
+
 Edge Pack provides the platform-level services (EP-IPU, EP-Manageability, and EP-TSN) that the
 suite blueprint runs on. Pass `--edgepack` when installing the blueprint to install them first:
 

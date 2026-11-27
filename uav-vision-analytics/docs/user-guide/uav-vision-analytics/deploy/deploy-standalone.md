@@ -209,7 +209,7 @@ curl -k -s https://<HOST_IP>/pipelines/${INSTANCE_ID}/status | python3 -m json.t
 > `captioner_model_path`, `captioner_prompt`, and `mqtt_topic` (captioning
 > pipelines only) override the pipeline's defaults — everything in
 > `parameters` is optional. To keep a per-frame detection log, add
-> `"metadata": {"type": "file", "path": "/tmp/results.jsonl", "format":
+> `"metadata": {"type": "file", "path": "/home/pipeline-server/resources/results.jsonl", "format":
 > "json-lines"}` to `destination`. The full parameter list per pipeline, and
 > how to list every available pipeline name, is in
 > [Manage Pipelines — REST API](../how-to-customize/pipeline-management/manage-pipelines.md#rest-api).

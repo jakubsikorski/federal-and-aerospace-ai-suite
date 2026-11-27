@@ -42,7 +42,7 @@ match. The ground station filters on the raw frame similarity instead:
 | `VSS_SEARCH_MIN_PEAK_SCORE` | `0.23` | Hits whose best frame scores below this are dropped. Turns "an elephant" over road footage into no results. Tuned for CLIP ViT-B/32 (on aerial footage an absent object peaks at 0.21-0.22 and a present one at 0.25 or more; single words such as "person" score lower than full descriptions); another embedding model needs a different value. |
 | `VSS_SEARCH_RELATIVE_CUTOFF` | `0.90` | Of the remaining hits, keep those within this fraction of the best hit's frame score for the same UAV, trimming the weak tail behind a strong match. |
 
-Set both to `0` to show everything VSS returns. Lower `MIN_PEAK_SCORE` (for
+Set both to `0` to show everything VSS returns. Lower `VSS_SEARCH_MIN_PEAK_SCORE` (for
 example `0.22`) if genuine matches are being hidden; raise it if unrelated
 clips appear for nonsense queries. The search popup's `filtered_out` count
 (`/api/search`) shows how many hits the filters removed.
@@ -70,7 +70,7 @@ behaviour:
 | `VSS_LIVE_STREAM_MAX_CONCURRENT` | `8` | Live streams indexed at once, one per UAV camera. Feeds beyond it show as `queued` in the live-index panel, the tab being viewed first. Raise it to index more UAVs together (more CPU/GPU). |
 | `VSS_INGEST_EMBEDDING_DEVICE`, `VSS_DETECTION_DEVICE`, `VSS_QUERY_EMBEDDING_DEVICE` | `CPU` | Devices for frame embedding, object crops and query embedding; `GPU`/`NPU` need the device entries in `.env`. |
 | `VSS_ENABLE_OBJECT_DETECTION` | `true` | Also embed detected-object crops, which improves queries for small objects at extra indexing cost. |
-| `VSS_EMBEDDING_MODEL` | `CLIP/clip-vit-b-32` | Embedding model for both indexing and queries; changing it invalidates the existing index (`make clean-vss-index`) and the `MIN_PEAK_SCORE` calibration. |
+| `VSS_EMBEDDING_MODEL` | `CLIP/clip-vit-b-32` | Embedding model for both indexing and queries; changing it invalidates the existing index (`make clean-vss-index`) and the `VSS_SEARCH_MIN_PEAK_SCORE` calibration. |
 
 ## Playback
 

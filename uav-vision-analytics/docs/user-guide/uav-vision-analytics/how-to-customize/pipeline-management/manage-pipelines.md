@@ -115,7 +115,7 @@ Useful request fields:
 | --- | --- |
 | `destination.frame.path` | Stream name: `rtsp://<HOST_IP>:8555/<path>`. Keep `"encoding": "h264"` (the ground station's relay needs H.264). |
 | `destination.frame.overlay: false` | Hide the detection boxes and telemetry text. |
-| `destination.metadata` | Add `{"type": "file", "path": "/tmp/results.jsonl", "format": "json-lines"}` to keep a per-frame detection log (see [Read and Filter Detection Logs](../../how-to-guides/view-detection-logs.md)). |
+| `destination.metadata` | Add `{"type": "file", "path": "/home/pipeline-server/resources/results.jsonl", "format": "json-lines"}` to keep a per-frame detection log (see [Read and Filter Detection Logs](../../how-to-guides/view-detection-logs.md)). |
 | `parameters.video` | Standalone mode: file name in `resources/videos`. |
 | `parameters.rtsp_url` | SDK mode: the camera's RTSP source. |
 | `parameters.detection_model` | Container path of the OpenVINO™ IR model (see [Modify the Detection Model](../model-and-video-management/modify-model.md)). |

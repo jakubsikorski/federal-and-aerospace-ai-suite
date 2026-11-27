@@ -20,50 +20,6 @@ local machine.
 The Makefile detects the GPU, NPU, and asset-directory group IDs separately; they do not need
 to match.
 
-## (Optional) Configuring the Proxy
-
-> [!NOTE]
-> If not using proxy servers, skip to [Deploying the Application](#deploying-the-application).
-
-Depending on the system's network configuration, you may need an additional proxy configuration.
-Ensure that `/etc/environment` contains proxy variables; replace `proxy-example:123` with a
-valid proxy for the local environment. `localhost` and `127.0.0.1` must be in `no_proxy`:
-the pre-flight check fails if requests to `127.0.0.1` would go through the proxy.
-
-```bash
-sudo tee -a /etc/environment > /dev/null <<EOT
-http_proxy="http://proxy-example:123"
-https_proxy="http://proxy-example:123"
-no_proxy="localhost,127.0.0.1"
-HTTP_PROXY="http://proxy-example:123"
-HTTPS_PROXY="http://proxy-example:123"
-NO_PROXY="localhost,127.0.0.1"
-EOT
-
-source /etc/environment
-```
-
-Configure the proxy for the Docker daemon, so that it can pull images:
-
-```bash
-sudo mkdir -p /etc/systemd/system/docker.service.d
-sudo tee /etc/systemd/system/docker.service.d/http-proxy.conf > /dev/null <<EOT
-[Service]
-Environment="HTTP_PROXY=http://proxy-example:123"
-Environment="HTTPS_PROXY=http://proxy-example:123"
-Environment="NO_PROXY=localhost,127.0.0.1"
-EOT
-
-sudo systemctl daemon-reload
-sudo systemctl restart docker
-```
-
-Verify the Docker daemon's proxy configuration:
-
-```bash
-docker info | grep -i proxy
-```
-
 ## Installing application
 
 If `openedge-cli` wasn't installed in previous steps, start by installing it:
@@ -72,6 +28,11 @@ If `openedge-cli` wasn't installed in previous steps, start by installing it:
 curl -fsSL https://raw.githubusercontent.com/open-edge-platform/edge-ai-libraries/refs/heads/release-2026.3.0/frameworks/oep-installer-cli/rendered/openedge-cli > /tmp/openedge-cli
 sudo chmod +x /tmp/openedge-cli
 sudo mv /tmp/openedge-cli /usr/bin
+```
+
+Optionally, export a Hugging Face token. The configured models are public and do not require it; a token only helps when Hugging Face rate-limits anonymous downloads. Do not store the token in configuration files or commit it to version control.
+```bash
+export HF_TOKEN=hf_...
 ```
 
 After that, install application:

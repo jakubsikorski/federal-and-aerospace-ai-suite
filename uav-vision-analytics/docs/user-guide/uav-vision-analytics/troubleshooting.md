@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 # Troubleshoot UAV Vision Analytics
 
 If you face a problem while working with UAV Vision Analytics, you can reach out to its
-maintainers in the [Discussions section](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/discussions),
+maintainers in the [Issues section](https://github.com/open-edge-platform/federal-and-aerospace-ai-suite/issues),
 but first, see if the following list of tips answers your questions. They are
 grouped into the following categories:
 
@@ -812,7 +812,7 @@ The system does not have an accessible Intel GPU or NPU. Verify hardware availab
 
 ```bash
 docker exec uav-va-dlstreamer-pipeline-server python3 -c \
-  "from openvino.runtime import Core; print(Core().available_devices)"
+  "import sys; sys.path.insert(0, '/opt/intel/openvino/python'); from openvino import Core; print(Core().available_devices)"
 ```
 
 - GPU requires `/dev/dri/renderD128` accessible inside the container (Intel iGPU or dGPU).
