@@ -25,6 +25,15 @@ def _same_group(child):
         return False
 
 
+def load_config(path=None):
+    """The optional TOML, or {} (with a warning) when it is unreadable: it must never stop a startup."""
+    try:
+        return configuration.load(path)
+    except ValueError as error:
+        print(f"startup timing: {error}; continuing without configuration", file=sys.stderr)
+        return {}
+
+
 def execute(command):
     """Run the command, forwarding SIGINT/SIGTERM to it and waiting for it before reporting."""
     child = subprocess.Popen(command)
@@ -86,8 +95,8 @@ def finalise(directory, root, name, start, clock, code, cfg, logs, explain, gant
 
 
 def run(command, name=None, config_path=None, output=None, explain=False, gantt=False, logs=True):
-    cfg = configuration.load(config_path)
-    found = configuration.find(config_path)
+    cfg = load_config(config_path)
+    found = configuration.find(config_path) if cfg else None  # an unusable file is not handed to child commands
     root = configuration.report_root(cfg, output).resolve()  # scripts may change directory
     try:
         directory = root / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ-") + uuid.uuid4().hex[:8])
@@ -176,12 +185,12 @@ def main(argv=None):
         print(compare(args.first, args.second))
         return 0
     if args.action == "summary":
-        cfg = configuration.load(args.config)
+        cfg = load_config(args.config)
         data = load(args.report or configuration.report_root(cfg) / "latest")
         print(json.dumps(services.summary(data, cfg), indent=2) if args.json else "\n".join(render.brief(data, cfg)))
         return 0
     if args.action == "render":
-        cfg = configuration.load(args.config)
+        cfg = load_config(args.config)
         for path in args.reports:
             path = path / "report.json" if path.is_dir() else path
             output = write(path.parent, load(path), cfg, args.explain, args.gantt, keep_json=True)
@@ -192,7 +201,7 @@ def main(argv=None):
         top.error("a command is required after --")
     if args.action == "pull":
         from .images import pull_images
-        return pull_images(configuration.load(args.config), command)
+        return pull_images(load_config(args.config), command)
     return run(command, args.name, args.config, args.output, args.explain, args.gantt, not args.no_logs)
 
 

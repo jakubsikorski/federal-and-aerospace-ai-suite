@@ -9,7 +9,7 @@ from .report import SKIPPED, facts, load
 def keyed(report):
     seen, result = {}, {}
     for step in report["steps"]:
-        base = (step["group"], step["label"])
+        base = (step["group"], step["label"], step.get("service") or "")
         seen[base] = seen.get(base, 0) + 1
         result[base + (seen[base],)] = step
     return result
@@ -45,7 +45,7 @@ def compare(path_a, path_b):
     for key in keys:
         change, text = delta(left.get(key), right.get(key))
         rows.append((-abs(change) if change is not None else 0, key, left.get(key), right.get(key), text))
-    rows.sort(key=lambda row: (row[0], str(row[1][0]), str(row[1][1]), row[1][2]))
+    rows.sort(key=lambda row: (row[0], *map(str, row[1][:3]), row[1][3]))
     total, text = delta({"seconds": first["overall_seconds"], "status": "ok"},
                         {"seconds": second["overall_seconds"], "status": "ok"})
     lines = [f"Total: {seconds(first['overall_seconds'])} -> {seconds(second['overall_seconds'])}  {text}",

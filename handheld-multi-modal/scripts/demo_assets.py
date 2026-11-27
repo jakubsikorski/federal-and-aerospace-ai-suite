@@ -164,14 +164,14 @@ def download_video(root):
             if sha(target) != digest:
                 raise ValueError(f"Demo video checksum mismatch: {target}; refusing to overwrite")
             print(f"Verified cached demo video: {target}")
-            cached("video_download", name)
+            cached("video_download", name, "demo-cameras")
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
         failures = []
         with tempfile.TemporaryDirectory(prefix=".video-", dir=target.parent) as temporary:
             staged = Path(temporary) / target.name
             for url in urls:
-                timer = begin("video_download", name)
+                timer = begin("video_download", name, "demo-cameras")
                 problem = "interrupted"
                 try:
                     problem = fetch_verified(url, staged, digest)

@@ -496,6 +496,26 @@ class TestReviewFixes(unittest.TestCase):
         self.assertAlmostEqual(names["backend"]["busy"], 10.0)
         self.assertIsNone(names["s0"]["busy"])  # batched pulls are counted once, under activities
 
+    def test_compare_does_not_pair_steps_of_different_services(self):
+        def run(order):
+            return build([step("startup", "Start", 0, seconds, service=name) for name, seconds in order])
+        with tempfile.TemporaryDirectory() as temporary:
+            paths = []
+            for name, data in (("a.json", run([("a", 1.0), ("b", 9.0)])), ("b.json", run([("b", 9.0), ("a", 1.0)]))):
+                paths.append(Path(temporary, name))
+                paths[-1].write_text(json.dumps(data))
+            text = compare.compare(*paths)
+        self.assertNotIn("+8", text)
+        self.assertNotIn("-8", text)
+
+    def test_broken_config_warns_and_the_command_still_runs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            Path(temporary, "startup-timing.toml").write_text("not = [valid")
+            result = run_tool("echo started", temporary)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("started", result.stdout)
+            self.assertIn("continuing without configuration", result.stderr)
+
     def test_shell_script_has_a_bash_shebang(self):
         self.assertEqual(HELPERS.read_text().splitlines()[0], "#!/usr/bin/env bash")
 
