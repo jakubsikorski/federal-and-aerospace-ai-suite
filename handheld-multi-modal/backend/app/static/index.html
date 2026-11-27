@@ -375,7 +375,7 @@ SPDX-License-Identifier: Apache-2.0
   .kpi { display: flex; flex-direction: column; justify-content: flex-start; min-width: 0; min-height: 44px; font: inherit; color: inherit; text-align: left; cursor: pointer; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
   .kpi span, .kpi strong, .kpi small { display: block; }
   .kpi span { color: var(--muted); font-size: 12px; }
-  .kpi strong { font-size: 20px; font-variant-numeric: tabular-nums; line-height: 1.3; white-space: nowrap; }
+  .kpi strong { font-size: clamp(15px, 1.35vw, 20px); font-variant-numeric: tabular-nums; line-height: 1.2; }
   .kpi small { font-size: 12px; line-height: 1.3; color: var(--muted); overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
   .kpi[aria-pressed="true"] { border-color: var(--accent); background: var(--selected); }
   #kpi-explain { margin: 6px 0 0; font-size: 13px; }
@@ -4139,7 +4139,8 @@ function renderPerformance() {
     return;
   }
   const {time_to_alert: alert, spoken_answer: voice, cameras, answer_speed: speed, memory} = kpis;
-  // Headline: the typical (p50) value once there are enough samples.
+  // Headline: the typical (p50) value once there are enough samples. A word
+  // joiner (U+2060) keeps "/s" with its unit if a narrow tile wraps the value.
   const typicalValue = (summary) => enoughSamples(summary) ? perfSeconds(summary.p50) : "—";
   const typicalDetail = (summary, noun, empty) => enoughSamples(summary) ? `typical, ${summary.count} ${noun}`
     : summary.count ? `Not enough data yet · ${summary.count} ${noun}` : empty;
@@ -4169,10 +4170,10 @@ function renderPerformance() {
         : cameras.running ? "No dropped frames or delay" : "No camera is sending frames",
       title: "Smooth: no more than 10% of frames skipped, keeping up with the camera, detection delay under 400 ms."},
     decodeValue != null
-      ? {id: "speed", label: "Answer speed", value: (chatSpeed.state === "stale" ? "◷ " : "") + decodeValue.toFixed(1) + " tokens/s",
+      ? {id: "speed", label: "Answer speed", value: (chatSpeed.state === "stale" ? "◷ " : "") + decodeValue.toFixed(1) + " tokens/\u2060s",
         detail: "Reported by Chat Q&A (since it started)",
         title: "Decode tokens per second reported by Chat Q&A, typical since it started."}
-      : {id: "speed", label: "Answer speed", value: enoughSamples(speed) ? "~" + speed.p50 + " words/s" : "—",
+      : {id: "speed", label: "Answer speed", value: enoughSamples(speed) ? "~" + speed.p50 + " words/\u2060s" : "—",
         detail: enoughSamples(speed) ? "Approximate: words, not tokens"
           : speed.count ? "Not enough data yet" : "Ask a question",
         title: "Approximate: streamed words per second, not model tokens. Exact tokens/s after the Chat Q&A update."},

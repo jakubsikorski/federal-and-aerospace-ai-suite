@@ -892,7 +892,7 @@ def main():
                 if ($('latency-badge').textContent !== 'Detect 120 ms · 29.8/30 fps' || !$('latency-badge').classList.contains('show')) return "camera badge: " + $('latency-badge').textContent;
                 state.telemetry = {metrics: [], services: undefined};
                 setTelemetryView('performance');
-                const perfTiles = [...$('kpi-grid').children].map(tile => tile.textContent);
+                const perfTiles = [...$('kpi-grid').children].map(tile => tile.textContent.replaceAll('\u2060', ''));
                 if (!perfShown('performance-view') || perfShown('telemetry-grid') || perfTiles.length !== 5) return "performance view not shown";
                 // Headline is the typical value; nothing is judged against a target.
                 if (!perfTiles[0].includes('250 ms') || !perfTiles[0].includes('typical, 12 alerts') || perfTiles[0].includes('350 ms')) return "time to alert tile: " + perfTiles[0];
@@ -902,6 +902,7 @@ def main():
                 if (!perfTiles[4].includes('52%') || !perfTiles[4].includes('Now 41% of host RAM')) return "memory tile: " + perfTiles[4];
                 if (perfTiles.some(text => /✓|!|target/i.test(text)) || $('kpi-grid').querySelector('.kpi-status')) return "KPI tile judges a value: " + perfTiles;
                 if ([...$('kpi-grid').children].some(tile => getComputedStyle(tile).borderLeftWidth !== '1px')) return "KPI tile has an accent border";
+                if ([...$('kpi-grid').querySelectorAll('strong')].some(value => value.scrollWidth > value.clientWidth + 1)) return "KPI value clipped: " + [...$('kpi-grid').querySelectorAll('strong')].map(v => v.textContent);
                 if (perfShown('expand-telemetry') || perfShown('telemetry-status')) return "resource-only header controls shown on Performance";
                 const kpiNodes = [...$('kpi-grid').children];
                 kpiNodes[0].focus(); renderPerformance();
@@ -948,12 +949,12 @@ def main():
                 if (!rep[1].includes('Speech heard 4.2x faster than real time') || !rep[1].includes('Reported by Audio Analyzer (since it started): model-only speed 2.0x, errors 0.0%')) return "asr reported line: " + rep[1];
                 if (!rep[2].includes('Voice ready in 400 ms') || !rep[2].includes('Reported by Text To Speech (since it started): model time to first audio 500 ms, RTF ◷ 0.30, errors 2.5%')) return "tts reported line: " + rep[2];
                 if (rep.some(text => /not available|in flight/i.test(text)) || svcJudged()) return "reported details list absent values or judge: " + rep;
-                const speedTile = $('kpi-grid').children[3].textContent;
+                const speedTile = $('kpi-grid').children[3].textContent.replaceAll('\u2060', '');
                 if (!speedTile.includes('21.4 tokens/s') || !speedTile.includes('Reported by Chat Q&A (since it started)') || speedTile.includes('words/s')) return "exact tokens/s should replace words/s: " + speedTile;
                 state.telemetry.services.chat.metrics.decode_tokens_per_second = svcM(21.4, 'tokens/s', 'stale'); renderPerformance();
-                if (!$('kpi-grid').children[3].textContent.includes('◷ 21.4 tokens/s')) return "stale tokens/s not marked: " + $('kpi-grid').children[3].textContent;
+                if (!$('kpi-grid').children[3].textContent.replaceAll('\u2060', '').includes('◷ 21.4 tokens/s')) return "stale tokens/s not marked: " + $('kpi-grid').children[3].textContent;
                 state.telemetry.services.chat.metrics.decode_tokens_per_second = svcM(21.4, 'tokens/s', 'ok', {count: 2}); renderPerformance();
-                if (!$('kpi-grid').children[3].textContent.includes('~9.5 words/s')) return "two service requests replaced words/s: " + $('kpi-grid').children[3].textContent;
+                if (!$('kpi-grid').children[3].textContent.replaceAll('\u2060', '').includes('~9.5 words/s')) return "two service requests replaced words/s: " + $('kpi-grid').children[3].textContent;
                 state.telemetry.services.chat.metrics.decode_tokens_per_second = svcM(21.4, 'tokens/s'); renderPerformance();
                 if (svcTiles().some((tile, i) => tile !== svcNodes[i] || tile.querySelector('details') !== svcDetails[i] || !svcDetails[i].open)) return "service refresh rebuilt tiles or closed Details";
                 const svcSummary = svcTiles()[0].querySelector('summary');
