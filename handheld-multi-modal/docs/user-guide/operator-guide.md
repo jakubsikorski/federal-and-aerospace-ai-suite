@@ -367,44 +367,55 @@ vehicles move, because an object counts by where its feet or wheels touch the gr
    do not add them together or treat them as wall power.
 3. **Expand** - show a larger chart.
 4. **Details** - show the raw readings.
+5. **Resources | Performance** - switch to the [Performance](#performance) view.
 
 ### Performance
 
-Tap **Performance** in the Resources heading to switch views. Tap **Resources** to switch
-back. The tiles describe what the console measured over the last 5 minutes; they do not grade
-it against a target.
+![Performance](_assets/guide-performance.jpg)
 
-1. **Time to alert** - how quickly an alert is raised after an object first appears in the
-   camera image.
-2. **Spoken answer** - from the end of your spoken question to the first sound of the answer.
-   Only voice questions asked with **Audio on** are counted.
-3. **Smooth cameras** - cameras that keep up with their frame rate without skipping frames or
-   detecting late. The table below the tiles shows frames per second, skipped frames, and
-   detection time for each camera.
-4. **Answer speed** - approximate words per second while the answer is written (**~** means
-   approximate). It shows exact tokens per second once Chat Q&A reports them.
-5. **Peak memory** - the highest host memory use.
+The Performance view describes what the console measured over the last 5 minutes. It does not
+grade the values against targets.
 
-Each tile shows the typical value: half of the measurements are at or below it. Until there
-are at least five measurements the value reads **—**: the line below it says what to do
-(for example **Ask by voice with Audio on**) or **Not enough data yet** with the count so
-far. Tap a tile to see what it
-measures, the value that 95% of measurements are at or below, and, for **Spoken answer**,
-the typical time of each stage. Tap it again to hide the explanation.
+1. **Resources | Performance** - switch between the two views.
+2. **Tiles** - one number per question an operator asks about speed:
+   - **Time to alert** - how quickly an alert is raised after an object first appears in the
+     camera image.
+   - **Spoken answer** - from the end of your spoken question to the first sound of the
+     answer. Only voice questions asked with **Audio on** are counted.
+   - **Smooth cameras** - cameras that keep up with their frame rate without skipping
+     frames or detecting late.
+   - **Answer speed** - approximate words per second while the answer is written (**~**
+     means approximate). It shows exact tokens per second once Chat Q&A reports them.
+   - **Peak memory** - the highest host memory use.
 
-**Services** shows one tile each for Chat Q&A, Audio Analyzer (speech to text), and Text To
-Speech: how soon the first words appear, how much faster than real time speech is
-transcribed, and how soon a spoken answer is ready. The console measures these itself, so
-they include any time spent waiting for the service. A service tile reads **Not available yet** until the
-console has timed a request, and **Not enough data yet** for the first few. Open **Details**
-for the typical and 95% values and, once a service reports its own measurements, a **Reported by** line with
-them (since that service started).
+   Each tile shows the typical value: half of the measurements are at or below it. Until
+   there are at least five measurements the value reads **—**, and the line below it says
+   what to do (for example **Ask by voice with Audio on**) or shows **Not enough data yet**
+   with the count so far.
+3. **Explanation** - tap a tile to see what it measures, the value that 95% of measurements
+   are at or below, and, for **Spoken answer**, the typical time of each stage. Tap the tile
+   again to hide it.
+4. **Services** - one tile each for Chat Q&A, Audio Analyzer (speech to text), and Text To
+   Speech: how soon the first words appear, how much faster than real time speech is
+   transcribed, and how soon a spoken answer is ready. The console measures these itself, so
+   they include any time spent waiting for the service. A tile reads **Not available yet**
+   until the console has timed a request, and **Not enough data yet** for the first few.
+   Open **Details** for the typical and 95% values and, once a service reports its own
+   measurements, a **Reported by** line with them (since that service started).
+5. **Cameras** - frames per second (processed / camera), skipped frames, and detection time
+   for each camera over the last 30 seconds. **Health** reads **Smooth**, **Dropping
+   frames** (more than 10% skipped), **Delayed** (detection over 400 ms), **Measuring**, or
+   **Offline**.
 
-The live video badge shows detection time and frames per second for the selected camera. After a
-spoken answer, a line under the assistant such as **Answered aloud in 2.4 s** shows the time
-to the first sound; open it to see the listening, hearing, thinking, and speaking stages. For alerts raised as soon as
-an object appears, the alert latency chip tooltip starts with the time to alert; rules that
-wait (dwell) or a later zone entry do not show it.
+The same measurements appear where you are already looking:
+
+- **Video badge** - detection time and frames per second for the selected camera, such as
+  **Detect 120 ms · 29.8/30 fps**. It starts with the reason when a camera is not smooth.
+- **Under the answer** - after a spoken answer, **Answered aloud in 2.4 s** shows the time to
+  the first sound; open it to see the listening, hearing, thinking, and speaking stages. Typed
+  questions show **First words in 640 ms**.
+- **Alert latency chip** - for alerts raised as soon as an object appears, the tooltip starts
+  with the time to alert. Rules that wait (dwell) or a later zone entry do not show it.
 
 ## Voice Questions and Spoken Answers
 

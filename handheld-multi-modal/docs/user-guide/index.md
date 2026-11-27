@@ -62,6 +62,9 @@ Follow these steps to deploy the Handheld (Soldier System) Blueprint:
   the Alert Agent and spoken by SpeechT5.
 - **Voice** — push-to-talk questions transcribed by Whisper-medium (GPU) and spoken answers.
 - **Resources** — CPU, memory, GPU, NPU, power, and per-service telemetry.
+- **Performance** — time to alert, time to spoken answer, smooth cameras, answer speed, and
+  peak memory, plus speed tiles for Chat Q&A, Audio Analyzer, and Text To Speech, measured on
+  the device over the last 5 minutes.
 
 ## Architecture
 

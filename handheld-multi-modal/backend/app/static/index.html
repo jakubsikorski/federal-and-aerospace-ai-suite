@@ -4167,7 +4167,7 @@ function renderPerformance() {
     {id: "cameras", label: "Smooth cameras",
       value: cameras.running ? `${cameras.smooth} of ${cameras.running}` : "—",
       detail: worst ? cameraLabel(worst[0]) + ": " + worst[1].reason
-        : cameras.running ? "No dropped frames or delay" : "No camera is sending frames",
+        : cameras.running ? "All cameras keeping up" : "No camera is sending frames",
       title: "Smooth: no more than 10% of frames skipped, keeping up with the camera, detection delay under 400 ms."},
     decodeValue != null
       ? {id: "speed", label: "Answer speed", value: (chatSpeed.state === "stale" ? "◷ " : "") + decodeValue.toFixed(1) + " tokens/\u2060s",

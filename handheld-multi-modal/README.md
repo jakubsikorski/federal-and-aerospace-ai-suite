@@ -28,6 +28,12 @@ computing platform, which enables hardware acceleration capabilities. See
   `make speech-device TTS_DEVICE=GPU` to switch).
 - **Voice**: push-to-talk questions transcribed by Whisper-medium (GPU).
 - **Resources**: CPU, memory, GPU, NPU, and power telemetry.
+- **Performance**: time to alert, time to spoken answer, smooth cameras, answer speed, and peak
+  memory, plus speed tiles for Chat Q&A, Audio Analyzer, and Text To Speech, measured on the
+  device. See the [Operator Guide](docs/user-guide/operator-guide.md#performance) and the
+  [Performance KPI Plan](docs/user-guide/benchmarking/handheld-performance-kpi-plan.md).
+
+![Performance view: time to alert, spoken answer, smooth cameras, answer speed and peak memory tiles, service tiles for Chat Q&A, Audio Analyzer and Text To Speech, and per-camera frame rates](docs/user-guide/_assets/guide-performance.jpg)
 
 ## Project Structure
 

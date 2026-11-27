@@ -18,7 +18,8 @@ cameras, approximate answer speed, and peak memory over the last 5 minutes, plus
 each for Chat Q&A, Audio Analyzer, and Text To Speech. It describes the values without
 grading them against targets. See the
 [Performance KPI Plan](./benchmarking/handheld-performance-kpi-plan.md) for definitions,
-the implemented measurements, and the upstream service requests.
+the implemented measurements, and the upstream service requests, and the
+[Operator Guide](operator-guide.md#performance) for how to read the view.
 
 <!--hide_directive
 :::{toctree}
