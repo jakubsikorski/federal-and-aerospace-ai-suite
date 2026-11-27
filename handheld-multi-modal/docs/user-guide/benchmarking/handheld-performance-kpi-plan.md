@@ -71,7 +71,7 @@ by the Handheld. The service's own numbers explain it, in Details.
 | --- | --- | --- | --- |
 | Chat Q&A | "First words in 1.2 s": question sent → first streamed text | Model time to first token (TTFT), queue wait, error rate | TTFT < 2 s |
 | Audio Analyzer | "Speech heard 2.0x faster than real time": audio length ÷ call time | Model-only speed (RTFx), error rate | > 1x, aim ≥ 2x |
-| Text To Speech | "Voice ready in 0.4 s": call time for one clip (SpeechT5 returns the whole clip, so this is time to first audio) | Real-time factor (RTF), queue wait, error rate | RTF < 1.0 |
+| Text To Speech | "Voice ready in 0.4 s": call time for one clip (SpeechT5 returns the whole clip, so this is time to first audio) | Model time to first audio, real-time factor (RTF), error rate | RTF < 1.0 |
 
 Video and alert KPIs already sit on the video badge, alert rows, and camera
 table (Section 7), so DL Streamer and Alert Agent get no service tile.
@@ -109,8 +109,9 @@ for video. ASR accuracy (WER) is an offline benchmark, never a live tile.
 - **Throughput** (FPS, tokens/s, words/s, RTF): p50 of per-request values.
 - **Few samples:** fewer than 5 samples reads "Not enough data yet". One
   sample is never shown as typical.
-- **Missing, stale, zero:** kept distinct. Missing reads "Not available yet",
-  stale reads "◷ Stale", a real zero is shown as zero. Nothing is synthesized.
+- **Missing, stale, zero:** kept distinct. A missing value is left out (a tile
+  with nothing to show reads "Not available yet"), a stale service value is
+  marked "◷", a real zero is shown as zero. Nothing is synthesized.
 - **Successful requests only** for Handheld timings; failures are not timed.
   Error rates come only from services.
 - **Clocks:** one process uses its monotonic clock. Intervals across containers
@@ -148,7 +149,7 @@ stage so its cost is visible; tuning it is a product decision.
 | Collector, `GET /api/performance`, `performance` SSE event | Done | `backend/app/performance.py`, `backend/app/main.py` |
 | Service series read from Metrics Manager (`services` in telemetry) | Done; no service exports yet | `backend/app/telemetry.py` |
 | Scrape block for service `/metrics` | Done, commented out | `config/metrics/telegraf.conf` |
-| Panel: video badge, answer footer, alert tooltip, Performance tab, service tiles | Done; needs WP6 and WP7 to match this plan | `backend/app/static/index.html` |
+| Panel: video badge, answer footer, alert tooltip, Performance tab, service tiles (headline rule, no target judgement) | Done | `backend/app/static/index.html` |
 | Time to ready | Not built (WP4) | — |
 
 ## 4. Handheld instrumentation
@@ -191,10 +192,12 @@ keeps per camera:
 | Skipped frames | `1 − Δframe_sequence / Δframes_in` | 5 s |
 | Detection delay | Backend receive time − `ingress_at` (0–60 s accepted) | 30 s |
 | Pipeline latency | `pipeline_ms` | 30 s |
-| Health | Offline (no frames for 5 s), Measuring, Dropping (> 10 % skipped or processed < 90 % of source), Delayed (detection delay p95 over 400 ms), Smooth | — |
+| Health | Offline (no frames for 5 s), Measuring, Dropping (> 10 % skipped or processed < 90 % of source), Delayed (detection delay p95 over 400 ms, at least 5 samples), Smooth | — |
 
 Health is the camera's operating state, shown to explain a stutter. Its fixed
-limits are part of the state definition, not KPI targets.
+limits (`MAX_DROP_PERCENT`, `MIN_SOURCE_RATIO`, `DELAYED_SECONDS` in
+`performance.py`) are part of the state definition, not KPI targets, and are not
+configurable.
 
 A new tracking session, or a counter that goes backwards, restarts the counts.
 
@@ -267,8 +270,8 @@ summary has `last`, `p50`, `p95` (nearest rank), `count`, and `status`
 
 `kpis` holds `time_to_alert`, `spoken_answer` (with stage p50s,
 `acknowledged_p50`, `untimed`), `cameras` (`smooth`, `running`),
-`answer_speed` (approximate words/s, `first_words_p50`), `memory` (`last`,
-`peak`), and `services`:
+`answer_speed` (approximate words/s), `memory` (`last`, `peak`), and
+`services`. No KPI carries a target or a pass/fail status:
 
 ```json
 "services": {
@@ -313,7 +316,7 @@ Path: **service `/metrics` → Metrics Manager (Telegraf scrape) → Backend
   series to Panel keys, so a rename is a one-line change. `normalize()` adds a
   `services` object to the telemetry snapshot. It is always present, all
   `missing` before the first poll or if parsing fails, so host telemetry is
-  never lost. Derivations are read-side only: RTFx and RTF from durations,
+  never lost. Derivations are read-side only: RTFx from audio and model durations,
   error rate = (`error` + `timeout`) ÷ total from the `outcome` counter, p50/p95
   by nearest rank on cumulative buckets, mean from `_sum` / `_count`.
 
@@ -464,7 +467,8 @@ today), `audio_duration_s`, `rtf` = `generate_s / audio_duration_s`.
 `tts_queue_wait_seconds`). Optional, highest UX value: phrase-level output on
 `/v1/audio/speech/stream` for SpeechT5, so the first sentence plays sooner.
 
-**Handheld use:** the Text To Speech tile Details show RTF and queue wait.
+**Handheld use:** the Text To Speech tile Details show model time to first
+audio and RTF.
 
 ### B4. DL Streamer Pipeline Server (optional)
 
@@ -497,7 +501,7 @@ Model Download, MediaMTX, Coturn, Mosquitto.
    text beside it.
 3. **Describe, never judge.** No ✓/!, no "Meets target", no coloured status
    border. The only state markers are text: "Not enough data yet", "Not
-   available yet", "◷ Stale", "~" for approximate.
+   available yet", "◷" before a stale service value, "~" for approximate.
 4. **The headline is what the operator experiences.** Service values explain
    it in Details and never replace it, except exact tokens/s replacing ~words/s.
 5. **Say where a number comes from.** Details name the source: "Measured by
@@ -537,13 +541,13 @@ Model Download, MediaMTX, Coturn, Mosquitto.
    ┌ Time to alert ─┐┌ Spoken answer ─┐┌ Smooth cameras ┐┌ Answer speed ──┐┌ Peak memory ───┐
    │ 250 ms         ││ 2.4 s          ││ 1 of 2         ││ ~9.5 words/s   ││ 52%            │
    │ typical, 12    ││ typical, 14    ││ Camera 2:      ││ Approximate:   ││ Now 41% of     │
-   │ alerts         ││ answers        ││ dropping frames││ words, not     ││ host RAM       │
-   │                ││                ││                ││ tokens         ││                │
+   │ alerts         ││ answers        ││ 25% of frames  ││ words, not     ││ host RAM       │
+   │                ││                ││ skipped        ││ tokens         ││                │
    └────────────────┘└────────────────┘└────────────────┘└────────────────┘└────────────────┘
    Services
    ┌ Chat Q&A ──────────┐┌ Audio Analyzer ────────────┐┌ Text To Speech ──┐
    │ First words in 1.2 s││ Speech heard 2.0x faster   ││ Voice ready in   │
-   │ TTFT                ││ than real time · RTFx      ││ 0.4 s · RTF      │
+   │ TTFT                ││ than real time · RTFx      ││ 0.4 s · TTFA · RTF│
    │ ▸ Details           ││ ▸ Details                  ││ ▸ Details        │
    └─────────────────────┘└────────────────────────────┘└──────────────────┘
    Camera   | Health          | Frames/s  | Skipped | Detect
@@ -574,41 +578,18 @@ Paths are relative to `handheld-multi-modal/`. Each package ends with
 state for services; Handheld timings only at existing call sites, successful
 calls only; never synthesize a value; no OEP service changes.
 
-### WP6. Service tiles follow the headline rule
+### Done: WP6 headline rule and WP7 no target judgement
 
-Files: `backend/app/static/index.html`, `backend/app/telemetry.py`,
-`backend/test_ui.py`, `backend/test_backend.py`.
-
-- Headline always from `kpis.services` (Handheld). Remove the code path that
-  swaps the headline to the service series.
-- Details: Handheld typical and 95% with sample count and window; then, only
-  when present, one "Reported by … (since it started)" line with the service
-  values; otherwise one "More detail after the … update" line. Drop the
-  "not available" rows.
-- Rename the ASR key `request_seconds` → `model_seconds` (it reads the
-  inference histogram), and unify the TTS RTF unit to `ratio` in both
-  snapshots.
-- Remove the "First words" line from the Answer speed tile (the Chat Q&A tile
-  carries it).
-
-Tests: the headline does not change when service series appear; Details list
-only present values; source and window are visible text.
-
-### WP7. Remove target judgement from the Panel
-
-Files: `backend/app/performance.py`, `backend/app/static/index.html`,
-`config/backend/backend.yaml`, tests.
-
-- Remove `performance_targets` from `backend.yaml` and `targets()`; summaries
-  report `no_data`, `insufficient`, or `info` only.
-- KPI tiles: drop the target line, ✓/! status, and coloured border; the
-  headline becomes the typical (p50) value with the count. Answer footer: drop
-  "within 3.0 s target".
-- Camera health keeps its fixed limits (Section 4); Delayed uses a 400 ms
-  constant instead of the time-to-alert target.
-
-Tests: no target text or status icon anywhere in the Performance tab; the
-snapshot carries no target fields.
+- Service tile headlines always come from `kpis.services` (Handheld). Metrics
+  Manager values add one "Reported by … (since it started)" Details line listing
+  only present values, else "More detail after the … update". Exact decode
+  tokens/s replaces ~words/s on the Answer speed tile.
+- ASR key `model_seconds` reads the inference histogram; TTS RTF unit is
+  `ratio` in both snapshots.
+- `performance_targets`, `targets()`, the target and status lines, ✓/!,
+  coloured borders and "within target" are removed. KPI tiles lead with the
+  typical (p50) value and the count; 95% is in the tap explanation. Camera
+  Delayed uses the fixed `DELAYED_SECONDS = 0.4`.
 
 ### WP4. Time to ready
 
@@ -631,15 +612,19 @@ In `make test-all`:
 - `make test-crops`: ingress stamp consumed and removed, `frames_in` vs.
   `frame_sequence`, malformed stamps ignored.
 - `make test-coverage` (`backend/test_backend.py`, 75 % gate): camera rates,
-  drops, health and session reset; voice marks validation; time to alert only
+  drops, health (including the fixed Delayed limit) and session reset; no target
+  or pass/fail field in any KPI; voice marks validation; time to alert only
   for alerts raised on appearance; speech-to-text and text-to-speech recorders
   (success only, cache hits and warm-ups excluded, malformed WAV skipped);
   `services` in telemetry (missing, stale, real zero, derivations, bucket
   percentiles, malformed buckets do not drop host telemetry).
-- `make test-ui` (`backend/test_ui.py`): video badge, answer footer and stages,
-  Performance tiles, "Not enough data yet", service tiles (Handheld values,
-  "Not available yet", no status icon, tiles survive refresh, no sideways
-  scroll).
+- `make test-ui` (`backend/test_ui.py`): video badge, answer footer and stages
+  (no target text); KPI tiles lead with the typical value, no ✓/!, target text
+  or accent border, "Not enough data yet" below 5 samples, 95% in the tap
+  explanation; service tiles keep the Handheld headline when service series
+  appear, Details list only present values with source and window as visible
+  text, "Not available yet" before the first snapshot, tiles and open Details
+  survive refresh, no sideways scroll.
 
 Not run offline: `make test-live` and the other targets that need a running
 stack.

@@ -315,7 +315,7 @@ async def lifespan(app: FastAPI):
     app.state.services = Services(cfg["services"], cfg["timeout_seconds"])
     app.state.telemetry = Telemetry(app.state.services, cfg["telemetry_host"])
     app.state.placement = Placement(app.state.services, cfg)
-    app.state.performance = Performance(cfg)
+    app.state.performance = Performance()
     # Resolve the two settings that must agree with deployed component config
     # before anything uses them. Both fail the process with a named cause
     # rather than surfacing later as an unstartable camera or a missing

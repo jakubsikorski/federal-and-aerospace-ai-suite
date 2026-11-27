@@ -371,22 +371,31 @@ vehicles move, because an object counts by where its feet or wheels touch the gr
 ### Performance
 
 Tap **Performance** in the Resources heading to switch views. Tap **Resources** to switch
-back. Measurements cover the last 5 minutes.
+back. The tiles describe what the console measured over the last 5 minutes; they do not grade
+it against a target.
 
 1. **Time to alert** - how quickly an alert is raised after an object first appears in the
-   camera image (95% of alerts are faster than the value shown).
+   camera image.
 2. **Spoken answer** - from the end of your spoken question to the first sound of the answer.
    Only voice questions asked with **Audio on** are counted.
 3. **Smooth cameras** - cameras that keep up with their frame rate without skipping frames or
    detecting late. The table below the tiles shows frames per second, skipped frames, and
    detection time for each camera.
-4. **Answer speed** - approximate words per second while the answer is written, and how soon
-   the first words appear.
+4. **Answer speed** - approximate words per second while the answer is written (**~** means
+   approximate). It shows exact tokens per second once Chat Q&A reports them.
 5. **Peak memory** - the highest host memory use.
 
-Each tile shows its target and **Meets target**, **Misses target**, or **No data yet**.
-Tap a tile to see what it measures and, for **Spoken answer**, the typical time of each stage.
-Tap it again to hide the explanation. Targets are set under `performance_targets` in `config/backend/backend.yaml`.
+Each tile shows the typical value: half of the measurements are at or below it. Until there
+are a few measurements, a tile shows **Not enough data yet**. Tap a tile to see what it
+measures, the value that 95% of measurements are at or below, and, for **Spoken answer**,
+the typical time of each stage. Tap it again to hide the explanation.
+
+**Services** shows one tile each for Chat Q&A, Audio Analyzer (speech to text), and Text To
+Speech: how soon the first words appear, how much faster than real time speech is
+transcribed, and how soon a spoken answer is ready. The console measures these itself, so
+they include any time spent waiting for the service. Open **Details** for the typical and
+95% values and, once a service reports its own measurements, a **Reported by** line with
+them (since that service started).
 
 The live video badge shows detection time and frames per second for the selected camera. After a
 spoken answer, a line under the assistant such as **Answered aloud in 2.4 s** shows the time

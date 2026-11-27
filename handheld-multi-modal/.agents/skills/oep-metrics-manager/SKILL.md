@@ -65,18 +65,18 @@ source `edge-ai-libraries/microservices/metrics-manager/`. Compose service
 Chat Q&A, Audio Analyzer and Text To Speech are meant to expose these series;
 until the pinned images do, every one reads as `missing`. The one name table is
 `SERVICE_METRICS` at the top of `backend/app/telemetry.py`; a rename is a
-one-line change there (names from section 3 of
+one-line change there (names from section 5 of
 `docs/user-guide/benchmarking/handheld-performance-kpi-plan.md`).
 
 - Chat: `chatqna_ttft_seconds`, `chatqna_queue_wait_seconds`,
-  `chatqna_decode_tokens_per_second`, `chatqna_request_seconds`,
+  `chatqna_decode_tokens_per_second`, `chatqna_request_seconds` (histograms),
   `chatqna_requests_total{outcome}`, `chatqna_requests_in_flight`.
-- ASR: `audio_analyzer_inference_seconds`, `audio_analyzer_queue_wait_seconds`,
-  `audio_analyzer_audio_duration_seconds`, `audio_analyzer_rtf`,
-  `audio_analyzer_requests_total{outcome}`, `audio_analyzer_requests_in_flight`.
-- TTS: `tts_generate_seconds`, `tts_audio_duration_seconds`, `tts_rtf`,
-  `tts_queue_wait_seconds`, `tts_requests_total{outcome}`,
-  `tts_requests_in_flight`.
+- ASR: `audio_analyzer_inference_seconds` (key `model_seconds`),
+  `audio_analyzer_audio_duration_seconds` (histograms; `rtfx` is derived from
+  the two), `audio_analyzer_requests_total{outcome}`,
+  `audio_analyzer_requests_in_flight`.
+- TTS: `tts_time_to_first_audio_seconds`, `tts_rtf`, `tts_generate_seconds`
+  (histograms), `tts_requests_total{outcome}`, `tts_requests_in_flight`.
 
 Shape seen by the Backend: every series is `{name, tags{host,...}, fields{value},
 timestamp}`; types are lost. A Prometheus-scraped histogram arrives as flat
@@ -100,8 +100,10 @@ series are `missing` with `value` null, and a real 0 stays 0. The Backend only
 reads and relays these series: no outcome counting, no queue or in-flight
 counters, no histograms, no targets or pass/fail. Separately, the collector in
 `backend/app/performance.py` records successful end-to-end durations it observes
-(`kpis.services`, labelled Handheld-observed, includes queue wait). The Panel
-prefers these `services` series when present.
+(`kpis.services`, `source: "handheld"`, includes queue wait). Those are always the
+service tile headline; these `services` series only add a "Reported by … (since it
+started)" line to Details, and exact decode tokens/s replaces the approximate
+words/s on the Answer speed tile.
 
 Check that host and container series are fresh:
 

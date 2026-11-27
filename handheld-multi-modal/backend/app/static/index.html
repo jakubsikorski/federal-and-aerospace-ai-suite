@@ -371,25 +371,19 @@ SPDX-License-Identifier: Apache-2.0
   #telemetry.performance-mode #telemetry-grid, #telemetry.performance-mode #trend,
   #telemetry.performance-mode #diagnostics, #telemetry.performance-mode #toggle-diagnostics { display: none; }
   #kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 6px; }
-  .kpi { display: flex; flex-direction: column; justify-content: flex-start; min-width: 0; min-height: 44px; font: inherit; color: inherit; text-align: left; cursor: pointer; padding: 6px 8px; border: 1px solid var(--line); border-left: 3px solid var(--line); border-radius: 8px; background: var(--bg); }
+  .kpi { display: flex; flex-direction: column; justify-content: flex-start; min-width: 0; min-height: 44px; font: inherit; color: inherit; text-align: left; cursor: pointer; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
   .kpi span, .kpi strong, .kpi small { display: block; }
   .kpi span { color: var(--muted); font-size: 12px; }
   .kpi strong { font-size: 20px; font-variant-numeric: tabular-nums; line-height: 1.3; white-space: nowrap; }
   .kpi small { font-size: 12px; line-height: 1.3; color: var(--muted); overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-  .kpi .kpi-status { font-weight: 600; }
   .kpi[aria-pressed="true"] { border-color: var(--accent); background: var(--selected); }
   #kpi-explain { margin: 6px 0 0; font-size: 13px; }
-  .kpi[data-status="on_target"] { border-left-color: var(--good); }
-  .kpi[data-status="on_target"] .kpi-status { color: var(--good); }
-  .kpi[data-status="missed"] { border-left-color: var(--bad); }
-  .kpi[data-status="missed"] .kpi-status { color: var(--bad); }
   #service-heading { margin: 10px 0 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
   #service-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 6px; }
   .svc { min-width: 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
   .svc > span, .svc > strong, .svc > small { display: block; }
   .svc > span { color: var(--muted); font-size: 12px; }
   .svc > strong { font-size: 15px; line-height: 1.3; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
-  .svc > small[hidden] { display: none; }
   .svc > small, .svc li { font-size: 12px; line-height: 1.3; color: var(--muted); }
   .svc summary { cursor: pointer; display: flex; align-items: center; min-height: 44px; font-size: 12px; color: var(--muted); }
   .svc summary::before { content: "▸"; display: inline-block; width: 1.2em; }
@@ -404,8 +398,6 @@ SPDX-License-Identifier: Apache-2.0
   #latency-badge[data-health="dropping"], #latency-badge[data-health="delayed"] { color: var(--warn); }
   #answer-timing { padding: 0 0 6px; font-size: 12px; color: var(--muted); }
   #answer-timing summary { cursor: pointer; display: flex; align-items: center; min-height: 44px; }
-  #answer-timing [data-status="on_target"] { color: var(--good); }
-  #answer-timing [data-status="missed"] { color: var(--warn); }
   .stage-bar { display: flex; height: 8px; margin: 4px 0; border-radius: 4px; overflow: hidden; background: var(--line); }
   .stage-bar i { display: block; min-width: 2px; }
   [data-stage="listening"] { --stage: #8aa8c8; } [data-stage="hear"] { --stage: var(--accent); }
@@ -1590,6 +1582,8 @@ function startLatency(current) {
 }
 const CAMERA_HEALTH = {smooth: "Smooth", starting: "Measuring", dropping: "Dropping frames", delayed: "Delayed",
   offline: "Offline", no_data: "No frames"};
+// Detection delay p50 only once there are enough samples to call it typical.
+const typicalDelay = (camera) => enoughSamples(camera?.detection_delay_seconds) ? camera.detection_delay_seconds.p50 : null;
 // The selected camera's detection delay and frame rate, then the browser's video delay.
 function renderVideoBadge() {
   const badge = $("latency-badge");
@@ -1598,7 +1592,7 @@ function renderVideoBadge() {
   if (camera?.health === "starting") parts.push("Measuring camera…");
   else if (camera && camera.health !== "no_data" && camera.health !== "offline") {
     if (camera.health !== "smooth") parts.push(CAMERA_HEALTH[camera.health] || camera.health);
-    const delay = camera.detection_delay_seconds?.p50;
+    const delay = typicalDelay(camera);
     if (delay != null) parts.push("Detect " + perfSeconds(delay));
     if (camera.processed_fps != null) parts.push(camera.processed_fps + (camera.source_fps ? "/" + camera.source_fps : "") + " fps");
   }
@@ -2867,10 +2861,8 @@ function renderAnswerTiming() {
   const first = timing?.firstText != null ? perfSeconds((timing.firstText - timing.start) / 1000) : null;
   let content = null;
   if (timing?.outcome === "spoken") {
-    const target = state.performance?.kpis?.spoken_answer?.target ?? 3, seconds = timing.total / 1000;
     const details = document.createElement("details"), summary = document.createElement("summary");
-    summary.dataset.status = seconds < target ? "on_target" : "missed";
-    summary.textContent = `Answered aloud in ${perfSeconds(seconds)} · ${seconds < target ? "✓ within" : "! over"} ${perfSeconds(target)} target`;
+    summary.textContent = "Answered aloud in " + perfSeconds(timing.total / 1000);
     const bar = document.createElement("div"), legend = document.createElement("div");
     bar.className = "stage-bar"; legend.className = "stage-legend";
     for (const [name, value] of Object.entries(timing.stages)) {
@@ -4043,9 +4035,10 @@ function perfSeconds(seconds) {
   if (seconds == null) return "—";
   return seconds < 1 ? Math.round(seconds * 1000) + " ms" : seconds.toFixed(1) + " s";
 }
-// Text, not colour alone, carries the status; too few samples is never a pass.
-const KPI_STATUS = {on_target: "✓ Meets target", missed: "! Misses target", insufficient: "Not enough data yet",
-  no_data: "No data yet", info: "Information only"};
+// Values are described, never judged: no targets, no pass/fail. A summary is
+// "info" once it has enough samples (MIN_SAMPLES in performance.py) to show a
+// typical value; fewer is never shown as typical.
+const enoughSamples = (summary) => summary?.status === "info" && summary.p50 != null;
 
 function setTelemetryView(view) {
   state.telemetryView = view;
@@ -4058,108 +4051,82 @@ function setTelemetryView(view) {
 $("view-resources").onclick = () => setTelemetryView("resources");
 $("view-performance").onclick = () => setTelemetryView("performance");
 
-// Plain-words service tiles. Values come from state.telemetry.services as the
-// Backend relayed them; nothing here is compared with a target.
+// Service tiles. The headline is always what the operator waits for, measured
+// by the Handheld (state.performance.kpis.services: end to end, including the
+// service queue and loopback). Values the services report through Metrics
+// Manager (state.telemetry.services, cumulative since the service started)
+// only add a line to Details, so the headline never jumps when they appear.
 function svcSeconds(seconds) {
+  if (seconds == null) return "—";
   return seconds < 0.1 ? Math.round(seconds * 1000) + " ms" : seconds.toFixed(1) + " s";
 }
-const svcCount = (v) => String(v);
-// headline entries: [key, headline text, p95 label, p95 formatter]; a headline
-// without a seconds-style p95 formatter shows no 95% line.
+const svcTypical = (s) => "Typical " + svcSeconds(s.p50) + " · 95% at or below " + svcSeconds(s.p95);
+const svcPercent = (v) => v.toFixed(1) + "%";
+// headline: the Handheld summary shown; text: the headline sentence;
+// lines: extra Handheld lines; reported: [service key, words, formatter].
 const SERVICE_TILES = [
-  {id: "chat", label: "Chat Q&A", standard: "TTFT", provider: "needs Chat Q&A update",
-    headline: [["ttft_seconds", (m) => "First words in " + svcSeconds(m.value), "First words", svcSeconds]],
-    extras: [["queue_wait_seconds", "Queue wait", svcSeconds], ["in_flight", "In flight", svcCount]], extraOne: true},
-  {id: "asr", label: "Audio Analyzer", standard: "RTFx", provider: "needs Audio Analyzer update",
-    headline: [["rtfx", (m) => "Speech heard " + m.value.toFixed(1) + "x faster than real time"]],
-    extras: [["in_flight", "In flight", svcCount]]},
-  {id: "tts", label: "Text To Speech", standard: "TTFA / RTF", provider: "needs Text To Speech update",
-    headline: [["time_to_first_audio_seconds", (m) => "Voice ready in " + svcSeconds(m.value), "Voice ready", svcSeconds],
-      ["rtf", (m) => "Takes " + m.value.toFixed(2) + " s per second of speech", "Speech speed",
-        (v) => v.toFixed(2) + " s per second of speech"]],
-    extras: [["in_flight", "In flight", svcCount]]},
+  {id: "chat", label: "Chat Q&A", standard: "TTFT", headline: "first_words",
+    text: (s) => "First words in " + svcSeconds(s.p50),
+    lines: (h) => [svcTypical(h.first_words)],
+    reported: [["ttft_seconds", "model first token", svcSeconds], ["queue_wait_seconds", "queue wait", svcSeconds],
+      ["error_rate_percent", "errors", svcPercent]]},
+  {id: "asr", label: "Audio Analyzer", standard: "RTFx", headline: "rtfx",
+    text: (s) => "Speech heard " + s.p50.toFixed(1) + "x faster than real time",
+    lines: (h) => enoughSamples(h.request_seconds) ? ["Call time: " + svcTypical(h.request_seconds).toLowerCase()] : [],
+    reported: [["rtfx", "model-only speed", (v) => v.toFixed(1) + "x"], ["error_rate_percent", "errors", svcPercent]]},
+  {id: "tts", label: "Text To Speech", standard: "TTFA · RTF", headline: "request_seconds",
+    text: (s) => "Voice ready in " + svcSeconds(s.p50),
+    lines: (h) => [svcTypical(h.request_seconds)].concat(enoughSamples(h.rtf)
+      ? ["Takes " + h.rtf.p50.toFixed(2) + " s per second of speech (RTF)"] : []),
+    reported: [["time_to_first_audio_seconds", "model time to first audio", svcSeconds],
+      ["rtf", "RTF", (v) => v.toFixed(2)], ["error_rate_percent", "errors", svcPercent]]},
 ];
-function serviceMetricState(metric) {
-  return metric && ["ok", "stale"].includes(metric.state) && metric.value != null ? metric.state : "missing";
+// One line listing only the service values that exist; stale ones are marked.
+function reportedLine(spec) {
+  const metrics = state.telemetry?.services?.[spec.id]?.metrics || {};
+  const parts = spec.reported.flatMap(([key, words, fmt]) => {
+    const metric = metrics[key], value = metric?.p50 ?? metric?.value;
+    if (!metric || !["ok", "stale"].includes(metric.state) || value == null) return [];
+    return [words + " " + (metric.state === "stale" ? "◷ " : "") + fmt(value)];
+  });
+  return parts.length ? `Reported by ${spec.label} (since it started): ${parts.join(", ")}`
+    : `More detail after the ${spec.label} update`;
 }
-// What the Handheld itself observed (state.performance.kpis.services), used
-// only when the service reports no series of its own. It is client-observed:
-// it includes queue wait and loopback. Status "info" means at least the minimum
-// number of samples; anything less is never shown as a typical value.
-// headline: [summary key, headline text from the p50], lines: more detail.
-const handheldReady = (summary) => summary?.status === "info" && summary.p50 != null;
-const HANDHELD_TILES = {
-  chat: {headline: "first_words", text: (s) => "First words in " + svcSeconds(s.p50),
-    lines: (m) => ["First words, typical (50% at or below): " + svcSeconds(m.first_words.p50),
-      "First words, 95% at or below: " + svcSeconds(m.first_words.p95)]},
-  asr: {headline: "rtfx", text: (s) => "Speech heard " + s.p50.toFixed(1) + "x faster than real time",
-    lines: (m) => handheldReady(m.request_seconds)
-      ? ["Request time, typical (50% at or below): " + svcSeconds(m.request_seconds.p50),
-        "Request time, 95% at or below: " + svcSeconds(m.request_seconds.p95)] : []},
-  tts: {headline: "request_seconds", text: (s) => "Voice ready in " + svcSeconds(s.p50),
-    lines: (m) => ["Voice ready, 95% at or below: " + svcSeconds(m.request_seconds.p95)].concat(handheldReady(m.rtf)
-      ? ["Speech speed, typical: " + m.rtf.p50.toFixed(2) + " s per second of speech"] : [])},
-};
-const HANDHELD_NOTE = "Measured by the Handheld: includes queue wait; exact values need the service update.";
-// Tiles are built once and updated in place so focus and taps on Details
-// survive the once-a-second telemetry refresh.
+// Tiles are built once and updated in place so an open Details stays open
+// across the once-a-second refresh.
 function serviceTile(spec) {
   const box = document.createElement("div");
   box.className = "svc"; box.dataset.service = spec.id;
   const label = document.createElement("span"); label.textContent = spec.label;
-  const strong = document.createElement("strong");
-  const std = document.createElement("small");
-  const source = document.createElement("small"); source.className = "svc-source";
+  const std = document.createElement("small"); std.textContent = spec.standard;
   const details = document.createElement("details"); details.dataset.service = spec.id;
   const summary = document.createElement("summary"); summary.textContent = "Details";
   details.append(summary, document.createElement("ul"));
-  box.append(label, strong, std, source, details);
+  box.append(label, document.createElement("strong"), std, details);
   return box;
 }
 function renderServices() {
   const grid = $("service-grid");
   if (grid.children.length !== SERVICE_TILES.length) grid.replaceChildren(...SERVICE_TILES.map(serviceTile));
+  const snapshot = state.performance, minutes = Math.round((snapshot?.window_seconds || 300) / 60);
   SERVICE_TILES.forEach((spec, index) => {
-    const metrics = state.telemetry?.services?.[spec.id]?.metrics || {};
-    const pick = spec.headline.find(([key]) => serviceMetricState(metrics[key]) === "ok")
-      || spec.headline.find(([key]) => serviceMetricState(metrics[key]) === "stale");
-    const head = pick && metrics[pick[0]], headState = pick ? serviceMetricState(head) : "missing";
-    // The service's own series win when present and fresh; otherwise the Handheld's view.
-    const observed = state.performance?.kpis?.services?.[spec.id], fallback = HANDHELD_TILES[spec.id];
-    const useService = headState === "ok";
-    const handheld = !useService && observed && fallback.headline in observed
-      ? (handheldReady(observed[fallback.headline]) ? "ok" : "few") : "none";
-    const box = grid.children[index], strong = box.querySelector("strong"), source = box.querySelector(".svc-source");
-    const shown = useService ? "service" : handheld === "ok" ? "handheld" : headState === "stale" ? "stale"
-      : handheld === "few" ? "few" : "missing";
-    box.dataset.state = shown === "service" ? "ok" : shown;
-    strong.textContent = {service: () => pick[1](head), handheld: () => fallback.text(observed[fallback.headline]),
-      stale: () => "◷ Stale", few: () => "Not enough data yet", missing: () => "Not available yet"}[shown]();
-    strong.title = shown === "missing" ? "Not available yet: " + spec.provider
-      : shown === "few" ? "The Handheld times recent requests and shows a typical value after a few of them."
-      : shown === "handheld" ? HANDHELD_NOTE : "";
-    box.querySelector("small").textContent = spec.standard + (shown === "missing" ? " · " + spec.provider : "");
-    source.textContent = shown === "handheld" ? "Measured by Handheld" : "";
-    source.title = shown === "handheld" ? HANDHELD_NOTE : "";
-    source.hidden = shown !== "handheld";
-    const list = box.querySelector("ul"), lines = [];
-    const show = (metric, fmt) => {
-      const st = serviceMetricState(metric);
-      return st === "missing" ? "not available" : (st === "stale" ? "◷ " : "") + fmt(metric.value);
-    };
-    lines.push("Error rate: " + show(metrics.error_rate_percent, (v) => v.toFixed(1) + "%"));
-    for (const [key, name, fmt] of spec.extras) {
-      if (spec.extraOne && key === "in_flight" && serviceMetricState(metrics.queue_wait_seconds) !== "missing") continue;
-      lines.push(name + ": " + show(metrics[key], fmt));
-      if (spec.extraOne) break;
+    const handheld = snapshot?.kpis?.services?.[spec.id], head = handheld?.[spec.headline];
+    const shown = !head?.count ? "missing" : enoughSamples(head) ? "ok" : "few";
+    const box = grid.children[index];
+    box.dataset.state = shown;
+    box.querySelector("strong").textContent = shown === "ok" ? spec.text(head)
+      : shown === "few" ? "Not enough data yet" : "Not available yet";
+    const lines = [];
+    if (shown === "ok") lines.push(...spec.lines(handheld));
+    if (head?.count) {
+      lines.push(`Measured by the Handheld (last ${minutes} min, ${head.count} request${head.count === 1 ? "" : "s"}), `
+        + "including time waiting in the service queue"
+        + (shown === "few" ? "; a typical value shows after a few requests" : ""));
     }
-    if (shown === "service" && pick[3] && head.p95 != null) lines.push(pick[2] + ", 95% at or below: " + pick[3](head.p95));
-    if (shown === "handheld") {
-      lines.push(...fallback.lines(observed));
-      lines.push("Measured by the Handheld from " + observed[fallback.headline].count + " recent requests");
-      lines.push("Includes queue wait and loopback; exact values need the service update");
-    }
-    list.replaceChildren(...lines.map((text) => { const li = document.createElement("li"); li.textContent = text; return li; }));
+    lines.push(reportedLine(spec));
+    box.querySelector("ul").replaceChildren(...lines.map((text) => {
+      const li = document.createElement("li"); li.textContent = text; return li;
+    }));
   });
 }
 
@@ -4174,54 +4141,54 @@ function renderPerformance() {
     return;
   }
   const {time_to_alert: alert, spoken_answer: voice, cameras, answer_speed: speed, memory} = kpis;
-  const typical = (summary, noun) => `95% of ${summary.count} ${noun} · typical ${perfSeconds(summary.p50)}`;
+  // Headline: the typical (p50) value once there are enough samples.
+  const typicalValue = (summary) => enoughSamples(summary) ? perfSeconds(summary.p50) : "—";
+  const typicalDetail = (summary, noun, empty) => enoughSamples(summary) ? `typical, ${summary.count} ${noun}`
+    : summary.count ? `Not enough data yet · ${summary.count} ${noun}` : empty;
+  const spread = (summary) => enoughSamples(summary) ? "\n95% at or below " + perfSeconds(summary.p95) : "";
   const stages = Object.entries(voice.stages || {}).filter(([, value]) => value != null)
     .map(([name, value]) => titleCase(name) + " " + perfSeconds(value)).join(", ");
   const worst = Object.entries(snapshot.cameras || {}).find(([, camera]) => camera.reason && camera.health !== "starting");
   const chatSpeed = state.telemetry?.services?.chat?.metrics?.decode_tokens_per_second;
-  const decode = chatSpeed && chatSpeed.state === "ok" && chatSpeed.value != null ? chatSpeed : null;
+  // Exact tokens/s replaces ~words/s once the service has counted enough requests.
+  const decodeReady = ["ok", "stale"].includes(chatSpeed?.state) && (chatSpeed.p50 ?? chatSpeed.value) != null
+    && (chatSpeed.count == null || chatSpeed.count >= 5);
+  const decodeValue = decodeReady ? chatSpeed.p50 ?? chatSpeed.value : null;
   const tiles = [
-    {id: "alert", label: "Time to alert", status: alert.status, value: perfSeconds(alert.p95),
-      detail: alert.count ? typical(alert, "alerts")
-        : "No alerts yet" + (alert.detection_delay_p50 != null ? " · detect " + perfSeconds(alert.detection_delay_p50) : ""),
-      target: "Target under " + perfSeconds(alert.target),
-      title: "Camera frame decoded to alert raised, for alerts raised when the object first appears."},
-    {id: "voice", label: "Spoken answer", status: voice.status, value: perfSeconds(voice.p95),
-      detail: voice.count ? typical(voice, "voice questions") : "Ask by voice with Audio on",
-      target: "Target under " + perfSeconds(voice.target) + (voice.untimed ? ` · ${voice.untimed} not timed` : ""),
-      title: "End of your spoken question to the first sound of the answer."
+    {id: "alert", label: "Time to alert", value: typicalValue(alert),
+      detail: typicalDetail(alert, "alerts",
+        "No alerts yet" + (alert.detection_delay_p50 != null ? " · detect " + perfSeconds(alert.detection_delay_p50) : "")),
+      title: "Camera frame decoded to alert raised, for alerts raised when the object first appears." + spread(alert)},
+    {id: "voice", label: "Spoken answer", value: typicalValue(voice),
+      detail: typicalDetail(voice, "answers", "Ask by voice with Audio on"),
+      title: "End of your spoken question to the first sound of the answer." + spread(voice)
         + (stages ? "\nTypical stages: " + stages : "")
-        + (voice.acknowledged_p50 != null ? "\nAcknowledged after " + perfSeconds(voice.acknowledged_p50) : "")},
-    {id: "cameras", label: "Smooth cameras", status: cameras.status,
+        + (voice.acknowledged_p50 != null ? "\nAcknowledged after " + perfSeconds(voice.acknowledged_p50) : "")
+        + (voice.untimed ? `\n${voice.untimed} not timed (Audio off, blocked, or no answer heard)` : "")},
+    {id: "cameras", label: "Smooth cameras",
       value: cameras.running ? `${cameras.smooth} of ${cameras.running}` : "—",
       detail: worst ? cameraLabel(worst[0]) + ": " + worst[1].reason
         : cameras.running ? "No dropped frames or delay" : "No camera is sending frames",
-      target: `Target ${cameras.target} or more smooth`,
-      title: "Smooth: no more than 10% of frames skipped, keeping up with the camera, detection delay on target."},
-    {id: "speed", label: decode ? "Answer speed · decode tokens/s" : "Answer speed", status: speed.status,
-      value: decode ? decode.value.toFixed(1) + " tokens/s" : speed.p50 == null ? "—" : "~" + speed.p50 + " words/s",
-      detail: speed.first_words_p50 != null ? "First words typical " + perfSeconds(speed.first_words_p50) : "Ask a question",
-      target: decode ? "Measured by Chat Q&A"
-        : speed.tokens_per_second == null ? "Tokens/s: needs Chat Q&A update"
-        : `${speed.tokens_per_second} tokens/s · target ${speed.token_target}`,
-      title: decode ? "Decode tokens per second reported by Chat Q&A."
-        : "Approximate: streamed words per second, not model tokens."},
-    {id: "memory", label: "Peak memory", status: memory.status,
-      value: memory.peak == null ? "—" : Math.round(memory.peak) + "%",
+      title: "Smooth: no more than 10% of frames skipped, keeping up with the camera, detection delay under 400 ms."},
+    decodeValue != null
+      ? {id: "speed", label: "Answer speed", value: (chatSpeed.state === "stale" ? "◷ " : "") + decodeValue.toFixed(1) + " tokens/s",
+        detail: "Reported by Chat Q&A (since it started)",
+        title: "Decode tokens per second reported by Chat Q&A, typical since it started."}
+      : {id: "speed", label: "Answer speed", value: enoughSamples(speed) ? "~" + speed.p50 + " words/s" : "—",
+        detail: enoughSamples(speed) ? "Approximate: words, not tokens"
+          : speed.count ? "Not enough data yet" : "Ask a question",
+        title: "Approximate: streamed words per second, not model tokens. Exact tokens/s after the Chat Q&A update."},
+    {id: "memory", label: "Peak memory", value: memory.status === "info" && memory.peak != null ? Math.round(memory.peak) + "%" : "—",
       detail: memory.last == null ? "Waiting for readings" : "Now " + Math.round(memory.last) + "% of host RAM",
-      target: "Target under " + memory.target + "%", title: "Highest host memory use in the window."},
+      title: "Highest host memory use in the window."},
   ];
   $("kpi-grid").replaceChildren(...tiles.map((tile) => {
     const box = document.createElement("button");
-    box.type = "button"; box.className = "kpi"; box.dataset.kpi = tile.id; box.dataset.status = tile.status;
+    box.type = "button"; box.className = "kpi"; box.dataset.kpi = tile.id;
     box.setAttribute("aria-pressed", String(state.kpiOpen === tile.id)); box.setAttribute("aria-controls", "kpi-explain");
     box.onclick = () => { state.kpiOpen = state.kpiOpen === tile.id ? null : tile.id; renderPerformance(); };
-    const status = KPI_STATUS[tile.status] || tile.status;
-    for (const [tag, text, cls] of [["span", tile.label], ["strong", tile.value], ["small", tile.detail],
-      ["small", tile.target], ["small", status, "kpi-status"]]) {
-      const node = document.createElement(tag); node.textContent = text;
-      if (cls) node.className = cls;
-      box.append(node);
+    for (const [tag, text] of [["span", tile.label], ["strong", tile.value], ["small", tile.detail]]) {
+      const node = document.createElement(tag); node.textContent = text; box.append(node);
     }
     return box;
   }));
@@ -4229,7 +4196,7 @@ function renderPerformance() {
     const row = document.createElement("tr"); row.dataset.health = camera.health; row.title = camera.reason || "";
     const fps = camera.processed_fps == null ? "—" : camera.processed_fps + (camera.source_fps ? " / " + camera.source_fps : "");
     for (const text of [cameraLabel(streamId), CAMERA_HEALTH[camera.health] || camera.health, fps,
-      camera.drop_percent == null ? "—" : camera.drop_percent + "%", perfSeconds(camera.detection_delay_seconds?.p50)]) {
+      camera.drop_percent == null ? "—" : camera.drop_percent + "%", perfSeconds(typicalDelay(camera))]) {
       const cell = document.createElement("td"); cell.textContent = text; row.append(cell);
     }
     return row;
@@ -4239,8 +4206,8 @@ function renderPerformance() {
   $("kpi-explain").textContent = open ? open.label + ": " + open.title.replaceAll("\n", " · ") : "";
   $("camera-performance").tBodies[0].replaceChildren(...rows);
   $("camera-performance").hidden = !rows.length;
-  $("perf-note").textContent = `Last ${Math.round(snapshot.window_seconds / 60)} min on this device · `
-    + "headline is the 95th percentile (95% of samples at or below) · Detect and frames/s cover the last 30 s.";
+  $("perf-note").textContent = `Measured by the Handheld over the last ${Math.round(snapshot.window_seconds / 60)} min · `
+    + "headline is the typical value (half at or below); tap a tile for more · Detect and frames/s cover the last 30 s.";
 }
 function cameraLabel(streamId) {
   return state.streams.find((stream) => stream.stream_id === streamId)?.display_name || streamId;

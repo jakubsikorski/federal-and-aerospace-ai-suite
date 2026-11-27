@@ -143,14 +143,6 @@ alert_speech_floor_seconds: 3.0
 # Spoken the moment a voice question is transcribed (Audio on), from the WAV
 # cache, so the operator hears a reply within about a second. Empty disables it.
 speech_ack_text: "Checking."
-# Performance tab thresholds (Panel and GET /api/performance). Status compares the
-# 5-minute p95 for latencies and the peak for memory; omitted keys keep these values.
-performance_targets:
-  time_to_alert_seconds: 0.4
-  spoken_answer_seconds: 3.0
-  smooth_cameras: 3
-  tokens_per_second: 15.0
-  memory_percent: 80.0
 # Talk press wakes TTS and Whisper at most this often (idle devices were 4-9 s slower).
 voice_warm_interval_seconds: 20.0
 # Optional stock voice name from GET /v1/model-info; unset uses the service default.

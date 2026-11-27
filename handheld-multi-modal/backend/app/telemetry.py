@@ -22,9 +22,9 @@ CONTAINER_STALE_AFTER_SECONDS = 10.0
 #   gauge   bare series <name>; a real 0 stays 0
 #   errors  counter <name>{outcome}; error_rate = (error + timeout) / all * 100
 #   ratio   derived read-side from two other keys of the same service
-# Names are from the plan, section 3; the pinned images do not expose them yet,
-# so absent series report "missing". The tts time-to-first-audio name is not
-# listed in the plan and is a placeholder until the upstream release names it.
+# Names are from the KPI plan, section 5, and are the names requested upstream
+# (section 6). The pinned images do not expose them yet, so absent series report
+# "missing". The Panel shows these only in tile Details, never as the headline.
 SERVICE_METRICS = {
     "chat": {
         "ttft_seconds": ("hist", "chatqna_ttft_seconds", "s"),
@@ -35,8 +35,8 @@ SERVICE_METRICS = {
         "in_flight": ("gauge", "chatqna_requests_in_flight", "requests"),
     },
     "asr": {
-        "rtfx": ("ratio", ("audio_seconds", "request_seconds"), "x"),
-        "request_seconds": ("hist", "audio_analyzer_inference_seconds", "s"),
+        "rtfx": ("ratio", ("audio_seconds", "model_seconds"), "x"),
+        "model_seconds": ("hist", "audio_analyzer_inference_seconds", "s"),
         "audio_seconds": ("hist", "audio_analyzer_audio_duration_seconds", "s"),
         "error_rate_percent": ("errors", "audio_analyzer_requests_total", "%"),
         "in_flight": ("gauge", "audio_analyzer_requests_in_flight", "requests"),

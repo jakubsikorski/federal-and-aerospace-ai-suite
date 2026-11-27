@@ -876,106 +876,97 @@ def main():
                 stopLatency(); state.whep = null;
                 const perfShown = (id) => getComputedStyle($(id)).display !== 'none';
                 const perfSelected = state.selected; state.selected = 'cam1';
+                const hh = (p50, p95, count, status, unit) => ({last: p50, p50, p95, count, status: status || 'info', unit, source: 'handheld'});
+                const hhServices = (chat, asr, tts) => ({chat: {first_words: chat}, asr: {request_seconds: asr[0], rtfx: asr[1]}, tts: {request_seconds: tts[0], rtf: tts[1]}});
+                const hhFull = () => hhServices(hh(.8, 1.2, 12, 'info', 's'), [hh(.5, .9, 12, 'info', 's'), hh(4.2, 5, 12, 'info', 'x')], [hh(.4, .6, 12, 'info', 's'), hh(.3, .4, 12, 'info', 'ratio')]);
                 state.performance = {version:1, window_seconds:300, kpis:{
-                  time_to_alert:{p50:.25, p95:.35, count:12, target:.4, status:'on_target', unit:'s', detection_delay_p50:.12},
-                  spoken_answer:{p50:null, p95:null, count:2, target:3, status:'insufficient', unit:'s', stages:{}, acknowledged_p50:null, untimed:1},
-                  cameras:{smooth:1, running:2, target:3, status:'missed'},
-                  answer_speed:{p50:9.5, p95:11, count:6, target:null, status:'info', unit:'words/s', approximate:true,
-                    first_words_p50:.8, tokens_per_second:null, token_target:15},
-                  memory:{last:41, peak:52, count:30, target:80, unit:'%', status:'on_target'}},
-                  cameras:{cam1:{health:'smooth', reason:null, source_fps:30, processed_fps:29.8, drop_percent:0, detection_delay_seconds:{p50:.12}},
-                           cam2:{health:'dropping', reason:'25% of decoded frames skipped', source_fps:30, processed_fps:22.5, drop_percent:25, detection_delay_seconds:{p50:.2}}}};
+                  time_to_alert:{p50:.25, p95:.35, count:12, status:'info', unit:'s', detection_delay_p50:.12},
+                  spoken_answer:{p50:2.1, p95:2.9, count:2, status:'insufficient', unit:'s', stages:{}, acknowledged_p50:null, untimed:1},
+                  cameras:{smooth:1, running:2, status:'info'},
+                  answer_speed:{p50:9.5, p95:11, count:6, status:'info', unit:'words/s', approximate:true},
+                  memory:{last:41, peak:52, count:30, unit:'%', status:'info'},
+                  services: hhFull()},
+                  cameras:{cam1:{health:'smooth', reason:null, source_fps:30, processed_fps:29.8, drop_percent:0, detection_delay_seconds:{p50:.12, count:30, status:'info'}},
+                           cam2:{health:'dropping', reason:'25% of decoded frames skipped', source_fps:30, processed_fps:22.5, drop_percent:25, detection_delay_seconds:{p50:.2, count:2, status:'insufficient'}}}};
                 renderPerformance();
                 if ($('latency-badge').textContent !== 'Detect 120 ms · 29.8/30 fps' || !$('latency-badge').classList.contains('show')) return "camera badge: " + $('latency-badge').textContent;
+                state.telemetry = {metrics: [], services: undefined};
                 setTelemetryView('performance');
                 const perfTiles = [...$('kpi-grid').children].map(tile => tile.textContent);
                 if (!perfShown('performance-view') || perfShown('telemetry-grid') || perfTiles.length !== 5) return "performance view not shown";
-                if (!perfTiles[0].includes('350 ms') || !perfTiles[0].includes('Meets target')) return "time to alert tile: " + perfTiles[0];
-                if (!perfTiles[1].includes('Not enough data') || perfTiles[1].includes('Meets target')) return "too few samples shown as a pass: " + perfTiles[1];
-                if (!perfTiles[2].includes('1 of 2') || !perfTiles[2].includes('Camera 2: 25% of decoded frames skipped') || !perfTiles[2].includes('Misses target')) return "camera tile: " + perfTiles[2];
-                if (!perfTiles[3].includes('~9.5 words/s') || !perfTiles[3].includes('Tokens/s: needs Chat Q&A update')) return "speed tile: " + perfTiles[3];
+                // Headline is the typical value; nothing is judged against a target.
+                if (!perfTiles[0].includes('250 ms') || !perfTiles[0].includes('typical, 12 alerts') || perfTiles[0].includes('350 ms')) return "time to alert tile: " + perfTiles[0];
+                if (!perfTiles[1].includes('Not enough data yet') || perfTiles[1].includes('2.1 s')) return "too few samples shown as typical: " + perfTiles[1];
+                if (!perfTiles[2].includes('1 of 2') || !perfTiles[2].includes('Camera 2: 25% of decoded frames skipped')) return "camera tile: " + perfTiles[2];
+                if (!perfTiles[3].includes('~9.5 words/s') || !perfTiles[3].includes('Approximate: words, not tokens') || perfTiles[3].includes('First words')) return "speed tile: " + perfTiles[3];
+                if (!perfTiles[4].includes('52%') || !perfTiles[4].includes('Now 41% of host RAM')) return "memory tile: " + perfTiles[4];
+                if (perfTiles.some(text => /✓|!|target/i.test(text)) || $('kpi-grid').querySelector('.kpi-status')) return "KPI tile judges a value: " + perfTiles;
+                if ([...$('kpi-grid').children].some(tile => getComputedStyle(tile).borderLeftWidth !== '1px')) return "KPI tile has an accent border";
+                $('kpi-grid').children[0].click();
+                if (!$('kpi-explain').textContent.includes('95% at or below 350 ms')) return "95% not in the explanation: " + $('kpi-explain').textContent;
                 $('kpi-grid').children[1].click();
-                if ($('kpi-explain').hidden || !$('kpi-explain').textContent.includes('first sound of the answer') || $('kpi-grid').children[1].getAttribute('aria-pressed') !== 'true') return "tap tile explanation: " + $('kpi-explain').textContent;
+                if ($('kpi-explain').hidden || !$('kpi-explain').textContent.includes('first sound of the answer') || !$('kpi-explain').textContent.includes('1 not timed') || $('kpi-explain').textContent.includes('95%') || $('kpi-grid').children[1].getAttribute('aria-pressed') !== 'true') return "tap tile explanation: " + $('kpi-explain').textContent;
                 $('kpi-grid').children[1].click();
                 if (!$('kpi-explain').hidden) return "tile explanation not closed";
                 if ([...$('kpi-grid').children, $('view-resources'), $('view-performance')].some(el => el.getBoundingClientRect().height < 44)) return "performance touch target under 44px";
                 if ($('camera-performance').tBodies[0].rows.length !== 2 || $('camera-performance').tBodies[0].rows[1].dataset.health !== 'dropping') return "camera table";
+                if ($('camera-performance').tBodies[0].rows[0].cells[4].textContent !== '120 ms' || $('camera-performance').tBodies[0].rows[1].cells[4].textContent !== '—') return "detect with too few samples shown as typical";
+                if (!$('perf-note').textContent.includes('typical value') || $('perf-note').textContent.includes('95th')) return "performance note: " + $('perf-note').textContent;
+                // Service tiles: the headline is always the Handheld value.
                 const svcTiles = () => [...$('service-grid').children];
                 const svcText = () => svcTiles().map(tile => tile.textContent);
                 const svcSaved = state.telemetry;
-                state.telemetry = {metrics: [], services: undefined}; renderPerformance();
-                if (svcTiles().length !== 3 || svcText().some(text => !text.includes('Not available yet'))) return "services absent: " + svcText();
-                if (!svcTiles()[0].querySelector('strong').title.includes('needs Chat Q&A update') || !svcTiles()[0].querySelector('small').textContent.includes('needs Chat Q&A update')) return "chat provider hint not visible";
-                if (!$('kpi-grid').children[3].textContent.includes('~9.5 words/s') || $('kpi-grid').children[3].textContent.includes('decode tokens/s')) return "speed fallback changed";
+                const hhSaved = state.performance;
+                const hhShow = (services) => { state.performance = {...hhSaved, kpis: {...hhSaved.kpis, services}}; renderPerformance(); };
+                const svcJudged = () => svcTiles().some(tile => /✓|!|target/i.test(tile.textContent) || getComputedStyle(tile).borderLeftWidth !== '1px');
+                const svcNodes = svcTiles(), svcDetails = svcNodes.map(tile => tile.querySelector('details')), svcStrong = svcNodes.map(tile => tile.querySelector('strong'));
+                svcDetails.forEach(d => { d.open = true; });
+                const base = svcText();
+                if (svcTiles().length !== 3) return "service tiles: " + base;
+                if (!base[0].includes('First words in 0.8 s') || !base[0].includes('TTFT') || !base[0].includes('Typical 0.8 s · 95% at or below 1.2 s') || !base[0].includes('Measured by the Handheld (last 5 min, 12 requests), including time waiting in the service queue') || !base[0].includes('More detail after the Chat Q&A update')) return "chat tile: " + base[0];
+                if (!base[1].includes('Speech heard 4.2x faster than real time') || !base[1].includes('RTFx') || !base[1].includes('Call time: typical 0.5 s · 95% at or below 0.9 s') || !base[1].includes('More detail after the Audio Analyzer update')) return "asr tile: " + base[1];
+                if (!base[2].includes('Voice ready in 0.4 s') || !base[2].includes('TTFA') || !base[2].includes('Typical 0.4 s · 95% at or below 0.6 s') || !base[2].includes('Takes 0.30 s per second of speech (RTF)') || !base[2].includes('More detail after the Text To Speech update')) return "tts tile: " + base[2];
+                if (base.some(text => /not available|error rate|in flight/i.test(text)) || svcJudged()) return "details list absent values or judge: " + base;
                 const svcM = (value, unit, st, extra) => Object.assign({value, unit, state: st || 'ok', p50: null, p95: null, count: null}, extra || {});
                 const svcMiss = () => svcM(null, '', 'missing');
                 state.telemetry = {metrics: [], services: {
-                  chat: {state: 'ok', metrics: {ttft_seconds: svcM(.8, 's', 'ok', {p95: 1.2, count: 40}), queue_wait_seconds: svcM(.05, 's'),
-                    decode_tokens_per_second: svcM(21.4, 'tokens/s'), request_seconds: svcMiss(), error_rate_percent: svcM(0, '%'), in_flight: svcM(1, '')}},
-                  asr: {state: 'ok', metrics: {rtfx: svcM(2, 'x'), request_seconds: svcMiss(), audio_seconds: svcMiss(), error_rate_percent: svcM(0, '%'), in_flight: svcM(0, '')}},
-                  tts: {state: 'ok', metrics: {rtf: svcM(.3, ''), time_to_first_audio_seconds: svcM(.4, 's'), request_seconds: svcMiss(), error_rate_percent: svcM(2.5, '%'), in_flight: svcM(0, '')}}}};
+                  chat: {state: 'ok', metrics: {ttft_seconds: svcM(.7, 's', 'ok', {p50: .6, p95: 1.2, count: 40}), queue_wait_seconds: svcM(.3, 's'),
+                    decode_tokens_per_second: svcM(21.4, 'tokens/s'), request_seconds: svcMiss(), error_rate_percent: svcM(0, '%'), in_flight: svcM(1, 'requests')}},
+                  asr: {state: 'ok', metrics: {rtfx: svcM(2, 'x'), model_seconds: svcMiss(), audio_seconds: svcMiss(), error_rate_percent: svcM(0, '%'), in_flight: svcM(0, 'requests')}},
+                  tts: {state: 'ok', metrics: {rtf: svcM(.3, 'ratio', 'stale'), time_to_first_audio_seconds: svcM(.5, 's'), request_seconds: svcMiss(), error_rate_percent: svcM(2.5, '%'), in_flight: svcM(0, 'requests')}}}};
                 renderPerformance();
-                const svcOk = svcText();
-                if (!svcOk[0].includes('First words in 0.8 s') || !svcOk[0].includes('TTFT') || !svcOk[0].includes('Queue wait: 50 ms') || !svcOk[0].includes('First words, 95% at or below: 1.2 s')) return "chat service tile: " + svcOk[0];
-                if (!svcOk[1].includes('Speech heard 2.0x faster than real time') || !svcOk[1].includes('RTFx') || svcOk[1].includes('95% at or below')) return "asr service tile: " + svcOk[1];
-                if (!svcOk[2].includes('Voice ready in 0.4 s') || !svcOk[2].includes('Error rate: 2.5%')) return "tts service tile: " + svcOk[2];
-                if (!$('kpi-grid').children[3].textContent.includes('21.4 tokens/s') || !$('kpi-grid').children[3].textContent.includes('decode tokens/s')) return "decode speed tile: " + $('kpi-grid').children[3].textContent;
-                svcTiles()[0].querySelector('details').open = true; await new Promise(r => setTimeout(r, 50)); renderPerformance();
-                if (!svcTiles()[0].querySelector('details').open || svcTiles()[1].querySelector('details').open) return "details open state lost on re-render";
-                const svcSummary = svcTiles()[0].querySelector('summary'), svcNode = svcTiles()[0];
+                const rep = svcText();
+                // Service values add a Details line; the headline does not move.
+                if (rep.some((text, i) => svcStrong[i].textContent !== svcTiles()[i].querySelector('strong').textContent) || !rep[0].includes('First words in 0.8 s')) return "headline changed when service series appeared: " + rep;
+                if (!rep[0].includes('Reported by Chat Q&A (since it started): model first token 0.6 s, queue wait 0.3 s, errors 0.0%') || rep[0].includes('More detail after')) return "chat reported line: " + rep[0];
+                if (!rep[1].includes('Speech heard 4.2x faster than real time') || !rep[1].includes('Reported by Audio Analyzer (since it started): model-only speed 2.0x, errors 0.0%')) return "asr reported line: " + rep[1];
+                if (!rep[2].includes('Voice ready in 0.4 s') || !rep[2].includes('Reported by Text To Speech (since it started): model time to first audio 0.5 s, RTF ◷ 0.30, errors 2.5%')) return "tts reported line: " + rep[2];
+                if (rep.some(text => /not available|in flight/i.test(text)) || svcJudged()) return "reported details list absent values or judge: " + rep;
+                const speedTile = $('kpi-grid').children[3].textContent;
+                if (!speedTile.includes('21.4 tokens/s') || !speedTile.includes('Reported by Chat Q&A (since it started)') || speedTile.includes('words/s')) return "exact tokens/s should replace words/s: " + speedTile;
+                state.telemetry.services.chat.metrics.decode_tokens_per_second = svcM(21.4, 'tokens/s', 'stale'); renderPerformance();
+                if (!$('kpi-grid').children[3].textContent.includes('◷ 21.4 tokens/s')) return "stale tokens/s not marked: " + $('kpi-grid').children[3].textContent;
+                state.telemetry.services.chat.metrics.decode_tokens_per_second = svcM(21.4, 'tokens/s', 'ok', {count: 2}); renderPerformance();
+                if (!$('kpi-grid').children[3].textContent.includes('~9.5 words/s')) return "two service requests replaced words/s: " + $('kpi-grid').children[3].textContent;
+                state.telemetry.services.chat.metrics.decode_tokens_per_second = svcM(21.4, 'tokens/s'); renderPerformance();
+                if (svcTiles().some((tile, i) => tile !== svcNodes[i] || tile.querySelector('details') !== svcDetails[i] || !svcDetails[i].open)) return "service refresh rebuilt tiles or closed Details";
+                const svcSummary = svcTiles()[0].querySelector('summary');
                 svcSummary.focus(); renderServices();
-                if (svcTiles()[0] !== svcNode || document.activeElement !== svcSummary) return "service refresh dropped focus on Details";
+                if (document.activeElement !== svcSummary) return "service refresh dropped focus on Details";
                 if (getComputedStyle(svcSummary, '::before').content === 'none') return "Details has no disclosure marker";
-                state.telemetry.services.tts.metrics.time_to_first_audio_seconds = svcMiss();
-                state.telemetry.services.tts.metrics.rtf = svcM(.3, '', 'ok', {p95: .4, count: 10}); renderPerformance();
-                if (!svcText()[2].includes('Takes 0.30 s per second of speech') || !svcText()[2].includes('Speech speed, 95% at or below: 0.40 s per second of speech') || /400 ms/.test(svcText()[2])) return "tts rtf fallback: " + svcText()[2];
-                state.telemetry.services.chat.metrics.ttft_seconds = svcM(.8, 's', 'stale'); renderPerformance();
-                if (!svcText()[0].includes('◷ Stale') || svcText()[0].includes('First words in')) return "stale service tile: " + svcText()[0];
-                if (svcTiles().some(tile => /✓|!|Meets target|Misses target/.test(tile.textContent) || tile.querySelector('.kpi-status') || getComputedStyle(tile).borderLeftWidth !== '1px')) return "service tile has status icon or accent border";
                 if ($('performance-view').scrollWidth > $('performance-view').clientWidth) return "performance view scrolls sideways";
                 if ($('kpi-grid').children.length !== 5) return "service tiles leaked into KPI grid";
-                // Handheld-observed fallback: used only when the service reports nothing usable.
-                const hhSaved = state.performance;
-                const hh = (p50, p95, count, status, unit) => ({last: p50, p50, p95, count, target: null, status: status || 'info', unit, source: 'handheld'});
-                const hhServices = (chat, asr, tts) => ({chat: {first_words: chat}, asr: {request_seconds: asr[0], rtfx: asr[1]}, tts: {request_seconds: tts[0], rtf: tts[1]}});
-                const hhShow = (services) => { state.performance = {...hhSaved, kpis: {...hhSaved.kpis, services}}; renderPerformance(); };
-                const svcAllClean = () => svcTiles().some(tile => /✓|!|Meets target|Misses target/.test(tile.textContent) || tile.querySelector('.kpi-status') || getComputedStyle(tile).borderLeftWidth !== '1px');
-                state.telemetry = {metrics: [], services: undefined};
-                renderPerformance();
-                const hhNodes = svcTiles(), hhDetails = hhNodes.map(tile => tile.querySelector('details')), hhStrong = hhNodes.map(tile => tile.querySelector('strong'));
-                hhShow(hhServices(hh(.8, 1.2, 12, 'info', 's'), [hh(.5, .9, 12, 'info', 's'), hh(4.2, 3, 12, 'info', 'x')], [hh(.4, .6, 12, 'info', 's'), hh(.3, .4, 12, 'info', 's/s')]));
-                const hhText = svcText();
-                if (!hhText[0].includes('First words in 0.8 s') || !hhText[0].includes('Measured by Handheld') || !hhText[0].includes('TTFT') || !hhText[0].includes('First words, typical (50% at or below): 0.8 s') || !hhText[0].includes('First words, 95% at or below: 1.2 s') || hhText[0].includes('Not available yet')) return "chat handheld tile: " + hhText[0];
-                if (hhText.some(text => !text.includes('Includes queue wait and loopback; exact values need the service update'))) return "handheld caveat not visible: " + hhText;
-                if (!hhText[1].includes('Speech heard 4.2x faster than real time') || !hhText[1].includes('Measured by Handheld') || !hhText[1].includes('Request time, typical (50% at or below): 0.5 s')) return "asr handheld tile: " + hhText[1];
-                if (!hhText[2].includes('Voice ready in 0.4 s') || !hhText[2].includes('Speech speed, typical: 0.30 s per second of speech') || !hhText[2].includes('Measured by Handheld')) return "tts handheld tile: " + hhText[2];
-                if (!hhText[0].includes('Error rate: not available')) return "handheld tile claims an error rate: " + hhText[0];
-                const hhSource = svcTiles()[0].querySelector('.svc-source');
-                if (hhSource.hidden || !hhSource.title.includes('includes queue wait') || !hhSource.title.includes('service update') || !hhStrong[0].title.includes('includes queue wait')) return "handheld tooltip: " + hhSource.title;
-                if (svcAllClean()) return "handheld tile has status icon or accent border";
-                if (svcTiles().some((tile, i) => tile !== hhNodes[i] || tile.querySelector('details') !== hhDetails[i] || tile.querySelector('strong') !== hhStrong[i])) return "handheld refresh rebuilt tiles";
-                if ($('performance-view').scrollWidth > $('performance-view').clientWidth) return "handheld tiles scroll sideways";
                 // Too few samples (below the minimum, or none) is never a typical value.
-                hhShow(hhServices(hh(.8, .8, 2, 'insufficient', 's'), [hh(null, null, 0, 'no_data', 's'), hh(null, null, 0, 'no_data', 'x')], [hh(.4, .4, 4, 'insufficient', 's'), hh(.3, .3, 4, 'insufficient', 's/s')]));
+                hhShow(hhServices(hh(.8, .8, 2, 'insufficient', 's'), [hh(null, null, 0, 'no_data', 's'), hh(null, null, 0, 'no_data', 'x')], [hh(.4, .4, 4, 'insufficient', 's'), hh(.3, .3, 4, 'insufficient', 'ratio')]));
                 const hhFew = svcText();
-                if (hhFew.some(text => !text.includes('Not enough data yet') || text.includes('Measured by Handheld') || /First words in|faster than real time|Voice ready in/.test(text))) return "too few samples shown as a value: " + hhFew;
-                if (svcTiles().some(tile => !tile.querySelector('.svc-source').hidden) || svcAllClean()) return "too few samples got a source label or status";
-                // The service's own series win when fresh; the Handheld fills in when they are missing or stale.
-                state.telemetry = {metrics: [], services: {
-                  chat: {state: 'ok', metrics: {ttft_seconds: svcM(.3, 's', 'ok', {p95: .5, count: 40}), error_rate_percent: svcM(0, '%')}},
-                  asr: {state: 'ok', metrics: {rtfx: svcM(2, 'x', 'stale')}}, tts: {state: 'ok', metrics: {}}}};
-                hhShow(hhServices(hh(.8, 1.2, 12, 'info', 's'), [hh(.5, .9, 12, 'info', 's'), hh(4.2, 3, 12, 'info', 'x')], [hh(.4, .6, 12, 'info', 's'), hh(.3, .4, 12, 'info', 's/s')]));
-                const hhPref = svcText();
-                if (!hhPref[0].includes('First words in 0.3 s') || hhPref[0].includes('First words in 0.8 s') || hhPref[0].includes('Measured by Handheld') || hhPref[0].includes('Includes queue wait and loopback') || !svcTiles()[0].querySelector('.svc-source').hidden) return "service series not preferred: " + hhPref[0];
-                if (!hhPref[1].includes('Speech heard 4.2x faster than real time') || !hhPref[1].includes('Measured by Handheld')) return "stale service did not fall back: " + hhPref[1];
-                if (!hhPref[2].includes('Voice ready in 0.4 s') || !hhPref[2].includes('Measured by Handheld')) return "missing service did not fall back: " + hhPref[2];
-                if (svcTiles().some((tile, i) => tile !== hhNodes[i])) return "tiles rebuilt when the source changed";
-                state.performance = {...hhSaved, kpis: {...hhSaved.kpis, services: hhServices(hh(null, null, 0, 'no_data', 's'), [hh(null, null, 0, 'no_data', 's'), hh(null, null, 0, 'no_data', 'x')], [hh(null, null, 0, 'no_data', 's'), hh(null, null, 0, 'no_data', 's/s')])}}; renderPerformance();
-                if (!svcText()[1].includes('◷ Stale') || svcText()[1].includes('Speech heard')) return "stale service with no Handheld data: " + svcText()[1];
-                state.performance = hhSaved; state.telemetry = {metrics: [], services: undefined}; renderPerformance();
-                if (svcText().some(text => !text.includes('Not available yet') || text.includes('Measured by Handheld'))) return "snapshot without services must say Not available yet: " + svcText();
+                if ([0, 2].some(i => !hhFew[i].includes('Not enough data yet')) || hhFew.some(text => /First words in|faster than real time|Voice ready in|Typical /.test(text))) return "too few samples shown as a value: " + hhFew;
+                if (!hhFew[1].includes('Not available yet') || hhFew[1].includes('Measured by the Handheld')) return "no requests must read Not available yet: " + hhFew[1];
+                if (!hhFew[0].includes('(last 5 min, 2 requests)') || !hhFew[0].includes('a typical value shows after a few requests') || svcJudged()) return "too few samples details: " + hhFew[0];
+                // No performance snapshot yet.
+                hhShow(undefined);
+                if (svcText().some(text => !text.includes('Not available yet') || text.includes('Measured by the Handheld'))) return "snapshot without services must say Not available yet: " + svcText();
+                state.performance = hhSaved; state.telemetry = svcSaved;
                 if ($('kpi-grid').children.length !== 5) return "handheld tiles leaked into KPI grid";
-                state.telemetry = svcSaved;
                 setTelemetryView('resources');
                 if (perfShown('performance-view') || !perfShown('telemetry-grid')) return "resources view not restored";
                 const perfNow = performance.now();
@@ -985,7 +976,7 @@ def main():
                 if (perfTiming.done || perfTiming.ack == null) return "acknowledgement ended the timing";
                 noteAnswerPlayback({kind:'answer'}, 'playing');
                 const perfFooter = $('answer-timing').textContent;
-                if (!perfTiming.done || $('answer-timing').hidden || !perfFooter.includes('Answered aloud in 2.0 s') || !perfFooter.includes('within 3.0 s target') || !perfFooter.includes('Think 800 ms')) return "answer footer: " + perfFooter;
+                if (!perfTiming.done || $('answer-timing').hidden || !perfFooter.includes('Answered aloud in 2.0 s') || /target|✓|!/.test(perfFooter) || !perfFooter.includes('Think 800 ms')) return "answer footer: " + perfFooter;
                 const perfTyped = newAnswerTiming(false, {start: perfNow - 1200}); perfTyped.firstText = perfNow; renderAnswerTiming();
                 if ($('answer-timing').textContent !== 'First words in 1.2 s') return "typed footer: " + $('answer-timing').textContent;
                 state.answerTiming = null; renderAnswerTiming(); state.performance = null; state.selected = perfSelected; renderPerformance();
@@ -2023,13 +2014,16 @@ def main():
                 js('return window.eval(' + json.dumps('selectCamera("cam1"); state.evidenceView="compact"; renderTracks(true);') + ')')
                 shot('compact-evidence.png')
                 js('return window.eval(' + json.dumps('''(() => {
-                  const delay = {p50:.12}, slow = {p50:.2};
+                  const delay = {p50:.12, count:30, status:"info"}, slow = {p50:.2, count:30, status:"info"};
                   state.performance = {version:1, window_seconds:300, kpis:{
-                    time_to_alert:{p50:.25, p95:.35, count:12, target:.4, status:"on_target", detection_delay_p50:.12},
-                    spoken_answer:{p50:2.4, p95:2.8, count:14, target:3, status:"on_target", stages:{listening:1.5, hear:.3, think:.4, speak:.14}, acknowledged_p50:.8, untimed:1},
-                    cameras:{smooth:2, running:3, target:3, status:"missed"},
-                    answer_speed:{p50:9.5, count:6, status:"info", first_words_p50:.8, tokens_per_second:null, token_target:15},
-                    memory:{last:41, peak:52, count:30, target:80, status:"on_target"}},
+                    time_to_alert:{p50:.25, p95:.35, count:12, status:"info", detection_delay_p50:.12},
+                    spoken_answer:{p50:2.4, p95:2.8, count:14, status:"info", stages:{listening:1.5, hear:.3, think:.4, speak:.14}, acknowledged_p50:.8, untimed:1},
+                    cameras:{smooth:2, running:3, status:"info"},
+                    answer_speed:{p50:9.5, count:6, status:"info"},
+                    memory:{last:41, peak:52, count:30, status:"info"},
+                    services:{chat:{first_words:{p50:1.2, p95:2.1, count:18, status:"info"}},
+                      asr:{request_seconds:{p50:.9, p95:1.3, count:14, status:"info"}, rtfx:{p50:2, p95:3, count:14, status:"info"}},
+                      tts:{request_seconds:{p50:.4, p95:.7, count:20, status:"info"}, rtf:{p50:.3, p95:.4, count:20, status:"info"}}}},
                     cameras:{cam1:{health:"smooth", source_fps:30, processed_fps:29.8, drop_percent:0, detection_delay_seconds:delay},
                              cam2:{health:"dropping", reason:"25% of decoded frames skipped", source_fps:30, processed_fps:22.5, drop_percent:25, detection_delay_seconds:slow},
                              cam4:{health:"smooth", source_fps:30, processed_fps:30, drop_percent:0, detection_delay_seconds:delay}}};
